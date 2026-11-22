@@ -128,6 +128,18 @@ fn item_expr_inner(input: &str, mode: ExprMode, allow_assign: bool) -> PResult<'
 /// post-parse comma lift, so this layer is a straight pass-through to the item
 /// level there (preserving the previous behaviour).
 pub(crate) fn list_infix_top(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
+    list_infix_top_feeds(input, mode, true)
+}
+
+/// [`list_infix_top()`] without the sequencer-level feed operators (`==>`,
+/// `<==`, ...): rakudo's `EXPR('e=')`, the item of a parenthesized argument
+/// list (#18628).
+// Cost: O(n), n = length of the expression.
+pub(crate) fn list_infix_top_no_feed(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
+    list_infix_top_feeds(input, mode, false)
+}
+
+fn list_infix_top_feeds(input: &str, mode: ExprMode, allow_feed: bool) -> PResult<'_, Expr> {
     if matches!(mode, ExprMode::ListopArg | ExprMode::NoSequenceNoFeed) {
         return assign_not_expr_mode(input, mode);
     }
@@ -179,7 +191,7 @@ pub(crate) fn list_infix_top(input: &str, mode: ExprMode) -> PResult<'_, Expr> {
             input,
             &mut left,
             &mut current_assoc_key,
-            true,
+            allow_feed,
             operand,
         )?;
         if new_rest.len() < rest.len() {

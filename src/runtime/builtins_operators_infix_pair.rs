@@ -157,6 +157,13 @@ impl Interpreter {
                 }
                 if let Some(callable) = self.env.get_sym(amp_sym).cloned()
                     && !self.declined_captured_family(infix_name, &callable)
+                    // The built-in fallback of a dispatcher over a scope's
+                    // candidates must not call such a dispatcher again: the
+                    // frame of a candidate that uses its own operator (a
+                    // block's `multi infix:<==>` whose body compares Ints)
+                    // sees the family under `&infix:<==>` (#18617).
+                    && !(self.module.builtin_op_fallback_depth > 0
+                        && Self::is_builtin_operator_dispatcher(&callable))
                     && matches!(
                         callable.view(),
                         ValueView::Sub(_)

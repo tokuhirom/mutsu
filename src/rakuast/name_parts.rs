@@ -128,7 +128,12 @@ pub(crate) fn name_from_parts(parts: Vec<Value>) -> RakuAstNode {
 /// not a plain name (or no field at all) is left alone.
 // Cost: O(k), k = number of parts of the name.
 pub(super) fn with_leading_empty(fields: &mut [RakuAstField]) {
-    let Some(field) = fields.iter_mut().find(|f| f.name == Some("name")) else {
+    // The `name` field, or a lone positional one (`Type::Simple`'s name).
+    let at = fields
+        .iter()
+        .position(|f| f.name == Some("name"))
+        .or_else(|| (fields.len() == 1 && fields[0].name.is_none()).then_some(0));
+    let Some(field) = at.map(|at| &mut fields[at]) else {
         return;
     };
     let RakuAstFieldValue::Node(value) = &field.value else {
@@ -153,6 +158,22 @@ pub(super) fn with_leading_empty(fields: &mut [RakuAstField]) {
     };
     parts.insert(0, leading_empty());
     field.value = RakuAstFieldValue::Node(Value::rakuast(Box::new(name_from_parts(parts))));
+}
+
+/// `::Array`, `::Int:D`: the view of a type term written after a leading
+/// `::`, its name (or its smiley's base type's) starting with the empty edge.
+// Cost: O(k), k = number of parts of the name.
+pub(super) fn leading_colons(mut node: RakuAstNode) -> RakuAstNode {
+    match node.class {
+        RakuAstClass::TypeSimple | RakuAstClass::TermName => with_leading_empty(&mut node.fields),
+        RakuAstClass::TypeDefinedness => {
+            super::infix_origins::with_child(&mut node, "base-type", |base| {
+                with_leading_empty(&mut base.fields)
+            })
+        }
+        _ => {}
+    }
+    node
 }
 
 /// Whether a `RakuAST::Name` starts with the empty edge (`::Foo`).
@@ -322,6 +343,21 @@ pub(super) fn operator_name(name: &str) -> Option<RakuAstNode> {
     })
 }
 
+/// The `Name` of a routine or term name: an operator's (`term:<x>`) with its
+/// word quote, any other one from its identifier.
+// Cost: O(n), n = length of the name.
+pub(super) fn operator_or_identifier(name: &str) -> RakuAstNode {
+    operator_name(name).unwrap_or_else(|| super::view::name_from_identifier(name))
+}
+
+/// A qualified name used as a term: `A::B`, or a package-qualified operator
+/// name (`M::term:<ab>`).
+// Cost: O(n), n = length of the name.
+pub(super) fn is_qualified_term(name: &str) -> bool {
+    is_qualified_identifier(name)
+        || (crate::qualified::is_qualified_str(name) && operator_name(name).is_some())
+}
+
 /// The `Name` of an operator routine written with a quote form the canonical
 /// name does not keep (`postcircumfix:«<< >>»`, `infix:<< a >>`): the written
 /// colonpair is viewed as the quote it was, with its delimiters and spaces.
@@ -404,11 +440,12 @@ pub(super) fn sym_name(name: &str) -> Option<RakuAstNode> {
         (None, Some(inner)) => (true, inner),
         (None, None) => return None,
     };
-    if text.is_empty()
-        || text
-            .chars()
-            .any(|c| matches!(c, '<' | '>' | '\u{00AB}' | '\u{00BB}' | '\\'))
-    {
+    // `:sym«<foo>»`: angle brackets are plain text inside French quotes.
+    let delimiter = |c: char| match quotewords {
+        true => matches!(c, '\u{00AB}' | '\u{00BB}'),
+        false => matches!(c, '<' | '>' | '\u{00AB}' | '\u{00BB}'),
+    };
+    if text.is_empty() || text.chars().any(|c| delimiter(c) || c == '\\') {
         return None;
     }
     let pair = RakuAstNode {

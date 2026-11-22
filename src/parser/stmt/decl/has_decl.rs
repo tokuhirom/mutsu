@@ -525,6 +525,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let (mut rest, _) = ws(rest)?;
 
     // `of` type constraint can appear before `is` traits: `has $.a of Int is rw`
+    let mut trait_order: Vec<AttrTrait> = Vec::new();
     if type_constraint.is_none()
         && let Some(r) = keyword("of", rest)
         && let Ok((r, _)) = ws1(r)
@@ -532,6 +533,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     {
         let (r, _) = ws(r)?;
         type_constraint = Some(normalize_empty_coercion_type(tc));
+        trait_order.push(AttrTrait::Of);
         rest = r;
     }
 
@@ -546,8 +548,8 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
     let mut deprecated_message: Option<String> = None;
     let mut is_built: Option<crate::ast::BuiltTrait> = None;
     let mut unknown_traits: Vec<(String, String, Option<Expr>)> = Vec::new();
-    // The kinds of the traits in the order they were written (`ast::attr_trait`).
-    let mut trait_order: Vec<AttrTrait> = Vec::new();
+    // `trait_order` holds the kinds of the traits in the order they were
+    // written (`ast::attr_trait`).
     let mut handles = Vec::new();
     // The written term of each `handles` clause; `None` once a clause's
     // spelling is not one the term rebuilds the specs from.
@@ -891,6 +893,7 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
             let (r, tc) = parse_type_constraint_expr(r).ok_or_else(|| PError::expected("type"))?;
             let (r, _) = ws(r)?;
             type_constraint = Some(normalize_empty_coercion_type(tc));
+            trait_order.push(AttrTrait::Of);
             rest = r;
         }
 
@@ -965,30 +968,22 @@ pub(in crate::parser::stmt) fn has_decl(input: &str) -> PResult<'_, Stmt> {
         } else {
             (rest, Vec::new())
         };
-        let target_name = type_constraint.clone().unwrap_or_else(|| name.clone());
-        // `has Inp() $.x .= new` / `has Int(Str) $.x .= new`: the method is
-        // called on the target type of the coercion, not on the coercion.
-        let target_name = match target_name.split_once('(') {
-            Some((target, rest)) if rest.ends_with(')') && !target.is_empty() => target.to_string(),
-            _ => target_name,
-        };
-        let target_expr = if target_name == "::?CLASS" {
-            Expr::Var("?CLASS".to_string())
-        } else if target_name == "::?ROLE" {
-            Expr::Var("?ROLE".to_string())
-        } else {
-            Expr::BareWord(target_name)
+        let target_expr = super::call_assign_target::call_assign_invocant(
+            type_constraint.clone().unwrap_or_else(|| name.clone()),
+        );
+        let call = Expr::MethodCall {
+            target: Box::new(target_expr),
+            name: Symbol::intern(&method_name),
+            args,
+            modifier: None,
+            quoted: false,
+            sugar: false,
         };
         (
             rest,
-            Some(Expr::MethodCall {
-                target: Box::new(target_expr),
-                name: Symbol::intern(&method_name),
-                args,
-                modifier: None,
-                quoted: false,
-                sugar: false,
-            }),
+            Some(Expr::spelled(call, || {
+                crate::ast::spelled::Spelling::AttributeCallAssign
+            })),
         )
     } else if rest.starts_with('=') && !rest.starts_with("==") {
         let rest = &rest[1..];

@@ -3,7 +3,7 @@
 //!
 //! An interpolated `"@r[0]"` keeps its subscript as an expression the string
 //! parser read from the text between the brackets, without positions. The
-//! text is parsed again here, spelled, its ranges are moved to where the text
+//! text is parsed again here, spelled, with its ranges recorded where the text
 //! sits in the unit, and the result is converted with them in reach; the
 //! ranges of the resulting nodes are then copied onto the nodes the unit's
 //! own conversion made, which have the same shape. A node whose shape differs
@@ -18,10 +18,10 @@ use crate::value::{Value, ValueView};
 /// were read from `text` starting at byte `at` of the unit, their ranges.
 // Cost: O(n), n = length of `text`, plus the parse of it.
 pub(super) fn statements(names: &NameScope, list: &mut RakuAstNode, text: &str, at: usize) {
-    let Ok((mut stmts, _)) = crate::parser::parse_fragment_unfinalized(text) else {
+    // The fragment's ranges are recorded at the unit's positions.
+    let Ok((mut stmts, _)) = crate::parser::parse_fragment_at(text, at) else {
         return;
     };
-    crate::ast_visit::walk_stmts_mut(&mut super::regex_call_origins::Shift(at), &mut stmts);
     let _origins = super::expr_origins::strip(&mut stmts);
     let _statement =
         super::expr_origins::InStatement::enter(Some(SrcSpan::new(at, at + text.len())));
@@ -36,10 +36,10 @@ pub(super) fn statements(names: &NameScope, list: &mut RakuAstNode, text: &str, 
 /// its ranges.
 // Cost: O(n), n = length of `text`, plus the parse of it.
 pub(super) fn expression(names: &NameScope, target: &mut RakuAstNode, text: &str, at: usize) {
-    let Ok((mut stmts, _)) = crate::parser::parse_fragment_unfinalized(text) else {
+    // The fragment's ranges are recorded at the unit's positions.
+    let Ok((mut stmts, _)) = crate::parser::parse_fragment_at(text, at) else {
         return;
     };
-    crate::ast_visit::walk_stmts_mut(&mut super::regex_call_origins::Shift(at), &mut stmts);
     let _origins = super::expr_origins::strip(&mut stmts);
     let _statement =
         super::expr_origins::InStatement::enter(Some(SrcSpan::new(at, at + text.len())));

@@ -205,7 +205,7 @@ your distribution and test file as a comment there instead of opening a new issu
 which decodes a ~340KB license list — is [#8673](https://github.com/tokuhirom/mutsu/issues/8673)**,
 the single tracking issue for it (#9061 was filed as a duplicate). Comment there; do not file.
 
-Always add the `ecosystem` label as well (it is independent of the kind label). Label it by `docs/issue-workflow.md`: `todo:ticket` for a small self-contained slice you are simply
+Add the `ecosystem` label as well (it is independent of the kind label) **only when the gap makes one of the dist's own test files fail, hang, time out or flake against raku**; a gap that only makes the dist slower, or that no file hits, does not get it (`docs/issue-workflow.md`). Label it by `docs/issue-workflow.md`: `todo:ticket` for a small self-contained slice you are simply
 not doing now, `todo:deep` for the design-needed cases above, `todo:perf` only when mutsu is
 *correct but slow* — a wrong answer is never `todo:perf`. Title it after the missing capability, not
 after the distribution ("`EXPORTHOW::DECLARE` … " not "String::Utils fails"), because the next

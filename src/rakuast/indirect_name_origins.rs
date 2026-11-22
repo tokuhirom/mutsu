@@ -4,14 +4,13 @@
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::value::ValueView;
 
-/// Place `name`, the `Name` of a term written at `span`, when it ends in a
-/// `Name::Part::Expression` and the text spells it: `::(...)`, or simple
-/// parts then `::(...)`. Whether the name was an indirect one.
+/// Place `name`, the `Name` of a term written at `span`, when it holds a
+/// `Name::Part::Expression` and the text spells all of its parts: `::(...)`,
+/// `MY::(q[$x])`, `$::($u)::y7`, `CALLER::($s)::not`. Whether the name was
+/// an indirect one.
 // Cost: O(p + n), p = parts of the name, n = length of the term's text.
 pub(super) fn place(name: &mut RakuAstNode, span: crate::ast::SrcSpan) -> bool {
-    // `::("Int")`: an indirect name, `Name::Part::EmptyEdge` then the
-    // `Name::Part::Expression` in parentheses, spans the term's text.
-    let parts: Vec<_> = name
+    let parts: Vec<&crate::value::Value> = name
         .fields
         .iter()
         .filter(|f| f.name == Some("parts"))
@@ -19,101 +18,75 @@ pub(super) fn place(name: &mut RakuAstNode, span: crate::ast::SrcSpan) -> bool {
             RakuAstFieldValue::List(parts) => parts.as_slice(),
             _ => &[],
         })
-        .map(|v| match v.view() {
-            ValueView::RakuAst(part) => Some(part.class),
-            _ => None,
-        })
         .collect();
-    if parts
-        == [
-            Some(RakuAstClass::NamePartEmptyEdge),
-            Some(RakuAstClass::NamePartExpression),
-        ]
+    let class = |v: &crate::value::Value| match v.view() {
+        ValueView::RakuAst(part) => Some(part.class),
+        _ => None,
+    };
+    if !parts
+        .iter()
+        .any(|p| class(p) == Some(RakuAstClass::NamePartExpression))
     {
-        let indirect = super::unit_source::with_text(span, |text| {
-            (text.starts_with("::(") && text.ends_with(')')).then_some(())
-        });
-        if indirect.is_some() {
-            super::origin::set_span(name, span);
-        }
-        return true;
+        return false;
     }
-    // `$::($u)::y7`: the indirect part, then simple parts.
-    if parts.len() > 2
-        && parts[..2]
-            == [
-                Some(RakuAstClass::NamePartEmptyEdge),
-                Some(RakuAstClass::NamePartExpression),
-            ]
-        && parts[2..]
-            .iter()
-            .all(|p| *p == Some(RakuAstClass::NamePartSimple))
-    {
-        let tail: Option<Vec<String>> = name
-            .fields
-            .iter()
-            .filter(|f| f.name == Some("parts"))
-            .flat_map(|f| match &f.value {
-                RakuAstFieldValue::List(parts) => parts.as_slice(),
-                _ => &[],
-            })
-            .skip(2)
-            .map(super::name_parts::part_identifier)
-            .collect();
-        let indirect = tail.and_then(|tail| {
-            super::unit_source::with_text(span, |text| {
-                let rest = text.strip_prefix("::(")?;
-                let mut end = rest.len();
-                for part in tail.iter().rev() {
-                    let head = rest[..end].strip_suffix(part.as_str())?;
-                    let sep = crate::qualified::last_separator(head)?;
-                    if sep + 2 != head.len() {
-                        return None;
-                    }
-                    end = sep;
+    // Each part as written: `None` for an expression part, whose text is
+    // its parenthesized expression.
+    let mut written: Vec<Option<String>> = Vec::with_capacity(parts.len());
+    for (i, part) in parts.iter().enumerate() {
+        match class(part) {
+            Some(RakuAstClass::NamePartEmptyEdge) if i == 0 => written.push(Some(String::new())),
+            Some(RakuAstClass::NamePartExpression) => written.push(None),
+            Some(RakuAstClass::NamePartSimple) => match super::name_parts::part_identifier(part) {
+                Some(word) => written.push(Some(word)),
+                None => return true,
+            },
+            _ => return true,
+        }
+    }
+    let spelled = super::unit_source::with_text(span, |text| {
+        let mut rest = text;
+        for (i, part) in written.iter().enumerate() {
+            if i > 0 {
+                // The `::` before every part but the first.
+                if crate::qualified::separators(rest).next() != Some(0) {
+                    return None;
                 }
-                rest[..end].ends_with(')').then_some(())
-            })
-        });
-        if indirect.is_some() {
-            super::origin::set_span(name, span);
+                rest = &rest[2..];
+            }
+            rest = match part {
+                Some(word) => rest.strip_prefix(word.as_str())?,
+                None => &rest[parenthesized_len(rest)?..],
+            };
         }
-        return true;
+        rest.is_empty().then_some(())
+    });
+    if spelled.is_some() {
+        super::origin::set_span(name, span);
     }
-    // `MY::(q[$x])`: simple parts, then the indirect part.
-    if parts.len() > 1
-        && parts.last() == Some(&Some(RakuAstClass::NamePartExpression))
-        && parts[..parts.len() - 1]
-            .iter()
-            .all(|p| *p == Some(RakuAstClass::NamePartSimple))
-    {
-        let prefix: Option<Vec<String>> = name
-            .fields
-            .iter()
-            .filter(|f| f.name == Some("parts"))
-            .flat_map(|f| match &f.value {
-                RakuAstFieldValue::List(parts) => parts.as_slice(),
-                _ => &[],
-            })
-            .take(parts.len() - 1)
-            .map(super::name_parts::part_identifier)
-            .collect();
-        let prefix = prefix.map(|names| names.join("::"));
-        let indirect = prefix.and_then(|prefix| {
-            super::unit_source::with_text(span, |text| {
-                (text
-                    .strip_prefix(prefix.as_str())
-                    .is_some_and(|rest| rest.starts_with("::("))
-                    && text.ends_with(')'))
-                .then_some(())
-            })
-        });
-        if indirect.is_some() {
-            super::origin::set_span(name, span);
+    true
+}
+
+/// The length of the parenthesized text `text` starts with, through its
+/// matching `)`.
+// Cost: O(n), n = length of the parenthesized text.
+fn parenthesized_len(text: &str) -> Option<usize> {
+    if !text.starts_with('(') {
+        return None;
+    }
+    let mut depth = 0usize;
+    for (at, c) in text.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(at + 1);
+                }
+            }
+            _ => {}
         }
-        return true;
     }
-    false
+    None
 }
 
 /// `$OUR::x` / `$::($n)`: the `Name` of `node`, a `Var::Package` with a
@@ -250,7 +223,11 @@ pub(super) fn bare_call(node: &mut RakuAstNode, span: crate::ast::SrcSpan) -> bo
     if exact.is_none() {
         return false;
     }
-    with_child(node, "name", |n| super::origin::set_span(n, span));
+    // `M::term:<ab>`: the operator's `<...>` quote too.
+    with_child(node, "name", |n| {
+        super::origin::set_span(n, span);
+        operator_quote(n, span);
+    });
     let end = crate::ast::SrcSpan::new(span.to as usize, span.to as usize);
     super::empty_fields::set_span(node, "args", end);
     true

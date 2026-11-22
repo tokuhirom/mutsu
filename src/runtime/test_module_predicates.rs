@@ -28,10 +28,10 @@ impl Interpreter {
     /// [`Self::test_mode_active`] it is already true for the very first test
     /// call (`plan`), before any `TestState` exists.
     pub(crate) fn test_module_loaded(&self) -> bool {
-        self.module.loaded_modules.contains("Test")
+        self.module.world.loaded_modules.read().contains("Test")
             || self
                 .module
-                .loaded_modules
+                .world.loaded_modules.read()
                 .iter()
                 .any(|m| m.starts_with("Test::"))
     }

@@ -98,7 +98,9 @@ impl Interpreter {
             crate::parser::set_parser_source_file(Some(path.to_string_lossy().to_string()));
         // Like a module's, the required file's own `use`s load in its prologue
         // (see `parse_module_source_in`).
+        let saved_module_unit = crate::parser::set_parser_module_unit(true);
         let result = parse_dispatch::parse_compilation_unit_of(&preprocessed);
+        crate::parser::set_parser_module_unit(saved_module_unit);
         crate::parser::set_parser_source_file(saved_source_file);
         crate::parser::clear_parser_lib_paths();
         // See the parallel comment in `run_modules::parse_module_source`: the
@@ -203,7 +205,7 @@ impl Interpreter {
             self.promote_exported_main_to_global();
             let main_exported = self
                 .module
-                .exported_subs
+                .world.exported_subs.read()
                 .values()
                 .any(|m| m.contains_key("MAIN"));
             Self::remove_leaked_main_routines(
@@ -343,7 +345,7 @@ impl Interpreter {
     pub(crate) fn promote_exported_main_to_global(&mut self) {
         let pkgs_with_main: Vec<String> = self
             .module
-            .exported_subs
+            .world.exported_subs.read()
             .iter()
             .filter(|(p, m)| {
                 Symbol::intern(p) != crate::symbol::wk::global_package() && m.contains_key("MAIN")
@@ -450,7 +452,7 @@ impl Interpreter {
                     // its `unit module` declaration; a later nested load must
                     // still resolve that dependency's helpers while its own
                     // body runs.
-                    && !self.module.module_registered_functions.contains(k)
+                    && !self.module.world.module_registered_functions.read().contains(k)
             })
             .copied()
             .collect();
@@ -470,7 +472,7 @@ impl Interpreter {
                         && Self::is_toplevel_global_routine_key(&format!("GLOBAL::{name}"))
                         && !self
                             .module
-                            .module_registered_functions
+                            .world.module_registered_functions.read()
                             .contains(&Symbol::intern(&format!("GLOBAL::{name}")))
                 })
             })
@@ -771,7 +773,7 @@ impl Interpreter {
     // Cost: O(|name|) plus the export-value lookup's few table probes.
     fn required_export_value(&self, module: &str, name: &str) -> Option<Value> {
         self.module
-            .exported_vars
+            .world.exported_vars.read()
             .get(module)
             .is_some_and(|vars| vars.contains_key(name))
             .then(|| self.exported_var_value(module, name))
@@ -913,7 +915,7 @@ impl Interpreter {
             }
             self.require_load_from_file(&file, module_name.as_deref())?;
             if let Some(module) = module_name.as_ref() {
-                crate::runtime::cow_table_mut(&mut self.module.loaded_modules)
+                crate::runtime::cow_table_mut(&mut self.module.world.loaded_modules.write_guard())
                     .insert(module.clone());
             }
         } else if let Some(module) = module_name.as_ref() {
@@ -924,9 +926,9 @@ impl Interpreter {
             // has no `Module::`-prefixed routine, yet it is plainly still
             // loaded while its package is known; judging by routines alone
             // re-parsed and re-ran it on every `require` (~14 ms each, #17228).
-            if self.module.loaded_modules.contains(module) && !self.module_still_registered(module)
+            if self.module.world.loaded_modules.read().contains(module) && !self.module_still_registered(module)
             {
-                crate::runtime::cow_table_mut(&mut self.module.loaded_modules).remove(module);
+                crate::runtime::cow_table_mut(&mut self.module.world.loaded_modules.write_guard()).remove(module);
             }
             let saved = std::mem::replace(&mut self.module.require_propagates_missing_module, true);
             // `require` loads the module without importing its exports: only

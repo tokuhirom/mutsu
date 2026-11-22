@@ -608,11 +608,10 @@ impl Interpreter {
         // public class's own package still needs that lexical at instantiation
         // time. Consult the package-keyed module scope when the running code
         // belongs to that package.
-        if let Some(ValueView::Package(target)) = self
+        let scoped = self
             .module_scope_lexical(&crate::runtime::term_names::term_key(name))
-            .or_else(|| self.module_scope_lexical(name))
-            .map(Value::view)
-        {
+            .or_else(|| self.module_scope_lexical(name));
+        if let Some(ValueView::Package(target)) = scoped.as_ref().map(Value::view) {
             let resolved = target.resolve();
             if resolved != name && self.has_type_direct(&resolved) {
                 return true;
@@ -707,17 +706,20 @@ impl Interpreter {
     /// The bare `constant` / sigilless declaration a module made in its own file
     /// scope, for a name the live `env` no longer accounts for. The LAST resort in
     /// bareword resolution — see `module_scope_lexicals`.
-    pub(crate) fn module_scope_lexical(&self, name: &str) -> Option<&Value> {
+    pub(crate) fn module_scope_lexical(&self, name: &str) -> Option<Value> {
         // `$_` is the topic, not a module-scope lexical. A module body may
         // transiently put the topic's backing hash under the plain `_` key
         // while its declarations run, but consulting that entry here would
         // make every imported routine's topic read see the stale module value.
         // This runs on free-variable reads, so the key-union probe goes first
         // and the qualification test (a symbol lookup) is paid only on a hit.
-        if self.module.module_scope_lexicals.is_empty()
+        // One read of the world table (ADR-17216) for the probes and the
+        // lookup; the hit is returned owned because the guard ends here.
+        let lexicals = self.module.world.module_scope_lexicals.read();
+        if lexicals.is_empty()
             || name.is_empty()
             || matches!(name, "_" | "@_" | "%_")
-            || !self.module.module_scope_lexicals.contains_name(name)
+            || !lexicals.contains_name(name)
         {
             return None;
         }
@@ -725,7 +727,7 @@ impl Interpreter {
         // under that exact spelling (`Map.new: 'Graph::Grid' => Graph::Grid`);
         // the table is keyed by the full text, so the exact-name probe above is
         // the whole test.
-        self.lookup_in_running_package(&self.module.module_scope_lexicals, name)
+        self.lookup_in_running_package(&lexicals, name).cloned()
     }
 
     /// The module-scope value for a name that came from a nested `use`, rather
@@ -733,7 +735,7 @@ impl Interpreter {
     /// the env read fallback: a captured local in an anonymous block must beat
     /// the module's own `our $name`, while an imported alias must beat the
     /// caller's same-named env entry.
-    pub(crate) fn module_imported_lexical(&self, name: &str) -> Option<&Value> {
+    pub(crate) fn module_imported_lexical(&self, name: &str) -> Option<Value> {
         // The key-union probe first, as in `module_scope_lexical`.
         if self.module.module_imported_lexical_names.is_empty()
             || name.is_empty()
@@ -886,11 +888,12 @@ impl Interpreter {
     /// looked up from `owner`'s `::` chain. Used where the reader knows which
     /// declaration the name belongs to (a CStruct field's type alias) even
     /// though no frame of that module is running.
-    pub(crate) fn module_scope_lexical_for_owner(&self, owner: &str, name: &str) -> Option<&Value> {
-        if self.module.module_scope_lexicals.is_empty() || name.is_empty() {
+    pub(crate) fn module_scope_lexical_for_owner(&self, owner: &str, name: &str) -> Option<Value> {
+        let lexicals = self.module.world.module_scope_lexicals.read();
+        if lexicals.is_empty() || name.is_empty() {
             return None;
         }
-        Self::lookup_in_package_chain(&self.module.module_scope_lexicals, owner, name)
+        Self::lookup_in_package_chain(&lexicals, owner, name).cloned()
     }
 
     /// Whether `name` is a core type name that no user declaration shadows.
@@ -1390,11 +1393,10 @@ impl Interpreter {
                     return qualified.to_string();
                 }
             }
-            if let Some(ValueView::Package(target)) = self
+            let scoped = self
                 .module_scope_lexical_for_owner(owner, &crate::runtime::term_names::term_key(&name))
-                .or_else(|| self.module_scope_lexical_for_owner(owner, &name))
-                .map(Value::view)
-            {
+                .or_else(|| self.module_scope_lexical_for_owner(owner, &name));
+            if let Some(ValueView::Package(target)) = scoped.as_ref().map(Value::view) {
                 let resolved = target.resolve();
                 if resolved != name && resolved != owner && self.has_type_direct(&resolved) {
                     return resolved.to_string();
@@ -1419,11 +1421,10 @@ impl Interpreter {
                 return key;
             }
         }
-        if let Some(ValueView::Package(target)) = self
+        let scoped = self
             .module_scope_lexical_for_owner(owner, &crate::runtime::term_names::term_key(&name))
-            .or_else(|| self.module_scope_lexical_for_owner(owner, &name))
-            .map(Value::view)
-        {
+            .or_else(|| self.module_scope_lexical_for_owner(owner, &name));
+        if let Some(ValueView::Package(target)) = scoped.as_ref().map(Value::view) {
             let resolved = target.resolve();
             if resolved != name && self.has_type_direct(&resolved) {
                 return resolved.to_string();

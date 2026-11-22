@@ -39,7 +39,7 @@ impl Interpreter {
         let tagged = |tag: &String| src_tag == "ALL" || tag == src_tag || tag == "ALL";
         let sub_names: Vec<String> = self
             .module
-            .exported_subs
+            .world.exported_subs.read()
             .get(src_module)
             .map(|subs| {
                 subs.iter()
@@ -53,7 +53,7 @@ impl Interpreter {
         }
         let var_names: Vec<String> = self
             .module
-            .exported_vars
+            .world.exported_vars.read()
             .get(src_module)
             .map(|vars| {
                 vars.iter()
@@ -66,7 +66,7 @@ impl Interpreter {
             // The value stays with its owner: a copy under the loading module's
             // own qualified name is a package symbol an importer's scope would
             // then have to tell apart from the owner's.
-            crate::runtime::cow_table_mut(&mut self.module.reexported_var_owners)
+            crate::runtime::cow_table_mut(&mut self.module.world.reexported_var_owners.write_guard())
                 .insert((dst_module.clone(), name.clone()), src_module.to_string());
             self.register_exported_var(dst_module.clone(), name, vec![dst_tag.to_string()]);
         }

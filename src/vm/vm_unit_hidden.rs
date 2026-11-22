@@ -92,7 +92,9 @@ impl Interpreter {
             && self.module.module_scope_runs == 0
             && code.source_file.is_some_and(|file| {
                 self.module
+                    .world
                     .module_visibility
+                    .read()
                     .loaded_unit_set
                     .contains(&file)
             })

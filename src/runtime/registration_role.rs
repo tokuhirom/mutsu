@@ -29,7 +29,7 @@ impl Interpreter {
         role_def: &RoleDef,
     ) -> (Symbol, String) {
         let saved = (self.current_unit, self.current_package());
-        if let Some(unit) = self.module.class_declaring_units.get(role).copied() {
+        if let Some(unit) = self.module.world.class_declaring_units.read().get(role).copied() {
             self.current_unit = unit;
         }
         if let Some(pkg) = crate::qualified::package_parent(Symbol::intern(role)) {
@@ -255,6 +255,17 @@ impl Interpreter {
         pre_args: Option<&[Value]>,
     ) -> Result<Option<ResolvedRoleCandidate>, RuntimeError> {
         let parent = self.resolve_declared_type_name(parent);
+        self.resolve_role_candidate_named(&parent, pre_args)
+    }
+
+    /// [`Self::resolve_role_candidate_with_args`] for a `parent` that already
+    /// names the registry entry to compose, never re-resolved through the
+    /// running scope (a role's pun class composing that role, #18233).
+    pub(crate) fn resolve_role_candidate_named(
+        &mut self,
+        parent: &str,
+        pre_args: Option<&[Value]>,
+    ) -> Result<Option<ResolvedRoleCandidate>, RuntimeError> {
         if let Some(bracket_start) = parent.find('[') {
             let args_str = &parent[bracket_start + 1..parent.len() - 1];
             let arg_exprs = parse_role_type_args(args_str);
@@ -271,7 +282,7 @@ impl Interpreter {
         let base_role_name = if let Some(bracket) = parent.find('[') {
             &parent[..bracket]
         } else {
-            &parent
+            parent
         };
         let Some(candidates) = self.registry().role_candidates.get(base_role_name).cloned() else {
             if let Some(role) = self.registry().roles.get(base_role_name).map(|r| RoleDef::clone(r)) {
@@ -475,7 +486,7 @@ impl Interpreter {
         // it, so a lexical (`my role R`) one is visible in that unit's own
         // `UNIT::` and not in an importer's (`my_scoped_type_visible_here`).
         let declaring_unit = self.unit_of_declaring_file(self.current_source_file().as_deref());
-        crate::runtime::cow_table_mut(&mut self.module.class_declaring_units)
+        crate::runtime::cow_table_mut(&mut self.module.world.class_declaring_units.write_guard())
             .insert(name.to_string(), declaring_unit);
 
         if let Some(decl) = our_scope_violation {

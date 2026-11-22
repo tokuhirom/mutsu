@@ -1,6 +1,6 @@
 //! The rows of the objects the runtime mints (ADR-11276 §9.160):
 //! `Routine::WrapHandle` (what `.wrap` answers), `HyperConfiguration`
-//! (what `HyperSeq.configuration` answers) and `Pod::Block::Declarator`
+//! (what `HyperSeq.configuration` answers, and its `.new`) and `Pod::Block::Declarator`
 //! (what a `#|` / `#=` comment builds).
 //!
 //! Each has an opaque dispatch shape (`DispatchShape::is_opaque`), as
@@ -8,6 +8,7 @@
 //! table.
 
 use super::{Handler, MethodRow, RowFlags};
+use crate::builtins::method_table::Named;
 use crate::runtime::Interpreter;
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -21,6 +22,18 @@ pub(super) static ROWS: &[MethodRow] = &[
         handler: Handler::Interp(|interp, target, _, _| restore(interp, target)),
         flags: RowFlags::NONE,
         named: &[],
+    },
+    // `HyperConfiguration.new(:batch, :degree)` (#18709): rakudo's default
+    // constructor over `has int $.batch; has Int $.degree`.
+    MethodRow {
+        owner: "HyperConfiguration",
+        name: "new",
+        arity: 0,
+        handler: Handler::Named(hyper_configuration_new),
+        flags: RowFlags::OWNER_ONLY
+            .or(RowFlags::TYPE_OBJECT_OK)
+            .or(RowFlags::CLASS_METHOD),
+        named: &["batch", "degree"],
     },
     MethodRow {
         owner: "HyperConfiguration",
@@ -67,6 +80,25 @@ fn restore(interp: &mut Interpreter, target: &Value) -> Answer {
     };
     let attributes = attributes.to_map();
     Some(interp.wrap_handle_restore(&attributes))
+}
+
+/// `HyperConfiguration.new`: an unset `batch` is the native int's `0` and an
+/// unset `degree` the `Int` type object, as rakudo's default constructor
+/// leaves them.
+// Cost: O(1).
+fn hyper_configuration_new(_target: &Value, _: &[Value], named: Named<'_>) -> Answer {
+    let mut attrs = std::collections::HashMap::new();
+    let batch = named.get("batch").map(|b| Value::int(b.to_f64() as i64));
+    attrs.insert("batch".to_string(), batch.unwrap_or(Value::int(0)));
+    let degree = named.get("degree").cloned();
+    attrs.insert(
+        "degree".to_string(),
+        degree.unwrap_or_else(|| Value::package(crate::symbol::Symbol::intern("Int"))),
+    );
+    Some(Ok(Value::make_instance(
+        crate::symbol::Symbol::intern("HyperConfiguration"),
+        attrs,
+    )))
 }
 
 /// The receiver's attribute `name`; `None` (the ordinary dispatch) when unset.

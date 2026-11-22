@@ -54,7 +54,7 @@ fn operand_node(names: &NameScope, target: &Target) -> Result<RakuAstNode, Runti
                 listop: false,
             },
         ),
-        Target::Element(element) => view_expr(names, element),
+        Target::Element(element) | Target::NoContainer(element) => view_expr(names, element),
     }
 }
 
@@ -362,7 +362,11 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
             }
             Target::Element(lvalue.clone())
         }
-        other => Target::Variable(other.container_var_key().ok_or_else(|| unsupported(node))?),
+        // `temp 5`, `let &f`: no container to save; the prefix throws.
+        other => match other.container_var_key() {
+            Some(key) => Target::Variable(key),
+            None => Target::NoContainer(other.clone()),
+        },
     };
     // A compound or dotty assignment re-parses from the variable on: lower the
     // assignment node over the bare lvalue and run it after the save.

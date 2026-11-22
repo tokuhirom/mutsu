@@ -59,10 +59,19 @@ fn observes_container(method: &str) -> bool {
 // Cost: O(1) tag probes for a receiver in no such state; O(e) to build a
 // hash-like receiver's pairs (e = entries) or a Match's positional list.
 pub(crate) fn step(target: &Value, method: &str, argc: usize) -> Option<Step> {
+    // A lazy Match is no container: only [`claims`]' methods step it, and a
+    // `view()` here would materialize it on every native method call (#12917).
+    if target.is_lazy_match_value() && !claims(target, method) {
+        return None;
+    }
     match target.view() {
         ValueView::Scalar(inner) => {
+            // The item's container, as a `.VAR` view: it answers `.^name`
+            // `Scalar` and the container's own `.of` (`Mu`; an item has no
+            // declared type) instead of the `Scalar` type object (#18349).
             if method == "VAR" {
-                return Some(Step::Answer(Ok(Value::package(Symbol::intern("Scalar")))));
+                let cell = crate::gc::Gc::new(crate::value::ContainerCell::new(inner.clone()));
+                return Some(Step::Answer(Ok(Value::container_view(cell))));
             }
             if observes_container(method) && method != "item" && method != "self" {
                 return Some(Step::Itself);
@@ -327,6 +336,9 @@ pub(crate) enum MixinStep {
 // adds the wrapped value's own cost.
 pub(crate) fn mixin_step(target: &Value, method_sym: Symbol) -> Option<MixinStep> {
     use crate::builtins::methods_0arg::{native_method_0arg, raku_repr};
+    if !target.is_mixin_value() {
+        return None;
+    }
     let ValueView::Mixin(inner, mixins) = target.view() else {
         return None;
     };

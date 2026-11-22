@@ -437,7 +437,9 @@ impl Interpreter {
         // Keep the freshly-loaded symbols hidden from indirect lookup until merge.
         for s in &new_symbols {
             self.module
+                .world
                 .cur_repo
+                .write_guard()
                 .pending_global_symbols
                 .insert(s.clone());
         }

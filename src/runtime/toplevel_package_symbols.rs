@@ -58,7 +58,7 @@ impl Interpreter {
             && !crate::qualified::is_qualified(enum_sym)
         {
             let owner = self.current_package();
-            crate::runtime::cow_table_mut(&mut self.module.module_scope_lexicals)
+            crate::runtime::cow_table_mut(&mut self.module.world.module_scope_lexicals.write_guard())
                 .entry(owner)
                 .or_default()
                 .insert(key, value);
@@ -171,7 +171,7 @@ impl Interpreter {
     /// table. Readers ask the env first, so a lexical binding shadows either.
     // Cost: O(c * d + |name|), c = running package candidates (at most 4),
     // d = package nesting depth, including the global table lookup.
-    pub(crate) fn toplevel_package_symbol(&self, name: &str) -> Option<&Value> {
+    pub(crate) fn toplevel_package_symbol(&self, name: &str) -> Option<Value> {
         self.toplevel_package_symbol_keyed(name, None)
     }
 
@@ -182,7 +182,7 @@ impl Interpreter {
     /// of every bareword it resolves, and the re-intern (a thread-local
     /// string-hash probe plus a `memcmp`) was ~0.5% of an AttrX::Mooish round.
     // Cost: as `toplevel_package_symbol`, without the intern.
-    pub(crate) fn toplevel_package_symbol_sym(&self, name: Symbol) -> Option<&Value> {
+    pub(crate) fn toplevel_package_symbol_sym(&self, name: Symbol) -> Option<Value> {
         self.toplevel_package_symbol_keyed(name.as_str(), Some(name))
     }
 
@@ -191,11 +191,13 @@ impl Interpreter {
         &self,
         name: &str,
         name_sym: Option<Symbol>,
-    ) -> Option<&Value> {
+    ) -> Option<Value> {
+        // The scoped table is a world table (ADR-17216): its read guard
+        // cannot outlive this call, so the hit is returned owned.
         if let Some(scoped) =
-            self.lookup_in_running_package(&self.module.module_scope_lexicals, name)
+            self.lookup_in_running_package(&self.module.world.module_scope_lexicals.read(), name)
         {
-            return Some(scoped);
+            return Some(scoped.clone());
         }
         if self.module.module_toplevel.package_symbols.is_empty() {
             return None;
@@ -204,5 +206,6 @@ impl Interpreter {
             .module_toplevel
             .package_symbols
             .get(&name_sym.unwrap_or_else(|| Symbol::intern(name)))
+            .cloned()
     }
 }

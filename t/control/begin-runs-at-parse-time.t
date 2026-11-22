@@ -7,7 +7,7 @@ use Test;
 # loaded unit. Each case runs a child process so the order of its output is
 # visible; every expectation is what rakudo prints.
 
-plan 14;
+plan 17;
 
 sub run-code(Str $code) {
     my $proc = run $*EXECUTABLE, '-I', 't/lib', '-e', $code, :out, :err;
@@ -121,4 +121,33 @@ sub run-code(Str $code) {
         use LoadsAtParseTimeDies;
         CODE
     is %r<out>, "begin\n", 'a BEGIN before a module that dies while loading has run';
+}
+
+{
+    # A BEGIN that writes a dynamic variable runs at parse time too, so the
+    # module a later `use` loads sees it before a later syntax error stops the
+    # compile.
+    my %r = run-code(q:to/CODE/);
+        BEGIN %*ENV<MUTSU_BEGIN_AT_PARSE_TAG> = "the dynamic BEGIN";
+        use LoadsReadingBeginEnv;
+        say 1 +;
+        CODE
+    is %r<out>, "loaded with the dynamic BEGIN\n",
+        'a BEGIN writing %*ENV runs, and a use after it loads, before a later syntax error';
+}
+
+{
+    # The unit's own dynamic variable is in its frame, in its static state.
+    my %r = run-code(q:to/CODE/);
+        my $*BEGIN-AT-PARSE = 5;
+        BEGIN say $*BEGIN-AT-PARSE;
+        CODE
+    is %r<out>, "(Any)\n", "a BEGIN reads the unit's own dynamic variable in its static state";
+}
+
+{
+    my %r = run-code(q:to/CODE/);
+        BEGIN say $*CU.^name;
+        CODE
+    is %r<out>, "RakuAST::CompUnit\n", 'a BEGIN reads the compile-time $*CU';
 }

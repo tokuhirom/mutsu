@@ -57,6 +57,10 @@ pub(crate) enum Spelling {
     SourceIdentifier,
     /// A labelled bare block, whose execution uses a labelled do-block.
     LabelledBlock,
+    /// `::Array`, `::Foo::Bar`: a type name written after a leading `::`.
+    /// The parser looks the name up without it; RakuAST's `Name` starts with
+    /// a `Name::Part::EmptyEdge`.
+    LeadingColons,
     /// A source label reference whose executable term is a Label value.
     LabelTerm(Box<str>),
     /// Semicolon-separated array composer sections before execution lowering.
@@ -71,6 +75,10 @@ pub(crate) enum Spelling {
     ParenthesizedDeclaratorAdverb,
     /// An attribute trait's direct `[ ... ]` argument, not `([ ... ])`.
     BracketTraitArgument,
+    /// `has R $.r .= new(...)`: an attribute default written as a `.=` call
+    /// on the declared type, which the parser keeps as the method call;
+    /// RakuAST has an `Initializer::CallAssign`.
+    AttributeCallAssign,
     /// `q:to/END/`: the terminator line as written, indentation and newline
     /// included (`    END\n`), and where the body was written (ADR-10723
     /// Stage 2: the origin of its text).

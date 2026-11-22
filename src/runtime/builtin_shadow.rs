@@ -155,6 +155,23 @@ impl Interpreter {
                 || self
                     .resolve_method_with_owner_invocant(cn, name, args, target)?
                     .is_some()))
-            || self.class_scoped_accessor_shadows(cn, name, args))
+            || self.class_scoped_accessor_shadows(cn, name, args)
+            || self.role_type_object_puns_for(cn, name))
+    }
+
+    /// Whether a call of `name` on the role type object `cn` puns the role:
+    /// the role (or a role it does) declares `name`, and `name` is none of
+    /// the methods rakudo keeps on `Mu` for a role type object. A built-in
+    /// method of that name (`R.list`, `R.elems`) must not answer first
+    /// (#18062).
+    // Cost: O(1) for a class or a kept name; otherwise O(m), m = the role
+    // and its parents' method tables.
+    fn role_type_object_puns_for(&self, cn: &str, name: &str) -> bool {
+        !crate::runtime::role_type_object_keeps_mu_method(name)
+            && !crate::runtime::role_type_object_identity_method(name)
+            && name != "new"
+            && !self.registry().classes.contains_key(cn)
+            && self.is_role(cn)
+            && self.role_or_parent_has_method(&self.role_group_name(cn), name)
     }
 }

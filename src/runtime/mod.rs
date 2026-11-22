@@ -85,16 +85,34 @@ use std::process::Command;
 use std::sync::atomic::AtomicU32;
 use std::sync::{Arc, Mutex, RwLock};
 
-/// Stringifiers a role TYPE OBJECT answers from `Mu`, never from the role.
+/// Methods a role TYPE OBJECT answers from `Mu`, never from the role.
 ///
-/// A call on a role type object puns the role only for a method `Mu` does not
-/// have: Rakudo answers `R.Str`, `R.gist`, `R.raku` from `Mu` even when `R`
-/// (or a role it does) declares its own `Str`, and so it never complains that
-/// the role still has a `method m { ... }` stub that a pun could not satisfy
-/// (Map::Agnostic's `Map::Agnostic.gist`).
-// Cost: O(1), compares the method name against four constants.
+/// A call on a role type object puns the role, except for the fixed set of
+/// names rakudo's `RolePunning` keeps on `Mu` (`configure_punning` in
+/// BOOTSTRAP): `R.Str`, `R.gist`, `R.ACCEPTS(...)`, `R.WHY`, ... answer from
+/// `Mu` even when `R` (or a role it does) declares its own, and so never
+/// complain that the role still has a `method m { ... }` stub that a pun
+/// could not satisfy (Map::Agnostic's `Map::Agnostic.gist`). `Stringy` and
+/// `defined` are answered by `Mu` there too (#18062).
+// Cost: O(1), compares the method name against a fixed set of constants.
 pub(crate) fn role_type_object_keeps_mu_method(method: &str) -> bool {
-    matches!(method, "Str" | "gist" | "raku")
+    matches!(
+        method,
+        "ACCEPTS"
+            | "item"
+            | "Bool"
+            | "gist"
+            | "raku"
+            | "perl"
+            | "Str"
+            | "Stringy"
+            | "Numeric"
+            | "Real"
+            | "WHICH"
+            | "WHY"
+            | "set_why"
+            | "defined"
+    )
 }
 
 /// Reading a role type object's identity (`R.WHAT`, `R.HOW`, `R.^name`, ...)

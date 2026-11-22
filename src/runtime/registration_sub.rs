@@ -960,7 +960,7 @@ impl Interpreter {
                 // import alias. `reinstate_module_functions` needs the distinction
                 // to put it back after a scope rollback — see
                 // `prelude_registered_functions`.
-                crate::runtime::cow_table_mut(&mut self.module.prelude_registered_functions)
+                crate::runtime::cow_table_mut(&mut self.module.world.prelude_registered_functions.write_guard())
                     .insert(global_key);
                 // ...and record WHICH compunit this copy was spliced into, before
                 // the idempotence check below can swallow it. The registration is
@@ -969,7 +969,7 @@ impl Interpreter {
                 // `use NativeCall`, so resolution consults this set — see
                 // `prelude_declaring_units` / `prelude_visible_here`.
                 let unit = self.declaring_unit_sym();
-                crate::runtime::cow_table_mut(&mut self.module.prelude_declaring_units)
+                crate::runtime::cow_table_mut(&mut self.module.world.prelude_declaring_units.write_guard())
                     .entry(global_key)
                     .or_default()
                     .insert(unit);
@@ -980,7 +980,7 @@ impl Interpreter {
             // every compunit's bodies can reach it. This is about the NAME, so
             // a `multi` prelude needs it too — its candidates live under
             // `GLOBAL::name/N`, but the name they answer to is the same one.
-            crate::runtime::cow_table_mut(&mut self.module.prelude_sub_names)
+            crate::runtime::cow_table_mut(&mut self.module.world.prelude_sub_names.write_guard())
                 .insert(Symbol::intern(name));
             // Every compunit that uses NativeCall carries its own copy of the
             // declaration, and they are identical by construction, so the first
@@ -1949,8 +1949,12 @@ impl Interpreter {
             // A named wrap chain belongs to the declaration it wrapped, not
             // to every later routine with the same name. Retire it before an
             // EVAL-local redeclaration replaces the registry entry; named
-            // call dispatch otherwise finds the stale chain by name.
-            self.clear_wrap_chains_for_name(Symbol::intern(&package), name);
+            // call dispatch otherwise finds the stale chain by name. A role
+            // body's sub re-registered for a later composition keeps the
+            // chain its traits built at the first one (#18097).
+            if !self.role_body_sub_traits_recorded(name, registration_identity(&arc)) {
+                self.clear_wrap_chains_for_name(Symbol::intern(&package), name);
+            }
             self.routines_mut().functions_mut().insert(fq_sym, arc);
             // Invalidate name-keyed resolution caches — one key moved (#8314).
             self.invalidate_fn_resolution_for_keys([fq_sym]);
@@ -1966,12 +1970,13 @@ impl Interpreter {
             && !self.module.suppress_exports
             && self.current_package_is_global_name()
             && let Some(owner) = self.module.module_load_stack.last()
-            && let Some(tags) = self
-                .module
-                .module_owned_exports
-                .get(owner)
-                .and_then(|exports| exports.get(name))
-                .cloned()
+            && let Some(tags) = {
+                let module_owned_exports_r = self.module.world.module_owned_exports.read();
+                module_owned_exports_r
+                    .get(owner)
+                    .and_then(|exports| exports.get(name))
+                    .cloned()
+            }
         {
             let tags: Vec<String> = tags.into_iter().collect();
             self.register_exported_multi_candidates(
@@ -2006,9 +2011,9 @@ impl Interpreter {
                 .copied()
                 .collect();
             for key in keys {
-                crate::runtime::cow_table_mut(&mut self.module.prelude_registered_functions)
+                crate::runtime::cow_table_mut(&mut self.module.world.prelude_registered_functions.write_guard())
                     .insert(key);
-                crate::runtime::cow_table_mut(&mut self.module.prelude_declaring_units)
+                crate::runtime::cow_table_mut(&mut self.module.world.prelude_declaring_units.write_guard())
                     .entry(key)
                     .or_default()
                     .insert(unit);
@@ -2109,9 +2114,23 @@ impl Interpreter {
             self.env
                 .insert(MetaNs::MethodValue.owned_key_for_str(name), Value::TRUE);
         }
-        // Apply custom trait_mod:<is> for each non-builtin trait
+        // Apply custom trait_mod:<is> for each non-builtin trait; a role-body
+        // sub's traits run at its first registration only (#18097).
         let has_trait_mod = self.has_trait_mod_handler("trait_mod:<is>");
-        {
+        let role_trait_key = has_trait_mod
+            .then(|| {
+                let def = self
+                    .routines()
+                    .functions
+                    .get(&Symbol::intern(self.current_package_qualified(name)))
+                    .cloned()?;
+                self.role_body_sub_trait_key(name, registration_identity(&def))
+            })
+            .flatten();
+        let replayed = role_trait_key
+            .as_ref()
+            .is_some_and(|key| self.replay_role_body_sub_traits(key, name));
+        if !replayed {
             // `is hidden-from-USAGE` on a `MAIN` candidate keeps it dispatchable
             // but drops it from the generated usage message. Record its body
             // fingerprint (the same key `collect_main_candidates` dedupes on) so
@@ -2278,6 +2297,11 @@ impl Interpreter {
                     // swallowed.
                     Err(e) => return Err(e),
                 }
+            }
+            if let Some(key) = role_trait_key
+                && !custom_traits.is_empty()
+            {
+                self.record_role_body_sub_traits(key, name);
             }
         }
         if imported_routine_alias {

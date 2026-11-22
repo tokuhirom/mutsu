@@ -12,6 +12,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+mod typed_containers;
+
 /// A serializable representation of Value.
 /// Only includes variants that can appear in parsed AST literals.
 #[derive(Serialize, Deserialize)]
@@ -63,6 +65,14 @@ enum SerValue {
         index: usize,
     },
     Regex(String),
+    /// A regex literal with the source tree the parser gave it (#18003).
+    /// Dropping the tree made every match of a regex from a precompiled
+    /// module take the string path, so a warm load matched differently (and
+    /// ~13k instructions per match slower) than a cold one.
+    RegexSourced {
+        pattern: String,
+        source_tree: Box<crate::regex_tree::RegexTree>,
+    },
     /// A grammar `token`/`rule`/`regex` value keeping its verbatim declaration
     /// text (`Regex.gist`) and source tree across the module AST cache.
     RegexDeclared {
@@ -92,6 +102,8 @@ enum SerValue {
         samespace: bool,
         #[serde(default)]
         source_adverbs: Option<Vec<(String, Option<String>)>>,
+        #[serde(default)]
+        source_tree: Option<Box<crate::regex_tree::RegexTree>>,
     },
     Junction {
         kind: SerJunctionKind,
@@ -151,6 +163,18 @@ enum SerValue {
     Nil,
     Whatever,
     HyperWhatever,
+    /// An `Array` that carries container metadata ([`typed_containers`]).
+    /// Appended last so every earlier variant keeps its encoding.
+    TypedArray {
+        items: Vec<SerValue>,
+        kind: ArrayKind,
+        meta: Box<typed_containers::ContainerMeta>,
+    },
+    /// A `Hash` (or `Map`) that carries container metadata.
+    TypedHash {
+        map: HashMap<String, SerValue>,
+        meta: Box<typed_containers::ContainerMeta>,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -204,17 +228,8 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             excl_start,
             excl_end,
         }),
-        ValueView::Array(items, kind) => {
-            let ser_items: Result<Vec<_>, _> = items.iter().map(value_to_ser).collect();
-            Ok(SerValue::Array(ser_items?, kind))
-        }
-        ValueView::Hash(map) => {
-            let ser_map: Result<HashMap<_, _>, _> = map
-                .iter()
-                .map(|(k, v)| value_to_ser(v).map(|sv| (k.clone(), sv)))
-                .collect();
-            Ok(SerValue::Hash(ser_map?))
-        }
+        ValueView::Array(items, kind) => typed_containers::ser_array(&items, kind),
+        ValueView::Hash(map) => typed_containers::ser_hash(&map),
         ValueView::Rat(n, d) => Ok(SerValue::Rat(n, d)),
         ValueView::FatRat(n, d) => Ok(SerValue::FatRat(n, d)),
         ValueView::BigRat(n, d) => Ok(SerValue::BigRat(n.clone(), d.clone(), v.is_bigfatrat())),
@@ -264,7 +279,13 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             source_tree: v.regex_source_tree().cloned().map(Box::new),
             signature: v.regex_signature().map(|sig| (*sig).clone()),
         }),
-        ValueView::Regex(s) => Ok(SerValue::Regex((**s).clone())),
+        ValueView::Regex(s) => Ok(match v.regex_source_tree() {
+            Some(tree) => SerValue::RegexSourced {
+                pattern: (**s).clone(),
+                source_tree: Box::new(tree.clone()),
+            },
+            None => SerValue::Regex((**s).clone()),
+        }),
         ValueView::RegexWithAdverbs(a) => Ok(SerValue::RegexWithAdverbs {
             pattern: (*a.pattern).clone(),
             global: a.global,
@@ -281,6 +302,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
             samecase: a.samecase,
             samespace: a.samespace,
             source_adverbs: a.source_adverbs.as_ref().map(|v| (**v).clone()),
+            source_tree: a.source_tree.as_deref().cloned().map(Box::new),
         }),
         ValueView::Junction { kind, values } => {
             let ser_kind = match kind {
@@ -492,6 +514,10 @@ fn ser_to_value(sv: SerValue) -> Value {
             index,
         }),
         SerValue::Regex(s) => Value::regex(s),
+        SerValue::RegexSourced {
+            pattern,
+            source_tree,
+        } => Value::regex(pattern).with_regex_source_tree(*source_tree),
         SerValue::RegexDeclared {
             pattern,
             declared_source,
@@ -523,6 +549,7 @@ fn ser_to_value(sv: SerValue) -> Value {
             samecase,
             samespace,
             source_adverbs,
+            source_tree,
         } => Value::RegexWithAdverbs(Box::new(crate::value::RegexAdverbs {
             pattern: Arc::new(pattern),
             global,
@@ -543,7 +570,7 @@ fn ser_to_value(sv: SerValue) -> Value {
             // a serialization round-trip and is not part of the wire format.
             captured: None,
             topic: None,
-            source_tree: None,
+            source_tree: source_tree.map(Arc::from),
             id: Default::default(),
             name: Default::default(),
         })),
@@ -660,6 +687,10 @@ fn ser_to_value(sv: SerValue) -> Value {
         SerValue::Nil => Value::Nil,
         SerValue::Whatever => Value::Whatever,
         SerValue::HyperWhatever => Value::HyperWhatever,
+        SerValue::TypedArray { items, kind, meta } => {
+            typed_containers::de_array(items, kind, *meta)
+        }
+        SerValue::TypedHash { map, meta } => typed_containers::de_hash(map, *meta),
     }
 }
 
@@ -712,6 +743,10 @@ impl SerValue {
             | SerValue::Junction { values: vs, .. }
             | SerValue::ParametricRole { type_args: vs, .. } => any(vs),
             SerValue::Hash(map) => map.values().any(SerValue::has_identity),
+            SerValue::TypedArray { items, meta, .. } => any(items) || meta.has_identity(),
+            SerValue::TypedHash { map, meta } => {
+                map.values().any(SerValue::has_identity) || meta.has_identity()
+            }
             SerValue::Set(_, objs) => objs.values().any(|v| v.has_identity()),
             SerValue::Bag(_, objs) => objs.values().any(|v| v.has_identity()),
             SerValue::Mix(_, objs) => objs.values().any(|v| v.has_identity()),
@@ -741,6 +776,7 @@ impl SerValue {
             | SerValue::Routine { .. }
             | SerValue::Enum { .. }
             | SerValue::Regex(_)
+            | SerValue::RegexSourced { .. }
             | SerValue::RegexDeclared { .. }
             | SerValue::RegexWithAdverbs { .. }
             | SerValue::Version { .. }
@@ -765,6 +801,9 @@ impl<'de> Deserialize<'de> for Value {
         Ok(ser_to_value(sv))
     }
 }
+
+#[cfg(test)]
+mod regex_tree_round_trip;
 
 #[cfg(test)]
 mod tests {

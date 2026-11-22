@@ -127,7 +127,8 @@ Then decide by **where the root cause lives** — not by how big the fix looks:
   ([ADR-11276](../../../docs/adr/11276-built-in-methods-are-handler-rows.md), #11276) and RakuAST as
   the frontend ([ADR-10723](../../../docs/adr/10723-rakuast-is-the-frontend-ir.md), #7564). Do
   **not** fix it on the path the campaign is retiring. File an issue with its `lane:*` label and the
-  `ecosystem` label (plus `todo:ticket`/`todo:deep`) and an `eco-dist: <Dist::Name>` line in the
+  `ecosystem` label when a dist file fails, hangs, times out or flakes against raku (plus
+  `todo:ticket`/`todo:deep`) and an `eco-dist: <Dist::Name>` line in the
   body, make it a sub-issue of the campaign's carrier
   when the campaign's ADR covers it, unlock with `filed #N`, and take the next entry.
 - **(c) The same signature fails 3 or more distributions** (the queue row shows a cluster id): file
@@ -192,8 +193,8 @@ or on "looks abandoned".
 ## 5. Do the work (case a)
 
 Hand over to [`ecosystem-dist-fix`](../ecosystem-dist-fix/SKILL.md) and follow it as written: fix
-what is bounded and file a `tokuhirom/mutsu` issue for what is not (label it `ecosystem` and its
-`lane:*` besides its kind label), pin every fix with a `t/` test, and open the PR with auto-merge.
+what is bounded and file a `tokuhirom/mutsu` issue for what is not (label it with its `lane:*` besides its kind
+label, and `ecosystem` only when a dist file fails, hangs, times out or flakes against raku), pin every fix with a `t/` test, and open the PR with auto-merge.
 
 Three things that belong to this wrapper rather than that one:
 

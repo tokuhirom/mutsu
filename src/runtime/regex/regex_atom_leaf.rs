@@ -146,6 +146,11 @@ impl Interpreter {
             // interpolation falls back to it the same way).
             .or_else(|| self.regex_package_chain_var_fallback(&sigiled));
         let val = val.map(Value::into_deref);
+        // An unbound dynamic variable matches nothing, as its spliced `<!>`
+        // did (rakudo dies with "Dynamic variable $*x not found").
+        if val.is_none() && name.starts_with('*') {
+            return VarInterpTarget::End(None);
+        }
         if assertion {
             return self.var_assertion_target(val, ignore_case);
         }

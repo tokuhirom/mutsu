@@ -10,7 +10,8 @@ use crate::ast_visit::{Visit, walk_expr, walk_stmt};
 
 /// Whether `stmt` holds an effect the prologue runs: a `BEGIN` (statement or
 /// value form, a `will begin` trait), a `constant` or `enum` value that is
-/// computed, a user trait on a declaration (applied at BEGIN time), a `use`
+/// computed, a user trait on a declaration (applied at BEGIN time), a dynamic
+/// variable declaration, a `use`
 /// the parse did not load (`use lib` included) other than an inert pragma, a
 /// `need` or an `import`.
 // Cost: O(n), n = size of `stmt`.
@@ -43,7 +44,11 @@ impl<'ast> Visit<'ast> for Finder {
                 crate::ast::parsed::ParsedStmt::WillDecl { phasers, .. }
                     if phasers.iter().any(|(kind, _)| *kind == PhaserKind::Begin)
             ),
+            // A dynamic variable the unit declares is in its frame, where a
+            // prologue `BEGIN` finds it (in its static state, as on rakudo),
+            // and a parse-time one would not.
             Stmt::VarDecl {
+                name,
                 constant,
                 expr,
                 custom_traits,
@@ -51,6 +56,7 @@ impl<'ast> Visit<'ast> for Finder {
             } => {
                 (constant.is_some() && !matches!(expr, Expr::Literal(_)))
                     || !custom_traits.is_empty()
+                    || crate::parser::dynamic_var_key(name).is_some()
             }
             Stmt::EnumDecl { variants, .. } => variants.iter().any(|(_, value)| {
                 value

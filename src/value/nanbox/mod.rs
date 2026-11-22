@@ -620,6 +620,20 @@ pub(in crate::value) fn word_is_refcount_free(bits: u64) -> bool {
     }
 }
 
+/// Rebuild a payload-free word from its bits, or `None` when `bits` is not
+/// one: page 0 (the niche, which `cell_publish` uses for its sentinels) or a
+/// word that owns a payload reference. A payload-free word owns nothing, so a
+/// copy of its bits is a complete, independent value — no unsafe code and no
+/// refcount are involved (ADR-8069 slice 1).
+// Cost: O(1).
+#[inline]
+pub(in crate::value) fn payload_free_word(bits: u64) -> Option<NanBox> {
+    if bits >> TAG_SHIFT == 0 || !word_is_refcount_free(bits) {
+        return None;
+    }
+    NonZeroU64::new(bits).map(NanBox)
+}
+
 // ---- NanBox --------------------------------------------------------------------
 
 /// The packed 8-byte value word. Owns one reference of any pointer payload.

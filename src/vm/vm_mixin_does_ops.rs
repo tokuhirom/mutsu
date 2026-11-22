@@ -46,7 +46,6 @@ impl Interpreter {
         // defaults bound and its `TWEAK` run like an in-place `does` (#17765).
         // A user `specialize` (a trait handler mixed a meta-role into the
         // role's HOW) adds methods to that type. The original is untouched.
-        // See `but_rebless_copy` for which roles take this path.
         if let Some(reblessed) = self.but_rebless_copy(&left, &right)? {
             self.apply_pending_caller_var_writeback(code);
             self.stack.push(reblessed);
@@ -125,11 +124,11 @@ impl Interpreter {
         Ok(())
     }
 
-    /// `obj but R` for an instance and a parametric or trait-hooked `R`:
-    /// rebless a copy of `obj` into the mixin class `C+{R}` (`None` when
-    /// `left` is no instance, `R` is neither, or `does_rebless_instance`
-    /// keeps the wrapper path for it). Any other `but` keeps the mixin-map
-    /// wrapper.
+    /// `obj but R` for an instance: rebless a copy of `obj` into the mixin
+    /// class `C+{R}` (`None` when `left` is no instance, `right` is no role
+    /// application, or `does_rebless_instance` keeps the wrapper path for
+    /// them -- a built-in class or role with no registry entry, an internal
+    /// descriptor object).
     // Cost: O(a) to copy the attributes, a = attributes of `left`, plus the
     // role composition.
     fn but_rebless_copy(
@@ -148,21 +147,6 @@ impl Interpreter {
         let Some(application) = self.extract_role_application(right) else {
             return Ok(None);
         };
-        // Only a role that needs the real mixin type takes it: one whose
-        // attribute traits may specialize it, or a parametric one, whose
-        // parameter defaults the wrapper never binds (#17765).
-        // TODO: every `but` on an instance should compose a real mixin type;
-        // the wrapper path still carries the MRO, `WALK`, per-role attribute
-        // storage and `nextsame` of a mixin (t/oo/role/walk-mixin-role.t,
-        // t/oo/class/mixin-mro-parents.t), which the reblessed type lacks (#17890).
-        let parametric = self
-            .registry()
-            .role_candidates
-            .get(application.0.as_str())
-            .is_some_and(|cands| cands.iter().any(|c| !c.type_params.is_empty()));
-        if !parametric && !self.role_has_attribute_trait_hooks(&application.0) {
-            return Ok(None);
-        }
         let copy = Value::make_instance(class_name, attributes.as_map().clone());
         self.does_rebless_instance(&copy, &[application])
     }

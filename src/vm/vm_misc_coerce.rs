@@ -220,7 +220,16 @@ impl Interpreter {
             self.stack.push(Value::junction(kind, results));
             return Ok(());
         }
-        self.reify_nested_map_grep_for_read(&val)?;
+        // A lazy `Match` (`~$/` in grammar-action code, once per action) is
+        // none of the values the arms below handle: not a Seq to reify, `Mu`,
+        // a Buf, `Nil`, code, a Failure or an untouched Seq. Skip them on the
+        // tag, because their `view()` probes would materialize every capture
+        // (#12917). A user `prefix:<~>` candidate and the Match fast path
+        // further down still apply.
+        let lazy_match = val.is_lazy_match_value();
+        if !lazy_match {
+            self.reify_nested_map_grep_for_read(&val)?;
+        }
         // Mu itself has no Str candidate — stringifying it is a hard
         // error (Rakudo dies with `Cannot resolve caller prefix:<~>(Mu:U)`).
         // Tag-probed: `~$match` lands here per capture and a `view()` would
@@ -234,7 +243,7 @@ impl Interpreter {
                 name.resolve()
             )));
         }
-        if Self::is_buf_value(&val) {
+        if !lazy_match && Self::is_buf_value(&val) {
             let s = Self::concat_operand_stringy(val)?;
             self.stack.push(s);
             return Ok(());
@@ -258,7 +267,7 @@ impl Interpreter {
         // `~/a/` warns and yields the empty string, like every other Str
         // coercion of a Regex -- see `regex_str_coercion`.
         // A `Sub`/`Method` code object warns the same way (`code_str`).
-        if let Some(coerced) = self.code_str(&val) {
+        if let Some(coerced) = (!lazy_match).then(|| self.code_str(&val)).flatten() {
             let caller_code = self.current_code;
             let resumed = coerced?;
             self.reconcile_caller_after_internal_dispatch(caller_code);

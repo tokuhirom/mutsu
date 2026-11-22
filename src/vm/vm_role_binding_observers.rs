@@ -185,7 +185,14 @@ impl Interpreter {
         else {
             return false;
         };
-        syms.into_iter()
-            .all(|sym| !body.contains(sym) && !signature.contains(sym))
+        // A sigilless role parameter (`role R[\t]`) is bound under its term
+        // key (`\t`, ADR-12441), while the body names it by its spelling
+        // (`t`, a `GetBareWord` constant) (#18058).
+        let seen = |sym: Symbol| body.contains(&sym) || signature.contains(&sym);
+        syms.into_iter().all(|sym| {
+            !seen(*sym)
+                && crate::term_names::term_spelling(sym.as_str())
+                    .is_none_or(|spelling| !seen(Symbol::intern(spelling)))
+        })
     }
 }

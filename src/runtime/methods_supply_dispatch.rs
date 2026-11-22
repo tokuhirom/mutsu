@@ -809,15 +809,46 @@ impl Interpreter {
         } = value.view()
             && crate::value::supply_class::is_supply_class(class_name)
         {
-            if let Some(ValueView::Int(inner_sid)) =
-                attributes.as_map().get("supplier_id").map(Value::view)
-            {
+            let attrs = attributes.as_map();
+            let release_old = |this: &mut Self| -> Result<(), RuntimeError> {
+                if let Some(old) = crate::runtime::native_methods::migrate_current_inner(
+                    master_supplier_id,
+                    tap_index,
+                ) {
+                    this.migrate_release_inner(old)?;
+                }
+                Ok(())
+            };
+            if let Some(ValueView::Int(inner_sid)) = attrs.get("supplier_id").map(Value::view) {
+                drop(attrs);
+                release_old(self)?;
                 crate::runtime::native_methods::migrate_switch_inner(
                     master_supplier_id,
                     tap_index,
                     inner_sid as u64,
                     downstream_supplier_id,
                 );
+            } else if attrs.contains_key("on_demand_callback")
+                || attrs.contains_key("supply_id")
+                || Self::is_channel_backed_source(&attrs)
+            {
+                // An inner supply that delivers only once tapped
+                // (`Supply.interval`, a `supply { }` block, a live recipe) is
+                // tapped into a supplier of its own, which the migration
+                // forwards like any live one -- forwarding first, so what the
+                // supply emits while being tapped is not lost. Switching away
+                // closes that tap.
+                drop(attrs);
+                release_old(self)?;
+                let sid = crate::runtime::native_methods::next_supplier_id();
+                crate::runtime::native_methods::migrate_switch_inner(
+                    master_supplier_id,
+                    tap_index,
+                    sid,
+                    downstream_supplier_id,
+                );
+                let tap = self.tap_supply_into(&value, sid)?;
+                Self::migrate_own_inner(sid, tap);
             } else {
                 // A cold (non-live) supply: forward its already-known values now.
                 let vals = self.supply_list_values(&attributes.as_map(), true)?;

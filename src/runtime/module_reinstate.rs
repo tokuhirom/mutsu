@@ -63,10 +63,10 @@ impl Interpreter {
         functions: &mut std::sync::Arc<crate::runtime::function_table::FunctionTable>,
         include_global_aliases: bool,
     ) {
-        if self.module.module_registered_functions.is_empty() {
+        if self.module.world.module_registered_functions.read().is_empty() {
             return;
         }
-        let tracked = &self.module.module_registered_functions;
+        let tracked = &std::sync::Arc::clone(&*self.module.world.module_registered_functions.read());
         if self
             .routines()
             .module_functions_present
@@ -88,7 +88,7 @@ impl Interpreter {
         // after a scope that loaded a module exits, not on an ordinary one.
         let mut exported: Option<std::collections::HashSet<String>> = None;
         let registry = self.routines();
-        for key in self.module.module_registered_functions.iter() {
+        for key in self.module.world.module_registered_functions.read().iter() {
             if functions.contains_key(key) {
                 continue;
             }
@@ -100,7 +100,7 @@ impl Interpreter {
             let key_str = key.resolve();
             if !include_global_aliases
                 && let Some(tail) = key_str.strip_prefix("GLOBAL::")
-                && !self.module.prelude_registered_functions.contains(key)
+                && !self.module.world.prelude_registered_functions.read().contains(key)
             {
                 let name = crate::runtime::dispatch_resolve::function_key_strip_arity_suffix(tail);
                 let exported = exported.get_or_insert_with(|| self.exported_routine_names());
@@ -123,7 +123,8 @@ impl Interpreter {
     /// Put back any `our` package global of `module` that has gone missing from
     /// `env` since the module was loaded. See `module_package_globals`.
     pub(crate) fn reinstate_module_package_globals(&mut self, module: &str) {
-        let Some(globals) = self.module.module_package_globals.get(module) else {
+        let module_package_globals_r = self.module.world.module_package_globals.read();
+        let Some(globals) = module_package_globals_r.get(module) else {
             return;
         };
         let missing: Vec<(Symbol, Value)> = globals
@@ -159,7 +160,7 @@ impl Interpreter {
             .copied()
             .collect();
         if !new_keys.is_empty() {
-            crate::runtime::cow_table_mut(&mut self.module.module_registered_protos)
+            crate::runtime::cow_table_mut(&mut self.module.world.module_registered_protos.write_guard())
                 .extend(new_keys);
         }
     }
@@ -176,12 +177,12 @@ impl Interpreter {
         &self,
         snapshot: &rustc_hash::FxHashMap<Symbol, std::sync::Arc<FunctionDef>>,
     ) -> Vec<(Symbol, std::sync::Arc<FunctionDef>)> {
-        if self.module.module_registered_protos.is_empty() {
+        if self.module.world.module_registered_protos.read().is_empty() {
             return Vec::new();
         }
         let registry = self.routines();
         self.module
-            .module_registered_protos
+            .world.module_registered_protos.read()
             .iter()
             .filter(|key| !snapshot.contains_key(*key))
             .filter_map(|key| registry.proto_functions.get(key).map(|def| (*key, def.clone())))

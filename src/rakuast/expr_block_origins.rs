@@ -49,6 +49,31 @@ pub(super) fn whenever(statement: &mut RakuAstNode, span: SrcSpan) {
     });
 }
 
+/// `$x where { ... }`: a parameter's `where` block, written last in the
+/// parameter at `span`, runs from its `{` to the parameter's end.
+// Cost: O(n + s), n = length of the parameter's source, s = the block's statements.
+pub(super) fn parameter_where(parameter: &mut RakuAstNode, span: SrcSpan) {
+    if !span.is_some()
+        || super::infix_origins::child(parameter, "where")
+            .is_none_or(|w| w.class != RakuAstClass::Block || w.origin.0.is_some())
+    {
+        return;
+    }
+    let to = span.to as usize;
+    let at = super::unit_source::with_text(span, |text| {
+        let (_, after) = text.rsplit_once("where")?;
+        let body = after.trim_start();
+        (body.len() < after.len() && body.starts_with('{') && body.ends_with('}'))
+            .then(|| to - body.len())
+    });
+    if let Some(at) = at {
+        with_child(parameter, "where", |block| {
+            super::origin::set_span(block, SrcSpan::new(at, to));
+            derive(block);
+        });
+    }
+}
+
 // Cost: O(1).
 fn is_prefix(class: RakuAstClass) -> bool {
     use RakuAstClass as C;
@@ -127,6 +152,7 @@ fn anonymous_sub(node: &mut RakuAstNode) {
     let Some((from, to)) = byte_range(node) else {
         return;
     };
+    anon_return_type(node, from, to);
     if super::infix_origins::child(node, "name").is_some() {
         return;
     }
@@ -134,6 +160,29 @@ fn anonymous_sub(node: &mut RakuAstNode) {
         return;
     };
     blockoid(node, at, to);
+}
+
+/// `anon Str sub { }`: the type written between `anon` and `sub` is the
+/// signature's `returns`.
+// Cost: O(n), n = length of the type name.
+fn anon_return_type(node: &mut RakuAstNode, from: usize, to: usize) {
+    let ty = super::unit_source::with_text(SrcSpan::new(from, to), |text| {
+        let rest = text.strip_prefix("anon")?;
+        let ty = rest.trim_start();
+        let len = ty.find(char::is_whitespace)?;
+        let lead = rest.len() - ty.len();
+        (lead > 0 && ty[len..].trim_start().starts_with("sub"))
+            .then(|| SrcSpan::new(from + 4 + lead, from + 4 + lead + len))
+    });
+    if let Some(ty) = ty {
+        with_child(node, "signature", |signature| {
+            with_child(signature, "returns", |returns| {
+                if returns.origin.0.is_none() {
+                    super::routine_origins::type_origin(returns, ty)
+                }
+            })
+        });
+    }
 }
 
 /// The offset of the `{` after the parenthesized signature that follows the

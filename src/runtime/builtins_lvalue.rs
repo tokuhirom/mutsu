@@ -178,6 +178,11 @@ impl Interpreter {
                 ptr
             }};
         }
+        // A leaf or a lazy Match holds no Proxy; `view()` of the Match would
+        // materialize it.
+        if value.is_scalar_leaf() || value.is_lazy_match_value() {
+            return false;
+        }
         match value.view() {
             ValueView::Proxy { .. } => true,
             // An element bound with `@a[0] := $p` holds the `Proxy` behind the

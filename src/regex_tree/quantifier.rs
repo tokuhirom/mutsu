@@ -193,13 +193,11 @@ impl Parser {
 
     // Cost: O(1).
     fn parse_backtrack(&mut self) -> Option<RegexBacktrack> {
-        // `*:?` / `*:!` spell the frugal / greedy modifier with a colon.
+        // `*:?` / `*:!` spell the frugal / greedy modifier with a colon. After
+        // a quantifier it is always the modifier, even before a letter:
+        // rakudo reads `xa*:!y` as a greedy `a*` and then `y`.
         if self.chars.get(self.pos) == Some(&':')
             && matches!(self.chars.get(self.pos + 1), Some('?' | '!'))
-            && !self
-                .chars
-                .get(self.pos + 2)
-                .is_some_and(|next| next.is_alphanumeric())
         {
             self.pos += 1;
         }
@@ -257,14 +255,21 @@ impl Parser {
         })
     }
 
+    /// A `**` count, written in the digits of any decimal script (`a**۳`
+    /// is `a**3`, as in rakudo).
     // Cost: O(k), k = number of digits.
     fn parse_count(&mut self) -> Option<u64> {
         let start = self.pos;
-        while self.chars.get(self.pos).is_some_and(char::is_ascii_digit) {
+        let mut count: u64 = 0;
+        while let Some(digit) = self
+            .chars
+            .get(self.pos)
+            .and_then(|c| crate::ucd::numeric::unicode_decimal_digit_value(*c))
+        {
+            count = count.checked_mul(10)?.checked_add(u64::from(digit))?;
             self.pos += 1;
         }
-        let digits: String = self.chars[start..self.pos].iter().collect();
-        digits.parse().ok()
+        (self.pos > start).then_some(count)
     }
 
     /// Parse a `%` / `%%` separator after a quantifier, with the whitespace

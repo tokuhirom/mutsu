@@ -178,6 +178,7 @@ impl ArrayData {
             descriptor_name: None,
             nqp_elem: NqpElemKind::Object,
             bound_slice: false,
+            snapshot_version: std::sync::OnceLock::new(),
         }
     }
 
@@ -336,6 +337,8 @@ impl Clone for ArrayData {
             nqp_elem: self.nqp_elem,
             // A clone is a new container, not the binding's: never inherit.
             bound_slice: false,
+            // A clone is a new node: no snapshot was taken of it yet.
+            snapshot_version: std::sync::OnceLock::new(),
         }
     }
 }

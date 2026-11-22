@@ -24,7 +24,10 @@ mod trans;
 
 // Items used by external callers inside crate::parser (comparison.rs, token_body.rs,
 // reduction.rs, ident.rs, primary/mod.rs).  Visibility matches the original regex.rs.
-pub(in crate::parser) use call_args::{parse_call_arg_list, sigilless_item_assign_arg};
+pub(in crate::parser) use call_args::{
+    paren_arg_expr, parse_bounded_call_arg_list, parse_call_arg_list, parse_capture_arg_list,
+    reject_loose_infix_after_arg, sigilless_item_assign_arg,
+};
 pub(in crate::parser) use lit::regex_lit;
 pub(in crate::parser) use scan::scan_to_delim;
 pub(crate) use subst::{subst_compound_rhs, subst_compound_thunk};

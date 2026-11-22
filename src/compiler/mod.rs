@@ -1087,6 +1087,7 @@ mod bind_ternary;
 mod block_imported_vars;
 mod block_lexical_types;
 mod block_lexsubs;
+mod block_operator_sets;
 mod body_scans;
 mod call_arg_index_assign;
 pub(crate) mod compile_inputs;
@@ -5543,6 +5544,12 @@ impl Compiler {
                 // A tail bare `{ ... }` is sunk the same way: compiled as a
                 // value, its own tail statement would be (`{ $_ = 'x'; /x/ }`
                 // as the program's last statement left its regex unmatched).
+                // A labelled tail (`FOO: 42`) is its statement (#18283).
+                let stmt = if is_last {
+                    self.strip_tail_labels(stmt)
+                } else {
+                    stmt
+                };
                 let sunk_tail = self.unit_tail_sinks
                     && matches!(stmt, Stmt::Expr(_) | Stmt::Call { .. } | Stmt::Block(_));
                 if is_last && !sunk_tail {

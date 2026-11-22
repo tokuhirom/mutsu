@@ -80,7 +80,7 @@ impl Interpreter {
             }
             if let Some(dist) = self
                 .module
-                .package_distributions
+                .world.package_distributions.read()
                 .get(frame.package.as_str())
             {
                 return self.build_resources_from_dist(&dist.clone());
@@ -94,7 +94,7 @@ impl Interpreter {
         // Priority 3: Look up by current package
         if let Some(dist) = self
             .module
-            .package_distributions
+            .world.package_distributions.read()
             .get(&self.current_package())
         {
             return self.build_resources_from_dist(&dist.clone());
@@ -194,12 +194,12 @@ impl Interpreter {
     /// its enclosing module (`Zef`), which is the compilation unit that owns the
     /// source file. Falls back to the currently-loading distribution.
     pub(crate) fn resolve_package_distribution(&self, pkg: &str) -> Option<Value> {
-        if let Some(dist) = self.module.package_distributions.get(pkg) {
+        if let Some(dist) = self.module.world.package_distributions.read().get(pkg) {
             return Some(dist.clone());
         }
         for rest in crate::qualified::package_ancestors(crate::qualified::known_symbol(pkg)).skip(1)
         {
-            if let Some(dist) = self.module.package_distributions.get(rest.as_str()) {
+            if let Some(dist) = self.module.world.package_distributions.read().get(rest.as_str()) {
                 return Some(dist.clone());
             }
         }

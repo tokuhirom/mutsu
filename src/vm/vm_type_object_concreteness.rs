@@ -44,6 +44,10 @@ impl Interpreter {
         args: &[Value],
         target: &Value,
     ) -> Option<RuntimeError> {
+        // Tag-probed: `view()` of a lazy Match would materialize it.
+        if !target.is_package_value() {
+            return None;
+        }
         let ValueView::Package(type_name) = target.view() else {
             return None;
         };

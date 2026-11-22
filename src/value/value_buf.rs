@@ -52,11 +52,13 @@ use crate::symbol::Symbol;
 
 mod inplace;
 mod raw;
+mod slice;
 pub(crate) use inplace::{
     buf_storage_as, buf_target, install_empty_storage, pop_buf_elem, set_buf_elem, shift_buf_elem,
     with_buf_storage_mut,
 };
 pub(crate) use raw::{read_raw_elem, write_raw_elem};
+pub(crate) use slice::buf_slice;
 
 /// The attribute a `Buf`/`Blob`-shaped instance keeps its storage under.
 ///

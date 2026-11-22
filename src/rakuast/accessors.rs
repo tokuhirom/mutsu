@@ -12,6 +12,9 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     // (and a hand-built one) has no origin, which reads as the undefined
     // `RakuAST::Origin` (rakudo's answer for a hand-built node) so `with`
     // skips it.
+    if let Some(traits) = super::enum_implicit_traits::accessor(node, method) {
+        return Some(traits);
+    }
     if method == "origin" {
         return Some(
             origin::origin_of(node).unwrap_or_else(|| {

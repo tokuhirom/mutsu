@@ -80,20 +80,15 @@ impl Interpreter {
         // A type-deterministic family's winner comes from the key alone; a
         // value-dependent one's from its stage program, which has already
         // checked the winner's `where` clauses (`vm_multi_plan_light_call`).
-        let (hit, where_verified) = match typed {
-            Some(Some(hit)) => (hit, false),
+        // A program-picked winner's constraints were all checked by its stage
+        // program, so it binds without checking them again (ADR-18580 D2).
+        let (hit, trust) = match typed {
+            Some(Some(hit)) => (hit, super::vm_call_eligibility::LightBindTrust::None),
             Some(None) => return Ok(false),
             None => {
                 match self.multi_plan_light_winner(code, name, name_sym, &args, &key, compiled_fns)
                 {
-                    Some(hit) => {
-                        let verified = hit
-                            .def
-                            .param_defs
-                            .iter()
-                            .any(|pd| pd.where_constraint.is_some());
-                        (hit, verified)
-                    }
+                    Some(hit) => (hit, super::vm_call_eligibility::LightBindTrust::Constraints),
                     None => return Ok(false),
                 }
             }
@@ -110,7 +105,7 @@ impl Interpreter {
             Self::positional_light_argc(&args),
             &args,
             Some(code),
-            where_verified,
+            trust,
         ) || loan_env!(self, routine_is_test_assertion_by_name(name, &args))
             || self.wrap_sub_id_for_name(name).is_some()
         {
@@ -123,14 +118,25 @@ impl Interpreter {
             push_multi_dispatch_frame_with_winner_sym(name, name_sym, &args, Some(&hit.def))
         );
         self.push_samewith_context(name, None, None);
-        let result = self.call_compiled_function_positional_light(
-            cf,
-            &args,
-            compiled_fns,
-            name,
-            name_sym,
-            Some(code),
-        );
+        let result = if trust == super::vm_call_eligibility::LightBindTrust::Constraints {
+            self.call_compiled_function_positional_light_verified(
+                cf,
+                &args,
+                compiled_fns,
+                name,
+                name_sym,
+                Some(code),
+            )
+        } else {
+            self.call_compiled_function_positional_light(
+                cf,
+                &args,
+                compiled_fns,
+                name,
+                name_sym,
+                Some(code),
+            )
+        };
         self.pop_samewith_context();
         if pushed_dispatch {
             self.pop_multi_dispatch();

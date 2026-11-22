@@ -17,21 +17,320 @@ pub(crate) type ExportTagTable =
 /// (`set-unit`), its name, and its value.
 pub(crate) type GeneratedLexical = (bool, String, Value);
 
+/// One `ModuleWorld` table: a process-wide world cell holding the table's
+/// current version (ADR-17216).
+pub(crate) type WorldTable<T> = crate::runtime::world_cell::WorldCell<std::sync::Arc<T>>;
+
+/// What the program knows about the compunits it has loaded: which modules
+/// are loaded, what each one registered, exports and declared, and the
+/// per-unit visibility tables an import consults. A compunit loads once per
+/// process in rakudo, so this is program-world state (ADR-17216 slice 3);
+/// it is gathered here, apart from the per-load stacks and the lexical
+/// import state of [`ModuleState`], so it can be shared by every thread.
+#[derive(Default)]
+pub(crate) struct ModuleWorld {
+    /// Per loaded module, the nested packages it publishes under their short
+    /// name, `(short, package)` (`package Gender { enum Gender ... }` in
+    /// `unit module Enums` publishes `Gender` = `Enums::Gender`, #13940).
+    /// Copied into every importer's `package_type_aliases`.
+    pub(crate) published_outer_packages: WorldTable<HashMap<String, Vec<(String, String)>>>,
+    /// Per loaded module, the `EXPORTHOW` entries its source declares as
+    /// `(directive, declarator)` (`DECLARE`, `pokemon`), which
+    /// `CompUnit::Handle.export-how-package` publishes (#14173).
+    pub(crate) exporthow_declares: WorldTable<HashMap<String, Vec<(String, String)>>>,
+    /// Package-less top-level routines a loaded compunit declared but did NOT
+    /// export, keyed by that compunit's unit symbol and then by routine name.
+    ///
+    /// Raku scopes `sub name {...}` at a compunit's top level lexically to that
+    /// compunit; mutsu registers it as a shared `GLOBAL::name` stash entry, so
+    /// it used to stay callable, bare, from whatever scope `use`d/`require`d
+    /// the module. `seclude_private_toplevel_routines` moves such a routine out
+    /// of the shared registry and in here once the load finishes, and
+    /// `Interpreter::unit_private_routine` hands it back only to code compiled
+    /// in the same unit (or in an `EVAL` nested inside it). See
+    /// `runtime/unit_private_routines.rs`.
+    pub(crate) unit_private_routines:
+        WorldTable<HashMap<Symbol, HashMap<Symbol, Arc<FunctionDef>>>>,
+    /// Every name that appears in any `unit_private_routines` table. A cheap
+    /// negative test on the resolution hot path, and the signal that a name's
+    /// resolution is unit-dependent and therefore must bypass the name-keyed
+    /// resolution caches (which are not keyed by unit).
+    pub(crate) unit_private_names: WorldTable<HashSet<Symbol>>,
+    /// The compilation unit that declared each user class. Attribute defaults
+    /// run later, while constructing an instance from an arbitrary caller, so
+    /// they need the same unit anchor as the class body to resolve compunit-
+    /// private routines. Method parameter defaults use this metadata before the
+    /// method's routine frame exists as well.
+    pub(crate) class_declaring_units: WorldTable<HashMap<String, Symbol>>,
+    /// #7797: the compunit that declared each `use`/`need`/`require`d
+    /// top-level package, keyed by the first `::`-segment of the `use`
+    /// argument (or the module's own `unit module` name — the two normally
+    /// agree). A package NOT in this map has no known foreign declaring
+    /// compunit, so `Interpreter::qualified_name_visible_here` treats a
+    /// reference to it as permissive (same-compunit `package Foo { }`
+    /// blocks, and a script's own top-level `unit module`, never populate
+    /// this table, so they are never mistakenly gated).
+    pub(crate) package_declaring_units: WorldTable<HashMap<String, Symbol>>,
+    /// Generated EXPORT stashes belong to their declaring compilation unit.
+    pub(crate) unit_export_namespaces: WorldTable<HashSet<(Symbol, Symbol)>>,
+    /// Qualified export stashes of named packages, gated by module visibility.
+    pub(crate) package_export_namespaces: WorldTable<HashSet<Symbol>>,
+    /// Which module declarations resolve where: the #7797 package grants and
+    /// ADR-11136's GLOBAL-merge provenance and merges
+    /// (`runtime::module_merge::ModuleVisibility`).
+    pub(crate) module_visibility: crate::runtime::world_cell::WorldCell<module_merge::ModuleVisibility>,
+    /// Routines installed by a prelude spliced into a host compunit
+    /// (`PRELUDE_SUB_TRAIT`, e.g. NativeCall's `nativecast`/`nativesizeof`).
+    /// They deliberately live under `GLOBAL` for every compunit that uses them
+    /// and belong to no module's export map, so they are ambient rather than
+    /// compunit-private and are never secluded.
+    pub(crate) prelude_sub_names: WorldTable<HashSet<Symbol>>,
+    pub(crate) loaded_modules: WorldTable<HashSet<String>>,
+    /// The lexical pad `CompUnit::Handle.unit` answers for each loaded unit,
+    /// built on the first ask so every later ask returns the same `Hash` and
+    /// the same Pod objects (`at-unit($cu, '$=pod')[0] === $pod`).
+    pub(crate) loaded_unit_pads: crate::runtime::world_cell::WorldCell<HashMap<String, Value>>,
+    /// Package-qualified routine keys a module load introduced (`M::helper`,
+    /// `M::EXPORT::ALL::foo`) — never the bare `GLOBAL::` import aliases, which
+    /// stay lexical to the importing scope.
+    ///
+    /// `loaded_modules` is never rolled back, so these must not be either: a
+    /// scope that restores the routine registry wholesale (a bare block, an
+    /// `EVAL`) would otherwise leave the module marked as loaded while its own
+    /// routines are gone, and a re-`use` — being a no-op — could not bring them
+    /// back. See `reinstate_module_functions`.
+    pub(crate) module_registered_functions: WorldTable<HashSet<Symbol>>,
+    /// The package-qualified `proto sub` keys a module load introduced
+    /// (`M::it`): the proto twin of `module_registered_functions`, put back
+    /// by a scope restore that resets the proto tables wholesale (#13877).
+    pub(crate) module_registered_protos: WorldTable<HashSet<Symbol>>,
+    /// Packages that received a routine import from a role's own deferred
+    /// `use`/`need` body statement (`run_role_deferred_use_stmt`). Consulted
+    /// by method dispatch (`vm_method_dispatch.rs`) as an extra reason to set
+    /// `current_package` to the receiver's class even when none of the
+    /// existing fast-path conditions (class-scoped subs, package lexicals, a
+    /// `::`-qualified owner name) apply — a FLAT (non-namespaced) role/class
+    /// name can still own package-qualified imported routines that
+    /// `bare_name_packages()` can only find by walking outward from itself
+    /// (#8646 shape 1).
+    pub(crate) packages_with_deferred_use_imports: WorldTable<HashSet<Symbol>>,
+    /// The `GLOBAL::`-qualified keys of routines spliced in as a PRELUDE
+    /// (`PRELUDE_SUB_TRAIT` — mutsu's NativeCall helpers).
+    ///
+    /// `module_registered_functions` deliberately does not let its `GLOBAL::`
+    /// members be reinstated after an ordinary scope rollback, because a file
+    /// with no `unit module` runs its body at `current_package() == GLOBAL` and
+    /// its `sub foo is export` is then indistinguishable from an alias
+    /// installed *for the importing scope* (`{ require NoModule <&bar>; }` must
+    /// not leak `&bar`). A prelude routine carries no such ambiguity: it is
+    /// ambient compunit machinery, never an import alias, and every compunit
+    /// that needs one carries an identical copy of which only the first
+    /// registration wins. Dropping it on a rollback therefore left a module
+    /// loaded inside a routine call — `lives-ok { EVAL 'use M' }` — permanently
+    /// unable to resolve the helper its own body calls, since `loaded_modules`
+    /// still claimed it was loaded and the later real `use` short-circuited.
+    pub(crate) prelude_registered_functions: WorldTable<HashSet<Symbol>>,
+    /// For each prelude key in `prelude_registered_functions`, the compilation
+    /// units the declaration was actually spliced into (`?FILE` at registration
+    /// time; `main_unit()` for the main script).
+    ///
+    /// The registration is process-global by design — a prelude routine has to
+    /// be callable by bare name from a method body running under any package
+    /// (see `NATIVECALL_SUB_PRELUDES`) — but its *visibility* is not: rakudo
+    /// exports these from `NativeCall.rakumod`, so a compunit that never
+    /// mentioned NativeCall must not see them. Without this, one module's
+    /// `use NativeCall` made `&nativecast` resolvable from every scope in the
+    /// process, including the script that merely `use`d that module two levels
+    /// up (GH #7612).
+    ///
+    /// A splice happens per compunit and is idempotent (the first registration
+    /// wins, later ones return `Unchanged`), so this set is what records the
+    /// later ones. `prelude_visible_here` reads it.
+    pub(crate) prelude_declaring_units: WorldTable<HashMap<Symbol, HashSet<Symbol>>>,
+    /// The package-qualified globals (`Base::flag`, `$NativeLibs::config`) each
+    /// loaded module declared with `our`, keyed by module name.
+    ///
+    /// The routine-registry counterpart above cannot cover these: `our`
+    /// variables live in `env`, and every scope that restores `env` wholesale —
+    /// a sub call, a block, an `EVAL` — drops the ones a module load nested
+    /// inside it created. `loaded_modules` is never rolled back, so a later
+    /// `use` of that module is a no-op and could not bring them back. The
+    /// already-loaded path of `use_module_with_tags_inner` reinstates whatever
+    /// is missing from here instead.
+    pub(crate) module_package_globals: WorldTable<HashMap<String, Vec<(Symbol, Value)>>>,
+    /// Repositories registered by name (`CompUnit::RepositoryRegistry.register-name`),
+    /// answered by `repository-for-name` ahead of the built-in names.
+    pub(crate) named_repositories: WorldTable<HashMap<String, Value>>,
+    pub(crate) need_hidden_classes: WorldTable<HashSet<String>>,
+    /// Per loaded module, the classes and roles registered while it loaded
+    /// (its own declarations plus those of the modules it pulled in). The
+    /// stash-hiding pass subtracts these, for every *other* module, to tell a
+    /// module's own declarations from its transitive dependencies'.
+    pub(crate) module_registered_types: WorldTable<HashMap<String, HashSet<String>>>,
+    /// CompUnit::Repository::Installation state (`.loaded` units and the symbols
+    /// pulled in by `.need` but not yet merged into GLOBAL).
+    ///
+    /// Boxed: the whole `Interpreter` is moved by value into a `VM` that lives on
+    /// the stack (see `run_block_raw`), and nested module loads stack full copies,
+    /// so keeping rarely-used state off the inline struct preserves stack budget.
+    pub(crate) cur_repo: crate::runtime::world_cell::WorldCell<Box<CurRepoState>>,
+    /// Maps module names to the set of packages declared during their loading.
+    /// Used to propagate package declarations when a module is re-used.
+    pub(crate) module_packages: WorldTable<HashMap<String, HashSet<String>>>,
+    /// Maps package names to their distribution context.
+    /// Populated during module loading so OTF compilation can resolve $?DISTRIBUTION.
+    pub(crate) package_distributions: WorldTable<ValueMap>,
+    /// The module's other file-scope bare names — `constant`s and sigilless
+    /// declarations its own routines close over — keyed the same way as
+    /// `package_type_aliases`, and lost for the same reason. Consulted by
+    /// `module_scope_lexical` as the LAST resort in bareword resolution, just
+    /// before the undeclared-bareword-as-`Str` fallback, so a live `env` binding
+    /// always wins. Distinct from `package_lexicals`, which is the *mutable*
+    /// package-block `my` store with its own writeback path; these are a module's
+    /// immutable file-scope terms. `NativeHelpers::Blob`'s `MoarVM::Guts::REPRs`
+    /// is the motivating case: `constant Offset` is read by the exported
+    /// `OBJECT_BODY` sub of the same module, and resolved to the string
+    /// `"Offset"` once the frame that loaded the module was gone.
+    ///
+    /// For a `unit` compunit's own `constant`s and enum values this is no longer
+    /// a fallback but the ONLY store: `load_module_inner` drops their `env`
+    /// binding at the end of the load, because the module body ran in the
+    /// caller's env and rakudo makes those names package symbols of the
+    /// compunit rather than names the importer sees bare (#7787). The value
+    /// stays here so the declaring module's own routines and methods still read
+    /// it; see `collect_unit_package_scope_names`.
+    pub(crate) module_scope_lexicals: WorldTable<PackageLexicals>,
+    /// The module name owning each loaded source file. Ordinary (non-`unit`)
+    /// module files register top-level routines under `GLOBAL`, but their
+    /// private file-scope names remain lexical to the module.
+    pub(crate) module_source_packages: WorldTable<rustc_hash::FxHashMap<Symbol, Symbol>>,
+    /// Compilation units declared by `unit module`/`unit class` files, keyed by
+    /// their compilation-unit symbol. A unit module body runs under GLOBAL, so
+    /// its routines need this metadata after the load has finished in order to
+    /// resolve the module's own imported aliases lexically.
+    pub(crate) unit_module_packages: WorldTable<rustc_hash::FxHashMap<Symbol, Symbol>>,
+    /// Declared unit package by requested module path. A module file may be
+    /// loaded as `A::B` while declaring `unit module A::C`.
+    pub(crate) module_declared_unit_packages: WorldTable<rustc_hash::FxHashMap<Symbol, Symbol>>,
+    /// The one top-level `package`/`module` block a module file declares under
+    /// a name other than the one it was loaded as (`package Cro::WebSocket::Message
+    /// { enum Opcode is export (...) }` in `Cro/WebSocket/Message/Opcode.rakumod`),
+    /// by requested module path. What the file exports lives under that package.
+    pub(crate) module_block_packages: WorldTable<rustc_hash::FxHashMap<Symbol, Symbol>>,
+    /// Exported subroutine symbols by package and export tag.
+    pub(crate) exported_subs: WorldTable<ExportTagTable>,
+    /// Exported variable/constant symbols by package and export tag.
+    pub(crate) exported_vars: WorldTable<HashMap<String, HashMap<String, HashSet<String>>>>,
+    /// The `$`-scalars among [`Self::exported_vars`] (recorded without their
+    /// sigil), by package: an `EXPORT::` stash publishes them as `$name`.
+    pub(crate) exported_scalar_vars: WorldTable<HashMap<String, HashSet<String>>>,
+    /// An exported variable/constant a module re-exports from another module
+    /// (`UNIT::EXPORT::{$tag} := Other::EXPORT::{$tag}`): `(module, name)` ->
+    /// the module that owns the value.
+    pub(crate) reexported_var_owners:
+        WorldTable<HashMap<(String, String), String>>,
+    /// Trait-modified routine values (e.g. a sub with a custom `is` trait that
+    /// mixed a role into it) keyed by package and routine name. Captured at
+    /// `is export` registration time so `import` can restore the `&name` env
+    /// binding with the role mixed in, rather than just the plain FunctionDef.
+    pub(crate) exported_sub_values: WorldTable<HashMap<String, ValueMap>>,
+    /// Regex bodies of `token`/`rule`/`regex` declarations marked `is export`,
+    /// keyed by the module being loaded and the declarator's name.
+    ///
+    /// A regex declarator does not live in `Registry::functions` like a sub —
+    /// it lives in `Registry::token_defs` (ADR-0009: no compiled body), and a
+    /// *lexical* one (`my token foo`) is dropped by the block-scope restore
+    /// when the module's own scope exits. So the defs are captured here at
+    /// registration time and re-installed under the importing package by
+    /// `import_module`, which is what makes both `&foo` and `<foo>` resolve in
+    /// the importer.
+    pub(crate) exported_token_defs: WorldTable<ExportedTokenDefs>,
+    /// Mirrored export tables for modules declared with `unit module X`
+    /// when the actual runtime package registration used "GLOBAL".
+    /// Populated during `load_module` so that `import_module` can perform
+    /// tag validation and raise `X::Import::NoSuchTag` for bad tags.
+    pub(crate) unit_module_exported_subs: WorldTable<ExportTagTable>,
+    /// The `EXPORT` hook routine(s) each loaded compunit declared, by module
+    /// name: what `CompUnit::Handle.export-sub` answers once the load is over
+    /// and the registry's `GLOBAL::EXPORT` has been handed back to the
+    /// enclosing compunit (#15371).
+    pub(crate) module_export_hooks:
+        WorldTable<HashMap<String, Vec<std::sync::Arc<FunctionDef>>>>,
+    /// Exports each module registered while it was the module currently being
+    /// loaded (attributed via `module_load_stack`), mapping module -> name ->
+    /// tags. Unlike `exported_subs["GLOBAL"]`, which pools every unit-module
+    /// export ever hoisted, this correctly attributes an export to the module
+    /// that declared it. The `use MOD` tag-filter consults this so it only
+    /// hides MOD's *own* exports and never a symbol MOD imported from a
+    /// transitively-`use`d module (which MOD's methods must still resolve).
+    pub(crate) module_owned_exports: WorldTable<ExportTagTable>,
+    /// Qualified classes and roles declared by each module's own body. A
+    /// module without a `unit` declarator may still declare a type in an
+    /// unrelated package (for example `class Test::Handle`); that package is
+    /// visible to a direct importer, but declarations from the module's
+    /// dependencies are not. The load stack lets registration attribute the
+    /// type to the correct compunit while nested modules are loading.
+    pub(crate) module_owned_types:
+        WorldTable<HashMap<String, runtime_module::ModuleOwnedTypes>>,
+}
+
+
+impl ModuleWorld {
+    /// The same tables for a spawned thread: every slot is shared, never
+    /// copied (ADR-17216).
+    // Cost: O(f), f = tables (two reference-count increments each).
+    pub(crate) fn share(&self) -> Self {
+        Self {
+            loaded_modules: self.loaded_modules.share(),
+            loaded_unit_pads: self.loaded_unit_pads.share(),
+            module_registered_functions: self.module_registered_functions.share(),
+            module_registered_protos: self.module_registered_protos.share(),
+            packages_with_deferred_use_imports: self.packages_with_deferred_use_imports.share(),
+            prelude_registered_functions: self.prelude_registered_functions.share(),
+            prelude_declaring_units: self.prelude_declaring_units.share(),
+            module_package_globals: self.module_package_globals.share(),
+            named_repositories: self.named_repositories.share(),
+            need_hidden_classes: self.need_hidden_classes.share(),
+            module_registered_types: self.module_registered_types.share(),
+            cur_repo: self.cur_repo.share(),
+            module_packages: self.module_packages.share(),
+            package_distributions: self.package_distributions.share(),
+            module_scope_lexicals: self.module_scope_lexicals.share(),
+            module_source_packages: self.module_source_packages.share(),
+            unit_module_packages: self.unit_module_packages.share(),
+            module_declared_unit_packages: self.module_declared_unit_packages.share(),
+            module_block_packages: self.module_block_packages.share(),
+            exported_subs: self.exported_subs.share(),
+            exported_vars: self.exported_vars.share(),
+            exported_scalar_vars: self.exported_scalar_vars.share(),
+            reexported_var_owners: self.reexported_var_owners.share(),
+            exported_sub_values: self.exported_sub_values.share(),
+            exported_token_defs: self.exported_token_defs.share(),
+            unit_module_exported_subs: self.unit_module_exported_subs.share(),
+            module_export_hooks: self.module_export_hooks.share(),
+            module_owned_exports: self.module_owned_exports.share(),
+            module_owned_types: self.module_owned_types.share(),
+            unit_private_routines: self.unit_private_routines.share(),
+            unit_private_names: self.unit_private_names.share(),
+            class_declaring_units: self.class_declaring_units.share(),
+            package_declaring_units: self.package_declaring_units.share(),
+            unit_export_namespaces: self.unit_export_namespaces.share(),
+            package_export_namespaces: self.package_export_namespaces.share(),
+            module_visibility: self.module_visibility.share(),
+            prelude_sub_names: self.prelude_sub_names.share(),
+            exporthow_declares: self.exporthow_declares.share(),
+            published_outer_packages: self.published_outer_packages.share(),
+        }
+    }
+}
+
+
 pub(crate) struct ModuleState {
     /// Operator sub names (infix:<..>, prefix:<..>, etc.) that have been
     /// imported into the current lexical scope via `use Module`. Used to
     /// preseed the parser when EVAL is called so that imported operators
     /// remain visible, but non-exported operators from loaded modules do not.
     pub(crate) imported_operator_names: std::sync::Arc<HashSet<String>>,
-    /// Per loaded module, the nested packages it publishes under their short
-    /// name, `(short, package)` (`package Gender { enum Gender ... }` in
-    /// `unit module Enums` publishes `Gender` = `Enums::Gender`, #13940).
-    /// Copied into every importer's `package_type_aliases`.
-    pub(crate) published_outer_packages: std::sync::Arc<HashMap<String, Vec<(String, String)>>>,
-    /// Per loaded module, the `EXPORTHOW` entries its source declares as
-    /// `(directive, declarator)` (`DECLARE`, `pokemon`), which
-    /// `CompUnit::Handle.export-how-package` publishes (#14173).
-    pub(crate) exporthow_declares: std::sync::Arc<HashMap<String, Vec<(String, String)>>>,
     /// The compilation units that imported an operator candidate family,
     /// keyed by operator name and then by the candidates' declaring unit. An
     /// operator candidate that a `use` imported is visible only to its
@@ -54,53 +353,6 @@ pub(crate) struct ModuleState {
     /// they would lose a family they had a perfectly good import of.
     pub(crate) unscoped_import_units:
         std::sync::Arc<HashMap<Symbol, HashMap<Symbol, HashSet<Symbol>>>>,
-    /// Package-less top-level routines a loaded compunit declared but did NOT
-    /// export, keyed by that compunit's unit symbol and then by routine name.
-    ///
-    /// Raku scopes `sub name {...}` at a compunit's top level lexically to that
-    /// compunit; mutsu registers it as a shared `GLOBAL::name` stash entry, so
-    /// it used to stay callable, bare, from whatever scope `use`d/`require`d
-    /// the module. `seclude_private_toplevel_routines` moves such a routine out
-    /// of the shared registry and in here once the load finishes, and
-    /// `Interpreter::unit_private_routine` hands it back only to code compiled
-    /// in the same unit (or in an `EVAL` nested inside it). See
-    /// `runtime/unit_private_routines.rs`.
-    pub(crate) unit_private_routines:
-        std::sync::Arc<HashMap<Symbol, HashMap<Symbol, Arc<FunctionDef>>>>,
-    /// Every name that appears in any `unit_private_routines` table. A cheap
-    /// negative test on the resolution hot path, and the signal that a name's
-    /// resolution is unit-dependent and therefore must bypass the name-keyed
-    /// resolution caches (which are not keyed by unit).
-    pub(crate) unit_private_names: std::sync::Arc<HashSet<Symbol>>,
-    /// The compilation unit that declared each user class. Attribute defaults
-    /// run later, while constructing an instance from an arbitrary caller, so
-    /// they need the same unit anchor as the class body to resolve compunit-
-    /// private routines. Method parameter defaults use this metadata before the
-    /// method's routine frame exists as well.
-    pub(crate) class_declaring_units: std::sync::Arc<HashMap<String, Symbol>>,
-    /// #7797: the compunit that declared each `use`/`need`/`require`d
-    /// top-level package, keyed by the first `::`-segment of the `use`
-    /// argument (or the module's own `unit module` name — the two normally
-    /// agree). A package NOT in this map has no known foreign declaring
-    /// compunit, so `Interpreter::qualified_name_visible_here` treats a
-    /// reference to it as permissive (same-compunit `package Foo { }`
-    /// blocks, and a script's own top-level `unit module`, never populate
-    /// this table, so they are never mistakenly gated).
-    pub(crate) package_declaring_units: std::sync::Arc<HashMap<String, Symbol>>,
-    /// Generated EXPORT stashes belong to their declaring compilation unit.
-    pub(crate) unit_export_namespaces: std::sync::Arc<HashSet<(Symbol, Symbol)>>,
-    /// Qualified export stashes of named packages, gated by module visibility.
-    pub(crate) package_export_namespaces: std::sync::Arc<HashSet<Symbol>>,
-    /// Which module declarations resolve where: the #7797 package grants and
-    /// ADR-11136's GLOBAL-merge provenance and merges
-    /// (`runtime::module_merge::ModuleVisibility`).
-    pub(crate) module_visibility: module_merge::ModuleVisibility,
-    /// Routines installed by a prelude spliced into a host compunit
-    /// (`PRELUDE_SUB_TRAIT`, e.g. NativeCall's `nativecast`/`nativesizeof`).
-    /// They deliberately live under `GLOBAL` for every compunit that uses them
-    /// and belong to no module's export map, so they are ambient rather than
-    /// compunit-private and are never secluded.
-    pub(crate) prelude_sub_names: std::sync::Arc<HashSet<Symbol>>,
     pub(crate) lib_paths: std::sync::Arc<Vec<String>>,
     /// Bundled-battery module search paths (`modules/<Dist>/lib` shipped
     /// alongside the binary). Searched *after* every `lib_paths` entry so the
@@ -158,95 +410,6 @@ pub(crate) struct ModuleState {
     /// import-scope pop dropped them (#11246).
     pub(crate) module_own_families:
         HashMap<String, crate::runtime::unit_multi_scope::OwnFamilies>,
-    pub(crate) loaded_modules: std::sync::Arc<HashSet<String>>,
-    /// The lexical pad `CompUnit::Handle.unit` answers for each loaded unit,
-    /// built on the first ask so every later ask returns the same `Hash` and
-    /// the same Pod objects (`at-unit($cu, '$=pod')[0] === $pod`).
-    pub(crate) loaded_unit_pads: HashMap<String, Value>,
-    /// Package-qualified routine keys a module load introduced (`M::helper`,
-    /// `M::EXPORT::ALL::foo`) — never the bare `GLOBAL::` import aliases, which
-    /// stay lexical to the importing scope.
-    ///
-    /// `loaded_modules` is never rolled back, so these must not be either: a
-    /// scope that restores the routine registry wholesale (a bare block, an
-    /// `EVAL`) would otherwise leave the module marked as loaded while its own
-    /// routines are gone, and a re-`use` — being a no-op — could not bring them
-    /// back. See `reinstate_module_functions`.
-    pub(crate) module_registered_functions: std::sync::Arc<HashSet<Symbol>>,
-    /// The package-qualified `proto sub` keys a module load introduced
-    /// (`M::it`): the proto twin of `module_registered_functions`, put back
-    /// by a scope restore that resets the proto tables wholesale (#13877).
-    pub(crate) module_registered_protos: std::sync::Arc<HashSet<Symbol>>,
-    /// Packages that received a routine import from a role's own deferred
-    /// `use`/`need` body statement (`run_role_deferred_use_stmt`). Consulted
-    /// by method dispatch (`vm_method_dispatch.rs`) as an extra reason to set
-    /// `current_package` to the receiver's class even when none of the
-    /// existing fast-path conditions (class-scoped subs, package lexicals, a
-    /// `::`-qualified owner name) apply — a FLAT (non-namespaced) role/class
-    /// name can still own package-qualified imported routines that
-    /// `bare_name_packages()` can only find by walking outward from itself
-    /// (#8646 shape 1).
-    pub(crate) packages_with_deferred_use_imports: std::sync::Arc<HashSet<Symbol>>,
-    /// The `GLOBAL::`-qualified keys of routines spliced in as a PRELUDE
-    /// (`PRELUDE_SUB_TRAIT` — mutsu's NativeCall helpers).
-    ///
-    /// `module_registered_functions` deliberately does not let its `GLOBAL::`
-    /// members be reinstated after an ordinary scope rollback, because a file
-    /// with no `unit module` runs its body at `current_package() == GLOBAL` and
-    /// its `sub foo is export` is then indistinguishable from an alias
-    /// installed *for the importing scope* (`{ require NoModule <&bar>; }` must
-    /// not leak `&bar`). A prelude routine carries no such ambiguity: it is
-    /// ambient compunit machinery, never an import alias, and every compunit
-    /// that needs one carries an identical copy of which only the first
-    /// registration wins. Dropping it on a rollback therefore left a module
-    /// loaded inside a routine call — `lives-ok { EVAL 'use M' }` — permanently
-    /// unable to resolve the helper its own body calls, since `loaded_modules`
-    /// still claimed it was loaded and the later real `use` short-circuited.
-    pub(crate) prelude_registered_functions: std::sync::Arc<HashSet<Symbol>>,
-    /// For each prelude key in `prelude_registered_functions`, the compilation
-    /// units the declaration was actually spliced into (`?FILE` at registration
-    /// time; `main_unit()` for the main script).
-    ///
-    /// The registration is process-global by design — a prelude routine has to
-    /// be callable by bare name from a method body running under any package
-    /// (see `NATIVECALL_SUB_PRELUDES`) — but its *visibility* is not: rakudo
-    /// exports these from `NativeCall.rakumod`, so a compunit that never
-    /// mentioned NativeCall must not see them. Without this, one module's
-    /// `use NativeCall` made `&nativecast` resolvable from every scope in the
-    /// process, including the script that merely `use`d that module two levels
-    /// up (GH #7612).
-    ///
-    /// A splice happens per compunit and is idempotent (the first registration
-    /// wins, later ones return `Unchanged`), so this set is what records the
-    /// later ones. `prelude_visible_here` reads it.
-    pub(crate) prelude_declaring_units: std::sync::Arc<HashMap<Symbol, HashSet<Symbol>>>,
-    /// The package-qualified globals (`Base::flag`, `$NativeLibs::config`) each
-    /// loaded module declared with `our`, keyed by module name.
-    ///
-    /// The routine-registry counterpart above cannot cover these: `our`
-    /// variables live in `env`, and every scope that restores `env` wholesale —
-    /// a sub call, a block, an `EVAL` — drops the ones a module load nested
-    /// inside it created. `loaded_modules` is never rolled back, so a later
-    /// `use` of that module is a no-op and could not bring them back. The
-    /// already-loaded path of `use_module_with_tags_inner` reinstates whatever
-    /// is missing from here instead.
-    pub(crate) module_package_globals: std::sync::Arc<HashMap<String, Vec<(Symbol, Value)>>>,
-    /// Repositories registered by name (`CompUnit::RepositoryRegistry.register-name`),
-    /// answered by `repository-for-name` ahead of the built-in names.
-    pub(crate) named_repositories: std::sync::Arc<HashMap<String, Value>>,
-    pub(crate) need_hidden_classes: std::sync::Arc<HashSet<String>>,
-    /// Per loaded module, the classes and roles registered while it loaded
-    /// (its own declarations plus those of the modules it pulled in). The
-    /// stash-hiding pass subtracts these, for every *other* module, to tell a
-    /// module's own declarations from its transitive dependencies'.
-    pub(crate) module_registered_types: std::sync::Arc<HashMap<String, HashSet<String>>>,
-    /// CompUnit::Repository::Installation state (`.loaded` units and the symbols
-    /// pulled in by `.need` but not yet merged into GLOBAL).
-    ///
-    /// Boxed: the whole `Interpreter` is moved by value into a `VM` that lives on
-    /// the stack (see `run_block_raw`), and nested module loads stack full copies,
-    /// so keeping rarely-used state off the inline struct preserves stack budget.
-    pub(crate) cur_repo: Box<CurRepoState>,
     /// Package names declared via `package X {}` during the current module
     /// loading chain. Saved/restored around each top-level `use_module_with_tags`
     /// call so it only contains packages from the current loading chain.
@@ -256,9 +419,6 @@ pub(crate) struct ModuleState {
     /// and the depths the executing mainline started at. See
     /// `runtime::toplevel_callable_ids` and `runtime::toplevel_package_symbols`.
     pub(crate) module_toplevel: toplevel_callable_ids::ModuleToplevel,
-    /// Maps module names to the set of packages declared during their loading.
-    /// Used to propagate package declarations when a module is re-used.
-    pub(crate) module_packages: std::sync::Arc<HashMap<String, HashSet<String>>>,
     pub(crate) module_load_stack: Vec<String>,
     /// The current distribution context ($?DISTRIBUTION).
     pub(crate) current_distribution: Option<Value>,
@@ -269,29 +429,6 @@ pub(crate) struct ModuleState {
     /// load and must not shadow the module being loaded. See
     /// `build_resources_for_package`.
     pub(crate) current_distribution_frame_floor: usize,
-    /// Maps package names to their distribution context.
-    /// Populated during module loading so OTF compilation can resolve $?DISTRIBUTION.
-    pub(crate) package_distributions: std::sync::Arc<ValueMap>,
-    /// The module's other file-scope bare names — `constant`s and sigilless
-    /// declarations its own routines close over — keyed the same way as
-    /// `package_type_aliases`, and lost for the same reason. Consulted by
-    /// `module_scope_lexical` as the LAST resort in bareword resolution, just
-    /// before the undeclared-bareword-as-`Str` fallback, so a live `env` binding
-    /// always wins. Distinct from `package_lexicals`, which is the *mutable*
-    /// package-block `my` store with its own writeback path; these are a module's
-    /// immutable file-scope terms. `NativeHelpers::Blob`'s `MoarVM::Guts::REPRs`
-    /// is the motivating case: `constant Offset` is read by the exported
-    /// `OBJECT_BODY` sub of the same module, and resolved to the string
-    /// `"Offset"` once the frame that loaded the module was gone.
-    ///
-    /// For a `unit` compunit's own `constant`s and enum values this is no longer
-    /// a fallback but the ONLY store: `load_module_inner` drops their `env`
-    /// binding at the end of the load, because the module body ran in the
-    /// caller's env and rakudo makes those names package symbols of the
-    /// compunit rather than names the importer sees bare (#7787). The value
-    /// stays here so the declaring module's own routines and methods still read
-    /// it; see `collect_unit_package_scope_names`.
-    pub(crate) module_scope_lexicals: std::sync::Arc<PackageLexicals>,
     /// Names the module currently being loaded imported from another module,
     /// accumulated by `import_module` and folded into `module_scope_lexicals`
     /// when the load finishes. The env diff `load_module` takes cannot see these:
@@ -323,69 +460,13 @@ pub(crate) struct ModuleState {
     /// `our`/class-body names, while the VM's env fallback must only redirect
     /// aliases imported from a nested module.
     pub(crate) module_imported_lexical_names: std::sync::Arc<PackageKeyed<bool>>,
-    /// The module name owning each loaded source file. Ordinary (non-`unit`)
-    /// module files register top-level routines under `GLOBAL`, but their
-    /// private file-scope names remain lexical to the module.
-    pub(crate) module_source_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
-    /// Compilation units declared by `unit module`/`unit class` files, keyed by
-    /// their compilation-unit symbol. A unit module body runs under GLOBAL, so
-    /// its routines need this metadata after the load has finished in order to
-    /// resolve the module's own imported aliases lexically.
-    pub(crate) unit_module_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
     /// The last answer of `Interpreter::lexical_package_for_frame`, valid while
     /// the unit-scope epoch is unchanged (#15048).
     pub(crate) lexical_package_memo: std::cell::Cell<Option<LexicalPackageMemo>>,
-    /// Declared unit package by requested module path. A module file may be
-    /// loaded as `A::B` while declaring `unit module A::C`.
-    pub(crate) module_declared_unit_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
-    /// The one top-level `package`/`module` block a module file declares under
-    /// a name other than the one it was loaded as (`package Cro::WebSocket::Message
-    /// { enum Opcode is export (...) }` in `Cro/WebSocket/Message/Opcode.rakumod`),
-    /// by requested module path. What the file exports lives under that package.
-    pub(crate) module_block_packages: std::sync::Arc<rustc_hash::FxHashMap<Symbol, Symbol>>,
-    /// Exported subroutine symbols by package and export tag.
-    pub(crate) exported_subs: std::sync::Arc<ExportTagTable>,
-    /// Exported variable/constant symbols by package and export tag.
-    pub(crate) exported_vars: std::sync::Arc<HashMap<String, HashMap<String, HashSet<String>>>>,
-    /// The `$`-scalars among [`Self::exported_vars`] (recorded without their
-    /// sigil), by package: an `EXPORT::` stash publishes them as `$name`.
-    pub(crate) exported_scalar_vars: std::sync::Arc<HashMap<String, HashSet<String>>>,
-    /// An exported variable/constant a module re-exports from another module
-    /// (`UNIT::EXPORT::{$tag} := Other::EXPORT::{$tag}`): `(module, name)` ->
-    /// the module that owns the value.
-    pub(crate) reexported_var_owners:
-        std::sync::Arc<HashMap<(String, String), String>>,
-    /// Trait-modified routine values (e.g. a sub with a custom `is` trait that
-    /// mixed a role into it) keyed by package and routine name. Captured at
-    /// `is export` registration time so `import` can restore the `&name` env
-    /// binding with the role mixed in, rather than just the plain FunctionDef.
-    pub(crate) exported_sub_values: std::sync::Arc<HashMap<String, ValueMap>>,
-    /// Regex bodies of `token`/`rule`/`regex` declarations marked `is export`,
-    /// keyed by the module being loaded and the declarator's name.
-    ///
-    /// A regex declarator does not live in `Registry::functions` like a sub —
-    /// it lives in `Registry::token_defs` (ADR-0009: no compiled body), and a
-    /// *lexical* one (`my token foo`) is dropped by the block-scope restore
-    /// when the module's own scope exits. So the defs are captured here at
-    /// registration time and re-installed under the importing package by
-    /// `import_module`, which is what makes both `&foo` and `<foo>` resolve in
-    /// the importer.
-    pub(crate) exported_token_defs: std::sync::Arc<ExportedTokenDefs>,
-    /// Mirrored export tables for modules declared with `unit module X`
-    /// when the actual runtime package registration used "GLOBAL".
-    /// Populated during `load_module` so that `import_module` can perform
-    /// tag validation and raise `X::Import::NoSuchTag` for bad tags.
-    pub(crate) unit_module_exported_subs: std::sync::Arc<ExportTagTable>,
     /// Stack of unit-module names currently being loaded; used by
     /// `register_exported_sub` to mirror GLOBAL registrations into
     /// `unit_module_exported_subs`.
     pub(crate) unit_module_loading_stack: Vec<String>,
-    /// The `EXPORT` hook routine(s) each loaded compunit declared, by module
-    /// name: what `CompUnit::Handle.export-sub` answers once the load is over
-    /// and the registry's `GLOBAL::EXPORT` has been handed back to the
-    /// enclosing compunit (#15371).
-    pub(crate) module_export_hooks:
-        std::sync::Arc<HashMap<String, Vec<std::sync::Arc<FunctionDef>>>>,
     /// The package a `use`/`need` must import INTO, when the statement is run
     /// by a body that is not a compunit mainline: a role's deferred body, or an
     /// `augment` body. Both re-point `current_package` at the declaring package
@@ -441,22 +522,6 @@ pub(crate) struct ModuleState {
     /// module's, so it runs against this env instead and its writes land here
     /// (#16968).
     pub(crate) export_hook_importer_envs: Vec<(usize, crate::env::Env)>,
-    /// Exports each module registered while it was the module currently being
-    /// loaded (attributed via `module_load_stack`), mapping module -> name ->
-    /// tags. Unlike `exported_subs["GLOBAL"]`, which pools every unit-module
-    /// export ever hoisted, this correctly attributes an export to the module
-    /// that declared it. The `use MOD` tag-filter consults this so it only
-    /// hides MOD's *own* exports and never a symbol MOD imported from a
-    /// transitively-`use`d module (which MOD's methods must still resolve).
-    pub(crate) module_owned_exports: std::sync::Arc<ExportTagTable>,
-    /// Qualified classes and roles declared by each module's own body. A
-    /// module without a `unit` declarator may still declare a type in an
-    /// unrelated package (for example `class Test::Handle`); that package is
-    /// visible to a direct importer, but declarations from the module's
-    /// dependencies are not. The load stack lets registration attribute the
-    /// type to the correct compunit while nested modules are loading.
-    pub(crate) module_owned_types:
-        std::sync::Arc<HashMap<String, runtime_module::ModuleOwnedTypes>>,
     /// When true, `is export` trait is ignored (used by `CompUnit::Repository.need`
     /// to load without importing; the `need` statement itself registers exports).
     pub(crate) suppress_exports: bool,
@@ -738,6 +803,10 @@ pub(crate) struct ModuleState {
     /// Populated at export-symbol installation and never removed, mirroring
     /// `export_amp_override_names`.
     pub(crate) export_term_override_names: std::collections::HashSet<Symbol>,
+    /// Load-time knowledge about the loaded compunits: which modules are
+    /// loaded, what each one exports and registered, and the per-unit
+    /// visibility tables (ADR-17216 slice 3; see [`ModuleWorld`]).
+    pub(crate) world: ModuleWorld,
 }
 
 /// One memoised `lexical_package_for_frame` answer: the question
@@ -755,20 +824,11 @@ pub(crate) struct LexicalPackageMemo {
 impl ModuleState {
     pub(crate) fn new() -> Self {
         Self {
+            world: ModuleWorld::default(),
             imported_operator_names: Default::default(),
-            published_outer_packages: Default::default(),
-            exporthow_declares: Default::default(),
             operator_import_units: Default::default(),
             unscoped_import_units: Default::default(),
             operator_import_gen: 0,
-            unit_private_routines: Default::default(),
-            unit_private_names: Default::default(),
-            class_declaring_units: Default::default(),
-            package_declaring_units: Default::default(),
-            unit_export_namespaces: Default::default(),
-            package_export_namespaces: Default::default(),
-            module_visibility: Default::default(),
-            prelude_sub_names: Default::default(),
             lib_paths: Default::default(),
             bundled_lib_paths: Interpreter::bundled_lib_paths_shared(),
             require_propagates_missing_module: false,
@@ -780,51 +840,22 @@ impl ModuleState {
             begin_block_scopes: HashMap::new(),
             module_export_defs: HashMap::new(),
             module_own_families: HashMap::new(),
-            loaded_modules: Default::default(),
-            loaded_unit_pads: HashMap::new(),
-            module_registered_functions: Default::default(),
-            module_registered_protos: Default::default(),
-            packages_with_deferred_use_imports: Default::default(),
-            prelude_registered_functions: Default::default(),
-            prelude_declaring_units: Default::default(),
-            module_package_globals: Default::default(),
-            named_repositories: Default::default(),
-            need_hidden_classes: Default::default(),
-            module_registered_types: Default::default(),
-            cur_repo: Box::new(CurRepoState::default()),
             chain_declared_packages: Default::default(),
             module_toplevel: Default::default(),
-            module_packages: Default::default(),
             module_load_stack: Vec::new(),
             current_distribution: None,
             current_distribution_frame_floor: 0,
-            package_distributions: Default::default(),
-            module_scope_lexicals: std::sync::Arc::new(PackageLexicals::default()),
             module_imported_names: Vec::new(),
             module_export_terms: Vec::new(),
             importer_export_terms: Vec::new(),
             module_unit_bound_imports: Vec::new(),
             module_imported_lexical_names: std::sync::Arc::new(PackageKeyed::default()),
-            module_source_packages: Default::default(),
-            unit_module_packages: Default::default(),
             lexical_package_memo: std::cell::Cell::new(None),
-            module_declared_unit_packages: Default::default(),
-            module_block_packages: Default::default(),
-            exported_subs: Default::default(),
-            exported_sub_values: Default::default(),
-            exported_token_defs: Default::default(),
-            exported_vars: Default::default(),
-            exported_scalar_vars: Default::default(),
-            reexported_var_owners: Default::default(),
-            unit_module_exported_subs: Default::default(),
             unit_module_loading_stack: Vec::new(),
-            module_export_hooks: Default::default(),
             import_target_package: None,
             module_loading_unit_stack: Vec::new(),
             module_scope_runs: 0,
             export_hook_importer_envs: Vec::new(),
-            module_owned_exports: Default::default(),
-            module_owned_types: Default::default(),
             suppress_exports: false,
             loading_without_import: false,
             import_scope_stack: Vec::new(),
@@ -880,20 +911,11 @@ impl ModuleState {
     /// and handoff state of an in-flight `use` start empty.
     pub(crate) fn fork_for_thread(&self) -> Self {
         Self {
+            world: self.world.share(),
             imported_operator_names: self.imported_operator_names.clone(),
-            published_outer_packages: self.published_outer_packages.clone(),
-            exporthow_declares: self.exporthow_declares.clone(),
             operator_import_units: self.operator_import_units.clone(),
             unscoped_import_units: self.unscoped_import_units.clone(),
             operator_import_gen: self.operator_import_gen,
-            unit_private_routines: self.unit_private_routines.clone(),
-            unit_private_names: self.unit_private_names.clone(),
-            class_declaring_units: self.class_declaring_units.clone(),
-            package_declaring_units: self.package_declaring_units.clone(),
-            unit_export_namespaces: self.unit_export_namespaces.clone(),
-            package_export_namespaces: self.package_export_namespaces.clone(),
-            module_visibility: self.module_visibility.clone(),
-            prelude_sub_names: self.prelude_sub_names.clone(),
             lib_paths: self.lib_paths.clone(),
             bundled_lib_paths: self.bundled_lib_paths.clone(),
             require_propagates_missing_module: false,
@@ -905,51 +927,22 @@ impl ModuleState {
             begin_block_scopes: HashMap::new(),
             module_export_defs: HashMap::new(),
             module_own_families: HashMap::new(),
-            loaded_modules: self.loaded_modules.clone(),
-            loaded_unit_pads: self.loaded_unit_pads.clone(),
-            module_registered_functions: self.module_registered_functions.clone(),
-            module_registered_protos: self.module_registered_protos.clone(),
-            packages_with_deferred_use_imports: self.packages_with_deferred_use_imports.clone(),
-            prelude_registered_functions: self.prelude_registered_functions.clone(),
-            prelude_declaring_units: self.prelude_declaring_units.clone(),
-            module_package_globals: self.module_package_globals.clone(),
-            named_repositories: self.named_repositories.clone(),
-            need_hidden_classes: self.need_hidden_classes.clone(),
-            module_registered_types: self.module_registered_types.clone(),
-            cur_repo: self.cur_repo.clone(),
             chain_declared_packages: self.chain_declared_packages.clone(),
             module_toplevel: self.module_toplevel.for_thread(),
-            module_packages: self.module_packages.clone(),
             module_load_stack: Vec::new(),
             current_distribution: self.current_distribution.clone(),
             current_distribution_frame_floor: 0,
-            package_distributions: self.package_distributions.clone(),
-            module_scope_lexicals: self.module_scope_lexicals.clone(),
             module_imported_names: Vec::new(),
             module_export_terms: Vec::new(),
             importer_export_terms: Vec::new(),
             module_unit_bound_imports: Vec::new(),
             module_imported_lexical_names: self.module_imported_lexical_names.clone(),
-            module_source_packages: self.module_source_packages.clone(),
-            unit_module_packages: self.unit_module_packages.clone(),
             lexical_package_memo: std::cell::Cell::new(None),
-            module_declared_unit_packages: self.module_declared_unit_packages.clone(),
-            module_block_packages: self.module_block_packages.clone(),
-            exported_subs: self.exported_subs.clone(),
-            exported_vars: self.exported_vars.clone(),
-            exported_scalar_vars: self.exported_scalar_vars.clone(),
-            reexported_var_owners: self.reexported_var_owners.clone(),
-            exported_sub_values: self.exported_sub_values.clone(),
-            exported_token_defs: self.exported_token_defs.clone(),
-            unit_module_exported_subs: self.unit_module_exported_subs.clone(),
             unit_module_loading_stack: Vec::new(),
-            module_export_hooks: self.module_export_hooks.clone(),
             import_target_package: None,
             module_loading_unit_stack: Vec::new(),
             module_scope_runs: 0,
             export_hook_importer_envs: Vec::new(),
-            module_owned_exports: self.module_owned_exports.clone(),
-            module_owned_types: self.module_owned_types.clone(),
             suppress_exports: false,
             loading_without_import: false,
             import_scope_stack: Vec::new(),

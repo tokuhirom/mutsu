@@ -168,12 +168,13 @@ pub(crate) struct SigInfo {
     /// assembled from parts (`Signature.new`, a synthesized native one).
     #[serde(default, with = "param_defs_serde")]
     pub(crate) param_defs: Option<std::sync::Arc<Vec<ParamDef>>>,
-    /// A routine with this signature and an empty body, when a parameter
-    /// carries code that reads names of the scope the signature is written
-    /// in (a `where` clause, a computed default; see [`params_carry_code`]).
-    /// `Signature.ACCEPTS(Capture)` binds the capture by calling it, so that
-    /// code runs in the routine's own scope -- as rakudo's trial bind does --
-    /// rather than in the scope of whoever smartmatches (#18570).
+    /// The routine this signature belongs to, when a parameter carries code
+    /// that reads names of the scope the signature is written in (a `where`
+    /// clause, a computed default; see [`params_carry_code`]).
+    /// `Signature.ACCEPTS(Capture)` binds the capture in that routine's own
+    /// scope -- as rakudo's trial bind does -- rather than in the scope of
+    /// whoever smartmatches (#18570, #18661). The signature is one object per
+    /// declaration, so this is the closure it was last read from (#18728).
     #[serde(skip)]
     pub(crate) binder: Option<Value>,
 }
@@ -307,6 +308,23 @@ fn register_sig_info(id: u64, info: SigInfo) {
     let mut guard = SIG_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
     let map = guard.get_or_insert_with(HashMap::new);
     map.insert(id, info);
+}
+
+/// Point the registered signature `id` at `binder`, the closure whose scope
+/// its `ACCEPTS` binds in (#18661). A routine's signature is one object per
+/// declaration, as rakudo's is; rakudo's signature reads the scope of the
+/// closure cloned last, mutsu's the one whose `.signature` was read last.
+// Cost: O(1) under the registry lock.
+pub(crate) fn set_sig_binder(id: u64, binder: Value) {
+    let old = {
+        let mut guard = SIG_REGISTRY.lock().unwrap_or_else(|e| e.into_inner());
+        guard
+            .as_mut()
+            .and_then(|map| map.get_mut(&id))
+            .and_then(|info| info.binder.replace(binder))
+    };
+    // Dropped outside the lock: a Value may run code when it goes.
+    drop(old);
 }
 
 /// Look up SigInfo by Instance ID.
@@ -1746,7 +1764,9 @@ fn render_param(p: &SigParam) -> String {
         if !p.name.is_empty() {
             result.push_str(&p.name);
         }
-        for t in &p.traits {
+        // Raw by construction: rakudo renders no explicit `is raw` on it
+        // (`:(\x is raw).raku` is `:(\x)`).
+        for t in p.traits.iter().filter(|t| *t != "raw") {
             result.push_str(" is ");
             result.push_str(t);
         }
@@ -1831,8 +1851,10 @@ fn render_param(p: &SigParam) -> String {
         result.push_str(" where { ... }");
     }
 
-    // Literal default values render as `= 5`; complex default expressions
-    // are not reconstructed (mutsu has no full deparser).
+    // Rakudo renders a literal default as its value (`= 5`), a type
+    // object as its name (`= Int`) and any other default, which runs as
+    // code, as `= Code.new`. Leaving the default out made the rendering
+    // rebuild a required parameter (`:(@a = [2]).raku.EVAL`).
     if let Some(ref de) = p.default_expr
         && let Expr::Literal(lit) = de.as_ref()
     {
@@ -1844,6 +1866,13 @@ fn render_param(p: &SigParam) -> String {
     {
         // A bare block's synthetic topic parameter defaults to the outer topic.
         result.push_str(" = OUTER::<$_>");
+    } else if let Some(Expr::BareWord(name)) = p.default_expr.as_deref()
+        && name.starts_with(|c: char| c.is_ascii_uppercase())
+    {
+        result.push_str(" = ");
+        result.push_str(name);
+    } else if p.default_expr.is_some() {
+        result.push_str(" = Code.new");
     }
 
     result

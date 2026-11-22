@@ -57,17 +57,27 @@ turns out to be a quick fix becomes `todo:ticket`, and a `todo:perf` finding
 that profiling reveals to be a wrong answer rather than a slow one moves out of
 `todo:perf`.
 
-### `ecosystem` — the issue advances the zef ecosystem
+### `ecosystem` — the issue blocks keeping the ecosystem at 100%
 
 A third, **independent** label (not a kind, not a tier): put `ecosystem` *in addition to* the
-kind/tier labels on every issue whose fix moves a zef distribution toward green — a missing
-builtin or parse feature a dist's own tests hit, a cluster from the ecosystem ledger, a finding
-filed while working a dist with `ecosystem-dist-fix` or `ecosystem-dist-queue`. The test is
-"would closing this make a dist in `ecosystem/` pass more files?", not "did it come up while in an
-ecosystem session". It is how the ecosystem work is listed (`label:ecosystem`) and prioritised
-across the kind queues; it never replaces `todo:*`, and it is unrelated to the `ecosystem:lock`
-label, which marks the lock board and nothing else. The filer sets it (no triage needed); anyone
-may add it later to an older issue that turns out to qualify.
+kind/tier labels on an issue **only when it blocks keeping the zef ecosystem at 100%** (user
+decision, 2026-11-22). That means a distribution's own test file in `ecosystem/` **fails, hangs,
+times out (the sweep's 240 s per-file limit, or the test's own time assertion) or is flaky** under
+mutsu where raku passes it. The test is "does a dist file differ from raku because of this?", not
+"did it come up while in an ecosystem session" and not "does it make a dist faster".
+
+- **Do not** put it on an issue that only makes a distribution slower while its files still pass
+  within the limits; that is a plain `todo:perf` issue, tiered by its own merit.
+- **Do not** put it on a finding filed while working a dist that blocks no file (a bug the dist
+  happens to avoid, a gap found by reading its code).
+- Such an issue is **`tier:S`** (see the tier table). The two labels move together: when the
+  blocking file starts passing for another reason, or a re-measure shows it only slow, drop
+  `ecosystem` and re-tier; when a slow-but-passing issue starts timing out, add both.
+
+It is how the ecosystem blockers are listed (`label:ecosystem`); it never replaces `todo:*`, and it
+is unrelated to the `ecosystem:lock` label, which marks the lock board and nothing else. The filer
+sets it when the criterion holds (no triage needed); anyone may add or remove it as the state of
+the blocking file changes.
 
 ### `roast` — the issue moves a roast test
 
@@ -126,8 +136,8 @@ much work it is.
 
 | Label | Meaning |
 | --- | --- |
-| `tier:S` | Soundness. Silent data loss, hangs, wrong answers with no diagnostic. |
-| `tier:B` | Broad correctness — a whole language construct, or a dist-blocking battery gap. |
+| `tier:S` | Soundness. Silent data loss, hangs, wrong answers with no diagnostic. Also every `ecosystem` issue (a distribution's own test file fails, hangs, times out or is flaky against raku), and every `bench-history.tsv` row where mutsu is slower than rakudo (user decisions, 2026-11-22). |
+| `tier:B` | Broad correctness — a whole language construct, or a large slowdown that still passes. |
 | `tier:N` | Narrow correctness, diagnostics, permissiveness. |
 | `tier:icebox` | Not in the queue. **Why** it is not is a separate label — see the icebox-reason axis below, which every `tier:icebox` issue also carries. |
 

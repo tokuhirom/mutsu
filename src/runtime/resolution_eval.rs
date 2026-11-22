@@ -373,7 +373,7 @@ impl Interpreter {
         // Resolve distribution context for $?DISTRIBUTION
         compiler.current_distribution = self.module.current_distribution.clone().or_else(|| {
             self.module
-                .package_distributions
+                .world.package_distributions.read()
                 .get(&self.current_package())
                 .cloned()
         });
@@ -619,7 +619,7 @@ impl Interpreter {
         };
         let distribution = self.module.current_distribution.clone().or_else(|| {
             self.module
-                .package_distributions
+                .world.package_distributions.read()
                 .get(&self.current_package())
                 .cloned()
         });

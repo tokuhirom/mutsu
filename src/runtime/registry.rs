@@ -57,6 +57,20 @@ pub(crate) type RoleTable = CowTable<ShardedMap<String, CowTable<RoleDef>>>;
 /// Canonical method-table key. Both built-in handlers and user candidates will
 /// occupy this namespace; the latter still live in `ClassDef::methods` during
 /// the next migration step.
+/// A role-body `sub` as its traits left it at the first registration
+/// (`Registry::role_body_traited_subs`, #18097).
+#[derive(Clone)]
+pub(crate) struct RoleBodyTraitedSub {
+    /// The routine's registry def after the traits ran: a trait that wrapped
+    /// it or rebound its `$!do` did so to the routine this def builds.
+    pub(crate) def: Option<Arc<FunctionDef>>,
+    /// The mixin a trait bound under `&name` (a role it mixed in), if any.
+    pub(crate) mixin: Option<Value>,
+    /// The registration callable id the traits saw: a wrap chain is kept
+    /// only while the routine's id is the one it was wrapped under.
+    pub(crate) callable_id: Option<i64>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) struct MethodEntryKey {
     pub(crate) owner: Symbol,
@@ -719,6 +733,11 @@ pub(crate) struct Registry {
     /// The value is the env bindings the first evaluation left (the constant's
     /// own name and its term key), put back for the later compositions.
     pub(crate) role_evaluated_constants: Sharded<(String, String), Vec<(String, Value)>>,
+    /// What a role-body `sub`'s traits left at its first registration:
+    /// (role, `name\0<body identity>`) -> the traited routine. Later
+    /// compositions re-register the sub without re-running its traits and
+    /// take it (#18097, `role_body_sub_traits.rs`).
+    pub(crate) role_body_traited_subs: Sharded<(String, String), RoleBodyTraitedSub>,
 
     // ----- roles (PR-A slice 4) -----
     /// User/builtin role definitions: role name -> [`RoleDef`] (methods,

@@ -3,6 +3,27 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
+        "RakuAST::RuleDeclaration",
+        &[
+            "RakuAST::RuleDeclaration",
+            "RakuAST::RegexDeclaration",
+            "RakuAST::Methodish",
+            "RakuAST::Routine",
+            "RakuAST::Term",
+            "RakuAST::Termish",
+            "RakuAST::Expression",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::SemiList",
+        &[
+            "RakuAST::SemiList",
+            "RakuAST::StatementList",
+            "RakuAST::Node",
+        ],
+    ),
+    (
         "RakuAST::Signature",
         &[
             "RakuAST::Signature",
@@ -142,23 +163,6 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         &[
             "RakuAST::Statement::Loop::Until",
             "RakuAST::Statement::Loop",
-            "RakuAST::Statement",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Statement::Loop::While",
-        &[
-            "RakuAST::Statement::Loop::While",
-            "RakuAST::Statement::Loop",
-            "RakuAST::Statement",
-            "RakuAST::Node",
-        ],
-    ),
-    (
-        "RakuAST::Statement::Need",
-        &[
-            "RakuAST::Statement::Need",
             "RakuAST::Statement",
             "RakuAST::Node",
         ],

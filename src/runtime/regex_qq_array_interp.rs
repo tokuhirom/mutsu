@@ -67,7 +67,7 @@ impl Interpreter {
     /// Does a qq body interpolate only compile-time-constant scalars
     /// (`$name`), which Rakudo inlines into the declarative prefix?
     // Cost: O(n), n = the body's length.
-    fn qq_body_is_constant(&self, body: &str) -> bool {
+    pub(crate) fn qq_body_is_constant(&self, body: &str) -> bool {
         let chars: Vec<char> = body.chars().collect();
         let mut names = Vec::new();
         let mut i = 0;
@@ -294,17 +294,30 @@ impl Interpreter {
             "{}{opener}{body}{closer}",
             if ignore_case { ":i " } else { "" }
         );
-        crate::runtime::regex_parse::PARSE_CONSULTED_AMBIENT_STATE.with(|f| f.set(true));
-        super::regex_value_keyed_parse::note_unkeyed_read();
         let prev = REGEX_QQ_FALLBACK_PARSE.with(|f| f.replace(true));
         let fallback =
             self.parse_regex_uncached(&text, crate::runtime::regex_parse::RegexParseMode::Match);
         REGEX_QQ_FALLBACK_PARSE.with(|f| f.set(prev));
+        // Noted after the fallback parse: a nested parse inside it consumes
+        // the flag, and the enclosing pattern must still stay out of the
+        // text-keyed cache (its fallback read `env`).
+        crate::runtime::regex_parse::PARSE_CONSULTED_AMBIENT_STATE.with(|f| f.set(true));
+        super::regex_value_keyed_parse::note_unkeyed_read();
         Some(RegexAtom::QqInterp {
             key: MetaNs::RegexQq.key(Symbol::intern(body)),
             fallback: Box::new(fallback?),
         })
     }
+}
+
+/// Whether a `"..."` atom's fallback is being parsed (see
+/// [`Interpreter::regex_qq_interp_atom`]): such a parse reads the atom as
+/// text, so its trees are not the pattern's and must not enter the
+/// text-keyed parse caches, where the enclosing pattern's own lookup (the
+/// same text when the atom is the whole pattern) would find them.
+// Cost: O(1).
+pub(crate) fn in_regex_qq_fallback_parse() -> bool {
+    REGEX_QQ_FALLBACK_PARSE.with(Cell::get)
 }
 
 thread_local! {

@@ -254,6 +254,14 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("traits", Absent::EmptyList),
             ("body", Absent::Required),
         ],
+        MethodInitializer => &[
+            ("signature", Absent::EmptyNode(Signature)),
+            ("body", Absent::Required),
+        ],
+        MethodClassAccessor => &[
+            ("name", Absent::TypeObject("RakuAST::Name")),
+            ("body", Absent::Required),
+        ],
         Signature => &[
             ("parameters", Absent::EmptyList),
             ("returns", Absent::TypeObject("RakuAST::Node")),
@@ -349,6 +357,7 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
         VarDeclarationSignature => &[
             ("signature", Absent::Required),
             ("initializer", Absent::TypeObject("RakuAST::Initializer")),
+            ("traits", Absent::EmptyList),
         ],
         // A subset without a `where` clause answers an undefined expression.
         // `traits` holds the `of` and `is` traits; a bare `subset A where ...` has none.

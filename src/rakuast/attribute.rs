@@ -68,6 +68,8 @@ pub(super) struct AttributeTraits {
     pub(super) handles_terms: Vec<Expr>,
     /// The specs those terms name (`parser::handle_specs_from_term`).
     pub(super) handles: Vec<crate::ast::HandleSpec>,
+    /// The type of `of TYPE`.
+    pub(super) of_type: Option<String>,
 }
 
 fn trait_is(name: &str, argument: Option<RakuAstNode>) -> Value {
@@ -80,21 +82,6 @@ fn trait_is(name: &str, argument: Option<RakuAstNode>) -> Value {
         class: RakuAstClass::TraitIs,
         fields,
     }))
-}
-
-/// `is NAME`, which is a container type when `NAME` names one at parse time.
-fn trait_is_name_or_type(names: &NameScope, name: &str) -> Value {
-    if super::decl_traits::is_container_type(names, name) {
-        return Value::rakuast(Box::new(RakuAstNode {
-            origin: Default::default(),
-            class: RakuAstClass::TraitIs,
-            fields: vec![node_field(
-                Some("type"),
-                super::bareword::simple_type_node(name),
-            )],
-        }));
-    }
-    trait_is(name, None)
 }
 
 impl AttributeTraits {
@@ -165,7 +152,9 @@ impl AttributeTraits {
                         .ok_or_else(|| unsupported("attribute trait list out of step"))?;
                     match kind.as_str() {
                         "is" => match argument {
-                            None => trait_is_name_or_type(names, name),
+                            None => super::decl_traits::trait_is_name_or_type(names, name, |n| {
+                                trait_is(n, None)
+                            }),
                             Some(argument) => {
                                 trait_is(name, Some(trait_argument(names, argument)?))
                             }
@@ -201,6 +190,10 @@ impl AttributeTraits {
                         _ => return Err(unsupported("attribute with an unknown trait kind")),
                     }
                 }
+                AttrTrait::Of => match self.of_type.as_deref() {
+                    Some(of_type) => super::decl_traits::of_trait(names, of_type)?,
+                    None => return Err(unsupported("attribute `of` without its type")),
+                },
                 AttrTrait::Handles => {
                     let term = handles
                         .next()
@@ -352,6 +345,11 @@ pub(super) fn lower_traits(
                 traits.order.push(AttrTrait::Custom);
             }
             RakuAstClass::TraitIs => lower_trait_is(names, node, t, is_aggregate, &mut traits)?,
+            RakuAstClass::TraitOf => {
+                let of = named_child_or_positional(t)?;
+                traits.of_type = Some(super::lower::simple_type_name(names, node, of)?);
+                traits.order.push(AttrTrait::Of);
+            }
             _ => return Err(refuse()),
         }
     }

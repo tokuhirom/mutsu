@@ -543,7 +543,7 @@ impl Trace for super::ContainerCell {
     /// a cell that is busy simply takes the conservative answer.
     // Cost: O(1).
     fn currently_acyclic(&self) -> bool {
-        let Ok(inner) = self.value.try_lock() else {
+        let Ok(inner) = self.slot.try_lock() else {
             return false;
         };
         if !super::nanbox::word_is_refcount_free(inner.nanbox_bits()) {
@@ -569,6 +569,17 @@ impl Trace for super::ContainerCell {
 }
 
 impl Trace for ArrayData {
+    /// ADR-18637 S1: a write is about to happen, so a snapshot of this node
+    /// validated against `snapshot_version` must stop being served. Unset
+    /// (no snapshot was ever published of this node) costs one load.
+    // Cost: O(1).
+    #[inline]
+    fn note_mutable_access(&self) {
+        if let Some(version) = self.snapshot_version.get() {
+            version.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        }
+    }
+
     fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
         for v in &self.items {
             v.gc_trace(visit);

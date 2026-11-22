@@ -76,7 +76,14 @@ pub(super) fn view_node(
             "attribute with a `handles` spelling not kept as a term",
         ));
     }
-    let type_name = smiley_type.as_deref().or(type_constraint.as_deref());
+    // `has @.a of Int`: the type is the `Trait::Of`, not the declaration's.
+    let of_type = trait_order
+        .contains(&crate::ast::attr_trait::AttrTrait::Of)
+        .then(|| type_constraint.clone());
+    let type_name = match of_type {
+        Some(_) => None,
+        None => smiley_type.as_deref().or(type_constraint.as_deref()),
+    };
     let twigil = match (*is_alias, *is_public) {
         (true, _) => None,
         (false, true) => Some("."),
@@ -100,19 +107,27 @@ pub(super) fn view_node(
         explicit_default.map(|value| {
             if *default_is_bind {
                 Initializer::Bind(value)
+            } else if let Some(call) = call_assign(value) {
+                // `has R $.r .= new(...)`: an `Initializer::CallAssign`.
+                Initializer::CallAssignMarker(call)
             } else {
                 Initializer::Assign(value)
             }
         }),
         scope,
         (type_name, twigil),
-        if *default_is_bind {
+        // A class attribute (`my $.q`, `our $.q`) has no `WillBuild`: its
+        // accessor is a `Method::ClassAccessor` (`super::method_initializer`).
+        if *default_is_bind || *is_our || *is_my {
             None
         } else {
             explicit_default
         },
         false,
     )?;
+    if (*is_our || *is_my) && twigil == Some(".") {
+        decl.origin.3 = names.enclosing_package().map(String::into_boxed_str);
+    }
     if let Some(key) = hash_key_type {
         if let Some(expression) = hash_key_type_expr {
             super::keyed_hash::insert_subset_shape(names, &mut decl, expression, key)?;
@@ -135,6 +150,7 @@ pub(super) fn view_node(
             unknown_traits: unknown_traits.clone(),
             handles_terms: handles_terms.clone(),
             handles: handles.clone(),
+            of_type: of_type.flatten(),
         },
     )?;
     if let Some(constraint) = where_constraint {
@@ -142,6 +158,22 @@ pub(super) fn view_node(
             .push(node_field(Some("where"), view_expr(names, constraint)?));
     }
     Ok(Some(statement_expression(decl)))
+}
+
+/// The method call of an attribute default written `.= method(...)`.
+// Cost: O(1).
+fn call_assign(default: &crate::ast::Expr) -> Option<&crate::ast::Expr> {
+    match default {
+        crate::ast::Expr::Spelled(spelled)
+            if matches!(
+                spelled.spelling,
+                crate::ast::spelled::Spelling::AttributeCallAssign
+            ) =>
+        {
+            Some(&spelled.expr)
+        }
+        _ => None,
+    }
 }
 
 /// `has [Type] $.x [is rw] [= EXPR]` -> `Stmt::HasDecl`. The view renders
@@ -157,14 +189,15 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
         None => None,
         Some(f) => {
             let init = child_node(&f.value)?;
-            if !matches!(
-                init.class,
-                RakuAstClass::InitializerAssign | RakuAstClass::InitializerBind
-            ) {
-                return Err(unsupported(node));
+            match init.class {
+                RakuAstClass::InitializerAssign | RakuAstClass::InitializerBind => {
+                    default_is_bind = init.class == RakuAstClass::InitializerBind;
+                    Some(lower_expr(names, named_child_or_positional(init)?)?)
+                }
+                // `has R $.r .= new(...)`: the call on the declared type.
+                RakuAstClass::InitializerCallAssign => Some(lower_call_assign(names, node, init)?),
+                _ => return Err(unsupported(node)),
             }
-            default_is_bind = init.class == RakuAstClass::InitializerBind;
-            Some(lower_expr(names, named_child_or_positional(init)?)?)
         }
     };
     let where_constraint = match node.fields.iter().find(|f| f.name == Some("where")) {
@@ -213,7 +246,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
     };
     let type_name = match node.fields.iter().find(|f| f.name == Some("type")) {
         Some(f) => Some(simple_type_name(names, node, child_node(&f.value)?)?),
-        None => None,
+        None => traits.of_type.clone(),
     };
     // `Int:D` comes back as the parser's base type plus its smiley.
     let (type_constraint, type_smiley) = match type_name.as_deref() {
@@ -310,8 +343,9 @@ pub(super) fn initializer_value(same: bool, field: Option<&RakuAstField>) -> Opt
 /// Whether an attribute default `node` is one Rakudo keeps as written: a
 /// number, a quote with nothing interpolated (a word quote too), a
 /// colonpair or a name (`True`, `pi`). Such a default has an origin and an
-/// implicit `Trait::WillBuild` carrying it; `1 + 2`, `{ ... }` or `-1` has
-/// neither (measured on rakudo 2026.11).
+/// implicit `Trait::WillBuild` carrying it; `1 + 2`, `{ ... }` or `-1` has a
+/// `WillBuild` carrying the `Method::Initializer` thunk that computes it
+/// (`super::method_initializer`; measured on rakudo 2026.11).
 // Cost: O(s), s = segments of a quoted default.
 pub(super) fn literal_default(node: &RakuAstNode) -> bool {
     match node.class {
@@ -335,20 +369,55 @@ pub(super) fn literal_default(node: &RakuAstNode) -> bool {
     }
 }
 
-/// The `traits` field of an attribute declaration whose default is `value`:
-/// its `Trait::WillBuild`.
+/// The `traits` field of an attribute declaration whose default is `value`
+/// (written as `init`): its `Trait::WillBuild`, which holds a literal default
+/// itself and any other through its `Method::Initializer` thunk.
 // Cost: O(1).
-pub(super) fn will_build_field(value: Value) -> RakuAstField {
+pub(super) fn will_build_field(
+    value: Value,
+    init: Option<super::view::Initializer<'_>>,
+) -> RakuAstField {
+    let call = matches!(init, Some(super::view::Initializer::CallAssignMarker(_)));
     let trait_node = RakuAstNode {
         origin: Default::default(),
         class: RakuAstClass::TraitWillBuild,
         fields: vec![RakuAstField {
             name: None,
-            value: RakuAstFieldValue::Node(value),
+            value: RakuAstFieldValue::Node(super::method_initializer::will_build_value(
+                value, call,
+            )),
         }],
     };
     RakuAstField {
         name: Some("traits"),
         value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(trait_node))]),
     }
+}
+
+/// The default of `node`, an attribute declared `.= method(...)` (`init` its
+/// `Initializer::CallAssign`): the method called on the declared type, as
+/// the parser builds it (the attribute's own name when untyped).
+// Cost: O(n), n = size of the call.
+fn lower_call_assign(
+    names: &NameScope,
+    node: &RakuAstNode,
+    init: &RakuAstNode,
+) -> Result<crate::ast::Expr, RuntimeError> {
+    let (method, callee, args) =
+        super::dynamic_method::call_assign_initializer(names, named_child_or_positional(init)?)?;
+    if callee.is_some() {
+        return Err(unsupported(node));
+    }
+    let invocant = match named_child(node, "type") {
+        Ok(type_node) => simple_type_name(names, node, type_node)?,
+        Err(_) => return Err(unsupported(node)),
+    };
+    Ok(crate::ast::Expr::MethodCall {
+        target: Box::new(crate::parser::call_assign_invocant(invocant)),
+        name: crate::symbol::Symbol::intern(&method),
+        args,
+        modifier: None,
+        quoted: false,
+        sugar: false,
+    })
 }

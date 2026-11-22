@@ -217,6 +217,10 @@ impl Interpreter {
     /// view is the lazy list's still-empty cache (`.elems` 0, `.list` `()`).
     // Cost: O(1) plus the role-method probe, r = composed roles.
     pub(crate) fn mixin_lazy_inner(&self, target: &Value, method: &str) -> Option<Value> {
+        // Tag-probed: `view()` of a lazy Match receiver would materialize it.
+        if !target.is_mixin_value() {
+            return None;
+        }
         let ValueView::Mixin(inner, _) = target.view() else {
             return None;
         };

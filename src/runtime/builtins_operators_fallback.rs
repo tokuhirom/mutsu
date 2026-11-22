@@ -939,7 +939,7 @@ impl Interpreter {
         // a frame-env entry (ADR-12529 phase 1).
         let callable_from_code_sigil = self.env.get(&code_sigil_key).cloned().or_else(|| {
             crate::qualified::is_qualified_str(name)
-                .then(|| self.toplevel_package_symbol(&code_sigil_key).cloned())
+                .then(|| self.toplevel_package_symbol(&code_sigil_key))
                 .flatten()
         });
         let callable_from_plain = self.env.get(name).cloned();

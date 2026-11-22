@@ -442,7 +442,8 @@ impl Interpreter {
             // through the ordinary Code `.raku` dispatch.
             // `HyperSeq.configuration` has no class declaration to read its
             // public attributes from: its two fields are the whole object.
-            "HyperConfiguration" if method == "raku" => {
+            // `Mu.gist` of an instance renders the same way (#18709).
+            "HyperConfiguration" if matches!(method, "raku" | "gist") => {
                 let attrs = attributes.as_map();
                 let fields: Vec<String> = ["batch", "degree"]
                     .iter()
@@ -1095,6 +1096,12 @@ impl Interpreter {
                     {
                         let msg = msg.to_string_value();
                         return Ok(with_backtrace(&target, msg));
+                    } else if let Some(text) =
+                        self.inherited_builtin_exception_message(&cn, &attributes.as_map())
+                    {
+                        // A user subclass of a built-in `X::` class inherits
+                        // its `message` (#18730).
+                        return Ok(with_backtrace(&target, text));
                     } else if method == "message" {
                         // A class that reaches Exception through a role still
                         // has Exception.message even when it has no stored

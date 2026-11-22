@@ -761,7 +761,7 @@ impl Interpreter {
             let mut explicit_return: Option<Value> = None;
             let mut fail_bypass = false;
             let mut explicit_from_method = false;
-            let polls = crate::vm::vm_poll::DispatchPolls::current();
+            let polls = crate::vm::vm_poll::DispatchPolls::enter(&cf.code);
             let frame_caller_code = self.current_code;
             while ip < cf.code.ops.len() {
                 // JIT entry (ADR-0004 J2): same hook as vm_call_light.rs — at body
@@ -769,7 +769,8 @@ impl Interpreter {
                 // Tier A-compilable; the native outcome threads through the same
                 // match arms below.
                 let step = if ip == 0
-                    && let Some(r) = crate::vm::vm_jit::try_enter(self, &cf.code, compiled_fns)
+                    && let Some(r) =
+                        crate::vm::vm_jit::try_enter(self, &cf.code, compiled_fns, polls)
                 {
                     ip = cf.code.ops.len();
                     r

@@ -177,7 +177,15 @@ impl Interpreter {
             let resolved_role = if core_grammar_parent || mixin_base_pun {
                 None
             } else {
-                self.resolve_role_candidate_with_args(&resolved_parent_name, pre_args.as_deref())?
+                if Self::plain_role_pun_source(cx.name) == Some(parent.as_str()) {
+                    // A pun composes exactly its role (#18233).
+                    self.resolve_role_candidate_named(&resolved_parent_name, pre_args.as_deref())?
+                } else {
+                    self.resolve_role_candidate_with_args(
+                        &resolved_parent_name,
+                        pre_args.as_deref(),
+                    )?
+                }
             };
             if let Some(resolved) = resolved_role {
                 // Check if this role was specified via `is` (punning) vs `does` (composition)

@@ -843,16 +843,32 @@ impl Compiler {
             let name_idx = self.code.add_constant(Value::str(stash.clone()));
             self.code.emit(OpCode::GetPseudoStashKeyed(name_idx));
         } else {
+            // `@var[...]`: a candidate for `IndexUpvalue` once the variable
+            // read turns out to be a captured one (ADR-18637). The target is
+            // one variable read with no control flow, so no jump can land
+            // between the read and the `Index`.
+            let read_at = self.code.ops.len();
+            let fusable_target = is_positional
+                && !use_autovivify
+                && !raw_receiver
+                && matches!(target, Expr::ArrayVar(_));
             if !((use_autovivify || raw_receiver) && self.emit_bind_chain_raw_target(target)) {
                 self.compile_expr(target);
             }
+            let single_read = self.code.ops.len() == read_at + 1;
             self.compile_subscript_index(index);
             if use_autovivify {
                 self.emit_lex_import_subscript(is_positional);
                 self.code.emit(lazy_op);
             } else {
                 self.emit_lex_import_subscript(is_positional);
+                let index_at = self.code.ops.len();
                 self.code.emit(OpCode::Index { is_positional });
+                if fusable_target && single_read {
+                    self.code
+                        .upvalue_index_candidates
+                        .push((read_at as u32, index_at as u32));
+                }
             }
         }
         self.bind_terminal = saved_terminal;
@@ -1068,6 +1084,10 @@ impl Compiler {
                 _ => self.compile_expr(part),
             }
         }
+        // The pieces fold through `~`'s candidates in scope, a block's own
+        // or imported ones included (#18617). Ahead of the part names, which
+        // are keyed by the `StringConcat`'s own ip.
+        self.emit_lex_import_builtin_op(&OpCode::StringConcat(n));
         self.code.note_interp_part_names(names);
         self.code.emit(OpCode::StringConcat(n));
     }

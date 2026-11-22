@@ -13,6 +13,8 @@ pub(crate) mod supply_tap_stream;
 pub(crate) mod supply_whenever_prebuffer;
 pub(crate) use supply_emit_frame::EmitFrame;
 mod supply_promise;
+mod supply_delayed_live;
+mod supply_throttle_live;
 mod supply_transform;
 mod system;
 mod system_eval_names;

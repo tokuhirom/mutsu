@@ -182,7 +182,11 @@ mod tests {
         // It went 216 -> 200 on 2026-11-11 (#17429): the `initialized` hole
         // set hashes with `FxBuildHasher`, which is zero-sized, where std's
         // `RandomState` is two words.
-        assert_eq!(size_of::<crate::value::ArrayData>(), 200);
+        // It went 200 -> 216 on 2026-11-22 (ADR-18637): `snapshot_version`, the
+        // set-once mutation counter a published lock-free snapshot of the node
+        // validates against (a `OnceLock<Arc<_>>`: 16 bytes, race-free to set
+        // from `&self` without `unsafe`).
+        assert_eq!(size_of::<crate::value::ArrayData>(), 216);
         // `HashData` then went 208 -> 192 on 2026-09-13 (ADR-0103): its two maps
         // (`map` and `original_keys`) carry their `BuildHasher` inline, and
         // `foldhash::fast::RandomState` is one `u64` where std's `RandomState`

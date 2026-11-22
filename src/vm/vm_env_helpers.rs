@@ -556,7 +556,9 @@ impl Interpreter {
                     }
                     if let Some(value) = self
                         .module
+                        .world
                         .module_scope_lexicals
+                        .read()
                         .get(pkg.as_str())
                         .and_then(|entries| entries.get(name))
                         .cloned()
@@ -572,7 +574,6 @@ impl Interpreter {
         let bare = name.trim_start_matches('$');
         self.module_scope_lexical(name)
             .or_else(|| self.module_scope_lexical(bare))
-            .cloned()
             // A `use` at a compunit's top level binds its imports into the
             // unit pad rather than the module-scope table.
             .or_else(|| self.unit_scope_lexical(name, None))
@@ -1744,7 +1745,7 @@ impl Interpreter {
             && self.any_lexical_package_frame()
             && let Some(v) = self.module_imported_lexical(name)
         {
-            return Some(v.clone());
+            return Some(v);
         }
         // Raku allows underscore variants of kebab-case identifiers
         // (e.g. $*EXECUTABLE_NAME is equivalent to $*EXECUTABLE-NAME).
@@ -1774,7 +1775,7 @@ impl Interpreter {
             // env binding of the same name shadows it.
             .or_else(|| {
                 crate::qualified::is_qualified(sym)
-                    .then(|| self.toplevel_package_symbol_sym(sym).cloned())
+                    .then(|| self.toplevel_package_symbol_sym(sym))
                     .flatten()
             })
     }

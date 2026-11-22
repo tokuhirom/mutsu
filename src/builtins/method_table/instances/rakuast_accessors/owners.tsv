@@ -197,6 +197,10 @@ RakuAST::Method	private	RakuAST::Method
 RakuAST::Method	scope	RakuAST::Routine
 RakuAST::Method	signature	RakuAST::Routine
 RakuAST::Method	traits	RakuAST::Routine
+RakuAST::Method::ClassAccessor	body	RakuAST::Method
+RakuAST::Method::ClassAccessor	name	RakuAST::Routine
+RakuAST::Method::Initializer	body	RakuAST::Method
+RakuAST::Method::Initializer	signature	RakuAST::Routine
 RakuAST::Mixin	operator	RakuAST::Infix
 RakuAST::Module	augmented	RakuAST::Package
 RakuAST::Module	body	RakuAST::Package
@@ -768,6 +772,7 @@ RakuAST::VarDeclaration::Signature	default-scope	RakuAST::VarDeclaration::Signat
 RakuAST::VarDeclaration::Signature	initializer	RakuAST::VarDeclaration::Signature
 RakuAST::VarDeclaration::Signature	scope	RakuAST::VarDeclaration::Signature
 RakuAST::VarDeclaration::Signature	signature	RakuAST::VarDeclaration::Signature
+RakuAST::VarDeclaration::Signature	traits	RakuAST::VarDeclaration::Signature
 RakuAST::VarDeclaration::Signature	type	RakuAST::VarDeclaration::Signature
 RakuAST::VarDeclaration::Simple	compile-time-value	RakuAST::VarDeclaration::Simple
 RakuAST::VarDeclaration::Simple	container-type	RakuAST::VarDeclaration::Simple

@@ -126,6 +126,23 @@ impl Interpreter {
                     })
                     .cloned()
                     .collect::<Vec<_>>();
+                // A dispatcher over a scope's own candidates of a built-in
+                // operator that falls back to it (a block's `multi
+                // infix:<+>`, an import) adds them to the setting's family,
+                // which is listed first (#17923, #18617).
+                if data
+                    .env
+                    .contains_key_sym(crate::symbol::wk::multi_dispatch_builtin_fallback())
+                    && !data
+                        .env
+                        .contains_key_sym(crate::symbol::wk::multi_dispatch_proto_shadows_core())
+                    && let Some(ValueView::Str(disp_name)) =
+                        data.env.get("__mutsu_multi_dispatch_name").map(Value::view)
+                {
+                    let mut family = self.setting_multi_candidates("GLOBAL", disp_name.as_str());
+                    family.extend(once);
+                    return Some(Ok(Value::array(family)));
+                }
                 return Some(Ok(Value::array(once)));
             }
             if let Some(ValueView::Str(cls)) = data.env.get("__mutsu_lookup_class").map(Value::view)

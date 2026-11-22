@@ -1159,14 +1159,29 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         match slot {
             Some(slot) if !has_block_phasers && !ast.is_empty() => {
-                let (code, fns) = self.compile_module_mainline(
+                let (code, fns, plan) = self.compile_module_mainline(
                     super::module_bytecode::MainlineBody::Module(ast),
                     &slot,
                 )?;
-                self.run_compiled_block_raw(&code, &fns)
+                self.run_module_mainline_code(&code, &fns, plan)
             }
             slot => self.run_block_with(ast.stmts()?, slot, None, true),
         }
+    }
+
+    /// Run a module's compiled mainline under its BEGIN record/replay plan
+    /// (ADR-18012 S1): a run that finishes stores the log it recorded.
+    // Cost: the mainline's, plus the log's encoding when one is recorded.
+    fn run_module_mainline_code(
+        &mut self,
+        code: &crate::opcode::CompiledCode,
+        fns: &crate::opcode::CompiledFns,
+        plan: Option<crate::runtime::begin_replay::Plan>,
+    ) -> Result<(), RuntimeError> {
+        let guard = crate::runtime::begin_replay::begin_mainline(code, plan);
+        let ran = self.run_compiled_block_raw(code, fns);
+        guard.finish(ran.is_ok());
+        ran
     }
 
     /// Run `stmts` with their block phasers. `module_unit`: they are a
@@ -1197,11 +1212,11 @@ impl Interpreter {
         self.run_block_raw(&enter_ph)?;
         let body_result = match &slot {
             Some(slot) if !body_main.is_empty() => {
-                let (code, fns) = self.compile_module_mainline(
+                let (code, fns, plan) = self.compile_module_mainline(
                     super::module_bytecode::MainlineBody::Split(&body_main),
                     slot,
                 )?;
-                self.run_compiled_block_raw(&code, &fns)
+                self.run_module_mainline_code(&code, &fns, plan)
             }
             _ if module_unit && !body_main.is_empty() => {
                 let (code, fns) = self.compile_module_mainline_uncached(&body_main);
@@ -1296,7 +1311,7 @@ impl Interpreter {
         // from a module that had a distribution.
         compiler.current_distribution = self.module.current_distribution.clone().or_else(|| {
             self.module
-                .package_distributions
+                .world.package_distributions.read()
                 .get(&self.current_package())
                 .cloned()
         });

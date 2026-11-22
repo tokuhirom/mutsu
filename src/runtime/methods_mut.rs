@@ -398,6 +398,11 @@ impl Interpreter {
         // so every alias of the cell observes the element write.
         let mut cells: Vec<crate::gc::Gc<crate::value::ContainerCell>> = Vec::new();
         for (name, value) in self.env.iter() {
+            // A scalar leaf or a lazy Match (`$/`) holds no array; skip it on
+            // its tag, since `view()` would materialize the Match (#12917).
+            if value.is_scalar_leaf() || value.is_lazy_match_value() {
+                continue;
+            }
             match value.view() {
                 ValueView::Array(existing, ..) if crate::gc::Gc::ptr_eq(&existing, needle) => {
                     keys.push(*name);

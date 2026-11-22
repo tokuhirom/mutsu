@@ -259,10 +259,18 @@ impl Interpreter {
                         0,
                     ));
                 }
-                let mut new_attrs = attributes.clone();
-                new_attrs.insert("delay_seconds".to_string(), Value::num(delay_seconds));
-                new_attrs.insert("taps".to_string(), Value::array(Vec::new()));
-                Ok(Value::make_instance(Symbol::intern("Supply"), new_attrs))
+                // A live source is delayed on a worker, so the emitter does
+                // not wait for the delay (#18608).
+                if let Some(source_id) = supplier_id_from_attrs(attributes)
+                    && attributes.get("live").is_some_and(Value::truthy)
+                {
+                    return Ok(self.delayed_live_supply(source_id, delay_seconds));
+                }
+                // Any other source is a per-tap stage: each tap replays the
+                // source into its own delay worker, so `.tap` returns at once
+                // (#18696).
+                let source = Value::make_instance_with_id(Symbol::intern("Supply"), attributes.clone(), 0);
+                Ok(Self::make_eager_stage_supply(source, "delayed", vec![Value::num(delay_seconds)]))
             }
             "min" => {
                 let mapper = args.first().cloned();

@@ -62,11 +62,17 @@ impl Interpreter {
     /// Cost: O(1) average for a Match: one `AT-KEY` override probe and one
     /// named-capture map probe.
     fn match_capture_at_key(&mut self, topic: Value, key: &str) -> Value {
-        let overridden = match topic.view() {
-            ValueView::Instance { class_name, .. } => {
-                self.has_user_method_including_role(&class_name.resolve(), "AT-KEY")
+        // A lazy Match names its dispatch class without a `view()`, which
+        // would materialize every capture (#12917).
+        let overridden = if topic.is_lazy_match_value() {
+            self.has_user_method_including_role(topic.match_dispatch_class(), "AT-KEY")
+        } else {
+            match topic.view() {
+                ValueView::Instance { class_name, .. } => {
+                    self.has_user_method_including_role(&class_name.resolve(), "AT-KEY")
+                }
+                _ => true,
             }
-            _ => true,
         };
         if !overridden && topic.is_match_instance() {
             return topic.match_named_capture(key);
@@ -220,7 +226,7 @@ impl Interpreter {
         // routine of the importing compunit needs it too, not just `f()`.
         if val.is_nil()
             && !name_is_qualified
-            && let Some(found) = self.module_scope_lexical(&format!("&{name}")).cloned()
+            && let Some(found) = self.module_scope_lexical(&format!("&{name}"))
         {
             val = found.into_deref();
         }

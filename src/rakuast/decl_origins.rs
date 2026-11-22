@@ -89,7 +89,7 @@ struct Parts {
 }
 
 #[derive(Clone, Copy)]
-struct TraitAt {
+pub(super) struct TraitAt {
     whole: (usize, usize),
     name: (usize, usize),
     argument: Option<(usize, usize)>,
@@ -154,7 +154,7 @@ fn read(text: &str, base: usize, variable: &str) -> Option<Parts> {
 /// `at` on, `base` being where `text` starts in the unit; reading stops at
 /// the first clause it cannot read whole.
 // Cost: O(n), n = length of `text` after `at`.
-fn read_traits(text: &str, mut at: usize, base: usize) -> Option<Vec<TraitAt>> {
+pub(super) fn read_traits(text: &str, mut at: usize, base: usize) -> Option<Vec<TraitAt>> {
     let mut traits = Vec::new();
     loop {
         let gap = trivia_len(&text[at..])?;
@@ -321,7 +321,7 @@ fn child_name(ty: &RakuAstNode) -> Option<String> {
 /// Give `node`'s `Trait::Is` nodes the clauses in `at`, when there is one
 /// clause per trait and each names its trait.
 // Cost: O(t), t = traits.
-fn traits(names: &NameScope, node: &mut RakuAstNode, at: &[TraitAt]) {
+pub(super) fn traits(names: &NameScope, node: &mut RakuAstNode, at: &[TraitAt]) {
     let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("traits")) else {
         return;
     };

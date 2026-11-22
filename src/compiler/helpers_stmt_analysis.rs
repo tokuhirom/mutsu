@@ -110,27 +110,16 @@ impl Compiler {
     }
 
     /// Emit the `OpCode::ImportScope` that opens the import region of `stmts`
-    /// (a block body) when it holds an import statement, and open the region
+    /// (a block body) when it holds an import statement or declares a plain
+    /// built-in operator routine of its own (#17771), and open the region
     /// for the code compiled next: its key joins `import_region_chain`, which
     /// the caller truncates when the block ends. The key is the unit's file
     /// plus the line of the block's first import statement, so a recompile of
     /// the same AST (a `.map` callback) names the same region.
     // Cost: O(s), s = statements of the block.
     pub(super) fn emit_import_scope_region(&mut self, stmts: &[Stmt]) -> Option<usize> {
-        let first = stmts.iter().position(Self::opens_import_scope)?;
-        let line = stmts[..first]
-            .iter()
-            .rev()
-            .find_map(|stmt| match stmt {
-                Stmt::SetLine(n, _) => Some(*n),
-                _ => None,
-            })
-            .or(self.last_source_line)
-            .unwrap_or(0);
-        let file = crate::unit_source_file::current()
-            .map(|file| file.resolve())
-            .unwrap_or_default();
-        let region = Symbol::intern(&format!("{file}\u{1}{line}\u{1}{first}"));
+        let first = Self::import_region_start(stmts)?;
+        let region = self.import_region_key(stmts, first);
         self.import_region_chain.push(region);
         Some(self.code.emit(OpCode::ImportScope {
             body_end: 0,
@@ -162,6 +151,9 @@ impl Compiler {
                 }
             }
         }
+        // The block's own plain operator routines bind in a set of their own
+        // (#17771).
+        self.enter_block_operator_set(stmts);
         mark
     }
 
@@ -378,6 +370,27 @@ impl Compiler {
             }
             return;
         };
+        // The sets around the closure that one of its call sites reads. A
+        // site's chain leaves out the sets that do not bind its name (a set
+        // opened before the block's own routine of the name), so the sites
+        // need not share a suffix: `Thing + 1` under a block's `multi
+        // infix:<+>` reads [block, unit-use] for `Thing` and [block] for `+`
+        // (#18617). Each name is filtered again as the body recompiles.
+        if !origin.enclosing_import_chain.is_empty() {
+            let used: Vec<Symbol> = origin
+                .enclosing_import_chain
+                .iter()
+                .copied()
+                .filter(|id| {
+                    origin
+                        .lexical_import_chains
+                        .iter()
+                        .any(|chain| chain.contains(id))
+                })
+                .collect();
+            self.seed_lexical_import_chain(used);
+            return;
+        }
         // Innermost first, so the shared outer sets are a common suffix.
         let mut common: &[Symbol] = first;
         for chain in chains {

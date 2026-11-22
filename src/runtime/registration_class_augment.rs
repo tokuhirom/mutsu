@@ -856,8 +856,10 @@ impl Interpreter {
         }
     }
 
-    /// Get the type constraint for a class attribute, searching MRO.
-    // Cost: O(d), d = ancestors of `class_name` (one registry probe per level).
+    /// Get the type constraint for a class attribute: that of its most-derived
+    /// declaration in the MRO (`None` when that one is untyped).
+    // Cost: O(d * a), d = ancestors of `class_name`, a = attributes a level
+    // declares (scanned only at a level with no typed entry for the name).
     pub(crate) fn get_attr_type_constraint(
         &self,
         class_name: &str,
@@ -865,17 +867,28 @@ impl Interpreter {
     ) -> Option<String> {
         for cls in self.mro_syms_readonly(class_name).iter() {
             let cls = cls.as_str();
-            if let Some(class_def) = self.registry().classes.get(cls)
-                && let Some(tc) = class_def.attribute_types.get(attr_name)
-            {
-                let tc = tc.clone();
-                // The declaration site writes the short name, but a type
-                // declared inside the owning package is named `Owner::Name`
-                // (raku reports that in every type-check message). Resolve it
-                // here rather than at record time: a `subset` in a class body
-                // is registered when the body runs, after `has` is recorded.
-                return Some(self.resolve_type_name_for_owner(cls, tc));
-            }
+            let Some(tc) = self.registry().classes.get(cls).and_then(|class_def| {
+                // The most-derived declaration of the name is the attribute
+                // the bare name stores: a derived class's untyped `@.label`
+                // redeclaring a base `Str $.label` is untyped, not `Str`
+                // (#17994).
+                match class_def.attribute_types.get(attr_name) {
+                    Some(tc) => Some(Some(tc.clone())),
+                    None => class_def
+                        .attributes
+                        .iter()
+                        .any(|a| a.name == attr_name)
+                        .then_some(None),
+                }
+            }) else {
+                continue;
+            };
+            // The declaration site writes the short name, but a type declared
+            // inside the owning package is named `Owner::Name` (raku reports
+            // that in every type-check message). Resolve it here rather than
+            // at record time: a `subset` in a class body is registered when
+            // the body runs, after `has` is recorded.
+            return tc.map(|tc| self.resolve_type_name_for_owner(cls, tc));
         }
         // A role instantiated directly (`R.new`) has no ClassDef until something
         // puns it, but its instances still report the role as their class — so

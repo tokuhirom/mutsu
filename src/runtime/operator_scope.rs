@@ -137,7 +137,7 @@ impl Interpreter {
         let bare_body = self.module.module_load_stack.last().is_some_and(|loading| {
             !self
                 .module
-                .module_declared_unit_packages
+                .world.module_declared_unit_packages.read()
                 .contains_key(&Symbol::intern(loading))
         });
         (!bare_body).then_some(unit_mod)

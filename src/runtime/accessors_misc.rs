@@ -20,18 +20,18 @@ impl Interpreter {
         {
             return false;
         }
-        self.module.need_hidden_classes.contains(key)
+        self.module.world.need_hidden_classes.read().contains(key)
             || key
                 .strip_prefix("GLOBAL::")
-                .is_some_and(|name| self.module.need_hidden_classes.contains(name))
+                .is_some_and(|name| self.module.world.need_hidden_classes.read().contains(name))
             || crate::qualified::split_qualified(Symbol::intern(key))
-                .is_some_and(|(_, short)| self.module.need_hidden_classes.contains(short.as_str()))
+                .is_some_and(|(_, short)| self.module.world.need_hidden_classes.read().contains(short.as_str()))
             || self.key_ends_with_need_hidden_class(key)
     }
 
     /// [`key_ends_with_any_as_qualified_tail`] over the hidden `need` classes.
     fn key_ends_with_need_hidden_class(&self, key: &str) -> bool {
-        key_ends_with_any_as_qualified_tail(key, &self.module.need_hidden_classes)
+        key_ends_with_any_as_qualified_tail(key, &self.module.world.need_hidden_classes.read())
     }
 
     /// Check if a name is a known pseudo-package (MY, OUTER, CORE, etc.)
@@ -256,13 +256,14 @@ impl Interpreter {
         // `sub EXPORT` (the `Exportable` idiom) -- and its `EXPORT::<tag>`
         // mirror keys survive the restore. Only the loading module's own
         // exports: a module `require`d inside a block is still lexical to it.
+        let module_owned_exports_r = self.module.world.module_owned_exports.read();
         let owned_exports = if is_eval {
             None
         } else {
             self.module
                 .module_load_stack
                 .last()
-                .and_then(|m| self.module.module_owned_exports.get(m))
+                .and_then(|m| module_owned_exports_r.get(m))
         };
         let new_exported: Vec<(Symbol, std::sync::Arc<FunctionDef>)> = match owned_exports {
             None => Vec::new(),
@@ -276,6 +277,7 @@ impl Interpreter {
                     .collect()
             }
         };
+        drop(module_owned_exports_r);
         let module_protos = self.module_protos_missing_from(&proto_functions);
         let mut guard = self.routines_mut();
         let registry = guard.deref_mut_tables();

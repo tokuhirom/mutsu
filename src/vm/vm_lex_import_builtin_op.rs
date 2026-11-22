@@ -90,6 +90,20 @@ impl Interpreter {
             }
             return Ok(next_ip);
         };
+        // A family that shadows the built-in (a plain `sub infix:<**>`, a
+        // user `proto`) replaces the operator, so a reduction or hyper over it
+        // folds with the dispatcher itself, as one over a user operator does:
+        // with the candidates merely in scope, the fold's native path never
+        // asks them (`[**] 2, 3` stayed `8`, #17771).
+        if Self::dispatcher_shadows_core(&dispatcher)
+            && matches!(
+                code.ops.get(ip + 1),
+                Some(OpCode::Reduction(_) | OpCode::HyperOp { .. })
+            )
+            && self.exec_lex_import_meta_site(code, ip, chain_idx, name_idx, compiled_fns)?
+        {
+            return Ok(ip + 2);
+        }
         self.dispatch
             .lexical_operator_scopes
             .push(LexicalOperatorScope {
@@ -97,7 +111,12 @@ impl Interpreter {
                 dispatcher,
                 depth: self.routine_stack().len(),
             });
-        let result = self.exec_one(code, &mut next_ip, compiled_fns);
+        let result = self.exec_one(
+            code,
+            &mut next_ip,
+            compiled_fns,
+            crate::vm::vm_poll::DispatchPolls::enter(code),
+        );
         self.dispatch.lexical_operator_scopes.pop();
         result.map(|()| next_ip)
     }
@@ -159,6 +178,14 @@ impl Interpreter {
         let result = self.try_lexical_operator_candidates(name, args);
         self.dispatch.lexical_operator_scopes.pop();
         result
+    }
+
+    /// Whether `dispatcher`, a bound family of a built-in operator, replaces
+    /// the operator rather than adding to it (`with_proto_shadowing_core`).
+    // Cost: O(1).
+    fn dispatcher_shadows_core(dispatcher: &Value) -> bool {
+        matches!(dispatcher.view(), ValueView::Sub(data)
+            if data.env.contains_key_sym(crate::symbol::wk::multi_dispatch_proto_shadows_core()))
     }
 
     /// Whether [`Self::lexical_operator_dispatcher`] has an answer for `name`.

@@ -17,23 +17,6 @@ use crate::symbol::Symbol;
 /// registered by the same top-to-bottom pass over its unit.
 static NEXT_DECL_ORDER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
-thread_local! {
-    /// Memo for [`Interpreter::proto_variant_keys_sorted`]: prefix -> the
-    /// `TOKEN_DEFS_GEN` the answer was computed under, and the answer.
-    ///
-    /// The scan it memoizes is O(all registered token keys) and runs once per
-    /// `<subrule>` resolution, for a handful of distinct prefixes — 8.5% of a
-    /// YAML-parse profile went into re-deriving the same few lists
-    /// ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)). Entries carry
-    /// the generation they were built under, the same invalidation discipline
-    /// as `PARSED_TOKEN_CANDIDATES` and `REGEX_PARSE_CACHE` — anything that
-    /// (re)defines, restores or wholesale-replaces `token_defs` bumps it.
-    #[allow(clippy::type_complexity)]
-    static PROTO_VARIANT_KEYS: std::cell::RefCell<
-        rustc_hash::FxHashMap<String, (u64, std::sync::Arc<Vec<Symbol>>)>,
-    > = std::cell::RefCell::new(rustc_hash::FxHashMap::default());
-}
-
 /// Take the next declaration-order stamp. Called from every `FunctionDef`
 /// construction site in the registration paths.
 pub(crate) fn next_decl_order() -> u64 {
@@ -45,31 +28,6 @@ pub(crate) fn next_decl_order() -> u64 {
 // Cost: O(1).
 pub(crate) fn peek_decl_order() -> u64 {
     NEXT_DECL_ORDER.load(std::sync::atomic::Ordering::Relaxed)
-}
-
-/// True when `rest` (the portion of a `token_defs` key AFTER the proto's
-/// fully-qualified name) begins a proto-regex variant adverb. Three spellings
-/// register a candidate under the proto:
-///
-/// | spelling | binds `<sym>`? |
-/// | --- | --- |
-/// | `:sym<int>` / `:sym«int»` | yes |
-/// | `:<int>` / `:«int»` (shorthand) | no |
-/// | `:int` (bare identifier adverb) | no |
-///
-/// A resolver that recognized only `:sym<` dropped every `token element:<int>
-/// {...}` candidate (YAMLish's `Schema::JSON`); one that additionally missed
-/// the bare form dropped every `token gap:spacer {...}` candidate
-/// (`Config::TOML`'s grammar, which names all of its alternatives that way).
-///
-/// `::` is a package separator, never an adverb, so it must not count.
-pub(crate) fn is_proto_variant_suffix(rest: &str) -> bool {
-    let Some(after) = rest.strip_prefix(':') else {
-        return false;
-    };
-    after.starts_with('<')
-        || after.starts_with('\u{ab}')
-        || after.starts_with(|c: char| c.is_alphabetic() || c == '_')
 }
 
 impl Interpreter {
@@ -190,7 +148,7 @@ impl Interpreter {
         // resolve `MOD::foo`. This fires only for genuinely-hidden owned exports,
         // so an unrelated `Foo::bar` in a sibling package block is never
         // spuriously resolved.
-        if !self.module.module_owned_exports.is_empty() {
+        if !self.module.world.module_owned_exports.read().is_empty() {
             if let Some(def) = self.resolve_hidden_owned_export(&cur_pkg, name) {
                 return Some(def);
             }
@@ -215,7 +173,7 @@ impl Interpreter {
         loop {
             if self
                 .module
-                .module_owned_exports
+                .world.module_owned_exports.read()
                 .get(probe)
                 .is_some_and(|owned| owned.contains_key(name))
                 && let Some(def) = dispatch_key::qualified_lookup(probe, name)
@@ -290,58 +248,6 @@ impl Interpreter {
             .get(&key)
             .and_then(|defs| defs.iter().map(|d| d.decl_order).min())
             .unwrap_or(u64::MAX)
-    }
-
-    /// Every `token_defs` key that spells a `:sym<…>` proto variant of
-    /// `prefix`, sorted by declaration order (Rakudo's LTM tie-break) and
-    /// falling back to alphabetical order for keys that share a declaration
-    /// order or are unregistered, so the result stays deterministic.
-    ///
-    /// This walks the whole `token_defs` key set, and it is walked once per
-    /// `<subrule>` resolution, so it must not allocate per key: a callgrind
-    /// profile of a YAML parse had the five hand-rolled copies of this scan
-    /// materializing a `String` for every key (`Symbol::resolve`) just to test
-    /// a prefix and throw it away — 4.6M allocations, ~15% of the whole
-    /// program ([#7576](https://github.com/tokuhirom/mutsu/issues/7576)).
-    /// `Symbol::as_str` hands out the interned `&'static str` instead, and the
-    /// key symbols come back as symbols so no call site re-interns them.
-    pub(crate) fn proto_variant_keys_sorted(&self, prefix: &str) -> std::sync::Arc<Vec<Symbol>> {
-        let generation =
-            crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
-        if let Some(hit) = PROTO_VARIANT_KEYS.with(|c| {
-            c.borrow()
-                .get(prefix)
-                .filter(|(entry_gen, _)| *entry_gen == generation)
-                .map(|(_, keys)| keys.clone())
-        }) {
-            return hit;
-        }
-        let keys = std::sync::Arc::new(self.proto_variant_keys_sorted_uncached(prefix));
-        PROTO_VARIANT_KEYS.with(|c| {
-            c.borrow_mut()
-                .insert(prefix.to_owned(), (generation, keys.clone()));
-        });
-        keys
-    }
-
-    fn proto_variant_keys_sorted_uncached(&self, prefix: &str) -> Vec<Symbol> {
-        let mut keys: Vec<Symbol> = self
-            .routines()
-            .token_defs
-            .keys()
-            .copied()
-            .filter(|key| {
-                key.as_str()
-                    .strip_prefix(prefix)
-                    .is_some_and(is_proto_variant_suffix)
-            })
-            .collect();
-        keys.sort_by(|a, b| {
-            self.token_key_decl_order_sym(*a)
-                .cmp(&self.token_key_decl_order_sym(*b))
-                .then_with(|| a.as_str().cmp(b.as_str()))
-        });
-        keys
     }
 
     pub(crate) fn token_def_identity(def_name: &str, token_name: &str) -> String {

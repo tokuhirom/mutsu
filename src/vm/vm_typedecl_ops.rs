@@ -1175,7 +1175,13 @@ impl Interpreter {
                 // gets that hook run when the class composes, as in Rakudo -- once,
                 // at the real declaration, not for a throwaway hoisted shell.
                 if !is_hoisted_shell {
-                    self.drive_role_how_specialize(&storage_name)?;
+                    // A class HOW `compose` override runs first; the roles
+                    // specialize inside its `nextsame` (`mop_compose`), as in
+                    // rakudo, where `ClassHOW.compose` applies the roles
+                    // (#18145).
+                    if !self.class_how_compose_hook(&storage_name) {
+                        self.drive_role_how_specialize(&storage_name)?;
+                    }
                     self.queue_trait_how_compose(&storage_name, how_hook_before);
                 }
 
@@ -1820,7 +1826,8 @@ impl Interpreter {
             if let Some(keyword) = declarator.clone()
                 && let Some(how_type) = self.declarator_how_type(&keyword)
             {
-                self.install_custom_class_how(&qualified_name, how_type, false)?;
+                let has_user_compose =
+                    self.install_custom_class_how(&qualified_name, how_type, false)?;
                 // The declaration expression (`(role { })`) evaluates to the
                 // candidate-keyed type object, whose `.HOW` is keyed apart from
                 // the group's.
@@ -1834,6 +1841,7 @@ impl Interpreter {
                     .class_how_values
                     .get(&qualified_name)
                     .cloned();
+                let mut composed_by = None;
                 if let (Some(role_id), Some(how)) = (role_id, how)
                     && role_id != 0
                 {
@@ -1842,7 +1850,22 @@ impl Interpreter {
                     // Rakudo builds the role's own (candidate) metaobject with
                     // the superseding HOW; the role group keeps its default.
                     self.registry_mut().class_how_values.remove(&qualified_name);
-                    self.registry_mut().class_how_values.insert(candidate, how);
+                    self.registry_mut()
+                        .class_how_values
+                        .insert(candidate.clone(), how.clone());
+                    composed_by = Some((how, candidate));
+                }
+                // The HOW's own `compose` runs as the declaration completes,
+                // with the role's (candidate) type object, as rakudo composes a
+                // role at the end of its declaration; its `callsame` reaches the
+                // native role compose (#18081). A hoisted forward-reference shell is
+                // registered again in place, which composes it.
+                if has_user_compose
+                    && !is_hoisted_shell
+                    && let Some((how, candidate)) = composed_by
+                {
+                    let type_obj = Value::package(Symbol::intern(&candidate));
+                    self.try_compiled_method_or_interpret(how, "compose", vec![type_obj])?;
                 }
             }
 

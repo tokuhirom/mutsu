@@ -5,8 +5,10 @@ mod class_body_free_vars;
 mod nested_decl_names_tests;
 mod proto_decl;
 mod reflective_names;
+mod regex_code_writes;
 use reflective_names::{names_package_member_prefix, pseudo_stash_names_enclosing_scope};
 mod role_body_outer_refs;
+mod upvalue_index_fuse;
 
 pub(crate) use attribute_decl::{AttrDeclChunks, CompiledAttrDecl};
 
@@ -3159,6 +3161,15 @@ pub(crate) enum OpCode {
     /// `is_positional` is true when the subscript was `[...]` (positional),
     /// false when `{...}` or `<...>` (associative).
     Index { is_positional: bool },
+    /// `GetUpvalue { index, name_idx }` fused with the positional
+    /// [`Self::Index`] that consumes it, for an index computed by pure stack
+    /// ops (`CompiledCode::fuse_upvalue_index_reads`). Stack: `[index] → [elem]`.
+    ///
+    /// A captured array shared between threads is then read from its cell's
+    /// published snapshot without cloning the node or taking a lock
+    /// (ADR-18637); anything else reads the upvalue and indexes it exactly as
+    /// the unfused pair does.
+    IndexUpvalue { index: u32, name_idx: u32 },
     /// Preserve an existing scalar cell in a List when indexing for `.VAR`.
     /// Other subscripts use the ordinary Index semantics.
     IndexVarRef { is_positional: bool },
@@ -5554,6 +5565,11 @@ pub(crate) struct CompiledSubDeclPlan {
     /// interpreter and binds nothing in the program-global registry; every
     /// call site resolves it through [`CompiledCode::lexical_routines`].
     pub(crate) frame_lexical: Option<FrameLexicalRef>,
+    /// The synthetic lexical import set of the block that declares this
+    /// plain built-in operator routine (`sub infix:<**>` below the unit's
+    /// top level, #17771): the registration binds it there and leaves the
+    /// unit's operator gate alone (`runtime::block_operator_sets`).
+    pub(crate) block_operator_set: Option<Symbol>,
     /// A frame-lexical routine the body also reads as a code object
     /// (`&name`). Each execution of the declaration then mints the callable
     /// identity a registration would have, so every `&name` read in one
@@ -7687,6 +7703,12 @@ pub(crate) struct CompiledCode {
     /// [`Self::lexsub_refs`]: the `&g` value is the captured binding, not the
     /// routine the name resolves to at the read.
     pub(crate) code_var_upvalue_reads: Vec<(u32, u32)>,
+    /// `(read, index)` op positions of each `@var[subscript]` the compiler
+    /// emitted as a single variable read followed by a positional `Index`
+    /// (ADR-18637): the only pairs `fuse_upvalue_index_reads` may fuse once
+    /// the read has become a `GetUpvalue`. A compile-time scratch list:
+    /// consumed by `compute_upvalues` and never encoded.
+    pub(crate) upvalue_index_candidates: Vec<(u32, u32)>,
     /// True when this chunk or one of its nested closures has
     /// `lexical_routines`. A closure created from such a chunk registers its
     /// body with the interpreter, so a runtime recompile of that body (the
@@ -8893,6 +8915,7 @@ impl CompiledCode {
             routine_shadowed_calls: Vec::new(),
             lexsub_refs: Vec::new(),
             code_var_upvalue_reads: Vec::new(),
+            upvalue_index_candidates: Vec::new(),
             lexical_subtree: false,
             nested_routine_free_reads: Vec::new(),
             bounded_lazy_decl_plans: Vec::new(),
@@ -12083,6 +12106,20 @@ impl CompiledCode {
                 ValueView::RegexWithAdverbs(a) => Some(a.pattern.clone()),
                 _ => None,
             };
+            // The regex's own code may write a scalar while it matches, which
+            // no op of this chunk shows: count it as mutated so a closure
+            // capturing it (the regex's `"..."` thunk) shares its cell
+            // (#18630).
+            if let Some(tree) = c.regex_source_tree() {
+                for sym in regex_code_writes::regex_code_scalar_names(tree) {
+                    if sym.with_str(|s| own.contains(s)) {
+                        self_mutated.insert(sym);
+                    } else {
+                        free.insert(sym);
+                        free_writes.insert(sym);
+                    }
+                }
+            }
             if let Some(pattern) = pattern {
                 // Kebab-case names are captured under their full spelling too
                 // (`regex_literal_closure_captures`), so they need the same
@@ -12937,11 +12974,15 @@ impl CompiledCode {
         if syms.is_empty() {
             return;
         }
+        let any_rewrite = !rewrites.is_empty();
         for (op_pos, uv, name_idx) in rewrites {
             self.ops[op_pos] = OpCode::GetUpvalue {
                 index: uv,
                 name_idx,
             };
+        }
+        if any_rewrite {
+            self.fuse_upvalue_index_reads();
         }
         for (op_pos, uv) in code_rewrites {
             if let OpCode::CallOnCodeVar { upvalue, .. } = &mut self.ops[op_pos] {
@@ -13813,6 +13854,7 @@ impl CompiledCode {
             compiled_routine_keys: Vec::new(),
             frame_lexical: None,
             frame_lexical_value: false,
+            block_operator_set: None,
             free_var_decl_slots: Vec::new(),
             hoist_seed_slots: Vec::new(),
             own_scope_decl_slots: Vec::new(),

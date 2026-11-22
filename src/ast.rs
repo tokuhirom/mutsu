@@ -2207,6 +2207,10 @@ pub(crate) enum EnumVariantForm {
     /// A `<< >>` / `« »` body with its text as written (spacing, colonpair atoms).
     WrittenQuoteWords(Box<str>),
     PairList,
+    /// A parenthesized body of one element written without a comma
+    /// (`(a => 3)`, `(:a(1))`, `('a')`): RakuAST holds the element itself,
+    /// not a one-operand list, written in this form.
+    Lone(BinaryForm),
     /// A parenthesized pair list with a colonpair spelling the variants do
     /// not keep (`:x(1)`, `:y`): how each element was written.
     WrittenPairs(Vec<BinaryForm>),
@@ -4156,6 +4160,10 @@ pub struct PackageMarks {
     /// when the name is a trait instead (`is foo`) it is dispatched as written
     /// (#11349).
     pub parent_spellings: Vec<(String, String)>,
+    /// `is rw` was written in the body as `also is rw;` (a `Statement::Also`
+    /// in RakuAST), not on the declaration.
+    #[serde(default)]
+    pub rw_also: bool,
 }
 
 #[cfg(test)]

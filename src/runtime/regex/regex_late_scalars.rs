@@ -67,9 +67,24 @@ fn scan_scalars(text: &str) -> (Vec<(String, bool)>, bool) {
             '<' if chars.get(i + 1) == Some(&'$') => {
                 // `<$var>` interpolates its value as regex source, with
                 // semantics of its own (#13029, #13042), read where the
-                // parse-time `<$var>` arm reads it.
+                // parse-time `<$var>` arm reads it -- unless a code block
+                // precedes it, which may assign the variable: then it is read
+                // when the cursor reaches it, as Rakudo does (#14510).
+                let start = i + 2;
                 while i < chars.len() && chars[i] != '>' {
                     i += 1;
+                }
+                let name: String = chars[start..i.min(chars.len())].iter().collect();
+                let plain = name
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphabetic() || c == '_')
+                    && name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-');
+                if seen_block && plain {
+                    match names.iter_mut().find(|(n, _)| *n == name) {
+                        Some(entry) => entry.1 = true,
+                        None => names.push((name, true)),
+                    }
                 }
                 i += 1;
             }
@@ -261,6 +276,7 @@ mod tests {
         assert_eq!(scalars_in_pattern("$<a>=$b").0, ["b"]);
         assert_eq!(scalars_in_pattern("$0 = $b").0, ["b"]);
         assert!(scalars_in_pattern("<$b> 'x'").0.is_empty());
+        assert_eq!(scalars_in_pattern("x { 1 } <$b>").0, ["b"]);
         assert!(scalars_in_pattern("{ $b } '$q' \\$e <[$f]>").0.is_empty());
         assert_eq!(scalars_in_pattern("$a { 1 } $a $c").0, ["a", "c"]);
     }

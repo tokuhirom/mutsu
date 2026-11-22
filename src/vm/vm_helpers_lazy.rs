@@ -753,7 +753,9 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         // A metamethod (`$s.^isa(Junction)`, `.^name`) describes the type,
         // not the elements: it pulls nothing from a lazy List or Seq.
-        if method.starts_with('^') {
+        // A scalar leaf or a lazy Match holds no Seq; a `view()` of the Match
+        // would materialize it (#12917).
+        if method.starts_with('^') || target.is_scalar_leaf() || target.is_lazy_match_value() {
             return Ok(target);
         }
         let ValueView::Seq(body) = target.view() else {
@@ -1906,7 +1908,7 @@ impl Interpreter {
         let gather_scope = self.enter_gather_defining_unit(list);
         let mut ip = 0;
         let mut run_result = Ok(());
-        let polls = crate::vm::vm_poll::DispatchPolls::current();
+        let polls = crate::vm::vm_poll::DispatchPolls::enter(&cc);
         while ip < cc.ops.len() {
             match self.exec_one_backedge_polled(&cc, &mut ip, run_fns, polls) {
                 Ok(()) => {}

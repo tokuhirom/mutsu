@@ -45,6 +45,8 @@ impl Interpreter {
         frame: TrFrame,
         compiled_fns: &CompiledFns,
     ) -> Result<TrOutcome, RuntimeError> {
+        // An eager push lands above any deferred entries: push those first.
+        self.trir_observe();
         let def_file = chunk.def_file.get().copied();
         self.push_routine_with_visibility(
             self.current_package_sym(),
@@ -65,6 +67,37 @@ impl Interpreter {
             self.current_unit = saved_unit;
         }
         self.pop_routine();
+        self.finish_trir_routine(chunk, outcome)
+    }
+
+    /// Run `chunk` as the body of a call made from another TRIR body
+    /// (`CallTr`, or a `CallGen` served through its link): as
+    /// [`Self::run_trir_routine`], except that its routine-stack entry is
+    /// pushed only once an op that can observe it runs (ADR-8673 D1).
+    // Cost: the body's, plus O(1) for the deferred entry.
+    pub(crate) fn run_trir_inner_routine(
+        &mut self,
+        chunk: &TrChunk,
+        frame: TrFrame,
+        compiled_fns: &CompiledFns,
+    ) -> Result<TrOutcome, RuntimeError> {
+        if !super::lazy_frames::lazy_frames_enabled() {
+            return self.run_trir_routine(chunk, frame, compiled_fns);
+        }
+        self.trir_defer_routine(chunk);
+        let outcome = self.run_trir_chunk(chunk, frame, compiled_fns);
+        self.trir_finish_deferred_routine();
+        self.finish_trir_routine(chunk, outcome)
+    }
+
+    /// The routine-boundary handling of a TRIR body's outcome, once its
+    /// routine-stack entry is gone.
+    // Cost: O(1) plus the return-type check.
+    fn finish_trir_routine(
+        &mut self,
+        chunk: &TrChunk,
+        outcome: Result<TrOutcome, RuntimeError>,
+    ) -> Result<TrOutcome, RuntimeError> {
         // A `fail` raised inside the body (a call that fails: `...`, a
         // missing `$*x`) ends the routine with a Failure value, exactly as
         // the untyped entries do at their routine boundary (#11728).

@@ -46,11 +46,12 @@ pub(in crate::parser) use begin_at_parse::{
 
 // `pub` re-exports.
 pub use lib_paths::{
-    clear_parser_lib_paths, set_parser_lib_paths, set_parser_preload_modules,
-    set_parser_program_path, set_parser_source_file,
+    clear_parser_lib_paths, set_parser_lib_paths, set_parser_module_unit,
+    set_parser_preload_modules, set_parser_program_path, set_parser_source_file,
 };
 pub(crate) use lib_paths::{
-    fold_use_lib_path, parser_source_file, try_add_parse_time_lib_path, use_lib_args,
+    fold_use_lib_path, parser_module_unit, parser_source_file, try_add_parse_time_lib_path,
+    use_lib_args,
 };
 
 // `pub(crate)` re-exports.
@@ -133,7 +134,9 @@ pub(in crate::parser) use pragma_preseed::{
 /// sub-hoisting order (#8657).
 pub(crate) use pragma_preseed::{is_user_declared_enum_value, is_user_declared_type};
 pub(crate) use pragma_preseed::{is_user_declared_sub, term_keywords_shadowable};
-pub(in crate::parser) use pragma_preseed::{note_unit_package, statement_package};
+pub(in crate::parser) use pragma_preseed::{
+    note_package_declared, note_unit_package, package_declared, statement_package,
+};
 pub(crate) use registry::lookup_custom_infix_precedence;
 pub(in crate::parser) use registry::{
     declare_keywords_snapshot, declared_loop_label_value, is_declared_loop_label, lookup_op_prec,
@@ -333,6 +336,10 @@ thread_local! {
     /// The package the unit's `unit module` / `unit class` declaration names
     /// (`pragma_preseed::note_unit_package`).
     static UNIT_PACKAGE: RefCell<Option<String>> = const { RefCell::new(None) };
+    /// Whether the unit being parsed has declared a package-like type (a
+    /// `class`/`role`/`grammar`/`module`/`package` block) yet; a `unit`
+    /// declarator after one is too late (`pragma_preseed::note_package_declared`).
+    static PACKAGE_DECLARED: RefCell<bool> = const { RefCell::new(false) };
 
     /// Library search paths set before parsing, mirroring the runtime's lib_paths.
     static LIB_PATHS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
@@ -352,6 +359,10 @@ thread_local! {
     /// a module reports the module's own path. `None` leaves `$?FILE` as a
     /// runtime lookup (EVAL and other synthesized parses).
     static SOURCE_FILE: RefCell<Option<String>> = const { RefCell::new(None) };
+    /// Whether the compilation unit being parsed is a module (`use`/`need`/
+    /// `require`) rather than the program or an `EVAL`. See
+    /// `set_parser_module_unit`.
+    static MODULE_UNIT: RefCell<bool> = const { RefCell::new(false) };
 
     /// Operator sub names to pre-register after scope reset (for EVAL).
     static EVAL_OPERATOR_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
@@ -555,10 +566,12 @@ pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state
     unit.take(&SCOPES, vec![LexicalScope::default()]);
     unit.take(&PACKAGE_PATH, Vec::new());
     unit.take(&UNIT_PACKAGE, None);
+    unit.take(&PACKAGE_DECLARED, false);
     unit.take(&LIB_PATHS, Vec::new());
     unit.take(&PRELOAD_MODULES, Vec::new());
     unit.take(&PROGRAM_PATH, None);
     unit.take(&SOURCE_FILE, None);
+    unit.take(&MODULE_UNIT, false);
     unit.take(&EVAL_OPERATOR_PRESEED, Vec::new());
     unit.take(&EVAL_OPERATOR_ASSOC_PRESEED, HashMap::new());
     unit.take(&EVAL_USER_SUB_PRESEED, Vec::new());

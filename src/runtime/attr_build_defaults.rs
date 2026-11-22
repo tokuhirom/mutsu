@@ -511,8 +511,8 @@ impl Interpreter {
         // class even when a foreign module called `.new`.
         let saved_unit = self.current_unit;
         self.current_unit = captured_unit
-            .or_else(|| self.module.class_declaring_units.get(decl_package).copied())
-            .or_else(|| self.module.class_declaring_units.get(class_key).copied())
+            .or_else(|| self.module.world.class_declaring_units.read().get(decl_package).copied())
+            .or_else(|| self.module.world.class_declaring_units.read().get(class_key).copied())
             .unwrap_or(saved_unit);
         // Closures built by the default (`has &.p = -> { helper() }`) stamp the
         // file of the innermost routine frame as their own `source_file`, and

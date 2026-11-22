@@ -915,7 +915,11 @@ impl Interpreter {
         parent: &str,
         does_parents: &[String],
     ) -> String {
-        if self.is_self_named_builtin_role_parent(child_name, parent, does_parents) {
+        // A role's pun class composes exactly that role (#18233, see
+        // `register_class_decl`).
+        if self.is_self_named_builtin_role_parent(child_name, parent, does_parents)
+            || Self::plain_role_pun_source(child_name) == Some(parent)
+        {
             parent.to_string()
         } else {
             let resolved = self.resolve_declared_type_name(parent);

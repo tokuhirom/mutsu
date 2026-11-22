@@ -64,6 +64,7 @@
 //! `serde::Deserialize`. The `Value` enum uses custom serde that supports
 //! only the subset of variants that can appear in AST literals.
 
+pub(crate) mod begin_log;
 pub(crate) mod bytecode;
 pub(crate) mod private_files;
 
@@ -159,7 +160,8 @@ pub(crate) fn interpreter_version() -> String {
     // `OpCode::MarkSigillessBind` gained `from_stack` (ADR-10779 D3).
     // 69: `Stmt::TempMethodAssign`'s value became optional and it gained
     // `is_let` (#18392).
-    const CACHE_FORMAT_VERSION: u32 = 69;
+    // 70: `CompiledSubDeclPlan` gained `block_operator_set` (#17771).
+    const CACHE_FORMAT_VERSION: u32 = 70;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();

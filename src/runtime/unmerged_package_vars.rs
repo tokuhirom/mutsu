@@ -51,7 +51,9 @@ impl Interpreter {
         // `EXPORTHOW`) are read here on the importer's behalf.
         if let Some(&unit) = self
             .module
+            .world
             .module_visibility
+            .read()
             .lexical_package_units
             .get(&top)
             && !matches!(top.as_str(), "EXPORT" | "EXPORTHOW")
@@ -62,9 +64,8 @@ impl Interpreter {
             let split = split_qualified_var(name)?;
             return Some(Self::unmerged_store_key(pkg, split.sigil, split.bare));
         }
-        let modules = self
-            .module
-            .module_visibility
+        let module_visibility_r = self.module.world.module_visibility.read();
+        let modules = module_visibility_r
             .package_granting_modules
             .get(top.as_str())?;
         if self.any_module_merged_here(modules) {
@@ -104,8 +105,15 @@ impl Interpreter {
     // Cost: O(1) expected.
     pub(crate) fn record_lexical_package_unit(&mut self, name: Symbol) {
         let unit = self.executing_unit_sym_for_module_load();
-        crate::runtime::cow_table_mut(&mut self.module.module_visibility.lexical_package_units)
-            .insert(name, unit);
+        crate::runtime::cow_table_mut(
+            &mut self
+                .module
+                .world
+                .module_visibility
+                .write_guard()
+                .lexical_package_units,
+        )
+        .insert(name, unit);
     }
 
     /// Whether the running code belongs to `unit` (or to an `EVAL` of it),
@@ -146,7 +154,7 @@ impl Interpreter {
     // otherwise one intern plus `unmerged_package_var_key`.
     #[inline]
     pub(crate) fn unmerged_our_var_key(&self, key: &str) -> Option<Symbol> {
-        let visibility = &self.module.module_visibility;
+        let visibility = &self.module.world.module_visibility.read();
         if (visibility.package_granting_modules.is_empty()
             && visibility.lexical_package_units.is_empty())
             || !crate::qualified::is_qualified_str(key)
