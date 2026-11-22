@@ -1047,7 +1047,7 @@ impl Interpreter {
 
         // A `Date`/`DateTime` instance the shape lookup did not take (a
         // subclass instance): the rows, found by owner (ADR-11276 §9.127).
-        if let Some(result) = self.dispatch_temporal_method(&target, method, &args) {
+        if let Some(result) = self.dispatch_unqualified_temporal_method(&target, method, &args) {
             return result;
         }
 

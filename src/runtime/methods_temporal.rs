@@ -59,4 +59,31 @@ impl super::Interpreter {
         }
         crate::builtins::method_table::invoke_owner(self, owners, method, args, || target.clone())
     }
+
+    /// [`Self::dispatch_temporal_method`] for an unqualified call: a
+    /// subclass's (or a mixed-in role's) own method of the name wins over the
+    /// `Date`/`DateTime` row it overrides when one of its candidates binds the
+    /// call -- `$topic ~~ ($date but R)` runs R's `ACCEPTS` (Chronic's
+    /// `DateTimeMatcher`, #18817). A `multi` none of whose candidates binds
+    /// leaves the row, as an inherited candidate would answer. A qualified
+    /// `self.DateTime::later` asks for the row itself and does not come here.
+    // Cost: the user candidate resolution's, plus the row's.
+    pub(super) fn dispatch_unqualified_temporal_method(
+        &mut self,
+        target: &Value,
+        method: &str,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        if let ValueView::Instance { class_name, .. } = target.view()
+            && !matches!(class_name.as_str(), "Date" | "DateTime")
+            && self.has_user_method(&class_name.resolve(), method)
+        {
+            match self.user_method_applies(&class_name.resolve(), method, target, args) {
+                Ok(true) => return None,
+                Ok(false) => {}
+                Err(e) => return Some(Err(e)),
+            }
+        }
+        self.dispatch_temporal_method(target, method, args)
+    }
 }
