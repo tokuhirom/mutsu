@@ -10,8 +10,15 @@ use Test::Util;
 # comment past it has no declarand: rakudo warns "Missing declarand for
 # trailing declarator doc" and attaches it to nothing. Routines and grammar
 # rules are exempt: blank lines do not cut them off (#18096).
+#
+# The worry is the program's own: rakudo reports a module's worries once, when
+# it precompiles it, never on a later load, while mutsu replays a module's
+# parse warnings on every load -- so a module only gets the attachment rule.
+# (Test 15 therefore differs from a *cold* rakudo, which prints the worry on
+# the precompiling load; roast's 6.c/MISC/bug-coverage-stress.t relies on a
+# module load staying quiet.)
 
-plan 14;
+plan 15;
 
 my $missing = 'Missing declarand for trailing declarator doc';
 
@@ -144,3 +151,17 @@ grammar G {
 }
 print G.^find_method('t').WHY;
 ｣, %(:out('one'), :err('')), 'a grammar rule is exempt too';
+
+{
+    my $dir = make-temp-dir;
+    $dir.add('DeclDocAdjacency.rakumod').spurt: ｢
+unit module DeclDocAdjacency;
+class A is export {
+}
+#= trailing A
+
+#= stray
+｣;
+    is_run ｢use DeclDocAdjacency; print A.WHY｣, :compiler-args['-I', $dir.absolute],
+        %(:out('trailing A'), :err('')), 'a module gets the rule, but not the worry';
+}

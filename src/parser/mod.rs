@@ -415,8 +415,8 @@ pub(crate) fn replay_cached_type_names(
     }
 }
 pub use stmt::simple::{
-    clear_parser_lib_paths, set_parser_lib_paths, set_parser_preload_modules,
-    set_parser_program_path, set_parser_source_file,
+    clear_parser_lib_paths, set_parser_lib_paths, set_parser_module_unit,
+    set_parser_preload_modules, set_parser_program_path, set_parser_source_file,
 };
 
 pub(crate) use expr::precedence::{assign_to_target_expr, single_target_list_lvalue_expr};

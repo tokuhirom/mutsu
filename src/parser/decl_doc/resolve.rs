@@ -48,7 +48,8 @@ fn trailing_owner(
 
 /// Hand every comment to the declaration it documents (see the module docs).
 /// A trailing `#=` that documents nothing gets rakudo's "Missing declarand"
-/// worry, reported on the line the comment ends on.
+/// worry, reported on the line the comment ends on -- in the program's own
+/// units only, see `set_parser_module_unit`.
 fn assign_comments(t: &Table) -> HashMap<usize, DeclDoc> {
     let mut leading: HashMap<usize, Vec<&Comment>> = HashMap::new();
     let mut trailing: HashMap<usize, Vec<&Comment>> = HashMap::new();
@@ -58,7 +59,7 @@ fn assign_comments(t: &Table) -> HashMap<usize, DeclDoc> {
     for (&at, comment) in &t.comments {
         let owner = if comment.trailing {
             let owner = trailing_owner(t, at, comment, &mut last_line);
-            if owner.is_none() {
+            if owner.is_none() && !crate::parser::stmt::simple::parser_module_unit() {
                 crate::parser::add_parse_warning(
                     "Potential difficulties:\n    Missing declarand for trailing declarator doc"
                         .to_string(),

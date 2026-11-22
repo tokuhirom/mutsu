@@ -98,7 +98,9 @@ impl Interpreter {
             crate::parser::set_parser_source_file(Some(path.to_string_lossy().to_string()));
         // Like a module's, the required file's own `use`s load in its prologue
         // (see `parse_module_source_in`).
+        let saved_module_unit = crate::parser::set_parser_module_unit(true);
         let result = parse_dispatch::parse_compilation_unit_of(&preprocessed);
+        crate::parser::set_parser_module_unit(saved_module_unit);
         crate::parser::set_parser_source_file(saved_source_file);
         crate::parser::clear_parser_lib_paths();
         // See the parallel comment in `run_modules::parse_module_source`: the

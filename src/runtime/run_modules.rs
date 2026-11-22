@@ -603,6 +603,7 @@ impl Interpreter {
         // the previous value is restored rather than cleared.
         let saved_source_file =
             crate::parser::set_parser_source_file(Some(source_path.to_string_lossy().to_string()));
+        let saved_module_unit = crate::parser::set_parser_module_unit(true);
         let parse = || {
             parse_dispatch::parse_compilation_unit_of(&preprocessed)
         };
@@ -618,6 +619,7 @@ impl Interpreter {
             None => parse(),
         });
         self.module.module_loading_unit_stack.pop();
+        crate::parser::set_parser_module_unit(saved_module_unit);
         crate::parser::set_parser_source_file(saved_source_file);
         crate::parser::clear_parser_lib_paths();
         // Capture exactly what a later cache hit will have to replay, before

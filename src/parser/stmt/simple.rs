@@ -46,11 +46,12 @@ pub(in crate::parser) use begin_at_parse::{
 
 // `pub` re-exports.
 pub use lib_paths::{
-    clear_parser_lib_paths, set_parser_lib_paths, set_parser_preload_modules,
-    set_parser_program_path, set_parser_source_file,
+    clear_parser_lib_paths, set_parser_lib_paths, set_parser_module_unit,
+    set_parser_preload_modules, set_parser_program_path, set_parser_source_file,
 };
 pub(crate) use lib_paths::{
-    fold_use_lib_path, parser_source_file, try_add_parse_time_lib_path, use_lib_args,
+    fold_use_lib_path, parser_module_unit, parser_source_file, try_add_parse_time_lib_path,
+    use_lib_args,
 };
 
 // `pub(crate)` re-exports.
@@ -352,6 +353,10 @@ thread_local! {
     /// a module reports the module's own path. `None` leaves `$?FILE` as a
     /// runtime lookup (EVAL and other synthesized parses).
     static SOURCE_FILE: RefCell<Option<String>> = const { RefCell::new(None) };
+    /// Whether the compilation unit being parsed is a module (`use`/`need`/
+    /// `require`) rather than the program or an `EVAL`. See
+    /// `set_parser_module_unit`.
+    static MODULE_UNIT: RefCell<bool> = const { RefCell::new(false) };
 
     /// Operator sub names to pre-register after scope reset (for EVAL).
     static EVAL_OPERATOR_PRESEED: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
@@ -559,6 +564,7 @@ pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state
     unit.take(&PRELOAD_MODULES, Vec::new());
     unit.take(&PROGRAM_PATH, None);
     unit.take(&SOURCE_FILE, None);
+    unit.take(&MODULE_UNIT, false);
     unit.take(&EVAL_OPERATOR_PRESEED, Vec::new());
     unit.take(&EVAL_OPERATOR_ASSOC_PRESEED, HashMap::new());
     unit.take(&EVAL_USER_SUB_PRESEED, Vec::new());
