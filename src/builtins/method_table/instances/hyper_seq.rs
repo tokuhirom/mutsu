@@ -159,13 +159,20 @@ fn configuration(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> A
     Some(i.hyper_seq_configuration(t))
 }
 
-/// `raku`: `Mu.raku` over the configuration, reading no element (#18690).
+/// `raku`: Rakudo's `Mu.raku` over the configuration, reading no element, so
+/// an infinite (lazy) hyper sequence renders too (#18690).
 // Cost: O(1).
 fn raku(_: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answer {
-    if lazy_hyper(t) {
-        return None;
-    }
-    Some(Ok(Value::str(crate::value::raku_repr::raku_value(t))))
+    use crate::value::{HyperKind, ValueView, hyper_config};
+    let rendered = match t.view() {
+        ValueView::LazyList(list) => match list.hyper_kind() {
+            HyperKind::Hyper => hyper_config::seq_raku(true, list.hyper_config()),
+            HyperKind::Race => hyper_config::seq_raku(false, list.hyper_config()),
+            HyperKind::Plain => return None,
+        },
+        _ => crate::value::raku_repr::raku_value(t),
+    };
+    Some(Ok(Value::str(rendered)))
 }
 
 // Cost: O(1).
