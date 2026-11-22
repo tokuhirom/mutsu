@@ -686,12 +686,28 @@ impl Interpreter {
         let world = self.types.registry.generation();
         if world != self.types.registry_world_seen.load(Ordering::Relaxed) {
             self.types.registry_world_seen.store(world, Ordering::Relaxed);
-            self.types.registry_write_gen.store(
-                crate::runtime::registry_gen::next_generation(),
-                Ordering::Relaxed,
-            );
+            let generation = crate::runtime::registry_gen::next_generation();
+            self.types.registry_write_gen.store(generation, Ordering::Relaxed);
+            self.types.registry_decl_gen.store(generation, Ordering::Relaxed);
         }
         self.types.registry_write_gen.load(Ordering::Relaxed)
+    }
+
+    /// The registry's own generation: like [`Self::registry_write_generation`]
+    /// it moves on every registry write here and on one another thread
+    /// published, but not when this context's routine tables are written or
+    /// swapped (`routines_mut`, a closure run on its creator's routine tables).
+    /// A memo whose answer reads the registry and never the routine tables --
+    /// what a class declares, which methods and accessors it has -- is keyed
+    /// by this one, so a worker calling a closure the main thread created
+    /// keeps it (#14812).
+    // Cost: O(1), one or two atomic loads.
+    #[inline]
+    pub(crate) fn registry_decl_generation(&self) -> u64 {
+        self.registry_write_generation();
+        self.types
+            .registry_decl_gen
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Write access to the shared declaration [`Registry`]. Same guard discipline
@@ -701,10 +717,13 @@ impl Interpreter {
         // Any write access may mutate the registry, so move to a generation
         // value no interpreter has had (`registry_gen`): the content after
         // this write is this interpreter's alone.
-        self.types.registry_write_gen.store(
-            crate::runtime::registry_gen::next_generation(),
-            std::sync::atomic::Ordering::Relaxed,
-        );
+        let generation = crate::runtime::registry_gen::next_generation();
+        self.types
+            .registry_write_gen
+            .store(generation, std::sync::atomic::Ordering::Relaxed);
+        self.types
+            .registry_decl_gen
+            .store(generation, std::sync::atomic::Ordering::Relaxed);
         crate::runtime::registry::RegistryWriteGuard::new(&self.types.registry)
     }
 

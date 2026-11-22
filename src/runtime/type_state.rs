@@ -85,6 +85,13 @@ pub(crate) struct TypeState {
     /// checked". `AtomicU64` (not `Cell`) so `Interpreter` stays `Send`/`Sync` —
     /// `registry_mut()` takes `&self`.
     pub(crate) registry_write_gen: std::sync::atomic::AtomicU64,
+    /// [`Self::registry_write_gen`] for what the registry alone answers: it
+    /// moves with every registry write (here or published by another thread)
+    /// but not with a routine-table write or swap, so a memo of class and
+    /// method facts survives a call that installs another thread's routine
+    /// tables for a closure (#14812). See
+    /// `Interpreter::registry_decl_generation`.
+    pub(crate) registry_decl_gen: std::sync::atomic::AtomicU64,
     /// Per-`(class, attribute)` memo of `self_attr_type_constraint`, keyed by
     /// the same `registry_write_gen` (ADR-0121). See `vm_attr_type_constraint`.
     pub(crate) attr_type_constraint_cache: std::cell::RefCell<crate::vm::AttrTypeConstraintCache>,
@@ -322,6 +329,7 @@ impl TypeState {
             registry_world_seen: std::sync::atomic::AtomicU64::new(0),
             routines: Arc::new(RwLock::new(Arc::default())),
             registry_write_gen: Interpreter::fresh_registry_write_gen(),
+            registry_decl_gen: Interpreter::fresh_registry_write_gen(),
             attr_type_constraint_cache: Default::default(),
             class_does_role_memo: Default::default(),
             package_stash_hidden: Default::default(),
@@ -392,6 +400,10 @@ impl TypeState {
             // in shared chunks are current for it (`registry_gen`).
             registry_write_gen: std::sync::atomic::AtomicU64::new(
                 self.registry_write_gen
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            ),
+            registry_decl_gen: std::sync::atomic::AtomicU64::new(
+                self.registry_decl_gen
                     .load(std::sync::atomic::Ordering::Relaxed),
             ),
             attr_type_constraint_cache: Default::default(),
