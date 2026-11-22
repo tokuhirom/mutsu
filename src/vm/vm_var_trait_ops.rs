@@ -540,13 +540,6 @@ impl Interpreter {
                     self.set_env_with_main_alias(&name_str, tagged);
                 }
             }
-            // Mark the variable read-only to prevent mutation
-            self.mark_readonly_with(&name_str, crate::ast::ReadonlyKind::ImmutableValue);
-            self.record_readonly_on_own_binding(
-                code,
-                &name_str,
-                crate::ast::ReadonlyKind::ImmutableValue,
-            );
             return Ok(());
         }
 

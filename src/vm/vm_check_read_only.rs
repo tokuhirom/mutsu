@@ -33,7 +33,9 @@ impl Interpreter {
         };
         Some(RuntimeError::assignment_ro_typename(
             type_name,
-            &current.to_string_value(),
+            &crate::value::exception_message::shorten_assignment_ro_gist(
+                &crate::value::gist::gist_value(&current),
+            ),
         ))
     }
 
