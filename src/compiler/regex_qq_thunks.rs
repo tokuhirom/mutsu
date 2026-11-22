@@ -77,7 +77,7 @@ impl Compiler {
             };
             let name = format!("__mutsu_regex_qq_{}", self.code.locals.len());
             let slot = self.alloc_fresh_local(&name);
-            self.with_escape(true, |c| c.compile_expr(&thunk));
+            self.compile_expr(&thunk);
             self.code.emit(OpCode::SetLocal(slot));
             captures.push((MetaNs::RegexQq.key(Symbol::intern(&body)), slot));
         }
