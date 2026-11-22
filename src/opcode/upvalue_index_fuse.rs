@@ -49,25 +49,17 @@ impl CompiledCode {
             ) {
                 continue;
             }
-            let mut depth = 0usize;
-            let mut fused_at = None;
-            for k in p + 1..=q {
-                if k == q {
-                    if depth == 1 {
-                        fused_at = Some(q);
-                    }
-                    break;
-                }
-                let Some((pops, pushes)) = pure_subscript_op_effect(&self.ops[k]) else {
-                    break;
-                };
-                // An op that would consume the upvalue's own value is not
-                // part of the subscript.
-                let Some(after_pops) = depth.checked_sub(pops) else {
-                    break;
-                };
-                depth = after_pops + pushes;
+            // Every op strictly between the read and the `Index` must be a
+            // pure subscript op, never consuming the upvalue's own value, and
+            // together they must leave exactly the subscript on the stack.
+            let mut depth = Some(0usize);
+            for op in &self.ops[p + 1..q] {
+                depth = depth.and_then(|d| {
+                    let (pops, pushes) = pure_subscript_op_effect(op)?;
+                    Some(d.checked_sub(pops)? + pushes)
+                });
             }
+            let fused_at = (depth == Some(1)).then_some(q);
             if let Some(q) = fused_at {
                 self.ops[p] = OpCode::Jump((p + 1) as i32);
                 self.ops[q] = OpCode::IndexUpvalue { index, name_idx };
