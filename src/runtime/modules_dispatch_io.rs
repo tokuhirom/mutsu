@@ -41,6 +41,7 @@ mod rakuast_attributes;
 mod exception_control;
 mod exception_message;
 mod failure_calls;
+mod type_object_capture;
 pub(crate) mod family_gen_cache;
 pub(crate) mod fn_keys_index;
 pub(crate) mod function_table;

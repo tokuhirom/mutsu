@@ -48,22 +48,20 @@ pub(super) static MU_CAPTURE_ROWS: &[MethodRow] = &[MethodRow {
     name: "Capture",
     arity: 0,
     handler: Handler::Pure(mu_capture),
-    flags: RowFlags::NONE,
+    flags: RowFlags::TYPE_OBJECT_OK,
     named: &[],
 }];
 
 // Cost: O(a), a = attributes or elements of the receiver.
 fn mu_capture(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
-    // `Any` has no attributes to read: `Any.Capture` is `\()`.
-    // TODO: a type object of a class with attributes is Rakudo's "Cannot look
-    // up attributes in a Foo type object"; it answers the type in a capture.
+    // A core type object answers as rakudo's does (#18778): `\()` without
+    // attributes, the attribute read's death with them, or its own `:D`
+    // `Capture`'s refusal. A user class's is the interpreter twin's.
     if let ValueView::Package(name) = target.view()
-        && name == "Any"
+        && let Some(answer) =
+            crate::builtins::methods_0arg::type_capture::builtin_type_object_capture(name)
     {
-        return Ok(Value::capture(
-            Vec::new(),
-            crate::value::ValueMap::default(),
-        ));
+        return answer;
     }
     crate::builtins::methods_0arg::coercion::value_to_capture(target)
 }
