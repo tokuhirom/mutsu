@@ -5150,8 +5150,10 @@ impl Interpreter {
             if first_cell.is_none() {
                 *first_cell = Some(crate::gc::Gc::as_ptr(&cell) as usize);
             }
-            let mut guard = cell.lock().unwrap();
-            current = &mut *guard as *mut Value;
+            // The pointer outlives the guard (the caller writes through it
+            // with the mutex released), so the cell stops publishing its
+            // value lock-free for good (ADR-8069, `value::cell_publish`).
+            current = cell.lock().unwrap().escape_slot();
         }
         current
     }

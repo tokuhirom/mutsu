@@ -5897,6 +5897,12 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         match &code.ops[*ip] {
             // -- Indexing --
+            // Cost: O(1) for a snapshot hit (ADR-18637); otherwise as
+            // `GetUpvalue` followed by `Index`.
+            OpCode::IndexUpvalue { index, name_idx } => {
+                self.exec_index_upvalue_op(code, *index, *name_idx)?;
+                *ip += 1;
+            }
             // Cost: O(1) for a single index/key; O(k) for a slice, k = indices (see
             // exec_index_op_with_positional).
             OpCode::Index { is_positional } => {

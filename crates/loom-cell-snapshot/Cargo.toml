@@ -1,0 +1,19 @@
+# A loom model of the lock-free shared-array snapshot protocol (ADR-18637 §6.2,
+# `src/value/cell_snapshot.rs`). A standalone package, outside the workspace,
+# so loom never enters the interpreter's dependency graph. Run:
+#
+#   cd crates/loom-cell-snapshot
+#   RUSTFLAGS="--cfg crossbeam_loom" cargo test --release
+[package]
+name = "loom-cell-snapshot"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "Artistic-2.0"
+
+[workspace]
+
+[dev-dependencies]
+# The same pinned release the interpreter uses, built against loom.
+crossbeam-epoch = { version = "=0.9.18", features = ["loom"] }
+loom = "=0.7.2"

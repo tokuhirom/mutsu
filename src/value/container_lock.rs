@@ -356,6 +356,9 @@ impl crate::value::ContainerCell {
     /// which takes the same pair.
     // Cost: O(1).
     pub(crate) fn load(&self) -> crate::value::Value {
+        if let Some(published) = self.published_value() {
+            return published;
+        }
         let _structure = ContainerStructGuard::acquire(std::ptr::from_ref(self) as usize);
         self.lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
