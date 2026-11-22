@@ -319,7 +319,9 @@ pub(crate) fn contains_whatever(expr: &Expr) -> bool {
                 || is_wrapped_whatevercode(left)
                 || is_wrapped_whatevercode(right)
         }
-        Expr::Unary { expr, .. } => operand_contains_whatever(expr) || is_wrapped_whatevercode(expr),
+        Expr::Unary { expr, .. } => {
+            operand_contains_whatever(expr) || is_wrapped_whatevercode(expr)
+        }
         Expr::PostfixOp { expr, .. } => contains_whatever(expr) || is_wrapped_whatevercode(expr),
         // Non-currying pseudo-methods evaluate immediately on Whatever AND on
         // an already-built WhateverCode: `*.WHAT` is `(Whatever)` and
