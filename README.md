@@ -26,7 +26,7 @@ PATH:
 ```bash
 mise use -g github:tokuhirom/mutsu       # latest release
 # or pin a version:
-mise use -g github:tokuhirom/mutsu@0.24.0
+mise use -g github:tokuhirom/mutsu@0.26.1
 
 mutsu -e 'say "Hello, World!"'
 mzef --version                            # the bundled Zef package manager
@@ -68,7 +68,7 @@ docker run --rm -v mutsu-home:/root ghcr.io/tokuhirom/mutsu \
     mutsu -e 'use JSON::OptIn; say "loaded"'
 ```
 
-Pin a version with a tag (`ghcr.io/tokuhirom/mutsu:0.24.0`); `:latest` tracks the
+Pin a version with a tag (`ghcr.io/tokuhirom/mutsu:0.26.1`); `:latest` tracks the
 newest release. Images are built from release tags only, so there is no
 development-branch tag.
 
@@ -78,12 +78,29 @@ carries only the `mutsu`/`mzef` binaries, the bundled zef tree, and zef's
 shell-out tools (`curl`/`git`/`tar`/`unzip`) — no Rust toolchain or source. Build
 it yourself with `docker build -t mutsu .`.
 
+### With npm (WebAssembly)
+
+The same interpreter is published as a WebAssembly package for browsers and
+Node.js:
+
+```bash
+npm install @tokuhirom/mutsu
+```
+
+See [Run mutsu in a browser](docs/browser-embedding.md) for the `<mutsu-code>`
+component and the JavaScript API.
+
 ### From source
 
 ```bash
 cargo build --release
 ./target/release/mutsu -e 'say "Hello, World!"'
 ```
+
+This builds `mutsu` and `mzef`. The language server for editors, `mutsu-lsp`, is
+built from source with `cargo build --release -p mutsu-lsp` (see
+[docs/language-server.md](docs/language-server.md)); it is not in the release
+archives.
 
 ## Quick Start
 
@@ -101,22 +118,53 @@ For interactive use:
 
 ## Status
 
-mutsu passes **1,426 out of 1,454** official [Roast](https://github.com/Raku/roast) test files in full. Compatibility is improving daily; the [site](https://tokuhirom.github.io/mutsu/) shows the figure counted at its last deploy.
+mutsu passes **1,437 of the 1,455** test files of the official
+[Roast](https://github.com/Raku/roast) spec suite in full (`roast-whitelist.txt`
+against `roast/`, counted the same way the [site](https://tokuhirom.github.io/mutsu/)
+counts it at each deploy). A full run of the suite on 2026-11-22 passed
+**195,587 of 196,001** subtests (`HISTORY.tsv`).
 
 Roast measures the language against its spec. The other question — *does the
 module I actually use work?* — is measured by running each zef distribution's own
-test suite under both rakudo and mutsu and comparing the two. Of the
-**1,638** distributions in the ecosystem index, **1,202** can be graded against
-a rakudo baseline, and **69.4%** of those (834) pass every test file that
-rakudo passes (**77.1%** of test files, **89.4%** of assertions). Look up a
-particular distribution on the [ecosystem
-page](https://tokuhirom.github.io/mutsu/ecosystem.html); the per-distribution
+test suite under both rakudo and mutsu and comparing the two. As of the ledger
+summary of 2026-11-22, the ecosystem index has **1,686** distributions. **1,339**
+of them can be graded against a rakudo baseline, and **99.3%** of those (1,329)
+pass every test file that rakudo passes (**99.3%** of test files, **99.9%** of
+assertions). Look up a particular distribution on the [ecosystem
+page](https://tokuhirom.github.io/mutsu/ecosystem.html). The per-distribution
 records are on the [`ecosystem-data`](https://github.com/tokuhirom/mutsu/tree/ecosystem-data/ecosystem)
-branch, the metric over time is
-[`history.tsv`](https://github.com/tokuhirom/mutsu/blob/ecosystem-data/ecosystem/history.tsv) and its chart
-[`history.svg`](https://github.com/tokuhirom/mutsu/blob/ecosystem-data/ecosystem/history.svg), and the method is
-[docs/ecosystem-parity.md](docs/ecosystem-parity.md). rakudo is the denominator
-throughout: a test rakudo also fails is not counted against mutsu.
+branch, the metric over time is in
+[`history.tsv`](https://github.com/tokuhirom/mutsu/blob/ecosystem-data/ecosystem/history.tsv)
+and its chart [`history.svg`](https://github.com/tokuhirom/mutsu/blob/ecosystem-data/ecosystem/history.svg),
+and the method is in [docs/ecosystem-parity.md](docs/ecosystem-parity.md).
+rakudo is the denominator throughout: a test rakudo also fails is not counted
+against mutsu. Fourteen distributions that are deliberately out of scope (for
+example the `MoarVM::` namespace) are listed with their reasons in
+[`ecosystem/exclude.txt`](ecosystem/exclude.txt) and left out of these figures.
+
+### Implementation
+
+- **Bytecode VM with a JIT.** Source is parsed, compiled to bytecode and run on
+  mutsu's own VM. The JIT, NaN-boxed values and the cycle collector are on by
+  default ([ADR-0001](docs/adr/0001-gc-strategy-and-phasing.md)).
+- **RakuAST.** `.AST` gives a program's RakuAST tree, and `EVAL` runs one.
+- **Concurrency.** `start`, `Promise`, `Supply`/`react`/`whenever`, `Channel` and
+  `Thread` run on real OS threads. Memory safety under concurrency follows
+  rakudo's model ([ADR-12814](docs/adr/12814-concurrency-memory-safety-follows-rakudo.md)).
+- **NativeCall.** `use NativeCall` loads the upstream module itself, through its
+  backend-neutral path, on a libffi-based FFI
+  ([ADR-11203](docs/adr/11203-nativecall-runs-upstream-via-the-backend-neutral-path.md)).
+- **Precompilation.** A loaded module's compiled bytecode is cached per user
+  ([ADR-11756](docs/adr/11756-compiled-bytecode-precompilation.md)). Replaying a
+  module's recorded BEGIN-time state instead of re-running it is landing in slices
+  ([ADR-18012](docs/adr/18012-precompiled-modules-replay-recorded-begin-time-state.md)).
+- **Modules and `mzef`.** `mzef` is the upstream Zef package manager, vendored and
+  run unmodified on mutsu.
+- **Batteries.** mutsu bundles a standard library of ecosystem modules, and runs
+  each one as the real upstream module, verbatim
+  ([BATTERIES.md](BATTERIES.md), [ADR-0096](docs/adr/0096-batteries-adoption-policy.md)).
+- **WebAssembly.** The interpreter builds for wasm32; the site's playground and the
+  npm package run it.
 
 ## What Works
 
@@ -273,14 +321,17 @@ Usage:
 
 ## Known Limitations
 
-- **Some compile-time diagnostics are missing.** Most visibly, an undeclared variable is not rejected at compile time the way strict mode requires.
-- **A few rare exception types are missing.** Nearly every `X::` type Rakudo ships exists; the exceptions are the roles `X::Await::Died`, `X::HyperRace::Died` and `X::Wrapper`, so a `CATCH` matching one of them may not fire.
-- **The package manager is young.** Zef ships bundled as `mzef` and runs on mutsu, but installing arbitrary ecosystem distributions is not yet dependable.
-- **`RakuAST` exists but is far from complete.**
+- **Not yet production-ready.** mutsu is under active development; expect gaps
+  and behaviour changes between releases.
+- **Roast is not complete.** The remaining files and why each one fails are
+  tracked in [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md).
+- **Some differences from rakudo are intentional.** Where mutsu deliberately
+  behaves differently (for example, it reports itself as `mutsu`, not as MoarVM),
+  [docs/rakudo-divergences.md](docs/rakudo-divergences.md) lists the known
+  intentional differences from rakudo and the reason for each.
 
 The [manual](https://tokuhirom.github.io/mutsu/manual.html#compat) keeps the current
-account of what works and what does not — including the things people assume are
-missing and are not (real threads, NativeCall, `supply`/`react`, grammar actions).
+account of what works and what does not.
 
 ## Building
 
@@ -335,5 +386,6 @@ only via `scripts/update-vendor.sh` (see [docs/vendoring.md](docs/vendoring.md))
 - [Raku documentation](https://docs.raku.org/)
 - [Roast (official Raku test suite)](https://github.com/Raku/roast)
 - [The mutsu site](https://tokuhirom.github.io/mutsu/) — Raku introduction, tutorial and playground (source in `site/`)
+- [Known intentional differences from rakudo](docs/rakudo-divergences.md)
 - [Raptor](https://github.com/xyzzyapps/raptor) — a Perl5 subset of Raku in Go, on top of MoarVM
 - [Raku++ (rakupp)](https://github.com/ash/rakupp) — a Raku interpreter and compiler written from scratch in C++17, validated against Roast
