@@ -144,10 +144,7 @@ pub(crate) fn leading_modifier_keyword(input: &str) -> Option<&'static str> {
 /// rakudo (#18510). `Err(expr)` gives the operand back when no modifier
 /// follows; a modifier on a later line starts a statement of its own.
 // Cost: O(n), n = length of the modifier parsed.
-pub(crate) fn prefix_operand_statement(
-    input: &str,
-    expr: Expr,
-) -> PResult<'_, Result<Stmt, Expr>> {
+pub(crate) fn prefix_operand_statement(input: &str, expr: Expr) -> PResult<'_, Result<Stmt, Expr>> {
     let same_line = ws(input).is_ok_and(|(after, _)| {
         !input[..input.len() - after.len()].contains(['\n', '\r'])
             && leading_modifier_keyword(after).is_some()
@@ -163,10 +160,7 @@ pub(crate) fn prefix_operand_statement(
 /// a `do` statement (its value, `Empty` when the condition fails), or the
 /// operand itself.
 // Cost: as `prefix_operand_statement`.
-pub(crate) fn prefix_operand_expr(
-    input: &str,
-    expr: Expr,
-) -> PResult<'_, Expr> {
+pub(crate) fn prefix_operand_expr(input: &str, expr: Expr) -> PResult<'_, Expr> {
     let (rest, operand) = prefix_operand_statement(input, expr)?;
     let expr = match operand {
         Ok(stmt) => Expr::DoStmt(Box::new(stmt)),

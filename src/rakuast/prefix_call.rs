@@ -79,7 +79,10 @@ fn blorst(names: &NameScope, arg: &Expr) -> Result<RakuAstNode, RuntimeError> {
 /// statement as a `do` statement) is that statement itself, as in rakudo
 /// (#18510); any other operand is a `Statement::Expression` over it.
 // Cost: O(n), n = size of the operand.
-pub(super) fn prefix_statement(names: &NameScope, operand: &Expr) -> Result<RakuAstNode, RuntimeError> {
+pub(super) fn prefix_statement(
+    names: &NameScope,
+    operand: &Expr,
+) -> Result<RakuAstNode, RuntimeError> {
     if let Expr::DoStmt(stmt) = operand
         && super::view::is_modifier_statement(stmt)
     {
