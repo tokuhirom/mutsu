@@ -52,7 +52,20 @@ pub(crate) fn invoke(
     // reaches `Any`'s rows through its MRO (§9.106).
     let id = match Receiver::of_settled(target) {
         Some(receiver) => resolve(receiver, method, 1)?,
-        None => super::dispatch::shapeless_row(Some(&mut *interp), target, method, 1)?,
+        None => {
+            // A class that declares the method itself (a user `AT-POS` taking
+            // any index, Red's `Red::Column` one) answers it: `Any`'s row
+            // must not coerce the index first (#18782).
+            // The receiver may arrive in its container (a raw `\SELF`
+            // invocant's assignment).
+            if let ValueView::Instance { class_name, .. } | ValueView::Package(class_name) =
+                target.deref_container().view()
+                && interp.has_user_method_memo(class_name, method)
+            {
+                return None;
+            }
+            super::dispatch::shapeless_row(Some(&mut *interp), target, method, 1)?
+        }
     };
     let flags = row(id).flags;
     if !flags.contains(RowFlags::INDEX_ARG) {
