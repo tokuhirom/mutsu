@@ -47,10 +47,12 @@ pub(crate) struct RegexTree {
 /// A slot for facts a higher layer derives from a [`RegexTree`], computed on
 /// first use. The tree does not know their type (the layer rule: the AST names
 /// no runtime type), so the slot holds them type-erased; the runtime's
-/// `regex_value_memo` module is the only writer and reader.
+/// `regex_value_memo` module is the only writer and reader. It is one pointer
+/// wide: a tree sits inline in `Expr::RegexLiteral`, and `Expr` is
+/// size-bounded.
 #[derive(Default)]
 pub(crate) struct ExecMemo(
-    std::sync::Mutex<Option<std::sync::Arc<dyn std::any::Any + Send + Sync>>>,
+    Box<std::sync::Mutex<Option<std::sync::Arc<dyn std::any::Any + Send + Sync>>>>,
 );
 
 impl ExecMemo {
