@@ -30,52 +30,6 @@ use crate::ast::{ParamTrait, SignatureDecl, SignatureGroup, SignatureInit, Signa
 use crate::scope::NameScope;
 use crate::value::{RuntimeError, Value, ValueView};
 
-/// Construct the same declaring signature shape produced by the parser.
-// Cost: O(a), a = number of constructor arguments (a fixed number of lookups).
-pub(super) fn construct(args: &[Value]) -> Result<Value, RuntimeError> {
-    let ctor = "RakuAST::VarDeclaration::Signature.new";
-    let signature = super::named_arg(args, "signature")
-        .ok_or_else(|| RuntimeError::new(format!("{ctor} requires `signature`")))?;
-    super::require_rakuast_class(&signature, RakuAstClass::Signature, ctor)?;
-    let mut fields = vec![RakuAstField {
-        name: Some("signature"),
-        value: RakuAstFieldValue::Node(signature),
-    }];
-    if let Some(scope) = super::named_arg(args, "scope") {
-        if !matches!(scope.view(), ValueView::Str(_)) {
-            return Err(RuntimeError::new(format!(
-                "{ctor} expects `scope` to be Str"
-            )));
-        }
-        fields.push(leaf_field(Some("scope"), scope));
-    }
-    if let Some(ty) = super::named_arg(args, "type") {
-        super::require_rakuast_type(&ty, ctor)?;
-        fields.push(RakuAstField {
-            name: Some("type"),
-            value: RakuAstFieldValue::Node(ty),
-        });
-    }
-    if let Some(init) = super::named_arg(args, "initializer") {
-        if !matches!(init.view(), ValueView::RakuAst(n) if matches!(n.class,
-            RakuAstClass::InitializerAssign | RakuAstClass::InitializerBind))
-        {
-            return Err(RuntimeError::new(format!(
-                "{ctor} expects an assignment or binding initializer"
-            )));
-        }
-        fields.push(RakuAstField {
-            name: Some("initializer"),
-            value: RakuAstFieldValue::Node(init),
-        });
-    }
-    Ok(Value::rakuast(Box::new(RakuAstNode {
-        origin: Default::default(),
-        class: RakuAstClass::VarDeclarationSignature,
-        fields,
-    })))
-}
-
 /// The `VarDeclaration::Signature` an expansion's source-form record describes.
 pub(super) fn view_node(
     names: &NameScope,
@@ -108,14 +62,31 @@ pub(super) fn view_node(
         class: RakuAstClass::Signature,
         fields: signature_fields,
     };
-    let mut fields = vec![node_field(Some("signature"), signature)];
-    if let Some(default) = &decl.group_default {
-        // Rakudo omits the group trait from .raku, but execution still needs it.
-        fields.push(node_field(
-            Some("group-default"),
-            view_expr(names, default)?,
-        ));
+    let traits = match &decl.group_default {
+        Some(default) => vec![super::signature_decl_traits::default_trait(names, default)?],
+        None => Vec::new(),
+    };
+    let mut signature = signature;
+    if !traits.is_empty()
+        && let Some(RakuAstField {
+            value: RakuAstFieldValue::List(parameters),
+            ..
+        }) = signature
+            .fields
+            .iter_mut()
+            .find(|f| f.name == Some("parameters"))
+    {
+        for value in parameters.iter_mut() {
+            if let ValueView::RakuAst(param) = value.view() {
+                let mut param = RakuAstNode::clone(param);
+                super::infix_origins::with_child(&mut param, "target", |target| {
+                    super::signature_decl_traits::with_declaration(target, &traits)
+                });
+                *value = Value::rakuast(Box::new(param));
+            }
+        }
     }
+    let mut fields = vec![node_field(Some("signature"), signature)];
     if decl.is_our || decl.is_state {
         let scope = if decl.is_our { "our" } else { "state" };
         fields.push(leaf_field(Some("scope"), Value::str(scope.to_string())));
@@ -141,6 +112,10 @@ pub(super) fn view_node(
                 fields: vec![node_field(None, view_expr(names, &init.rhs)?)],
             },
         ));
+    }
+    // Rakudo visits the traits last, and leaves them out of `.raku`.
+    if !traits.is_empty() {
+        fields.push(super::signature_decl_traits::traits_field(&traits));
     }
     Ok(RakuAstNode {
         origin: Default::default(),
@@ -359,12 +334,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, Runti
         is_state,
         is_our,
         type_constraint,
-        group_default: node
-            .fields
-            .iter()
-            .any(|f| f.name == Some("group-default"))
-            .then(|| lower_expr(names, named_child(node, "group-default")?))
-            .transpose()?,
+        group_default: super::signature_decl_traits::group_default(names, node)?,
         has_nested_group,
         init,
     })

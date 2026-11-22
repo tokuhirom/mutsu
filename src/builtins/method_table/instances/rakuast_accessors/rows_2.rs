@@ -102,6 +102,7 @@ pub(super) const ROWS: &[MethodRow] = &[
     row!("RakuAST::VarDeclaration::Signature", "initializer"),
     row!("RakuAST::VarDeclaration::Signature", "scope"),
     row!("RakuAST::VarDeclaration::Signature", "signature"),
+    row!("RakuAST::VarDeclaration::Signature", "traits"),
     row!("RakuAST::VarDeclaration::Signature", "type"),
     row!("RakuAST::VarDeclaration::Simple", "compile-time-value"),
     row!("RakuAST::VarDeclaration::Simple", "container-type"),
