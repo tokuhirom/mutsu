@@ -24,6 +24,7 @@ use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt, walk_stmts};
 use crate::regex_tree::RegexNode;
 
 mod forward;
+mod suggest;
 mod lowered_decls;
 mod refs;
 use refs::{VarRefs, later_param_in_where};
@@ -205,16 +206,22 @@ impl UndeclaredVars<'_> {
     /// env does not hold a lexical declared after the call yet (#10511).
     // Cost: O(|name|).
     fn caller_scope_declares(&self, name: &str) -> bool {
+        self.caller_code().is_some_and(|code| code.eval_scope_names.contains(name))
+    }
+
+    /// The compiled code of the frame calling `EVAL`.
+    // Cost: O(1).
+    fn caller_code(&self) -> Option<&crate::opcode::CompiledCode> {
         // The compunit mode runs at CHECK time, outside any `EVAL` call:
         // `current_code` may still name a chunk of an earlier run.
         if self.interp.current_code == 0 || self.forward.is_some() {
-            return false;
+            return None;
         }
         // SAFETY: `current_code` is the address of the live bytecode frame's
         // `CompiledCode` (the frame calling `EVAL`), kept alive for the whole
-        // frame by `vm_call_*`.
-        let code = unsafe { &*(self.interp.current_code as *const crate::opcode::CompiledCode) };
-        code.eval_scope_names.contains(name)
+        // frame by `vm_call_*`, which outlives this scan (it runs inside that
+        // frame's `EVAL` call).
+        Some(unsafe { &*(self.interp.current_code as *const crate::opcode::CompiledCode) })
     }
 
     /// Runs `f` with the given judging state, restoring the current one.
@@ -229,10 +236,6 @@ impl UndeclaredVars<'_> {
         self.scopes.push(HashSet::new());
         f(self);
         self.scopes.pop();
-    }
-
-    fn all_declared(&self) -> HashSet<String> {
-        self.scopes.iter().flatten().cloned().collect()
     }
 
     fn check_var(&mut self, expr: &Expr) {
