@@ -68,7 +68,7 @@ pub(crate) fn scan_subscript_adverbs(input: &str) -> Option<(&str, Vec<Expr>)> {
 /// `Array[Int]:D`: a colonpair after a type application. A subscript on a
 /// type name is a type application, not a subscript, so rakudo refuses the
 /// adverb at compile time (`X::Syntax::Adverb`, "You can't adverb
-/// Array[Int]") instead of passing it to `postcircumfix:<[ ]>` (#18323).
+/// `Array[Int]`") instead of passing it to `postcircumfix:<[ ]>` (#18323).
 /// `rest` is the input right after the `]`.
 // Cost: O(n), n = length of the subscript's source.
 pub(super) fn reject_type_application_adverb(subscript: &Expr, rest: &str) -> Result<(), PError> {
