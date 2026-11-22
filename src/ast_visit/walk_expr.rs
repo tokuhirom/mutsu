@@ -71,7 +71,10 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
             x_expr,
         } => {
             walk_literal(v, value);
-            for e in [pos_expr, continue_expr, nth_expr, x_expr].into_iter().flatten() {
+            for e in [pos_expr, continue_expr, nth_expr, x_expr]
+                .into_iter()
+                .flatten()
+            {
                 v.visit_expr(e);
             }
         }

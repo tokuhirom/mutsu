@@ -33,8 +33,7 @@ pub(in crate::parser) use scan::scan_to_delim;
 pub(crate) use subst::{subst_compound_rhs, subst_compound_thunk};
 pub(crate) use subst_source::{
     SubstFlags, match_adverb_exprs, parse_adverb_argument, regex_execution_value,
-    rx_execution_value,
-    subst_pattern_source,
+    rx_execution_value, subst_pattern_source,
 };
 
 // Items used by primary/mod.rs (sibling module).

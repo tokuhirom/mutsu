@@ -4670,8 +4670,7 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
             // `m:nth(...)` / `m:x(...)` evaluate their argument where the
             // match runs, as the parser's `m//` does.
             let (nth_expr, x_expr) = if tree.match_immediately && !is_rx_literal {
-                crate::parser::match_adverb_exprs(&tree.adverbs)
-                    .ok_or_else(|| unsupported(node))?
+                crate::parser::match_adverb_exprs(&tree.adverbs).ok_or_else(|| unsupported(node))?
             } else {
                 (None, None)
             };

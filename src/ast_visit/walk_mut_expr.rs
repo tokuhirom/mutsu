@@ -59,7 +59,10 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             nth_expr,
             x_expr,
         } => {
-            for e in [pos_expr, continue_expr, nth_expr, x_expr].into_iter().flatten() {
+            for e in [pos_expr, continue_expr, nth_expr, x_expr]
+                .into_iter()
+                .flatten()
+            {
                 v.visit_expr_mut(e);
             }
         }

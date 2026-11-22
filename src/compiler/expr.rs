@@ -192,8 +192,8 @@ impl Compiler {
                 self.compile_match_regex_topic(&value, false);
             }
             Expr::MatchRegexDynamicAdverbs { .. } => {
-                let (value, adverbs) =
-                    super::expr_helpers::DynamicMatchAdverbs::of(expr).expect("a dynamic m// match");
+                let (value, adverbs) = super::expr_helpers::DynamicMatchAdverbs::of(expr)
+                    .expect("a dynamic m// match");
                 self.compile_match_regex_dynamic(value, adverbs);
             }
             // `$?LANG` is the language handle the unit is compiled with
