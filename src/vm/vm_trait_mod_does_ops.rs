@@ -54,14 +54,13 @@ impl Interpreter {
     /// (`runtime::run::TRAIT_MOD_IS_DEFAULT_PRELUDE`). `None` for any other
     /// function name, matching the shape of `try_trait_mod_does_apply` above.
     ///
-    /// Relays `$default` through `trait_mod_default_writeback` rather than
-    /// mutating `$attr` itself: `apply_class_body_attribute_traits` drains it
-    /// right after dispatching an attribute's own custom traits and folds it
-    /// into that attribute's compiled default. A call reached with no
-    /// attribute-trait dispatch in progress (a bare `trait_mod:<is>($attr,
-    /// :default($v))` outside a `has` handler) leaves a value nobody reads —
-    /// a harmless no-op, matching how real Rakudo's own default machinery is
-    /// meaningless there too.
+    /// Records `$default` on the attribute meta-object, as CORE's `:rw` and
+    /// `:built` candidates record theirs (`attribute_core_traits`): the
+    /// declaration site reads it back after the attribute's custom traits ran
+    /// and folds it into the attribute's compiled default. A call on an
+    /// attribute no declaration is reading (a bare `trait_mod:<is>($attr,
+    /// :default($v))` outside a `has` handler) leaves a value nobody reads,
+    /// as on rakudo.
     pub(super) fn try_trait_mod_set_default(
         &mut self,
         name: &str,
@@ -76,7 +75,7 @@ impl Interpreter {
                 args.len()
             ))));
         }
-        self.trait_mod_default_writeback = Some(args[1].clone());
+        crate::runtime::attribute_core_traits::record_core_default(&args[0], &args[1]);
         Some(Ok(Value::NIL))
     }
 

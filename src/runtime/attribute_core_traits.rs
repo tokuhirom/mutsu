@@ -1,5 +1,5 @@
 //! CORE's own `trait_mod:<is>` candidates for an `Attribute` (`:rw`,
-//! `:built`), reached when a routine calls them by name.
+//! `:built`, `:default`), reached when a routine calls them by name.
 //!
 //! An `is rw` / `is built` written on the `has` line is decided by the parser.
 //! A custom attribute trait re-dispatches to the same CORE candidates as a call
@@ -14,13 +14,36 @@ use super::*;
 
 /// What CORE's `trait_mod:<is>` candidates did to one attribute while its
 /// custom traits ran.
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
+#[derive(Clone, Default)]
 pub(crate) struct AttrCoreTraitEffects {
     /// `trait_mod:<is>($attr, :rw)` ran: the accessor is writable.
     pub(crate) rw: bool,
     /// `trait_mod:<is>($attr, :built(...))` ran and changed whether `.new`
     /// initializes the attribute from a named argument.
     pub(crate) built: Option<bool>,
+    /// `trait_mod:<is>($attr, :default($v))` ran (ASN::BER's `is
+    /// default-value` handler re-dispatches to it): `$v` is the default.
+    pub(crate) default: Option<Value>,
+}
+
+/// The meta-object key CORE's `:default` candidate records its value under.
+const CORE_DEFAULT_KEY: &str = "default_value";
+
+/// CORE's `trait_mod:<is>(Attribute:D, :$default!)`: record `default` on the
+/// attribute meta-object `attr` (through a `.VAR` or a mixin), for the
+/// declaration site to read back ([`AttrCoreTraitEffects::read`]).
+// Cost: O(m), m = mixin layers on the attribute object.
+pub(crate) fn record_core_default(attr: &Value, default: &Value) {
+    let mut obj = match attr.view() {
+        ValueView::VarRef { value, .. } => value,
+        _ => attr,
+    };
+    while let ValueView::Mixin(inner, _) = obj.view() {
+        obj = inner.as_ref();
+    }
+    if let ValueView::Instance { attributes, .. } = obj.view() {
+        attributes.insert(CORE_DEFAULT_KEY.to_string(), default.clone());
+    }
 }
 
 impl AttrCoreTraitEffects {
@@ -45,11 +68,12 @@ impl AttrCoreTraitEffects {
             .get("is_built")
             .map(Value::truthy)
             .filter(|built| *built != is_public);
-        Self { rw, built }
+        let default = map.get(CORE_DEFAULT_KEY).cloned();
+        Self { rw, built, default }
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        *self == Self::default()
+        !self.rw && self.built.is_none() && self.default.is_none()
     }
 
     /// Fold the effects into an attribute definition and its class's or
@@ -62,10 +86,11 @@ impl AttrCoreTraitEffects {
         attribute_built: &mut HashMap<String, crate::ast::BuiltTrait>,
         attr_name: &str,
     ) {
-        if self.rw
-            && let Some(attr) = attributes.iter_mut().find(|a| a.name == attr_name)
-        {
-            attr.is_rw = true;
+        if let Some(attr) = attributes.iter_mut().find(|a| a.name == attr_name) {
+            attr.is_rw |= self.rw;
+            if let Some(default) = &self.default {
+                attr.default = Some(crate::opcode::DeclTraitArg::Literal(default.clone()));
+            }
         }
         if let Some(built) = self.built {
             attribute_built.insert(
