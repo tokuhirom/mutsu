@@ -679,7 +679,6 @@ impl Interpreter {
         // module name, just as exported subs are mirrored above, so a tagged
         // `our &alias is export(:tag)` is visible to a later `use Module :tag`.
         if let Some(unit_mod) = self.declared_unit_module_here().cloned() {
-            let mut exported_vars_w = self.module.world.exported_vars.write_guard();
             let mirror = crate::runtime::cow_table_mut(&mut exported_vars_w)
                 .entry(unit_mod)
                 .or_default()
@@ -696,7 +695,6 @@ impl Interpreter {
         if self.declared_unit_module_here().is_some()
             && let Some(module) = self.module.module_load_stack.last().cloned()
         {
-            let mut exported_vars_w = self.module.world.exported_vars.write_guard();
             let mirror = crate::runtime::cow_table_mut(&mut exported_vars_w)
                 .entry(module)
                 .or_default()
@@ -712,7 +710,6 @@ impl Interpreter {
         // is loading as well, allowing `use Module :tag` to import it and to
         // expose it through the importing lexical pseudo-stash.
         if let Some(owner) = self.module.module_load_stack.last().cloned() {
-            let mut exported_vars_w = self.module.world.exported_vars.write_guard();
             let mirror = crate::runtime::cow_table_mut(&mut exported_vars_w)
                 .entry(owner)
                 .or_default()
