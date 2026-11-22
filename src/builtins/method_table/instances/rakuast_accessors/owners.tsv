@@ -725,6 +725,7 @@ RakuAST::Var::Compiler::Distribution	name	RakuAST::Var::Lexical
 RakuAST::Var::Compiler::File	file	RakuAST::Var::Compiler::File
 RakuAST::Var::Compiler::Line	line	RakuAST::Var::Compiler::Line
 RakuAST::Var::Compiler::Lookup	name	RakuAST::Var::Compiler::Lookup
+RakuAST::Var::Compiler::Resources	name	RakuAST::Var::Lexical
 RakuAST::Var::Compiler::Routine	name	RakuAST::Var::Lexical
 RakuAST::Var::Doc	name	RakuAST::Var::Doc
 RakuAST::Var::Dynamic	is-resolved	RakuAST::Var::Dynamic
