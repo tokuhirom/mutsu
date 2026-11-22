@@ -830,9 +830,9 @@ pub(crate) use enum_display::{
     enum_display_name, is_package_enum_declared_name, note_enum_display_name, type_arg_display_name,
 };
 pub(crate) use error::LazyBacktraceText;
-pub(crate) use type_rename_display::{note_type_rename, type_rename_display};
 pub(crate) use error::expected_type_object;
 pub use error::{CatchInlinePayload, CatchInlineVerdict, Control, RuntimeError, RuntimeErrorCode};
+pub(crate) use type_rename_display::{note_type_rename, type_rename_display};
 // SubData is re-exported so callers can destructure Value::Sub(data)
 
 static INSTANCE_ID_COUNTER: AtomicU64 = AtomicU64::new(1);
