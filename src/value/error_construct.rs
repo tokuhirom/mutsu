@@ -668,6 +668,22 @@ impl RuntimeError {
         Self::typed("X::OutOfRange", attrs)
     }
 
+    /// X::OutOfRange naming the value that is out of range (`what`):
+    /// "<what> out of range. Is: <got>, should be in <range>".
+    // Cost: O(1) plus `got`'s Str.
+    pub(crate) fn out_of_range_named(what: &str, got: Value, range: &str) -> Self {
+        let msg = format!(
+            "{what} out of range. Is: {}, should be in {range}",
+            got.to_string_value()
+        );
+        let mut attrs = ValueMap::default();
+        attrs.insert("what".to_string(), Value::str(what.to_string()));
+        attrs.insert("got".to_string(), got);
+        attrs.insert("range".to_string(), Value::str(range.to_string()));
+        attrs.insert("message".to_string(), Value::str(msg));
+        Self::typed("X::OutOfRange", attrs)
+    }
+
     /// Create a Failure wrapping an X::OutOfRange exception.
     /// Used when operations should soft-fail (return Failure) rather than throw.
     pub(crate) fn out_of_range_failure(what: &str, got: Value, range: &str) -> Value {
