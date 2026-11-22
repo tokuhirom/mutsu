@@ -22,8 +22,7 @@ pub(crate) fn invalid_param_smiley_error(smiley: &str) -> PError {
 pub(crate) fn make_smiley_invocant_param(invocant_type: String, head: &str) -> ParamDef {
     let mut p = crate::parser::stmt::sub_param::make_param("self".to_string());
     if head.starts_with(invocant_type.as_str()) {
-        let written =
-            crate::parser::primary::source_span(head, &head[invocant_type.len()..]);
+        let written = crate::parser::primary::source_span(head, &head[invocant_type.len()..]);
         p.spans.param = written;
         p.spans.type_ = written;
     }

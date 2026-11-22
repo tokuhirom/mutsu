@@ -36,12 +36,10 @@ pub(super) fn place(name: &mut RakuAstNode, span: crate::ast::SrcSpan) -> bool {
         match class(part) {
             Some(RakuAstClass::NamePartEmptyEdge) if i == 0 => written.push(Some(String::new())),
             Some(RakuAstClass::NamePartExpression) => written.push(None),
-            Some(RakuAstClass::NamePartSimple) => {
-                match super::name_parts::part_identifier(part) {
-                    Some(word) => written.push(Some(word)),
-                    None => return true,
-                }
-            }
+            Some(RakuAstClass::NamePartSimple) => match super::name_parts::part_identifier(part) {
+                Some(word) => written.push(Some(word)),
+                None => return true,
+            },
             _ => return true,
         }
     }

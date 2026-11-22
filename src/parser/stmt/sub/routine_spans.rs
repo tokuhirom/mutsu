@@ -50,9 +50,10 @@ fn signature_span(start: &str, end: &str, params: &[ParamDef]) -> (SrcSpan, SrcS
     let span = match (written.first(), written.last(), returns) {
         (Some(first), _, Some((_, ret))) => SrcSpan::new(first.from as usize, ret.to as usize),
         (None, _, Some((arrow, ret))) => SrcSpan::new(arrow.from as usize, ret.to as usize),
-        (Some(first), Some(last), None) => {
-            SrcSpan::new(first.from as usize, invocant_marker_end(start, end, params).unwrap_or(last.to as usize))
-        }
+        (Some(first), Some(last), None) => SrcSpan::new(
+            first.from as usize,
+            invocant_marker_end(start, end, params).unwrap_or(last.to as usize),
+        ),
         _ => crate::parser::primary::source_span(start, start),
     };
     (span, returns.map_or(SrcSpan::NONE, |(_, ret)| ret))
