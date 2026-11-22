@@ -37,64 +37,6 @@ pub(crate) type RoutineCell = RwLock<Arc<RoutineTables>>;
 pub(crate) struct SavedRoutineTables {
     tables: Arc<RoutineTables>,
     keys_index: SavedFnKeysIndex,
-    /// The registry write generation before the swap, and the one the swap
-    /// assigned (see [`SwapGenerations`]).
-    before: u64,
-    assigned: u64,
-}
-
-/// How many `(installed tables, generation before)` pairs
-/// [`SwapGenerations`] remembers.
-const SWAP_GENERATIONS: usize = 8;
-
-/// The registry write generation each recent routine-table swap assigned
-/// (#14812).
-///
-/// A generation names the content of the registry *and* of the installed
-/// routine tables, so a swap must move it. A fresh value per swap, though,
-/// made a worker that calls a closure created on another thread once per
-/// loop iteration retire every memo keyed by it twice per iteration. Swapping
-/// the same creator tables in from the same starting generation installs the
-/// same content, so it is given the same generation again; leaving a call
-/// that wrote nothing puts the starting generation back. A memo filled inside
-/// the call (or outside it) then stays valid for the next one.
-#[derive(Default)]
-pub(crate) struct SwapGenerations {
-    entries: Vec<SwapGeneration>,
-}
-
-struct SwapGeneration {
-    /// The installed tables. A `Weak` keeps the allocation's address from
-    /// being reused while the entry lives, without keeping the tables (or
-    /// forcing their owner's next write to copy them).
-    tables: std::sync::Weak<RoutineTables>,
-    before: u64,
-    assigned: u64,
-}
-
-impl SwapGenerations {
-    /// The generation for installing `tables` over content named `before`.
-    // Cost: O(SWAP_GENERATIONS).
-    fn assigned(&mut self, tables: &Arc<RoutineTables>, before: u64) -> u64 {
-        let weak = Arc::downgrade(tables);
-        if let Some(entry) = self
-            .entries
-            .iter()
-            .find(|e| e.before == before && std::sync::Weak::ptr_eq(&e.tables, &weak))
-        {
-            return entry.assigned;
-        }
-        let assigned = crate::runtime::registry_gen::next_generation();
-        if self.entries.len() >= SWAP_GENERATIONS {
-            self.entries.remove(0);
-        }
-        self.entries.push(SwapGeneration {
-            tables: weak,
-            before,
-            assigned,
-        });
-        assigned
-    }
 }
 
 impl Interpreter {
@@ -142,11 +84,8 @@ impl Interpreter {
         if Arc::ptr_eq(&theirs, &ours) {
             return None;
         }
-        let saved = std::mem::replace(&mut *ours, Arc::clone(&theirs));
+        let saved = std::mem::replace(&mut *ours, theirs);
         drop(ours);
-        let before = self.registry_write_generation();
-        let assigned = self.types.swap_generations.assigned(&theirs, before);
-        drop(theirs);
         // The base-name key index (`fn_keys_by_base`) describes the functions
         // map it was filled from, and it is not tagged with that map's
         // version: over the creator's map it would answer the caller's keys
@@ -154,12 +93,10 @@ impl Interpreter {
         // it has as registered). Set the caller's index aside and start an
         // empty one over the installed map.
         let keys_index = self.take_fn_keys_index();
-        self.set_routine_generation(assigned);
+        self.bump_routine_generation();
         Some(SavedRoutineTables {
             tables: saved,
             keys_index,
-            before,
-            assigned,
         })
     }
 
@@ -172,27 +109,20 @@ impl Interpreter {
             .write()
             .unwrap_or_else(|e| e.into_inner()) = saved.tables;
         self.restore_fn_keys_index(saved.keys_index);
-        // Nothing was written during the call (the generation is still the one
-        // the swap assigned, and no other thread published a registry write):
-        // the content before the call is back, and so is its generation.
-        let generation = if self.registry_write_generation() == saved.assigned {
-            saved.before
-        } else {
-            crate::runtime::registry_gen::next_generation()
-        };
-        self.set_routine_generation(generation);
+        self.bump_routine_generation();
     }
 
-    /// Set the registry write generation: memos keyed by it cover what the
+    /// Move the registry write generation: memos keyed by it cover what the
     /// routine tables answer. `fn_resolve_gen` mirrors the installed
     /// functions map's version, so the memos tagged with it follow the swap:
     /// a version names one map content, so the ones tagged with the newly
     /// installed map's version are valid again and the rest are retired.
     // Cost: O(1).
-    fn set_routine_generation(&mut self, generation: u64) {
-        self.types
-            .registry_write_gen
-            .store(generation, std::sync::atomic::Ordering::Relaxed);
+    fn bump_routine_generation(&mut self) {
+        self.types.registry_write_gen.store(
+            crate::runtime::registry_gen::next_generation(),
+            std::sync::atomic::Ordering::Relaxed,
+        );
         self.sync_fn_resolve_gen();
     }
 }
