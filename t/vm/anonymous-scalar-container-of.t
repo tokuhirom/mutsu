@@ -4,7 +4,7 @@ use Test;
 # item (`$(1, 2)`) is a Scalar container that answers `.of`, not the `Scalar`
 # type object (#18349).
 
-plan 12;
+plan 14;
 
 is (my $ = 5).VAR.of.^name, 'Mu', 'an untyped anonymous scalar is of Mu';
 is (my $ = 5).VAR.^name, 'Scalar', 'and its .VAR is a Scalar';
@@ -13,6 +13,8 @@ is (my Int $ = 5).VAR.of.^name, 'Int', 'a typed anonymous scalar is of its type'
 is (my Int $ = 5).VAR.^name, 'Scalar', 'and its .VAR is a Scalar';
 is $(1, 2).VAR.of.^name, 'Mu', 'an item is of Mu';
 is $(1, 2).VAR.^name, 'Scalar', 'and its .VAR is a Scalar';
+ok (my $ = 5).VAR ~~ Scalar, 'the view smartmatches Scalar';
+{ my $t = 1; ok ($t,)[0].VAR ~~ Scalar, 'so does an element view'; }
 
 {
     my @l = ((my $ = 1), 2);
