@@ -620,13 +620,11 @@ impl Interpreter {
             Err(e) => {
                 // A module the parse already loaded registered its END phasers
                 // (ADR-17558), and rakudo runs them when the compile fails
-                // afterwards: report the error first, then END. The mainline
-                // was never entered, so its LEAVE phasers do not run, and `-c`
-                // runs nothing at all.
-                if !compile_only {
-                    self.report_uncaught_early(&e);
-                    let _ = self.finish_unit(false);
-                }
+                // afterwards, under `-c` too: report the error first, then END.
+                // The mainline was never entered, so its LEAVE phasers do not
+                // run.
+                self.report_uncaught_early(&e);
+                let _ = self.finish_unit(false);
                 return Err(e);
             }
         };
