@@ -462,21 +462,10 @@ impl Interpreter {
 
         // A Package on the LHS is a type object - check type hierarchy
         // LHS ~~ RHS checks: is LHS a subtype of RHS?
-        if let ValueView::Package(lhs_name) = left.view() {
-            let lhs_resolved = lhs_name.resolve();
-            let mut type_ok = self.type_matches_value(base_type, left);
-            // type_matches treats "Any" as a universal match, but a
-            // user-defined class that explicitly inherits from Mu only
-            // (e.g., `class Foo is Mu {}`) should NOT match Any.
-            // Check the actual MRO to correct this.
-            if type_ok && base_type == "Any" && self.registry().classes.contains_key(&*lhs_resolved)
-            {
-                let mro = self.class_mro(&lhs_resolved);
-                if !mro.iter().any(|c| c == "Any") {
-                    type_ok = false;
-                }
-            }
-            if !type_ok {
+        if let ValueView::Package(_) = left.view() {
+            // A `class M is Mu` type object is no `Any`: the type check
+            // itself consults the MRO (#18804).
+            if !self.type_matches_value(base_type, left) {
                 return false;
             }
             // Check definedness constraint

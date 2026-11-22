@@ -1089,6 +1089,16 @@ impl Interpreter {
         {
             return false;
         }
+        // `type_matches` treats `Any` as universal for a type name, but the
+        // type object of a class that inherits from `Mu` only (`class M is
+        // Mu`) is not an `Any`: its MRO decides, for `~~` and for an `Any`
+        // (or untyped) parameter alike (#18804).
+        if constraint == "Any"
+            && let ValueView::Package(name) = value.view()
+            && self.class_type_object_outside_any(name.resolve().as_str())
+        {
+            return false;
+        }
         // A core native type object matches a native constraint only by name:
         // `uint8` and `int16` both sit under `Int`, but neither is the other,
         // so `array[uint8] ~~ array[int16]` is False (raku). Without this the
