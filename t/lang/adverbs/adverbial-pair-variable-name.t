@@ -5,7 +5,7 @@ use Test;
 # do not count as part of it; only the quoted data matters", so <>, <<>>, «»,
 # [] and () are interchangeable spellings of the same name.
 
-plan 23;
+plan 33;
 
 # --- keyed colon pairs: $foo:bar<baz> ------------------------------------
 
@@ -85,6 +85,38 @@ plan 23;
 
     my $k:foo<a>:bar:baz<c> = 'novalue';
     is $k:foo<a>:bar:baz<c>, 'novalue', 'a valueless adverb between valued ones';
+}
+
+# --- subscript-adverb names are ordinary keys in a variable name ---------
+# rakudo reads `$y:k<1 2>` as one variable name; `:k`, `:v`, `:kv`,
+# `:p`, `:exists` and `:delete` are subscript adverbs only after a subscript.
+
+{
+    my $y:k<1 2> = 3;
+    is $y:k<1 2>, 3, ':k with a word-list value is part of the name';
+
+    my $x:k = 5;
+    my $x = 7;
+    is $x:k, 5, 'a valueless :k is part of the name';
+    is $x, 7, '... distinct from the bare variable';
+
+    my @a:v<1> = 1, 2;
+    is @a:v<1>.elems, 2, ':v on an array name';
+
+    my $p:exists = 'e';
+    is $p:exists, 'e', ':exists on a scalar name';
+}
+
+throws-like '$q:delete', Exception, 'an undeclared $q:delete is not $q with an adverb';
+
+# A positional capture variable is not a long name: `$0:exists` is
+# `$/[0]:exists`, a subscript adverb.
+{
+    'ab' ~~ /(a)/;
+    is $0:exists, True, '$0:exists is the subscript adverb';
+    is $1:exists, False, '... and false for a missing capture';
+    is $0:k, 0, '$0:k is the index';
+    is "$0:exists", 'a:exists', 'interpolated $0 leaves the adverb as text';
 }
 
 # vim: expandtab shiftwidth=4

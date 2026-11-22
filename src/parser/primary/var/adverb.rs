@@ -6,7 +6,11 @@ use super::ident::parse_ident_with_hyphens;
 use crate::adverb_name;
 
 /// Consume any `:adverb<value>` suffixes that follow a variable name.
-/// Stops before postfix adverbs (`delete`, `exists`, `v`, `kv`, `k`, `p`).
+///
+/// Every key is part of the name, the subscript-adverb names included:
+/// rakudo reads `$a:delete` as the variable `$a:delete` and `my $y:k[1,2]`
+/// declares `$y:k<1 2>`. A subscript adverb only follows a subscript
+/// (`%h<a>:delete`), which is parsed after the variable name.
 pub(crate) fn parse_var_name_adverb_suffixes(mut rest: &str, mut name: String) -> (&str, String) {
     while rest.starts_with(':') && !rest.starts_with("::") {
         let after_colon = &rest[1..];
@@ -25,11 +29,6 @@ pub(crate) fn parse_var_name_adverb_suffixes(mut rest: &str, mut name: String) -
             .is_some_and(crate::parser::helpers::is_raku_identifier_start)
             && let Ok((r2, suffix)) = parse_ident_with_hyphens(after_colon)
         {
-            // Keep postfix adverb names available to postfix parsing.
-            // This avoids treating `$a:delete` as a variable named `a:delete`.
-            if matches!(suffix, "delete" | "exists" | "v" | "kv" | "k" | "p") {
-                break;
-            }
             name.push(':');
             name.push_str(suffix);
             rest = r2;
