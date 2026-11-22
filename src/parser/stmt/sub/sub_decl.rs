@@ -35,7 +35,7 @@ pub(crate) fn sub_decl(input: &str) -> PResult<'_, Stmt> {
 }
 
 pub(crate) fn top_level_main_semicolon_decl(input: &str) -> PResult<'_, Stmt> {
-    let (rest_after_prefix, _) = if let Some(r) = keyword("unit", input) {
+    let (rest_after_prefix, has_unit) = if let Some(r) = keyword("unit", input) {
         let (r, _) = ws1(r)?;
         (r, true)
     } else {
@@ -49,6 +49,13 @@ pub(crate) fn top_level_main_semicolon_decl(input: &str) -> PResult<'_, Stmt> {
     if has_semicolon_terminator
         && matches!(&stmt, Stmt::SubDecl { name, multi, .. } if name == "MAIN" && !*multi)
     {
+        // `class A { }; unit sub MAIN();` is too late, as for a package (#18588).
+        if has_unit && crate::parser::stmt::simple::package_declared() {
+            return Err(crate::parser::stmt::class::unit_scope_too_late(
+                "sub",
+                rest_after_prefix,
+            ));
+        }
         Ok((rest, stmt))
     } else {
         Err(PError::expected("unit-scoped MAIN sub declaration"))

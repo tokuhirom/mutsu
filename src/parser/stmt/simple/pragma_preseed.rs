@@ -100,6 +100,37 @@ impl Drop for PackagePathGuard {
 pub(crate) fn reset_package_path() {
     PACKAGE_PATH.with(|p| p.borrow_mut().clear());
     UNIT_PACKAGE.with(|p| p.borrow_mut().take());
+    PACKAGE_DECLARED.with(|d| *d.borrow_mut() = false);
+}
+
+/// Note that the unit being parsed has declared a package-like type when
+/// `stmt` declares one (a block-form `class`, `role`, `grammar`, `module` or
+/// `package`, at any depth): a later `unit` declarator is then
+/// `X::UnitScope::TooLate`, as on rakudo (#18588). An `enum`, a `subset` or a
+/// routine does not count.
+// Cost: O(1).
+pub(in crate::parser) fn note_package_declared(stmt: &Stmt) {
+    let stmt = match stmt {
+        Stmt::Ast(node) => match node.inner_stmt() {
+            Some(inner) => inner,
+            None => return,
+        },
+        other => other,
+    };
+    let declares = match stmt {
+        Stmt::ClassDecl { .. } | Stmt::RoleDecl { .. } => true,
+        Stmt::Package { is_unit, .. } => !is_unit,
+        _ => false,
+    };
+    if declares {
+        PACKAGE_DECLARED.with(|d| *d.borrow_mut() = true);
+    }
+}
+
+/// Whether the unit being parsed has declared a package-like type yet.
+// Cost: O(1).
+pub(in crate::parser) fn package_declared() -> bool {
+    PACKAGE_DECLARED.with(|d| *d.borrow())
 }
 
 /// Note the package a `unit module` / `unit class` / `unit grammar`
