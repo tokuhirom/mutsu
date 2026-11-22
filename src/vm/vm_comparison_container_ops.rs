@@ -135,8 +135,7 @@ impl Interpreter {
             // outer `$a` an alias `$b := $a` names, yet is another container
             // (#18807). The `:=` bind pairs are slot-keyed, so when either
             // operand is bound through one they tell the two apart.
-            left_name == right_name
-                || !self.bound_slots_differ(left_slot, right_slot)
+            left_name == right_name || !self.bound_slots_differ(left_slot, right_slot)
         } else {
             // Different binding roots. For most types, this means different
             // containers → False. But singleton/unboxed types like Package
