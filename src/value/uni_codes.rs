@@ -185,6 +185,6 @@ mod tests {
         c.unshift(6);
         assert_eq!(c.as_slice(), &[6, 7, 2, 3, 0, 0]);
         c.resize(2);
-        assert_eq!(c.as_slice(), &[7, 2]);
+        assert_eq!(c.as_slice(), &[6, 7]);
     }
 }
