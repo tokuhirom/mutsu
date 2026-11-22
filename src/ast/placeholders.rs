@@ -21,7 +21,7 @@ use super::regex_placeholders::{
     placeholder_display_name, regex_literal_source, regex_source_placeholders,
 };
 use super::scope_scan::{is_scope_declaration, opens_own_scope, walk_control_header};
-use super::{Expr, Stmt};
+use super::{Expr, GivenWithKind, Stmt};
 use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt};
 use crate::regex_tree::RegexNode;
 
@@ -136,6 +136,21 @@ pub(crate) fn walk_stmt_placeholder_scope<'ast, V: Visit<'ast> + ?Sized>(
             v.visit_expr(expr);
             if let Some(w) = where_constraint {
                 v.visit_expr(w);
+            }
+        }
+        // The `given` a `with`-family BLOCK desugars into re-reads the
+        // condition as its topic, and the condition is the enclosing `if`'s
+        // header, outside this block: `{ with $^v { $_ } }` declares `$^v` on
+        // the outer block, not on the `with` body (#18310).
+        Stmt::Given {
+            with_kind: Some(GivenWithKind::BlockTopic | GivenWithKind::BlockTopicPointy),
+            body,
+            ..
+        } => {
+            if placeholder_body_kind(stmt) == PlaceholderBodyKind::Transparent {
+                for s in body {
+                    v.visit_stmt(s);
+                }
             }
         }
         s if has_block_body(s) => {
