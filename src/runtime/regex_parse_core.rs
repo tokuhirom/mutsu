@@ -2924,6 +2924,36 @@ impl Interpreter {
                                     let code = code[..code.len() - 1].to_string();
                                     code_segments.push((std::mem::take(&mut literal), code));
                                 }
+                                // `"$0"`, `"$/"`, `"$<a>"`: inside the pattern these
+                                // name the regex's own `$/`, which is still Nil while
+                                // it matches (rakudo: `'abxab' ~~ /(ab)x"$0"/` is
+                                // `abx`, with a "Use of Nil in string context"
+                                // warning). Read it at match time as that Nil, so
+                                // the atom contributes the empty string and warns.
+                                Some('$')
+                                    if mode == RegexParseMode::Match
+                                        && chars.peek().is_some_and(|ch| {
+                                            ch.is_ascii_digit() || matches!(ch, '/' | '<')
+                                        }) =>
+                                {
+                                    match chars.next() {
+                                        Some('<') => {
+                                            for ch in chars.by_ref() {
+                                                if ch == '>' {
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        Some(d) if d.is_ascii_digit() => {
+                                            while chars.peek().is_some_and(char::is_ascii_digit) {
+                                                chars.next();
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                    code_segments
+                                        .push((std::mem::take(&mut literal), "Nil.Str".to_string()));
+                                }
                                 Some('\\') => {
                                     match chars.next() {
                                         Some('n') => literal.push('\n'),

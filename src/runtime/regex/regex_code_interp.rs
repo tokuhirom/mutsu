@@ -227,7 +227,14 @@ impl Interpreter {
         } else if as_regex {
             pattern.push_str(&value.to_string_value());
         } else {
-            pattern.push_str(&Self::escape_regex_scalar_literal(&value.to_string_value()));
+            // An empty string matches the empty string (`/x $("")/` is `x`),
+            // not a null pattern: spell it as the empty quoted literal.
+            let text = value.to_string_value();
+            if text.is_empty() {
+                pattern.push_str("''");
+            } else {
+                pattern.push_str(&Self::escape_regex_scalar_literal(&text));
+            }
         }
         Some(pattern)
     }
