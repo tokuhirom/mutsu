@@ -139,7 +139,9 @@ pub(crate) fn is_core_metamodel_name(name: &str) -> bool {
 /// identity (see `exec_register_class_op`). The `\u{0}` separator can never
 /// appear in a source identifier, so the user-facing name is just everything
 /// before it. Anonymous class/grammar/role internal names display as
-/// Rakudo's `<anon|N>`. This is a pure function so `display.rs` (which has
+/// Rakudo's `<anon|N>`, and a type renamed by `.^set_name` (the
+/// process-global `type_rename_display` table) as its new name. It needs no
+/// interpreter, so `display.rs` (which has
 /// no interpreter context) can map the name for `.gist`/`.raku`/`say`.
 ///
 /// A NESTED lexical declaration (e.g. `my monitor Store { my class Session
@@ -148,6 +150,10 @@ pub(crate) fn is_core_metamodel_name(name: &str) -> bool {
 /// just the first, or a display would keep only `Store` and silently drop
 /// `::Session`.
 pub(crate) fn user_facing_type_name(name: &str) -> std::borrow::Cow<'_, str> {
+    // A type renamed with `.^set_name` answers to its new name everywhere.
+    if let Some(renamed) = super::type_rename_display(name) {
+        return std::borrow::Cow::Owned(renamed);
+    }
     // A parameterized type is named without its named arguments (#15504).
     if let std::borrow::Cow::Owned(plain) = super::constraint_without_named_args(name) {
         return std::borrow::Cow::Owned(user_facing_type_name(&plain).into_owned());

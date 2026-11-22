@@ -177,6 +177,7 @@ impl Interpreter {
                     // `Class.^mixin(R)` is a registered class: its instances are
                     // tagged with that class, so the rename lands there too.
                     if let Some(mixin_class) = self.mixin_class_of_type_object(&args[0]) {
+                        crate::value::note_type_rename(&mixin_class, &new_name);
                         self.type_metadata_mut(mixin_class)
                             .insert("__set_name__".to_string(), Value::str(new_name.clone()));
                     }
@@ -195,11 +196,14 @@ impl Interpreter {
                     // per-composition anonymous type object to rename
                     // instead, when the caller wants a scoped rename rather
                     // than a global one.
+                    crate::value::note_type_rename(&resolved, &new_name);
                     self.type_metadata_mut(resolved)
                         .insert("__set_name__".to_string(), Value::str(new_name.clone()));
                 }
                 ValueView::Instance { class_name, .. } => {
-                    self.type_metadata_mut(class_name.resolve())
+                    let resolved = class_name.resolve();
+                    crate::value::note_type_rename(&resolved, &new_name);
+                    self.type_metadata_mut(resolved)
                         .insert("__set_name__".to_string(), Value::str(new_name.clone()));
                 }
                 _ => {}

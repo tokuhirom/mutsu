@@ -33,4 +33,7 @@ my $out = $proc.out.slurp(:close);
 my $err = $proc.err.slurp(:close);
 is $proc.exitcode, 0, 'the process exits cleanly';
 is $err, '', 'nothing on stderr (no Gc::drop strong-count underflow)';
-like $out, / ^ "1\n" .* "end\n" $ /, 'the program ran to the end';
+# `$!driver but Scoped` is a reblessed copy of the driver (rakudo's
+# `.clone.does(R)`), a real object whose `DESTROY` the mixin type inherits;
+# a `DESTROY` delivered at teardown may follow `end`.
+like $out, / ^ "1\nend\n" ["destroy\n"]* $ /, 'the program ran to the end';

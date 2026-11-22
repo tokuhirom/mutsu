@@ -630,6 +630,7 @@ mod enum_display;
 mod error;
 mod error_construct;
 mod error_typed;
+mod type_rename_display;
 pub(crate) use error_typed::is_nominal_type_object_of;
 pub(crate) mod exception_message;
 pub(crate) mod flat;
@@ -829,6 +830,7 @@ pub(crate) use enum_display::{
     enum_display_name, is_package_enum_declared_name, note_enum_display_name, type_arg_display_name,
 };
 pub(crate) use error::LazyBacktraceText;
+pub(crate) use type_rename_display::{note_type_rename, type_rename_display};
 pub(crate) use error::expected_type_object;
 pub use error::{CatchInlinePayload, CatchInlineVerdict, Control, RuntimeError, RuntimeErrorCode};
 // SubData is re-exported so callers can destructure Value::Sub(data)
