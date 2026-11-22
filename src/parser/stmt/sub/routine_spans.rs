@@ -50,10 +50,25 @@ fn signature_span(start: &str, end: &str, params: &[ParamDef]) -> (SrcSpan, SrcS
     let span = match (written.first(), written.last(), returns) {
         (Some(first), _, Some((_, ret))) => SrcSpan::new(first.from as usize, ret.to as usize),
         (None, _, Some((arrow, ret))) => SrcSpan::new(arrow.from as usize, ret.to as usize),
-        (Some(first), Some(last), None) => SrcSpan::new(first.from as usize, last.to as usize),
+        (Some(first), Some(last), None) => {
+            SrcSpan::new(first.from as usize, invocant_marker_end(start, end, params).unwrap_or(last.to as usize))
+        }
         _ => crate::parser::primary::source_span(start, start),
     };
     (span, returns.map_or(SrcSpan::NONE, |(_, ret)| ret))
+}
+
+/// `method m(A:D:)`: a signature whose last parameter is the invocant ends
+/// after the `:` that marks it, as in Rakudo.
+// Cost: O(n), n = length of the signature.
+fn invocant_marker_end(start: &str, end: &str, params: &[ParamDef]) -> Option<usize> {
+    if !params.last()?.is_invocant {
+        return None;
+    }
+    let text = start.get(..start.len().checked_sub(end.len())?)?.trim_end();
+    let colon = text.strip_suffix(':')?;
+    let span = crate::parser::primary::source_span(&start[colon.len()..], &start[text.len()..]);
+    span.is_some().then_some(span.to as usize)
 }
 
 /// Where the `-->` of a signature written from `start` to `end` is, and the

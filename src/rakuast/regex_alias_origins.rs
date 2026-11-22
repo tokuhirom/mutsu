@@ -119,6 +119,15 @@ fn callee(callable: &mut RakuAstNode, text: &str, at: usize) -> Option<usize> {
             let var = leaf_text(super::infix_origins::child_at(held, 0)?)?;
             (format!("&{var}"), Some(var.len()))
         }
+        // `<&D::doo>`: a package-qualified callee.
+        RakuAstClass::VarPackage => {
+            let sigil = super::decl_origins::leaf(held, "sigil")?;
+            let name = match super::name_parts::name_shape(child(held, "name")?)? {
+                super::name_parts::NameShape::Identifier(name) => name,
+                _ => return None,
+            };
+            (format!("{sigil}{name}"), None)
+        }
         _ => (leaf_text(held)?, None),
     };
     let rest = text.strip_prefix(written.as_str())?;
@@ -142,6 +151,7 @@ fn callee(callable: &mut RakuAstNode, text: &str, at: usize) -> Option<usize> {
     };
     with_child(callable, "callee", |v| {
         super::origin::set_span(v, SrcSpan::new(at, at + written.len()));
+        super::indirect_name_origins::package_variable(v);
         if let Some(var) = inner {
             let end = at + written.len();
             super::infix_origins::with_child_at(v, 0, |var_node| {
