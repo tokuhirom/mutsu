@@ -32,6 +32,11 @@ impl Compiler {
             depth += 1;
             remaining = rest;
         }
+        // A bare `OUTER::` is the pad one scope out, `OUTER::MY::`.
+        if remaining == "OUTER" {
+            depth += 1;
+            remaining = "MY";
+        }
         if !matches!(remaining, "MY" | "LEXICAL") {
             return false;
         }

@@ -1688,6 +1688,25 @@ impl Compiler {
                 self.compile_expr(inner);
                 self.code.emit(OpCode::DeitemizeForBind);
             }
+            // `%h<k> := $c ?? my $ !! []`: each arm is the bound thing, so
+            // each is compiled as a bind value of its own and keeps its
+            // container (an anonymous `my $` stays a writable Scalar) instead
+            // of the ternary decontainerizing it (#18566).
+            Expr::IndexBindValue(rhs)
+                if let Expr::Ternary {
+                    cond,
+                    then_expr,
+                    else_expr,
+                } = rhs.as_ref() =>
+            {
+                self.compile_expr(cond);
+                let jump_else = self.code.emit(OpCode::JumpIfFalse(0));
+                self.compile_expr(&Expr::IndexBindValue(then_expr.clone()));
+                let jump_end = self.code.emit(OpCode::Jump(0));
+                self.code.patch_jump(jump_else);
+                self.compile_expr(&Expr::IndexBindValue(else_expr.clone()));
+                self.code.patch_jump(jump_end);
+            }
             Expr::IndexBindValue(rhs) => {
                 // The VM takes the bound value and its source variables; the
                 // sources derive from the RHS.
@@ -1785,9 +1804,21 @@ impl Compiler {
                 }
                 self.code.emit(OpCode::IndirectTypeLookup);
             }
-            Expr::IndirectCodeLookup { package, name, .. } => {
+            Expr::IndirectCodeLookup {
+                package,
+                name,
+                caller,
+            } => {
                 self.note_eval_site_chain();
-                self.compile_expr(package);
+                // `&CALLER::($p)::f` looks the package up from the caller.
+                if *caller {
+                    let prefix = self.code.add_constant(Value::str("CALLER::".to_string()));
+                    self.code.emit(OpCode::LoadConst(prefix));
+                    self.compile_expr(package);
+                    self.code.emit(OpCode::Concat);
+                } else {
+                    self.compile_expr(package);
+                }
                 let name_idx = self.code.add_constant(Value::str(name.clone()));
                 self.code.emit(OpCode::IndirectCodeLookup(name_idx));
             }

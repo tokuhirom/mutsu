@@ -2001,6 +2001,8 @@ impl Interpreter {
         target: &Value,
     ) -> Option<Result<Value, RuntimeError>> {
         match target.view() {
+            // A type object (#18778).
+            ValueView::Package(name) => self.type_object_capture(name),
             // The eager drain (`.list` pulls on demand, #12727).
             ValueView::Channel(ch) => Some(
                 Self::channel_list_coercion(&ch, "List")

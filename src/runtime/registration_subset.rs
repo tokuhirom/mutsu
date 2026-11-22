@@ -135,7 +135,16 @@ impl Interpreter {
         // `module M { my subset F ... }` still does not resolve. The bare
         // name is bound to the storage name in the declaring scope's env.
         if is_my && decl_id != 0 {
+            // The owner is the package's source name: a role body run for its
+            // pun runs in the pun's mangled package (`R\u{0}pun`), and a key
+            // built on that would carry `R` before its first NUL, so marking it
+            // `my`-scoped below would make `R` itself read as a lexical type
+            // and hide it (#18768).
             let pkg_sym = self.current_package_sym();
+            let pkg_sym = match pkg_sym.as_str().split_once('\u{0}') {
+                Some((source, _)) => Symbol::intern(source),
+                None => pkg_sym,
+            };
             let qualified = if already_qualified
                 || crate::qualified::is_global_package(pkg_sym)
                 || pkg_sym == Symbol::intern("Main")

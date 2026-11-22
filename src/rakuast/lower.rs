@@ -4976,6 +4976,12 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
             }
             Ok(Expr::Literal(value))
         }
+        // `::($a)::($b)`: a symbolic name of dynamic parts.
+        RakuAstClass::TermName
+            if let Some(lookup) = super::symbolic_deref::lower_indirect_parts(names, node) =>
+        {
+            lookup
+        }
         // `MY::(EXPR)` / `GLOBAL::(EXPR)`: a package-qualified symbolic lookup.
         RakuAstClass::TermName | RakuAstClass::CallName
             if let Some(lookup) = super::symbolic_deref::lower_package_indirect(names, node) =>
@@ -5172,10 +5178,9 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
             if statement.class != RakuAstClass::StatementExpression {
                 return Err(unsupported(node));
             }
-            Ok(Expr::Eager(Box::new(lower_expr(
-                names,
-                named_child(statement, "expression")?,
-            )?)))
+            Ok(Expr::Eager(Box::new(
+                super::prefix_call::lower_prefix_statement(names, statement)?,
+            )))
         }
         // `gather { … }` -> a gather expression over the lowered block body.
         RakuAstClass::StatementPrefixGather => {

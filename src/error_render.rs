@@ -51,7 +51,10 @@ fn short_parse_message(msg: &str) -> String {
 
     // Simplify long alternative lists
     let simplified = simplify_expected_list(&core);
-    if confused {
+    // A diagnosis with a reason renders as just the reason, as rakudo's
+    // `X::Syntax::Confused.message` does ("Two terms in a row"); only the raw
+    // parser-expectation fallback keeps the "Confused" marker.
+    if confused && body.starts_with("parse error") {
         format!("Confused. {}", simplified)
     } else {
         simplified

@@ -341,6 +341,9 @@ impl RuntimeError {
             };
             if let Some(reason) = reason {
                 attrs.insert("reason".to_string(), Value::str_from(reason));
+                // rakudo's `message` is the reason itself: "Two terms in a
+                // row", not mutsu's "Confused. Two terms in a row".
+                attrs.insert("message".to_string(), Value::str_from(reason));
             }
         }
         // `X::Anon::Multi`'s message IS `An anonymous {routine-type} may not

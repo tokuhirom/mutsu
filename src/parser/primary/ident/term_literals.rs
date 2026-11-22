@@ -126,6 +126,11 @@ pub(crate) fn class_literal(input: &str) -> PResult<'_, Expr> {
         let (r, inner) = expression(r)?;
         let (r, _) = ws(r)?;
         let (mut r, _) = parse_char(r, ')')?;
+        // `::($a)::($b)`: one symbolic name of dynamic parts (rakudo's
+        // `Term::Name(EmptyEdge, Expression($a), Expression($b))`).
+        if r.starts_with("::(") {
+            return indirect_parts(r, inner);
+        }
         let mut tail = String::new();
         let mut trailing = false;
         while let Some(after) = r.strip_prefix("::") {
@@ -714,11 +719,13 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             // The phaser covers the whole comma list, a sequence included
             // (`(1, once 2 ... 5)` holds `(2 3 4 5)` as one element).
             let (r, expr) = crate::parser::stmt::assign::parse_comma_or_expr(r)?;
+            // A same-line modifier is part of the phaser's statement (#18510).
+            let (r, stmt) = crate::parser::stmt::modifier::prefix_operand_statement(r, expr)?;
             return Ok((
                 r,
                 Expr::spelled(
                     Expr::Once {
-                        body: vec![Stmt::Expr(expr)],
+                        body: vec![stmt.unwrap_or_else(Stmt::Expr)],
                     },
                     || Spelling::BareStatement,
                 ),
@@ -754,4 +761,21 @@ fn pseudo_package(name: &str) -> Expr {
     Expr::spelled(Expr::Var(name.to_string()), || {
         crate::ast::spelled::Spelling::PseudoPackage(format!("::{name}").into())
     })
+}
+
+/// `::(A)::(B)...`: the dynamic parts after the first, as one symbolic name
+/// `A ~ "::" ~ B ...` looked up like `CALLERS::('$x')` is (a pseudo-package
+/// head walks its frames or scopes), keeping the parts apart for RakuAST.
+// Cost: O(n), n = length of the parts.
+fn indirect_parts(mut rest: &str, head: Expr) -> PResult<'_, Expr> {
+    let mut parts = vec![head];
+    while let Some(after) = rest.strip_prefix("::(") {
+        let (r, _) = ws(after)?;
+        let (r, part) = expression(r)?;
+        let (r, _) = ws(r)?;
+        let (r, _) = parse_char(r, ')')?;
+        parts.push(part);
+        rest = r;
+    }
+    Ok((rest, crate::ast::spelled::indirect_parts_lookup(parts)))
 }

@@ -61,6 +61,8 @@ pub(crate) fn nil_absorbs_method(method: &str) -> bool {
             | "self"
             | "sink"
             | "pending"
+            // `Mu.Capture`: `Nil.Capture` is `\()` (#18778).
+            | "Capture"
             // List/iteration methods inherited from Any.
             | "grep"
             | "map"
@@ -2201,7 +2203,7 @@ impl Interpreter {
                         "defined" | "Bool" | "so" | "not" | "gist" | "raku" | "WHAT" | "WHICH"
                         | "WHERE" | "HOW" | "WHY" | "VAR" | "DEFINITE" | "isa" | "does" | "can"
                         | "^name" | "^mro" | "^pun" | "new" | "bless" | "clone" | "item"
-                        | "self" | "sink" | "pending" => {
+                        | "self" | "sink" | "pending" | "Capture" => {
                             // Fall through to normal dispatch
                         }
                         // List/iteration methods inherited from Any: Nil behaves

@@ -45,7 +45,12 @@ impl Interpreter {
         let result = if installed.is_str_value() {
             installed
         } else {
-            let r = self.call_sub_value(installed, Vec::new()).ok()?;
+            // The thunk is a block: its `$_` is the topic the regex runs
+            // under (the `~~` subject, or the caller's `$_` for `.match`),
+            // as rakudo's `"{ $_ }"` reads it, not the topic the thunk's
+            // defining scope had.
+            let topic = self.env.get("_").cloned().unwrap_or(Value::NIL);
+            let r = self.call_sub_value(installed, vec![topic]).ok()?;
             Value::str(r.to_string_value())
         };
         let ValueView::Str(text) = result.view() else {

@@ -960,12 +960,16 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         if is_positional && self.stack.len() >= 2 {
             let n = self.stack.len();
+            // A List element holding a container keeps it; so does an
+            // Array element bound straight to a value, whose read-only cell
+            // stands for "no container" (`.VAR` answers the value, #18566).
             if let ValueView::Int(i) = self.stack[n - 1].view()
                 && i >= 0
-                && let ValueView::Array(items, ArrayKind::List | ArrayKind::ItemList) =
-                    self.stack[n - 2].descalarize().view()
+                && let ValueView::Array(items, kind) = self.stack[n - 2].descalarize().view()
                 && let Some(element) = items.get(i as usize)
                 && matches!(element.view(), ValueView::ContainerRef(_))
+                && (matches!(kind, ArrayKind::List | ArrayKind::ItemList)
+                    || Self::bound_value_of_element(element).is_some())
             {
                 let element = element.clone();
                 self.stack.truncate(n - 2);

@@ -142,7 +142,6 @@ plan 47;
     %h<a><b> := @source;
     dies-ok { %h<a><b> = 3 }, 'binding a whole Array does not invent a writable Scalar';
     @source.push(3);
-    todo 'a chained bind itemizes the bound Array (#18566)';
     is %h<a><b>.raku, '[1, 2, 3]', 'the bound aggregate retains its identity';
 }
 {

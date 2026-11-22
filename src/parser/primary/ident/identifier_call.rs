@@ -1547,7 +1547,9 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             let (r, expr) = if rest.starts_with('(') || r.starts_with('{') {
                 expression(r)?
             } else {
-                crate::parser::stmt::assign::parse_comma_or_expr(r)?
+                let (r, expr) = crate::parser::stmt::assign::parse_comma_or_expr(r)?;
+                // A same-line modifier is part of the prefix's statement (#18510).
+                crate::parser::stmt::modifier::prefix_operand_expr(r, expr)?
             };
             return Ok((
                 r,
@@ -1563,6 +1565,7 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
             // sink expr — evaluate expression and discard result. The prefix
             // covers the whole comma list (`sink $i++, $i++` sinks both).
             let (r, expr) = crate::parser::stmt::assign::parse_comma_or_expr(r)?;
+            let (r, expr) = crate::parser::stmt::modifier::prefix_operand_expr(r, expr)?;
             return Ok((
                 r,
                 Expr::Call {

@@ -392,6 +392,28 @@ impl Interpreter {
     pub(super) fn exec_container_eq_raw_aggregate_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        // An element bound straight to an aggregate (`@d[0] := @c`) has no
+        // container of its own: it IS that Array/Hash, so it is `=:=` to the
+        // variable holding the same object (#18566).
+        if let Some(bound) =
+            Self::bound_value_of_element(&left).or_else(|| Self::bound_value_of_element(&right))
+        {
+            let other = if Self::bound_value_of_element(&left).is_some() {
+                &right
+            } else {
+                &left
+            };
+            let other = other.deref_container();
+            let result = matches!(
+                (bound.view(), other.descalarize().view()),
+                (ValueView::Array(a, _), ValueView::Array(b, _)) if crate::gc::Gc::ptr_eq(&a, &b)
+            ) || matches!(
+                (bound.view(), other.descalarize().view()),
+                (ValueView::Hash(a), ValueView::Hash(b)) if crate::gc::Gc::ptr_eq(&a, &b)
+            );
+            self.stack.push(Value::truth(result));
+            return;
+        }
         let shares_container = |a: &Value, b: &Value| {
             matches!(a.view(), ValueView::ContainerRef(_))
                 || matches!(b.view(), ValueView::ContainerRef(_))
