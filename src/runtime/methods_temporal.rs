@@ -47,6 +47,21 @@ impl super::Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let owners = self.temporal_instance_owners(target)?;
+        // A subclass's (or a mixed-in role's) own method of the name wins over
+        // the `Date`/`DateTime` row it overrides when it binds the call:
+        // `$topic ~~ ($date but R)` runs R's `ACCEPTS` (Chronic's
+        // `DateTimeMatcher`). A `multi` none of whose candidates binds leaves
+        // the row, as an inherited candidate would answer.
+        if let ValueView::Instance { class_name, .. } = target.view()
+            && !matches!(class_name.as_str(), "Date" | "DateTime")
+            && self.has_user_method(&class_name.resolve(), method)
+        {
+            match self.user_method_applies(&class_name.resolve(), method, target, args) {
+                Ok(true) => return None,
+                Ok(false) => {}
+                Err(e) => return Some(Err(e)),
+            }
+        }
         // `Date.gist` and `Mu.Stringy` are `self.Str`: a subclass that
         // overrides `Str` answers both through it.
         if args.is_empty()

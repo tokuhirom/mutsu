@@ -22,13 +22,23 @@ impl Interpreter {
         matcher: &Value,
         topic: &Value,
     ) -> Result<bool, RuntimeError> {
+        self.user_method_applies(class_name, "ACCEPTS", matcher, std::slice::from_ref(topic))
+    }
+
+    /// [`Self::user_accepts_applies`] for any method: should
+    /// `invocant.<method>(|args)` run the user method of `class_name` rather
+    /// than the built-in one it overrides? A user `multi` adds candidates to
+    /// the inherited ones, so it wins only when one of them binds.
+    // Cost: O(m * c), m = MRO length of `class_name`, c = `method` candidates.
+    pub(crate) fn user_method_applies(
+        &mut self,
+        class_name: &str,
+        method: &str,
+        invocant: &Value,
+        args: &[Value],
+    ) -> Result<bool, RuntimeError> {
         if self
-            .resolve_method_with_owner_invocant(
-                class_name,
-                "ACCEPTS",
-                std::slice::from_ref(topic),
-                matcher,
-            )?
+            .resolve_method_with_owner_invocant(class_name, method, args, invocant)?
             .is_some()
         {
             return Ok(true);
@@ -36,7 +46,7 @@ impl Interpreter {
         let mro = self.class_mro(class_name);
         let only_multis = mro.iter().all(|owner| {
             self.registry()
-                .user_method_overloads(owner.as_str(), "ACCEPTS")
+                .user_method_overloads(owner.as_str(), method)
                 .is_none_or(|defs| defs.iter().all(|def| def.is_multi))
         });
         Ok(!only_multis)
