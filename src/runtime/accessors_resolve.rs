@@ -664,13 +664,19 @@ impl Interpreter {
     /// infix:<eqv>`).
     // Cost: O(1) hashed probes.
     /// `&SETTING::name` in an `EVAL` and `&CALLER::SETTING::name` from a frame
-    /// an `EVAL` compiled: an `EVAL`'s setting is the lexical scope it runs
-    /// in (rakudo compiles the snippet against that scope), so the routine is
-    /// the one that scope sees, a lexical `sub` shadowing the core one.
+    /// an `EVAL` compiled: under 6.c/6.d an `EVAL`'s setting is the lexical
+    /// scope it runs in (rakudo compiles the snippet against that scope), so
+    /// the routine is the one that scope sees, a lexical `sub` shadowing the
+    /// core one.
     /// `None` for any other name, which resolves as usual.
     // Cost: O(d) for the memoized segments, d = segments of `name`; a hit costs
     // the plain lookup of `bare` (or the caller-pad walk for `CALLER::`).
     fn eval_setting_routine(&self, name: &str, bare: &str) -> Option<Value> {
+        // From 6.e an EVAL's setting is the core setting again (rakudo 2026.11:
+        // `EVAL('&SETTING::not(False)')` is True under `use v6.e.PREVIEW`).
+        if crate::parser::current_language_version().starts_with("6.e") {
+            return None;
+        }
         let segments = crate::qualified::segments(crate::qualified::known_symbol(name));
         let (_, pseudo) = segments.split_last()?;
         let is_eval_unit = |unit| crate::runtime::eval_unit_parent(unit).is_some();

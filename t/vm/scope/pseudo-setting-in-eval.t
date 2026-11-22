@@ -3,7 +3,8 @@ use Test;
 # An EVAL's setting is the lexical scope it runs in: `&SETTING::not` inside
 # an EVAL sees a lexical `sub not`, and `&CALLER::SETTING::not` from a frame
 # an EVAL compiled does too. Outside an EVAL, SETTING is the core setting.
-# Roast S02-names/pseudo-6d.t 148-151 (#18742).
+# Roast S02-names/pseudo-6d.t 148-151 (#18742). Under 6.e an EVAL's setting
+# is the core setting again; roast S02-names/SETTING-6e.t pins that.
 
 plan 8;
 
@@ -28,3 +29,4 @@ plan 8;
 sub caller-pkg($fn) { $fn() }
 is caller-pkg({ &CALLER::('CORE')::not(True) }), False,
     '&CALLER::($p)::f takes the CALLER prefix into account';
+
