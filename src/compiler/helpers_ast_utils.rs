@@ -42,8 +42,11 @@ impl Compiler {
     /// rakudo. Array/hash/code targets and binds are not reported.
     // Cost: O(d), d = nesting depth of the parentheses.
     pub(super) fn assigned_scalar_name(expr: &Expr) -> Option<&str> {
+        let mut expr = expr;
+        while let Expr::Grouped(inner) = expr {
+            expr = inner;
+        }
         match expr {
-            Expr::Grouped(inner) => Self::assigned_scalar_name(inner),
             Expr::AssignExpr {
                 name,
                 is_bind: false,
