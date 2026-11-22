@@ -52,6 +52,7 @@ impl Interpreter {
         frame: TrFrame,
         compiled_fns: &CompiledFns,
     ) -> Result<TrOutcome, RuntimeError> {
+        crate::runtime::begin_replay::watch::note_routine_entry();
         let nbase = frame.nbase as usize;
         let obase = frame.obase as usize;
         let cbase = frame.outer_base as usize;

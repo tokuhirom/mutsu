@@ -169,6 +169,12 @@ impl Interpreter {
         err
     }
 
+    /// Execute the op at `ip`.
+    ///
+    /// `_polls` is the entry of the loop that runs `code`: only
+    /// `DispatchPolls::enter(code)` builds one, so no op runs in a loop that
+    /// did not report its code (ADR-18012 S1's code watch). `exec_one` is the
+    /// only caller of the per-op dispatch.
     // Cost: O(1) wrapper around `exec_one_dispatch` (a pending-where probe); the error
     // path attaches a backtrace, O(s), s = routine-stack depth.
     pub(crate) fn exec_one(
@@ -176,6 +182,7 @@ impl Interpreter {
         code: &CompiledCode,
         ip: &mut usize,
         compiled_fns: &CompiledFns,
+        _polls: crate::vm::vm_poll::DispatchPolls,
     ) -> Result<(), RuntimeError> {
         let at = *ip;
         let result = self.exec_one_dispatch(code, ip, compiled_fns);
