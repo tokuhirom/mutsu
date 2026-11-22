@@ -115,7 +115,7 @@ impl Interpreter {
                 continue;
             }
             let tail = tail.as_str();
-            let name = crate::runtime::dispatch_resolve::function_key_strip_arity_suffix(&tail);
+            let name = crate::runtime::dispatch_resolve::function_key_strip_arity_suffix(tail);
             if !name.is_empty() {
                 names.push(name.to_string());
             }
@@ -135,7 +135,7 @@ impl Interpreter {
             if let Some(set_ids) = imports.unit_sets.get(&scope.unit) {
                 for id in set_ids {
                     if let Some(set) = imports.sets.get(id) {
-                        names.extend(set.iter().map(|(name, _)| name.resolve()));
+                        names.extend(set.keys().map(|name| name.resolve()));
                     }
                 }
             }
