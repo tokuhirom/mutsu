@@ -266,23 +266,6 @@ impl<'a> TrirCompiler<'a> {
         slot
     }
 
-    /// A native slot with no name, for an inlined callee (`inline_call.rs`).
-    // Cost: O(1).
-    pub(super) fn fresh_native_slot(&mut self) -> u16 {
-        let s = self.n_native;
-        self.n_native += 1;
-        s
-    }
-
-    /// A boxed slot with no name, for an inlined callee.
-    // Cost: O(1).
-    pub(super) fn fresh_obj_slot(&mut self) -> u16 {
-        let s = self.n_obj;
-        self.n_obj += 1;
-        self.obj_written.push(true);
-        s
-    }
-
     pub(super) fn outer(&mut self, name: &str) -> u16 {
         if let Some(i) = self.outer_index.get(name) {
             return *i;
@@ -513,6 +496,7 @@ mod expr;
 mod inline;
 mod inline_call;
 pub(crate) use inline_call::inlining_enabled;
+mod inline_remap;
 mod method;
 mod nqp;
 mod params;

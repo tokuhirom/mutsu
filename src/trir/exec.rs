@@ -55,54 +55,12 @@ impl Interpreter {
         if chunk.inline_regions.is_empty() {
             return self.run_trir_ops(chunk, frame, compiled_fns, 0);
         }
-        // A body with inlined callees (ADR-8673 D2): leaving it any way but
-        // through a region's own return undoes the regions still active, and
-        // a `fail` raised inside one is that callee's `Failure` value, as its
-        // routine boundary made it (`run_trir_inner_routine`).
-        let base = self.trir.inline.len();
-        let mut ip = 0usize;
-        loop {
-            let outcome = self.run_trir_ops(chunk, frame, compiled_fns, ip);
-            match outcome {
-                Err(e) if e.is_fail() && self.trir.inline.len() > base => {
-                    let Some(a) = self.trir_inline_leave() else {
-                        return Err(e);
-                    };
-                    let callee = chunk
-                        .inline_regions
-                        .get(a.region as usize)
-                        .map(|r| r.link.chunk.name)
-                        .unwrap_or(chunk.name);
-                    let callable_id = self.registration_clone_id(
-                        &self.current_package_sym().resolve(),
-                        &callee.resolve(),
-                    );
-                    self.trir_inline_restore_pkg(&a);
-                    if e.fail_passes_frame(callable_id) {
-                        self.trir_inline_unwind(base);
-                        return Err(e);
-                    }
-                    let v = self.fail_error_to_failure_value(&e);
-                    self.trir.ns.truncate(a.ns_mark as usize);
-                    self.trir.os.truncate(a.os_mark as usize);
-                    self.trir.os.push(v);
-                    if !self.trir_reseed_outers(chunk, frame) {
-                        self.trir_inline_unwind(base);
-                        return Ok(TrOutcome::Bail);
-                    }
-                    ip = a.join as usize;
-                }
-                other => {
-                    self.trir_inline_unwind(base);
-                    return other;
-                }
-            }
-        }
+        self.run_trir_chunk_with_regions(chunk, frame, compiled_fns)
     }
 
     /// The op loop of [`Self::run_trir_chunk`], from `start`.
     // Cost: O(1) dispatch per op executed.
-    fn run_trir_ops(
+    pub(super) fn run_trir_ops(
         &mut self,
         chunk: &TrChunk,
         frame: TrFrame,
@@ -605,21 +563,16 @@ impl Interpreter {
                 // ---- inlined callees (ADR-8673 D2, `inline_exec.rs`) ----
                 // Not observers: they move the deferred routine-stack entry,
                 // they never read the stack.
-                TrOp::InlineEnter { region, join } => {
-                    if !self.trir_inline_enter(chunk, *region, *join, frame, compiled_fns) {
-                        return Ok(TrOutcome::Bail);
-                    }
-                }
-                TrOp::InlineReturn { join, .. } => {
-                    if !self.trir_inline_return(chunk, frame) {
-                        return Ok(TrOutcome::Bail);
-                    }
-                    ip = *join as usize;
-                    continue;
-                }
-                TrOp::InlineReseed(_) => {
-                    if !self.trir_inline_reseed(chunk, frame) {
-                        return Ok(TrOutcome::Bail);
+                op @ (TrOp::InlineEnter { .. }
+                | TrOp::InlineReturn { .. }
+                | TrOp::InlineReseed(_)) => {
+                    match self.exec_trir_inline_op(chunk, op, frame, compiled_fns) {
+                        None => return Ok(TrOutcome::Bail),
+                        Some(Some(join)) => {
+                            ip = join;
+                            continue;
+                        }
+                        Some(None) => {}
                     }
                 }
 

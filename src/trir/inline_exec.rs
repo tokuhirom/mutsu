@@ -10,12 +10,13 @@
 //! it too (`exec.rs`), and a `fail` raised inside becomes the callee's
 //! `Failure` value, as the callee's routine boundary made it.
 
-use super::TrChunk;
+use super::exec::TrOutcome;
 use super::frame::TrFrame;
+use super::{TrChunk, TrOp};
 use crate::opcode::CompiledFns;
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
-use crate::value::Value;
+use crate::value::{RuntimeError, Value};
 
 /// One inlined callee running now.
 #[derive(Debug, Clone, Copy)]
@@ -36,6 +37,86 @@ pub(crate) struct ActiveInline {
 pub(crate) type InlineRegions = Vec<ActiveInline>;
 
 impl Interpreter {
+    /// [`Interpreter::run_trir_chunk`] for a body with inlined callees.
+    // Cost: O(1) per op executed, plus O(r) per region left by an error, r =
+    // active regions.
+    pub(super) fn run_trir_chunk_with_regions(
+        &mut self,
+        chunk: &TrChunk,
+        frame: TrFrame,
+        compiled_fns: &CompiledFns,
+    ) -> Result<TrOutcome, RuntimeError> {
+        // A body with inlined callees (ADR-8673 D2): leaving it any way but
+        // through a region's own return undoes the regions still active, and
+        // a `fail` raised inside one is that callee's `Failure` value, as its
+        // routine boundary made it (`run_trir_inner_routine`).
+        let base = self.trir.inline.len();
+        let mut ip = 0usize;
+        loop {
+            let outcome = self.run_trir_ops(chunk, frame, compiled_fns, ip);
+            match outcome {
+                Err(e) if e.is_fail() && self.trir.inline.len() > base => {
+                    let Some(a) = self.trir_inline_leave() else {
+                        return Err(e);
+                    };
+                    let callee = chunk
+                        .inline_regions
+                        .get(a.region as usize)
+                        .map(|r| r.link.chunk.name)
+                        .unwrap_or(chunk.name);
+                    let callable_id = self.registration_clone_id(
+                        &self.current_package_sym().resolve(),
+                        &callee.resolve(),
+                    );
+                    self.trir_inline_restore_pkg(&a);
+                    if e.fail_passes_frame(callable_id) {
+                        self.trir_inline_unwind(base);
+                        return Err(e);
+                    }
+                    let v = self.fail_error_to_failure_value(&e);
+                    self.trir.ns.truncate(a.ns_mark as usize);
+                    self.trir.os.truncate(a.os_mark as usize);
+                    self.trir.os.push(v);
+                    if !self.trir_reseed_outers(chunk, frame) {
+                        self.trir_inline_unwind(base);
+                        return Ok(TrOutcome::Bail);
+                    }
+                    ip = a.join as usize;
+                }
+                other => {
+                    self.trir_inline_unwind(base);
+                    return other;
+                }
+            }
+        }
+    }
+
+    /// One of the three region ops: `None` bails, `Some(Some(ip))` jumps to
+    /// the region's join.
+    // Cost: O(1) plus the outer seeding, O(o), o = the callee's free variables.
+    pub(super) fn exec_trir_inline_op(
+        &mut self,
+        chunk: &TrChunk,
+        op: &TrOp,
+        frame: TrFrame,
+        compiled_fns: &CompiledFns,
+    ) -> Option<Option<usize>> {
+        let ok = match op {
+            TrOp::InlineEnter { region, join } => {
+                self.trir_inline_enter(chunk, *region, *join, frame, compiled_fns)
+            }
+            TrOp::InlineReturn { join, .. } => {
+                if !self.trir_inline_return(chunk, frame) {
+                    return None;
+                }
+                return Some(Some(*join as usize));
+            }
+            TrOp::InlineReseed(_) => self.trir_inline_reseed(chunk, frame),
+            _ => false,
+        };
+        ok.then_some(None)
+    }
+
     /// `InlineEnter`: `false` when the callee cannot be served (wrapped,
     /// replaced, or its free variables cannot be bound), which bails the
     /// chunk as the `CallTr` would have.
