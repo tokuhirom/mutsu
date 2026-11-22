@@ -69,8 +69,8 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             samemark: _,
             samespace: _,
             global: _,
-            nth: _,
-            x: _,
+            nth,
+            x,
             replacement_thunk,
             tree: _,
         }
@@ -82,11 +82,14 @@ pub(crate) fn walk_expr_mut<V: VisitMut + ?Sized>(v: &mut V, e: &mut Expr) {
             samemark: _,
             samespace: _,
             global: _,
-            nth: _,
-            x: _,
+            nth,
+            x,
             replacement_thunk,
             tree: _,
         } => {
+            for e in [nth, x].into_iter().flatten() {
+                v.visit_expr_mut(e);
+            }
             if let Some(t) = replacement_thunk {
                 v.visit_expr_mut(&mut t.expr);
             }

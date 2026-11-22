@@ -14,7 +14,7 @@ impl Interpreter {
     /// The `:nth` value `nth` stands for once `total` matches are known: the
     /// Callable's answer, or `nth` itself when it is no Callable.
     // Cost: O(1) plus one call of the Callable.
-    pub(super) fn resolve_callable_nth(
+    pub(crate) fn resolve_callable_nth(
         &mut self,
         nth: &Value,
         total: usize,
@@ -38,7 +38,7 @@ impl Interpreter {
     /// `total` matches: such an answer selects nothing (`:nth(*-5)` on two
     /// matches is Nil), where a literal out-of-range index is an error.
     // Cost: O(1).
-    pub(super) fn callable_nth_out_of_range(value: &Value, total: usize) -> bool {
+    pub(crate) fn callable_nth_out_of_range(value: &Value, total: usize) -> bool {
         matches!(value.view(), ValueView::Int(i) if i < 1 || i as usize > total)
     }
 }

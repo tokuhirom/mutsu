@@ -181,7 +181,7 @@ impl Interpreter {
     /// `*`. Anything else — notably a plain `Str`, which is *not* `Numeric`
     /// even when it spells a number — is an `X::Str::Match::x` error, exactly
     /// as Rakudo reports it (`:x("2")` is rejected while `:x(<2>)` is not).
-    pub(in crate::runtime) fn is_valid_match_x_arg(value: &Value) -> bool {
+    pub(crate) fn is_valid_match_x_arg(value: &Value) -> bool {
         // A numeric allomorph (`<2>`) is a `Mixin` wrapping the numeric value;
         // it is `Numeric`, so it is accepted while the bare `Str` "2" is not.
         if let ValueView::Mixin(inner, _) = value.view() {
@@ -235,7 +235,7 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 
-    pub(in crate::runtime) fn parse_match_repeat_bounds(
+    pub(crate) fn parse_match_repeat_bounds(
         value: &Value,
     ) -> Option<(usize, Option<usize>)> {
         fn parse_non_negative_int(v: &Value) -> Option<i64> {

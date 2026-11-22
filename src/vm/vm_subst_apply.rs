@@ -49,135 +49,69 @@ impl Interpreter {
         )
     }
 
+    /// The matches a substitution with `:nth` value `nth` and `:x` value `x`
+    /// replaces, out of `all_matches` (in scan order), and whether that
+    /// selection is a single Match rather than a List (a single-index `:nth`,
+    /// even under `:g`).
+    ///
+    /// Both values go through the resolvers `.match` and `.subst` use: a
+    /// Callable `:nth` (`*-1`, `{2}`) is called once with the match count
+    /// (`resolve_callable_nth`), and the indices come from
+    /// `resolve_nth_value_indices`, which also rejects an index below 1 or
+    /// out of order. `:x` is a count or a Range of counts
+    /// (`parse_match_repeat_bounds`); a value that is neither selects
+    /// nothing, as rakudo's `s:x("z")///` replaces nothing.
+    // Cost: O(r) plus one call of a Callable `:nth`, r = matches.
     pub(super) fn select_substitution_ranges(
+        &mut self,
         all_matches: &[(usize, usize)],
-        nth_spec: Option<&str>,
-        x_spec: Option<&str>,
-    ) -> Result<Vec<(usize, usize)>, RuntimeError> {
-        // `:x(N)` requires exactly N matches; `:x(lo..hi)` requires at least
-        // `lo` and keeps at most `hi`. Returns `(lo, hi)`.
-        let x_bounds = x_spec.map(Self::parse_subst_x_spec);
-        if let Some(raw) = nth_spec {
-            // :nth may carry a comma-separated list of 1-based indices, e.g.
-            // `:nth(1,3)`. Indices must be >= 1 and monotonically increasing.
-            let nth_list = Self::parse_subst_nth_spec(raw, all_matches.len())?;
-            let mut selected: Vec<(usize, usize)> = Vec::new();
-            for &n in &nth_list {
-                if n <= all_matches.len() {
-                    let range = all_matches[n - 1];
-                    // The list is validated ascending, so a repeat is adjacent.
-                    if selected.last() != Some(&range) {
-                        selected.push(range);
-                    }
+        nth: Option<&Value>,
+        x: Option<&Value>,
+    ) -> Result<(Vec<(usize, usize)>, bool), RuntimeError> {
+        let total = all_matches.len();
+        let x_bounds = match x {
+            Some(value) if !Self::is_valid_match_x_arg(value) => return Ok((Vec::new(), false)),
+            Some(value) => match Self::parse_match_repeat_bounds(value) {
+                Some(bounds) => Some(bounds),
+                // An empty Range of counts (`:x(3..1)`) can never be met.
+                None => return Ok((Vec::new(), false)),
+            },
+            None => None,
+        };
+        let mut single = false;
+        let mut selected: Vec<(usize, usize)> = match nth {
+            Some(spec) => {
+                let resolved = self.resolve_callable_nth(spec, total)?;
+                single = Self::is_single_nth(&resolved)
+                    || matches!(resolved.view(), crate::value::ValueView::Whatever);
+                // A Callable's answer outside the matches selects nothing,
+                // where a literal index below 1 is an error.
+                let from_callable = matches!(spec.view(), crate::value::ValueView::Sub(_));
+                if from_callable && Self::callable_nth_out_of_range(&resolved, total) {
+                    Vec::new()
+                } else {
+                    self.resolve_nth_value_indices(&resolved, total)?
+                        .into_iter()
+                        .filter(|&n| n <= total)
+                        .map(|n| all_matches[n - 1])
+                        .collect()
                 }
             }
-            // When combined with :x(lo..hi), require at least `lo` and keep up
-            // to `hi` of the selected matches.
-            if let Some((lo, hi)) = x_bounds {
+            None => all_matches.to_vec(),
+        };
+        match x_bounds {
+            Some((lo, hi)) => {
                 if selected.len() < lo {
-                    return Ok(Vec::new());
+                    return Ok((Vec::new(), single));
                 }
-                selected.truncate(hi);
-            }
-            return Ok(selected);
-        }
-        if let Some((lo, hi)) = x_bounds {
-            if hi == 0 || all_matches.len() < lo {
-                return Ok(Vec::new());
-            }
-            return Ok(all_matches.iter().copied().take(hi).collect());
-        }
-        Ok(all_matches.first().copied().into_iter().collect())
-    }
-
-    /// Parse a `:x` adverb spec into `(lo, hi)` match-count bounds. A bare count
-    /// `"3"` is `(3, 3)`; a range `"1..3"` / `"1..^3"` maps to its endpoints;
-    /// `"*"`/`"Inf"` is unbounded `(0, usize::MAX)`.
-    fn parse_subst_x_spec(raw: &str) -> (usize, usize) {
-        let token = raw.trim();
-        if token == "*" || token.eq_ignore_ascii_case("Inf") {
-            return (0, usize::MAX);
-        }
-        let parse_bound = |s: &str| s.trim().parse::<i64>().ok();
-        if let Some(idx) = token.find("..") {
-            let lo_s = &token[..idx];
-            let mut rest = &token[idx + 2..];
-            let excl = rest.starts_with('^');
-            if excl {
-                rest = &rest[1..];
-            }
-            let lo = parse_bound(lo_s).unwrap_or(0).max(0) as usize;
-            let hi = if rest.trim() == "*" || rest.trim().eq_ignore_ascii_case("Inf") {
-                usize::MAX
-            } else {
-                match parse_bound(rest) {
-                    Some(h) if h >= 0 => {
-                        let h = h as usize;
-                        if excl { h.saturating_sub(1) } else { h }
-                    }
-                    _ => usize::MAX,
+                if let Some(hi) = hi {
+                    selected.truncate(hi);
                 }
-            };
-            return (lo, hi);
-        }
-        match parse_bound(token) {
-            Some(n) if n >= 0 => (n as usize, n as usize),
-            _ => (0, usize::MAX),
-        }
-    }
-
-    /// Parse an `:nth` spec into a list of 1-based indices. Accepts a single
-    /// integer or a comma-separated list (e.g. `1,3`). Validates that every
-    /// index is >= 1 and that the list is monotonically increasing.
-    fn parse_subst_nth_spec(raw: &str, total: usize) -> Result<Vec<usize>, RuntimeError> {
-        let token = raw.trim();
-        if token.eq_ignore_ascii_case("-Inf") {
-            return Err(RuntimeError::new("Invalid :nth index (-Inf)"));
-        }
-        let mut out: Vec<usize> = Vec::new();
-        let mut prev: i64 = 0;
-        for part in token.split(',') {
-            let part = part.trim();
-            if part.is_empty() {
-                continue;
             }
-            // `*` is the last match and `*-N` counts back from it, resolved
-            // against the match count. A Whatever-derived index that falls out
-            // of range selects nothing (rather than erroring like a literal).
-            let (n, from_whatever) = if part == "*" {
-                (total as i64, true)
-            } else if let Some(rest) = part.strip_prefix("*-") {
-                let sub = rest
-                    .trim()
-                    .parse::<i64>()
-                    .map_err(|_| RuntimeError::new(format!("Invalid :nth index ({part})")))?;
-                (total as i64 - sub, true)
-            } else {
-                let n = part
-                    .parse::<i64>()
-                    .map_err(|_| RuntimeError::new(format!("Invalid :nth index ({part})")))?;
-                (n, false)
-            };
-            if from_whatever && (n < 1 || n as usize > total) {
-                continue;
-            }
-            if n < 1 {
-                return Err(RuntimeError::new(format!(
-                    "Attempt to retrieve before :1st match -- :nth({n})"
-                )));
-            }
-            if n < prev {
-                return Err(RuntimeError::new(format!(
-                    "Attempt to fetch match #{n} after #{prev}"
-                )));
-            }
-            prev = n;
-            out.push(n as usize);
+            None if nth.is_none() => selected.truncate(1),
+            None => {}
         }
-        if out.is_empty() {
-            return Err(RuntimeError::new(format!("Invalid :nth index ({token})")));
-        }
-        Ok(out)
+        Ok((selected, single))
     }
 
     // Cost: O(n + r) plus the replacement text, n = chars of `text`, r = ranges

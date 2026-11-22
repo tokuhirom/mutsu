@@ -7,8 +7,10 @@ use crate::value::ValueMap;
 pub(super) struct SubstOp {
     pub(super) pattern: String,
     pub(super) plan: SubstReplPlan,
-    pub(super) nth_spec: Option<String>,
-    pub(super) x_spec: Option<String>,
+    /// The `:nth` argument's value, resolved against the match count.
+    pub(super) nth: Option<Value>,
+    /// The `:x` argument's value.
+    pub(super) x: Option<Value>,
     pub(super) samecase: bool,
     pub(super) sigspace: bool,
     pub(super) samemark: bool,
@@ -40,11 +42,14 @@ impl Interpreter {
         samemark: bool,
         samespace: bool,
         global: bool,
-        nth_idx: Option<u32>,
-        x_idx: Option<u32>,
+        nth: bool,
+        x: bool,
         replacement_thunk: bool,
     ) -> Result<SubstOp, RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
+        // The stack holds `[Code?, Nth?, X?]`: pop in reverse.
+        let x = x.then(|| self.stack.pop().unwrap_or(Value::NIL));
+        let nth = nth.then(|| self.stack.pop().unwrap_or(Value::NIL));
         // The replacement is an assignment-form thunk, compiled to the closure
         // the op pops, or a `qq` quote (see `vm_subst_repl`): parse that once
         // and cache the plan.
@@ -56,8 +61,8 @@ impl Interpreter {
         Ok(SubstOp {
             pattern,
             plan,
-            nth_spec: nth_idx.map(|idx| Self::const_str(code, idx).to_string()),
-            x_spec: x_idx.map(|idx| Self::const_str(code, idx).to_string()),
+            nth,
+            x,
             samecase,
             sigspace,
             samemark,
@@ -76,7 +81,7 @@ impl Interpreter {
         op: &SubstOp,
         target: &crate::runtime::MatchTarget,
     ) -> Vec<(usize, usize, SubstMatchCaps)> {
-        let first_only = op.nth_spec.is_none() && op.x_spec.is_none() && !op.global;
+        let first_only = op.nth.is_none() && op.x.is_none() && !op.global;
         let mut out = Vec::new();
         let mut pos = 0usize;
         // One target for the whole scan — see the note in `native_subst_regex`:
@@ -115,39 +120,38 @@ impl Interpreter {
 
         let target = crate::runtime::MatchTarget::new(&text);
         let all = self.subst_collect_matches(op, &target);
-        let take_all = op.global && op.nth_spec.is_none() && op.x_spec.is_none();
-        let (selected, caps): (Vec<(usize, usize)>, Vec<SubstMatchCaps>) = if take_all {
-            all.into_iter().map(|(s, e, c)| ((s, e), c)).unzip()
-        } else {
-            let all_ranges: Vec<(usize, usize)> = all.iter().map(|(s, e, _)| (*s, *e)).collect();
-            let selected = Self::select_substitution_ranges(
-                &all_ranges,
-                op.nth_spec.as_deref(),
-                op.x_spec.as_deref(),
-            )?;
-            // `select_substitution_ranges` keeps matches in scan order (`:nth`
-            // is validated ascending, `:x` takes a prefix), so one forward
-            // pointer over `all` pairs every selected range with its captures.
-            let mut j = 0usize;
-            let mut caps = Vec::with_capacity(selected.len());
-            for r in &selected {
-                while j < all.len() && (all[j].0, all[j].1) != *r {
-                    j += 1;
+        let take_all = op.global && op.nth.is_none() && op.x.is_none();
+        let (selected, caps, single_nth): (Vec<(usize, usize)>, Vec<SubstMatchCaps>, bool) =
+            if take_all {
+                let (selected, caps) = all.into_iter().map(|(s, e, c)| ((s, e), c)).unzip();
+                (selected, caps, false)
+            } else {
+                let all_ranges: Vec<(usize, usize)> =
+                    all.iter().map(|(s, e, _)| (*s, *e)).collect();
+                let (selected, single_nth) =
+                    self.select_substitution_ranges(&all_ranges, op.nth.as_ref(), op.x.as_ref())?;
+                // `select_substitution_ranges` keeps matches in scan order
+                // (`:nth` is validated ascending, `:x` takes a prefix), so one
+                // forward pointer over `all` pairs every selected range with
+                // its captures.
+                let mut j = 0usize;
+                let mut caps = Vec::with_capacity(selected.len());
+                for r in &selected {
+                    while j < all.len() && (all[j].0, all[j].1) != *r {
+                        j += 1;
+                    }
+                    if let Some((_, _, c)) = all.get(j) {
+                        caps.push(c.clone());
+                        j += 1;
+                    }
                 }
-                if let Some((_, _, c)) = all.get(j) {
-                    caps.push(c.clone());
-                    j += 1;
-                }
-            }
-            (selected, caps)
-        };
+                (selected, caps, single_nth)
+            };
 
         // With :g, :x, or a multi-value :nth the result (and `$/`) is a List of
         // Match objects; a bare substitution yields a single Match. A *single*
         // :nth(N) forces a single Match even when combined with :g.
-        let single_nth = op.nth_spec.as_deref().is_some_and(|s| !s.contains(','));
-        let nth_is_multi = op.nth_spec.as_deref().is_some_and(|s| s.contains(','));
-        let is_list = !single_nth && (op.global || op.x_spec.is_some() || nth_is_multi);
+        let is_list = !single_nth && (op.global || op.x.is_some() || op.nth.is_some());
 
         if selected.is_empty() {
             return Ok(SubstOutcome {
@@ -264,8 +268,8 @@ impl Interpreter {
         samemark: bool,
         samespace: bool,
         global: bool,
-        nth_idx: Option<u32>,
-        x_idx: Option<u32>,
+        nth: bool,
+        x: bool,
         replacement_thunk: bool,
         qq_thunks: Option<&[(Symbol, u32)]>,
     ) -> Result<(), RuntimeError> {
@@ -278,8 +282,8 @@ impl Interpreter {
             samemark,
             samespace,
             global,
-            nth_idx,
-            x_idx,
+            nth,
+            x,
             replacement_thunk,
         )?;
         let outcome = self.run_subst_with_qq_thunks(&op, qq_thunks)?;
@@ -312,8 +316,8 @@ impl Interpreter {
         samemark: bool,
         samespace: bool,
         global: bool,
-        nth_idx: Option<u32>,
-        x_idx: Option<u32>,
+        nth: bool,
+        x: bool,
         replacement_thunk: bool,
         qq_thunks: Option<&[(Symbol, u32)]>,
     ) -> Result<(), RuntimeError> {
@@ -326,8 +330,8 @@ impl Interpreter {
             samemark,
             samespace,
             global,
-            nth_idx,
-            x_idx,
+            nth,
+            x,
             replacement_thunk,
         )?;
         // A Junction topic autothreads, as the `.subst` method call does (#15627):

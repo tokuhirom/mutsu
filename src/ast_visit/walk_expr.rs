@@ -81,8 +81,8 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
             samemark: _,
             samespace: _,
             global: _,
-            nth: _,
-            x: _,
+            nth,
+            x,
             replacement_thunk,
             tree: _,
         }
@@ -94,13 +94,17 @@ pub(crate) fn walk_expr<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, e: &'ast Expr)
             samemark: _,
             samespace: _,
             global: _,
-            nth: _,
-            x: _,
+            nth,
+            x,
             replacement_thunk,
             tree: _,
         } => {
             v.visit_name(pattern, NameKind::Source);
             v.visit_name(replacement, NameKind::Source);
+            // The `:nth` / `:x` arguments run before the replacement.
+            for e in [nth, x].into_iter().flatten() {
+                v.visit_expr(e);
+            }
             if let Some(t) = replacement_thunk {
                 v.visit_expr(&t.expr);
             }
