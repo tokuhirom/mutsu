@@ -2576,27 +2576,40 @@ impl Interpreter {
         for (name, class_def) in Self::io_notification_class_defs() {
             classes.insert(name, class_def);
         }
-        // `X::Range::Rand::InvalidEndpoints` exposes its `min` / `max` as
-        // accessors; without declared attributes `.min` / `.max` would resolve
-        // to the generic `Any.min` / `Any.max`.
-        if let Some(cls) = classes.get_mut("X::Range::Rand::InvalidEndpoints") {
-            for name in ["min", "max"] {
+        // Every built-in exception class declares the attributes rakudo's does
+        // (`builtin_exception_attrs`), so `.^attributes`, the accessors and
+        // construction see them (#18654). The few private `is built` ones
+        // (`X::TypeCheck`'s `$!got`/`$!expected`, `X::Coerce::Role`'s
+        // `$!exception`, ...) each have an explicit reader method in rakudo,
+        // so they are declared with their accessor.
+        for (name, rows) in super::builtin_exception_attrs::all() {
+            let Some(cls) = classes.get_mut(name) else {
+                continue;
+            };
+            for row in rows {
+                if cls.attributes.iter().any(|a| a.name == row.name) {
+                    continue;
+                }
+                let build = row.build_default();
                 cls.attributes.push(ClassAttributeDef {
-                    name: name.to_string(),
+                    name: row.name.to_string(),
                     is_public: true,
-                    default: None,
+                    default: build
+                        .clone()
+                        .or_else(|| row.unset_seed())
+                        .map(crate::opcode::DeclTraitArg::Literal),
                     captured_env: None,
                     captured_unit: None,
                     declaring_package: None,
                     is_rw: false,
                     is_required: None,
-                    sigil: '$',
+                    sigil: row.sigil(),
                     type_constraint: None,
                     where_constraint: None,
                     declared_shape: None,
                     source_line: None,
                     source_file: None,
-                    default_is_seed: false,
+                    default_is_seed: build.is_none(),
                     default_is_trait: false,
                 });
             }
