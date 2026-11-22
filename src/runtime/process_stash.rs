@@ -275,10 +275,13 @@ impl Interpreter {
             return self.lexicals.process_dynamics.get(&key);
         }
         let key = stash_key(name)?;
-        match self.env_dynamic_binding(name) {
+        let process = match self.env_dynamic_binding(name) {
             None => self.lexicals.process_dynamics.get(key),
             Some(found) => self.process_value_for_binding(key, &found).flatten(),
-        }
+        }?;
+        // No frame binds the name, so the lookup reaches the stashes, and
+        // rakudo's dynamic lookup asks `GLOBAL` before `PROCESS` (#18835).
+        Some(self.global_package_dynamic_fallback(key).unwrap_or(process))
     }
 
     /// For an env binding `found` of the published dynamic `key`: `Some(Some(

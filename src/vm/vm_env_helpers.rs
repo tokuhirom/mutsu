@@ -1967,7 +1967,7 @@ impl Interpreter {
     }
 
     // Cost: O(|name|) plus one env probe.
-    pub(super) fn global_package_dynamic_fallback(&self, name: &str) -> Option<Value> {
+    pub(crate) fn global_package_dynamic_fallback(&self, name: &str) -> Option<Value> {
         let (sigil, rest) = match name.chars().next()? {
             c @ ('@' | '%') => (Some(c), &name[1..]),
             _ => (None, name),
@@ -1980,11 +1980,12 @@ impl Interpreter {
             Some(c) => format!("{c}GLOBAL::{rest}"),
             None => format!("GLOBAL::{rest}"),
         };
-        self.env()
-            .get(&key)
-            .cloned()
+        // The `our` store first: it is the variable's one home, and the env
+        // copy of the frame that wrote it goes stale once a routine writes it
+        // (#18835).
+        self.get_our_var(&key)
+            .or_else(|| self.env().get(&key).cloned())
             .or_else(|| self.our_pseudo_var_read(&key))
-            .or_else(|| self.get_our_var(&key))
             .filter(|v| !v.is_nil())
     }
 

@@ -179,6 +179,34 @@ impl Interpreter {
         )))
     }
 
+    /// The `GLOBAL` stash key of the `our` store key `key` when it is a root
+    /// variable: `x` or `GLOBAL::x`. A store key written as `GLOBAL::GV` is
+    /// marked a scalar under that spelling, which the member rule (it sees
+    /// only the tail) cannot tell from a type name (#18835).
+    // Cost: O(|key|).
+    pub(super) fn root_our_stash_key(&self, key: &str, val: &Value) -> Option<String> {
+        let bare = key.strip_prefix("GLOBAL::").unwrap_or(key);
+        if bare.is_empty() || crate::qualified::is_qualified_str(bare) {
+            return None;
+        }
+        // An uppercase bare key holding anything but a type object is a
+        // scalar too (`our $OV`): only `GLOBAL::`-spelled writes are marked.
+        let sigilless = !bare.starts_with(['$', '@', '%', '&', '*', '\\'])
+            && !Symbol::lookup(key).is_some_and(|sym| self.our_table().is_term_key(sym))
+            && crate::runtime::term_names::term_spelling(bare).is_none();
+        if sigilless
+            && (self.is_our_scalar_key(key)
+                || self.is_our_scalar_key(bare)
+                || !matches!(val.view(), ValueView::Package(_)))
+        {
+            return Some(format!("${bare}"));
+        }
+        match self.our_var_stash_member(bare, "GLOBAL")? {
+            EnvStashMember::Value(stash_key) => Some(stash_key),
+            EnvStashMember::SubPackage(_) => None,
+        }
+    }
+
     /// Whether the sigil-less store key `key` (`Pkg::Baz`) holds a `$` scalar
     /// rather than a term of the same spelling (#17364).
     // Cost: O(1).
@@ -482,6 +510,12 @@ impl Interpreter {
             let Some(sym) = Symbol::lookup(spelling) else {
                 continue;
             };
+            // A `GLOBAL::`-spelled store is the variable's one home: the env
+            // copy of the frame that wrote it goes stale once a routine
+            // writes or binds it (#18835), so step 1 answers it.
+            if spelling.starts_with("GLOBAL::") && self.get_our_var(spelling).is_some() {
+                continue;
+            }
             let value = self.env.overlay_get_sym(sym).or_else(|| {
                 self.module
                     .module_toplevel
@@ -504,7 +538,9 @@ impl Interpreter {
                 continue;
             };
             let effective = spelling.strip_prefix("GLOBAL::").unwrap_or(spelling);
-            if Self::add_sigil_prefix(effective) != key {
+            // The same member rule the whole stash applies: a root `our`
+            // scalar's bare store key (`GV`) is `$GV`, not a type name (#18835).
+            if self.root_our_stash_key(spelling, &val).as_deref() != Some(key) {
                 continue;
             }
             let global = crate::qualified::qualified(
