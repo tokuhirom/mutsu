@@ -2581,7 +2581,10 @@ impl Interpreter {
         // construction see them (#18654). The few private `is built` ones
         // (`X::TypeCheck`'s `$!got`/`$!expected`, `X::Coerce::Role`'s
         // `$!exception`, ...) each have an explicit reader method in rakudo,
-        // so they are declared with their accessor.
+        // so they are declared with their accessor. An attribute a built-in
+        // method row already reads (`X::AdHoc.payload`, which falls back to
+        // the message an internal error carries) is built from its named
+        // argument but gets no generated accessor, so the row answers.
         for (name, rows) in super::builtin_exception_attrs::all() {
             let Some(cls) = classes.get_mut(name) else {
                 continue;
@@ -2591,9 +2594,15 @@ impl Interpreter {
                     continue;
                 }
                 let build = row.build_default();
+                let row_reads_it =
+                    crate::builtins::method_table::owner_has_row(name, row.name);
+                if row_reads_it {
+                    cls.attribute_built
+                        .insert(row.name.to_string(), crate::ast::BuiltTrait::Yes);
+                }
                 cls.attributes.push(ClassAttributeDef {
                     name: row.name.to_string(),
-                    is_public: true,
+                    is_public: !row_reads_it,
                     default: build
                         .clone()
                         .or_else(|| row.unset_seed())

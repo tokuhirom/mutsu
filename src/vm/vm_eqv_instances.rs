@@ -195,11 +195,11 @@ impl EqvInstanceHook for RakudoInstanceEqv<'_> {
             vivify_public_attrs(a, private);
             vivify_public_attrs(b, private);
         }
-        // A built-in exception declares no attribute metadata here, yet carries
-        // hidden state (`$!bt`, `$!ex`) a thrown one has and a constructed one
-        // lacks: compare what its default `.raku` renders, as Rakudo does.
-        if let (Some(private), ValueView::Instance { class_name: cb, .. }) = (&mode, b.view())
-            && private.is_empty()
+        // A built-in exception carries hidden state (`$!bt`, `$!ex`, the
+        // `message` an internal error stores) a thrown one has and a
+        // constructed one lacks: compare what its default `.raku` renders, as
+        // Rakudo does.
+        if let (Some(_), ValueView::Instance { class_name: cb, .. }) = (&mode, b.view())
             && cb == class_name
             && self.is_exception_class(class_name)
         {
