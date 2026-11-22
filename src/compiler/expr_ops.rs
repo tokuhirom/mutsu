@@ -125,20 +125,15 @@ impl Compiler {
         samemark: bool,
         samespace: bool,
         global: bool,
-        nth: &Option<Box<str>>,
-        x: &Option<Box<str>>,
+        nth: &Option<Box<Expr>>,
+        x: &Option<Box<Expr>>,
         replacement_thunk: Option<&Expr>,
     ) {
         self.compile_subst_replacement_thunk(replacement_thunk);
         let replacement_thunk = replacement_thunk.is_some();
         let pattern_idx = self.code.add_constant(Value::str(pattern.to_string()));
         let replacement_idx = self.code.add_constant(Value::str(replacement.to_string()));
-        let nth_idx = nth
-            .as_ref()
-            .map(|raw| self.code.add_constant(Value::str(raw.to_string())));
-        let x_idx = x
-            .as_ref()
-            .map(|raw| self.code.add_constant(Value::str(raw.to_string())));
+        let (nth, x) = self.compile_subst_adverb_args(nth, x);
         let qq_thunks = self.compile_pattern_qq_thunks(pattern);
         self.code.emit(OpCode::Subst {
             pattern_idx,
@@ -148,11 +143,26 @@ impl Compiler {
             samemark,
             samespace,
             global,
-            nth_idx,
-            x_idx,
+            nth,
+            x,
             replacement_thunk,
             qq_thunks,
         });
+    }
+
+    /// Push the values of a substitution's `:nth` and `:x` arguments, in that
+    /// order, above the replacement thunk (`OpCode::Subst`'s stack layout),
+    /// and report which of the two are present.
+    // Cost: O(1) emitted ops plus the two argument expressions.
+    fn compile_subst_adverb_args(
+        &mut self,
+        nth: &Option<Box<Expr>>,
+        x: &Option<Box<Expr>>,
+    ) -> (bool, bool) {
+        for arg in [nth, x].into_iter().flatten() {
+            self.compile_expr(arg);
+        }
+        (nth.is_some(), x.is_some())
     }
 
     /// Compile S/// non-destructive substitution.
@@ -166,20 +176,15 @@ impl Compiler {
         samemark: bool,
         samespace: bool,
         global: bool,
-        nth: &Option<Box<str>>,
-        x: &Option<Box<str>>,
+        nth: &Option<Box<Expr>>,
+        x: &Option<Box<Expr>>,
         replacement_thunk: Option<&Expr>,
     ) {
         self.compile_subst_replacement_thunk(replacement_thunk);
         let replacement_thunk = replacement_thunk.is_some();
         let pattern_idx = self.code.add_constant(Value::str(pattern.to_string()));
         let replacement_idx = self.code.add_constant(Value::str(replacement.to_string()));
-        let nth_idx = nth
-            .as_ref()
-            .map(|raw| self.code.add_constant(Value::str(raw.to_string())));
-        let x_idx = x
-            .as_ref()
-            .map(|raw| self.code.add_constant(Value::str(raw.to_string())));
+        let (nth, x) = self.compile_subst_adverb_args(nth, x);
         let qq_thunks = self.compile_pattern_qq_thunks(pattern);
         self.code.emit(OpCode::NonDestructiveSubst {
             pattern_idx,
@@ -189,8 +194,8 @@ impl Compiler {
             samemark,
             samespace,
             global,
-            nth_idx,
-            x_idx,
+            nth,
+            x,
             replacement_thunk,
             qq_thunks,
         });

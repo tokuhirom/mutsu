@@ -4070,7 +4070,8 @@ pub(crate) enum OpCode {
 
     // -- Substitution (s///) --
     /// Destructive substitution on the topic: `s/pat/repl/`,
-    /// `s[pat] = EXPR` and `ss/.../.../`. Stack: `[] → [result]`.
+    /// `s[pat] = EXPR` and `ss/.../.../`. Stack: `[Code?, Nth?, X?] → [result]`
+    /// (the replacement thunk and the `:nth`/`:x` values, each when present).
     ///
     /// The subject is always `$_`; `$x ~~ s///` topicalizes `$x` around the
     /// op and writes it back. `$_` is written only when something matched
@@ -4102,11 +4103,12 @@ pub(crate) enum OpCode {
         samespace: bool,
         /// `:g` / `:global`.
         global: bool,
-        /// Constant-pool index of the raw `:nth` spec string, or `None`.
-        nth_idx: Option<u32>,
-        /// Constant-pool index of the raw `:x` spec string (`"3"` / `"1..3"`),
-        /// or `None` when `:x` is absent.
-        x_idx: Option<u32>,
+        /// The `:nth` argument's value is on the stack, above the
+        /// replacement thunk (`[Code?, Nth] → …`).
+        nth: bool,
+        /// The `:x` argument's value is on the stack, above `:nth`'s
+        /// (`[Code?, Nth?, X] → …`).
+        x: bool,
         /// The replacement is an assignment-form thunk (`s[pat] = EXPR`), not
         /// a `qq` string (see `Expr::Subst::replacement_thunk`): its compiled
         /// closure is on the stack (`[Code] → …`), called once per match, and
@@ -4121,7 +4123,7 @@ pub(crate) enum OpCode {
 
     // -- Non-destructive substitution (S///) --
     /// Non-destructive substitution, `S/pat/repl/` and `S[pat] = EXPR`.
-    /// Stack: `[] → [Str]`.
+    /// Stack: `[Code?, Nth?, X?] → [Str]`.
     ///
     /// Same operands and matching as [`Self::Subst`], but `$_` is only
     /// read: the substituted text is pushed (the unchanged subject when
@@ -4148,11 +4150,12 @@ pub(crate) enum OpCode {
         samespace: bool,
         /// `:g` / `:global`.
         global: bool,
-        /// Constant-pool index of the raw `:nth` spec string, or `None`.
-        nth_idx: Option<u32>,
-        /// Constant-pool index of the raw `:x` spec string (`"3"` / `"1..3"`),
-        /// or `None` when `:x` is absent.
-        x_idx: Option<u32>,
+        /// The `:nth` argument's value is on the stack, above the
+        /// replacement thunk (`[Code?, Nth] → …`).
+        nth: bool,
+        /// The `:x` argument's value is on the stack, above `:nth`'s
+        /// (`[Code?, Nth?, X] → …`).
+        x: bool,
         /// The replacement is an assignment-form thunk (`s[pat] = EXPR`), not
         /// a `qq` string (see `Expr::Subst::replacement_thunk`): its compiled
         /// closure is on the stack (`[Code] → …`), called once per match, and

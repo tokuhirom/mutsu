@@ -282,13 +282,13 @@ impl Interpreter {
     }
 
     /// Check if an :nth argument is a single integer (not a list or range)
-    fn is_single_nth(val: &Value) -> bool {
+    pub(crate) fn is_single_nth(val: &Value) -> bool {
         matches!(val.view(), ValueView::Int(_) | ValueView::Num(_))
     }
 
     /// Resolve :nth argument (Value) into a list of 1-based indices.
     /// Validates that values are positive and monotonically increasing.
-    pub(in crate::runtime) fn resolve_nth_value_indices(
+    pub(crate) fn resolve_nth_value_indices(
         &mut self,
         val: &Value,
         total_matches: usize,
@@ -298,6 +298,18 @@ impl Interpreter {
             ValueView::Int(n) => {
                 Self::validate_nth_value(n)?;
                 indices.push(n as usize);
+            }
+            // `Inf` is past every match, so like `*` it selects the last
+            // one; `-Inf` is before the first (rakudo names it as written).
+            ValueView::Num(n) if n.is_infinite() => {
+                if n < 0.0 {
+                    return Err(RuntimeError::new(
+                        "Attempt to retrieve before :1st match -- :nth(-Inf)",
+                    ));
+                }
+                if total_matches >= 1 {
+                    indices.push(total_matches);
+                }
             }
             ValueView::Num(n) => {
                 let i = n as i64;
@@ -340,13 +352,13 @@ impl Interpreter {
                         loop {
                             if current <= 0 {
                                 return Err(RuntimeError::new(format!(
-                                    "Unexpected value ({}) for :nth; must be a positive integer",
+                                    "Attempt to retrieve before :1st match -- :nth({})",
                                     current
                                 )));
                             }
                             if current <= last {
                                 return Err(RuntimeError::new(format!(
-                                    "Unexpected value ({}) for :nth; must be greater than {}",
+                                    "Attempt to fetch match #{} after #{}",
                                     current, last
                                 )));
                             }
@@ -412,13 +424,13 @@ impl Interpreter {
                         loop {
                             if current <= 0 {
                                 return Err(RuntimeError::new(format!(
-                                    "Unexpected value ({}) for :nth; must be a positive integer",
+                                    "Attempt to retrieve before :1st match -- :nth({})",
                                     current
                                 )));
                             }
                             if current <= last {
                                 return Err(RuntimeError::new(format!(
-                                    "Unexpected value ({}) for :nth; must be greater than {}",
+                                    "Attempt to fetch match #{} after #{}",
                                     current, last
                                 )));
                             }
@@ -550,13 +562,13 @@ impl Interpreter {
             let i = Self::value_to_nth_int(item)?;
             if i <= 0 {
                 return Err(RuntimeError::new(format!(
-                    "Unexpected value ({}) for :nth; must be a positive integer",
+                    "Attempt to retrieve before :1st match -- :nth({})",
                     i
                 )));
             }
             if i <= last {
                 return Err(RuntimeError::new(format!(
-                    "Unexpected value ({}) for :nth; must be greater than {}",
+                    "Attempt to fetch match #{} after #{}",
                     i, last
                 )));
             }
@@ -573,7 +585,7 @@ impl Interpreter {
     fn validate_nth_value(n: i64) -> Result<(), RuntimeError> {
         if n <= 0 {
             return Err(RuntimeError::new(format!(
-                "Unexpected value ({}) for :nth; must be a positive integer",
+                "Attempt to retrieve before :1st match -- :nth({})",
                 n
             )));
         }

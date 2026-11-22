@@ -7041,8 +7041,8 @@ impl Interpreter {
                 samemark,
                 samespace,
                 global,
-                nth_idx,
-                x_idx,
+                nth,
+                x,
                 replacement_thunk,
                 qq_thunks,
             } => {
@@ -7056,8 +7056,8 @@ impl Interpreter {
                     *samemark,
                     *samespace,
                     *global,
-                    *nth_idx,
-                    *x_idx,
+                    *nth,
+                    *x,
                     *replacement_thunk,
                     qq_thunks.as_deref().map(Vec::as_slice),
                 )?;
@@ -7072,8 +7072,8 @@ impl Interpreter {
                 samemark,
                 samespace,
                 global,
-                nth_idx,
-                x_idx,
+                nth,
+                x,
                 replacement_thunk,
                 qq_thunks,
             } => {
@@ -7087,8 +7087,8 @@ impl Interpreter {
                     *samemark,
                     *samespace,
                     *global,
-                    *nth_idx,
-                    *x_idx,
+                    *nth,
+                    *x,
                     *replacement_thunk,
                     qq_thunks.as_deref().map(Vec::as_slice),
                 )?;

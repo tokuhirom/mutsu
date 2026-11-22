@@ -1615,11 +1615,14 @@ pub(crate) enum Expr {
         samemark: bool,
         samespace: bool,
         global: bool,
-        nth: Option<Box<str>>,
-        /// Raw `:x` adverb argument spec: a count (`"3"`) or a range
-        /// (`"1..3"`), parsed at substitution time. `None` when `:x` is absent.
-        /// (Boxed strings: `Expr` stays within its size guard.)
-        x: Option<Box<str>>,
+        /// The `:nth` adverb's argument (`:nth(1,3)`, `:2nd`, `:nth($n)`,
+        /// `:nth(*-1)`), an expression evaluated where the substitution runs.
+        /// `None` when `:nth` is absent.
+        nth: Option<Box<Expr>>,
+        /// The `:x` adverb's argument (`:x(3)`, `:x(1..3)`, `:x($n)`), an
+        /// expression evaluated where the substitution runs. `None` when `:x`
+        /// is absent.
+        x: Option<Box<Expr>>,
         /// The RHS of an assignment-form substitution (`s[pat] = EXPR`,
         /// `S[pat] = EXPR`), parsed in the enclosing scope. It is a thunk, not
         /// a Block: it is evaluated per match with `$/` bound to that match, a
@@ -1643,11 +1646,14 @@ pub(crate) enum Expr {
         samemark: bool,
         samespace: bool,
         global: bool,
-        nth: Option<Box<str>>,
-        /// Raw `:x` adverb argument spec: a count (`"3"`) or a range
-        /// (`"1..3"`), parsed at substitution time. `None` when `:x` is absent.
-        /// (Boxed strings: `Expr` stays within its size guard.)
-        x: Option<Box<str>>,
+        /// The `:nth` adverb's argument (`:nth(1,3)`, `:2nd`, `:nth($n)`,
+        /// `:nth(*-1)`), an expression evaluated where the substitution runs.
+        /// `None` when `:nth` is absent.
+        nth: Option<Box<Expr>>,
+        /// The `:x` adverb's argument (`:x(3)`, `:x(1..3)`, `:x($n)`), an
+        /// expression evaluated where the substitution runs. `None` when `:x`
+        /// is absent.
+        x: Option<Box<Expr>>,
         /// The RHS of an assignment-form substitution (`s[pat] = EXPR`,
         /// `S[pat] = EXPR`), parsed in the enclosing scope. It is a thunk, not
         /// a Block: it is evaluated per match with `$/` bound to that match, a

@@ -24,8 +24,22 @@ pub(crate) struct SubstFlags {
     pub(crate) samemark: bool,
     pub(crate) samespace: bool,
     pub(crate) global: bool,
-    pub(crate) nth: Option<Box<str>>,
-    pub(crate) x: Option<Box<str>>,
+    pub(crate) nth: Option<Box<Expr>>,
+    pub(crate) x: Option<Box<Expr>>,
+}
+
+/// The `:nth` / `:x` argument `raw` (as the adverb parser keeps it: `"2"` for
+/// `:2nd`, `"1,3"` for `:nth(1,3)`, `"$n"` for `:nth($n)`) as the expression a
+/// substitution evaluates where it runs, like any other argument.
+///
+/// The adverb parser has already balanced the argument's brackets, so it
+/// nearly always parses; one that does not is kept as its text, which the
+/// substitution then rejects as an `:nth`/`:x` value it cannot use.
+// Cost: O(|raw|).
+fn adverb_argument_expr(raw: &str) -> Box<Expr> {
+    Box::new(
+        parse_adverb_argument(raw).unwrap_or_else(|| Expr::Literal(Value::str(raw.to_string()))),
+    )
 }
 
 /// The source tree of a substitution whose pattern was written `raw`
@@ -71,8 +85,8 @@ pub(super) fn subst_expr(
     );
     let (global, nth, x) = (
         adverbs.global,
-        adverbs.nth.as_deref().map(Box::from),
-        adverbs.repeat.as_deref().map(Box::from),
+        adverbs.nth.as_deref().map(adverb_argument_expr),
+        adverbs.repeat.as_deref().map(adverb_argument_expr),
     );
     if destructive {
         Expr::Subst {
@@ -147,8 +161,8 @@ pub(crate) fn subst_pattern_source(
         samemark: parsed.samemark,
         samespace: parsed.samespace,
         global: parsed.global,
-        nth: parsed.nth.as_deref().map(Box::from),
-        x: parsed.repeat.as_deref().map(Box::from),
+        nth: parsed.nth.as_deref().map(adverb_argument_expr),
+        x: parsed.repeat.as_deref().map(adverb_argument_expr),
     };
     Some((apply_inline_match_adverbs(body, &parsed), flags))
 }
