@@ -9,7 +9,11 @@
 //!   own `gist` (`Nil` for a `Nil`) or `raku`; `perl` is `raku`;
 //! - `Str` threads (`any(1, "a").Str` is `any("1", "a")`, Rakudo's
 //!   `self.THREAD(*.Str)`);
-//! - `sink` is `Nil`: sinking a junction runs nothing per value.
+//! - `sink` is `Nil`: sinking a junction runs nothing per value;
+//! - `ACCEPTS` collapses: `(1|2).ACCEPTS(2)` is `True`, each value's
+//!   `ACCEPTS` of the topic combined by the junction's kind, and a junction
+//!   topic is matched as a whole (Rakudo's `BOOLIFY-ACCEPTS`). It is the
+//!   smartmatch `topic ~~ junction`, so the two cannot disagree.
 
 use super::{Handler, MethodRow, RowFlags};
 use crate::builtins::method_table::Named;
@@ -36,6 +40,17 @@ pub(super) static ROWS: &[MethodRow] = &[
     row!("raku", Handler::Interp(raku)),
     row!("Str", Handler::Interp(str_thread)),
     row!("sink", Handler::Narrow(sink)),
+    MethodRow {
+        owner: "Junction",
+        name: "ACCEPTS",
+        arity: 1,
+        handler: Handler::Interp(accepts),
+        flags: RowFlags::OWNER_ONLY
+            .or(RowFlags::ANY_ARGS)
+            .or(RowFlags::OBJECT_ARGS)
+            .or(RowFlags::JUNCTION_ARGS),
+        named: &[],
+    },
 ];
 
 /// The values of a junction receiver, with its kind's name.
@@ -100,4 +115,15 @@ fn str_thread(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Answ
 // Cost: O(1).
 fn sink(t: &Value, _: &[Value]) -> Answer {
     matches!(t.view(), ValueView::Junction { .. }).then_some(Ok(Value::NIL))
+}
+
+/// `Junction.ACCEPTS($topic)`: whether `$topic ~~ junction`, a `Bool`.
+// Cost: O(v) `ACCEPTS` calls, v = values (times the topic's, for a junction
+// topic).
+fn accepts(i: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>) -> Answer {
+    if !matches!(t.view(), ValueView::Junction { .. }) {
+        return None;
+    }
+    let topic = args.first()?;
+    Some(i.try_smart_match(topic, t).map(Value::truth))
 }
