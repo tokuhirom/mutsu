@@ -5129,7 +5129,7 @@ impl Interpreter {
     /// exactly what a concurrent writer races on, so it is also exactly what
     /// the store-side exclusion must be keyed on.
     pub(crate) unsafe fn descend_container_ref_tracked(
-        mut current: *mut Value,
+        current: *mut Value,
         first_cell: &mut Option<usize>,
     ) -> *mut Value {
         const MAX_DESCENT: usize = 256;
