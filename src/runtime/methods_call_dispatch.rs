@@ -1144,8 +1144,9 @@ impl Interpreter {
             // delegate to inner value at the end (handled later in this function)
         }
 
-        // Role type-object method punning
-        if method != "new" {
+        // Role type-object method punning; the names rakudo keeps on `Mu`
+        // are answered by `Mu` below, not by the role.
+        if method != "new" && !crate::runtime::role_type_object_keeps_mu_method(method) {
             if let ValueView::Package(role_name) = target.view() {
                 // A class-level (`my $.x`) role attribute is readable on the role
                 // type object directly (`R.x`), returning its recorded default —
