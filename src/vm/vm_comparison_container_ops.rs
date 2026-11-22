@@ -395,8 +395,8 @@ impl Interpreter {
         // An element bound straight to an aggregate (`@d[0] := @c`) has no
         // container of its own: it IS that Array/Hash, so it is `=:=` to the
         // variable holding the same object (#18566).
-        if let Some(bound) = Self::bound_value_of_element(&left)
-            .or_else(|| Self::bound_value_of_element(&right))
+        if let Some(bound) =
+            Self::bound_value_of_element(&left).or_else(|| Self::bound_value_of_element(&right))
         {
             let other = if Self::bound_value_of_element(&left).is_some() {
                 &right

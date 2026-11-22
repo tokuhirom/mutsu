@@ -1313,7 +1313,11 @@ impl Interpreter {
                 || aggregate_source)
             && !matches!(val.view(), ValueView::HashEntryRef { .. })
         {
-            Value::bound_element(if aggregate_source { val.into_deref() } else { val })
+            Value::bound_element(if aggregate_source {
+                val.into_deref()
+            } else {
+                val
+            })
         } else {
             val
         };

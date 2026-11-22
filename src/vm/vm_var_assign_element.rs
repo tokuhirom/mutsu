@@ -1384,14 +1384,13 @@ impl Interpreter {
                     None
                 }
             });
-        let result =
-            self.exec_index_assign_expr_named_op_inner(
-                code,
-                name_idx,
-                is_positional,
-                target_slot,
-                element_share,
-            );
+        let result = self.exec_index_assign_expr_named_op_inner(
+            code,
+            name_idx,
+            is_positional,
+            target_slot,
+            element_share,
+        );
         if result.is_ok()
             && let Some(instance) = saved_hash_subclass_instance
             && let ValueView::Instance { attributes, .. } = instance.view()
