@@ -5684,7 +5684,9 @@ pub(super) fn word_quote_with(quotewords: bool, val: bool, word: &str) -> RakuAs
                 name: Some("segments"),
                 // A balanced inner `<...>` is a nested quote (#18457).
                 value: RakuAstFieldValue::List(super::nested_words::segments(
-                    quotewords, word, &processors,
+                    quotewords,
+                    word,
+                    &processors,
                 )),
             },
         ],

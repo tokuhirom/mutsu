@@ -42,8 +42,7 @@ fn split(text: &str, processors: &[Value], depth: usize) -> Option<Vec<Value>> {
         // the next run.
         out.push(literal(&text[run_start..=at]));
         let inner = &text[at + 1..close];
-        let nested = split(inner, processors, depth + 1)
-            .unwrap_or_else(|| vec![literal(inner)]);
+        let nested = split(inner, processors, depth + 1).unwrap_or_else(|| vec![literal(inner)]);
         out.push(Value::rakuast(Box::new(quote(processors, nested))));
         run_start = close;
         found = true;
