@@ -714,11 +714,13 @@ pub(crate) fn keyword_literal(input: &str) -> PResult<'_, Expr> {
             // The phaser covers the whole comma list, a sequence included
             // (`(1, once 2 ... 5)` holds `(2 3 4 5)` as one element).
             let (r, expr) = crate::parser::stmt::assign::parse_comma_or_expr(r)?;
+            // A same-line modifier is part of the phaser's statement (#18510).
+            let (r, stmt) = crate::parser::stmt::modifier::prefix_operand_statement(r, expr)?;
             return Ok((
                 r,
                 Expr::spelled(
                     Expr::Once {
-                        body: vec![Stmt::Expr(expr)],
+                        body: vec![stmt.unwrap_or_else(Stmt::Expr)],
                     },
                     || Spelling::BareStatement,
                 ),

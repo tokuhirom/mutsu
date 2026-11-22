@@ -138,6 +138,43 @@ pub(crate) fn leading_modifier_keyword(input: &str) -> Option<&'static str> {
     .find(|kw| keyword(kw, input).is_some())
 }
 
+/// A statement prefix's operand (`quietly say 1`, `once say 1`, `eager @a`)
+/// with the statement modifier that follows it on the same line: the prefix
+/// takes a statement, so `once say 1 if $c` is `once (say 1 if $c)`, as in
+/// rakudo (#18510). `Err(expr)` gives the operand back when no modifier
+/// follows; a modifier on a later line starts a statement of its own.
+// Cost: O(n), n = length of the modifier parsed.
+pub(crate) fn prefix_operand_statement(
+    input: &str,
+    expr: Expr,
+) -> PResult<'_, Result<Stmt, Expr>> {
+    let same_line = ws(input).is_ok_and(|(after, _)| {
+        !input[..input.len() - after.len()].contains(['\n', '\r'])
+            && leading_modifier_keyword(after).is_some()
+    });
+    if !same_line {
+        return Ok((input, Err(expr)));
+    }
+    let (rest, stmt) = parse_statement_modifier(input, Stmt::Expr(expr))?;
+    Ok((rest, Ok(stmt)))
+}
+
+/// [`prefix_operand_statement`] as an expression: the modified statement as
+/// a `do` statement (its value, `Empty` when the condition fails), or the
+/// operand itself.
+// Cost: as `prefix_operand_statement`.
+pub(crate) fn prefix_operand_expr(
+    input: &str,
+    expr: Expr,
+) -> PResult<'_, Expr> {
+    let (rest, operand) = prefix_operand_statement(input, expr)?;
+    let expr = match operand {
+        Ok(stmt) => Expr::DoStmt(Box::new(stmt)),
+        Err(expr) => expr,
+    };
+    Ok((rest, expr))
+}
+
 /// Whether a second statement modifier `next` is legal after a first `first`.
 /// Raku only allows a *conditional* modifier (`if`/`unless`/`with`/`without`/`when`)
 /// followed by a *loop* modifier (`for`/`while`/`until`/`given`), e.g.

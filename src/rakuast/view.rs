@@ -92,7 +92,7 @@ fn is_do_statement(stmt: &Stmt) -> bool {
 /// Whether `stmt` is a statement carrying a statement modifier (`EXPR for LIST`,
 /// `EXPR if COND`, `EXPR given TOPIC`), which a SemiList holds as a statement.
 // Cost: O(1).
-fn is_modifier_statement(stmt: &Stmt) -> bool {
+pub(super) fn is_modifier_statement(stmt: &Stmt) -> bool {
     matches!(stmt, Stmt::Ast(node) if matches!(node.as_ref(), ParsedStmt::Modified(_)))
 }
 
@@ -2897,14 +2897,23 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
         }),
         // `eager EXPR` -> `StatementPrefix::Eager(Statement::Expression(EXPR))`.
         Expr::Eager(inner) => {
-            let operand = view_expr(names, inner)?;
-            if operand.class == RakuAstClass::Block {
-                return Err(unsupported("eager block"));
-            }
+            let statement = match inner.as_ref() {
+                // `eager EXPR if COND`: the modified statement (#18510).
+                Expr::DoStmt(stmt) if is_modifier_statement(stmt) => {
+                    super::prefix_call::prefix_statement(names, inner)?
+                }
+                _ => {
+                    let operand = view_expr(names, inner)?;
+                    if operand.class == RakuAstClass::Block {
+                        return Err(unsupported("eager block"));
+                    }
+                    statement_expression(operand)
+                }
+            };
             Ok(RakuAstNode {
                 origin: Default::default(),
                 class: RakuAstClass::StatementPrefixEager,
-                fields: vec![node_field(None, statement_expression(operand))],
+                fields: vec![node_field(None, statement)],
             })
         }
         // `$@a` / `$%h` / `$[1, 2]` -> `Contextualizer::Item` over the term.

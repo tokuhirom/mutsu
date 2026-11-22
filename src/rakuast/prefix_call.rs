@@ -70,8 +70,45 @@ fn blorst(names: &NameScope, arg: &Expr) -> Result<RakuAstNode, RuntimeError> {
             origin: crate::ast::DoBlockOrigin::SourceBlock,
             ..
         } => block_node(names, body),
-        other => Ok(statement_expression(view_expr(names, other)?)),
+        other => prefix_statement(names, other),
     }
+}
+
+/// The statement a prefix holds, from its operand: a same-line modifier the
+/// parser folded into the operand (`once say 1 if $c` holds the modified
+/// statement as a `do` statement) is that statement itself, as in rakudo
+/// (#18510); any other operand is a `Statement::Expression` over it.
+// Cost: O(n), n = size of the operand.
+pub(super) fn prefix_statement(names: &NameScope, operand: &Expr) -> Result<RakuAstNode, RuntimeError> {
+    if let Expr::DoStmt(stmt) = operand
+        && super::view::is_modifier_statement(stmt)
+    {
+        return super::view::view_stmt(names, stmt)?
+            .ok_or_else(|| super::view::unsupported("empty modified statement"));
+    }
+    Ok(statement_expression(view_expr(names, operand)?))
+}
+
+/// The operand a prefix's `Statement::Expression` lowers to: its expression,
+/// or, with a statement modifier, the modified statement as a `do`
+/// statement (the parser's shape for `quietly say 1 if $c`, #18510).
+// Cost: O(n), n = size of the node.
+pub(super) fn lower_prefix_statement(
+    names: &NameScope,
+    statement: &RakuAstNode,
+) -> Result<Expr, RuntimeError> {
+    let modified = statement.fields.iter().any(|field| {
+        matches!(
+            field.name.as_deref(),
+            Some("condition-modifier" | "loop-modifier")
+        )
+    });
+    if modified {
+        return Ok(Expr::DoStmt(Box::new(super::lower::lower_stmt(
+            names, statement,
+        )?)));
+    }
+    lower_expr(names, named_child(statement, "expression")?)
 }
 
 /// `StatementPrefix::Start` / `::Quietly` / `::Sink` -> the call the parser
@@ -103,7 +140,7 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Expr, Runti
             make_anon_sub(vec![super::lower::lower_stmt(names, blorst)?])
         }
         // `quietly EXPR` / `sink EXPR` take the expression itself.
-        RakuAstClass::StatementExpression => lower_expr(names, named_child(blorst, "expression")?)?,
+        RakuAstClass::StatementExpression => lower_prefix_statement(names, blorst)?,
         _ => return Err(unsupported(node)),
     };
     Ok(Expr::Call {
@@ -159,7 +196,7 @@ pub(super) fn lower_method(names: &NameScope, node: &RakuAstNode) -> Result<Expr
             label: None,
             origin: crate::ast::DoBlockOrigin::SourceBlock,
         },
-        RakuAstClass::StatementExpression => lower_expr(names, named_child(blorst, "expression")?)?,
+        RakuAstClass::StatementExpression => lower_prefix_statement(names, blorst)?,
         _ => return Err(unsupported(node)),
     };
     Ok(Expr::MethodCall {
