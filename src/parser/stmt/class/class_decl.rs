@@ -799,9 +799,11 @@ pub(crate) fn class_decl_body_opt(
     let mut implicit_grammar_parent = false;
     let mut body_parents: Vec<String> = Vec::new();
     let nested_types = nested_type_names(&body);
+    let mut rw_also = false;
     body.retain(|stmt| {
         if stmt_is_also_is_rw(stmt) {
             class_is_rw = true;
+            rw_also = true;
             false
         } else if let Some(parent_name) = stmt_also_is_parent(stmt) {
             // `also is Inner` names the type this body declares, not an outer
@@ -873,6 +875,7 @@ pub(crate) fn class_decl_body_opt(
         export_tags: None,
         marks: crate::ast::PackageMarks {
             leading_colons,
+            rw_also,
             ..Default::default()
         },
         implicit_grammar_parent: false,

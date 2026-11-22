@@ -1549,6 +1549,7 @@ fn lower_class(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeErr
     for parent in super::role::take_also_is_parents(&mut body) {
         crate::parser::push_also_is_parent(&mut parents, &mut body_parents, &mut false, parent);
     }
+    let class_is_rw = super::also_rw::take(&mut body) || class_is_rw;
     let repr = match node.fields.iter().find(|f| f.name == Some("repr")) {
         Some(_) => Some(leaf_str(node, "repr")?),
         None => None,

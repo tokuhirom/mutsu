@@ -43,6 +43,7 @@ pub(crate) use primary::{
     prepend_does_header,
 };
 pub(crate) use stmt::class::push_also_is_parent;
+pub(crate) use stmt::class::stmt_is_also_is_rw;
 pub(crate) use stmt::control::placeholder_loop_params;
 pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};
 pub(crate) use stmt::decl::handle_specs_from_term;
