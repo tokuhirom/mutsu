@@ -1668,7 +1668,10 @@ impl Interpreter {
         } else {
             None
         };
-        if let Some(kind) = readonly_mark {
+        // A code variable is marked under its exact `&name` key below, never
+        // under the bare name: that is the key of a same-named `$name`, which
+        // a `my &name := ...` must not make readonly (#18414).
+        if let Some(kind) = readonly_mark.filter(|_| !code.locals[idx].starts_with('&')) {
             // A `$` local is stored under its bare name, whose symbol the
             // chunk already holds: no `String` and no intern per bind.
             let local = code.locals[idx].as_str();
