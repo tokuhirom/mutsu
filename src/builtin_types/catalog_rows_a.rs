@@ -187,6 +187,9 @@ static CATALOG_A: &[BuiltinTypeInfo] = &[
         ],
         owner: "",
     ),
+    // `HyperSeq.configuration`'s class (#18709). raku:
+    // `HyperConfiguration.^mro` is `HyperConfiguration, Any, Mu`.
+    row!("HyperConfiguration", mro: ["HyperConfiguration", "Any", "Mu"], roles: [], owner: ""),
     row!(
         "RaceSeq",
         mro: ["RaceSeq", "Any", "Mu"],
