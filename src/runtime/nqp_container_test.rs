@@ -114,7 +114,12 @@ impl Interpreter {
             crate::symbol::Symbol::intern(attr),
             true,
             '$',
-            |attributes, _, _| attributes.contains_key(marker),
+            // `with_self_attr` already holds the cell's read guard and hands
+            // over its map. Asking the cell again took a second read lock on
+            // the same `RwLock`, which blocks behind a writer queued on another
+            // thread (an attribute `⚛++`/`nqp::atomicinc_i`) while that writer
+            // waits on the first read: a deadlock (#17723, ParaSeq `.map`).
+            |_, map, _| map.contains_key(marker),
         )
         .unwrap_or(false)
     }
