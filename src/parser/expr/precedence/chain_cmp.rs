@@ -316,8 +316,7 @@ pub(crate) fn range_expr(input: &str) -> PResult<'_, Expr> {
 pub(in crate::parser::expr) fn chaining_op_spelling(r: &str) -> Option<&str> {
     // `!=` and `!~~` are operators of their own; any other `!` negates the
     // operator after it (`!===`, `!=:=`), which rakudo names.
-    let own = r.starts_with("!~~")
-        || (r.starts_with("!=") && !r[2..].starts_with(['=', ':']));
+    let own = r.starts_with("!~~") || (r.starts_with("!=") && !r[2..].starts_with(['=', ':']));
     let negated = r.strip_prefix('!').filter(|_| !own);
     let at = negated.unwrap_or(r);
     let (op, len) = parse_comparison_op(at)?;
