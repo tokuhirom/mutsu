@@ -385,7 +385,7 @@ impl Interpreter {
             rw_params,
             dispatch_token,
         ));
-        self.push_samewith_callable_context(dispatcher);
+        self.push_samewith_callable_context(dispatcher.clone());
         self.pending_skip_constraint_recheck = trust_constraints;
         self.dispatch.nominal_verified_candidate = nominal_verified_id;
         // A module routine's own `my` statics are its whole scope for those
@@ -401,7 +401,17 @@ impl Interpreter {
                 self.inject_class_body_statics_saving(&package, &mut shadowed_by_statics);
             }
         }
-        let result = self.call_sub_value(candidate, args);
+        // The general call runs the candidate with the family's dispatcher
+        // bound as `&<family>`; the light bind never reads the candidate's env,
+        // so it takes the candidate as it is.
+        let result = match self.call_captured_winner_light(&candidate, &args, key_decided) {
+            Some(result) => result,
+            None => {
+                let family_name = (!family.is_empty()).then_some(family);
+                let candidate = self.bind_family_dispatcher(&candidate, family_name, &dispatcher);
+                self.call_sub_value(candidate, args)
+            }
+        };
         for (name, previous) in shadowed_by_statics.into_iter().rev() {
             match previous {
                 Some(v) => self.env_mut().insert(name, v),
@@ -415,6 +425,65 @@ impl Interpreter {
         self.pop_samewith_context();
         self.dispatch.multi_dispatch_stack.pop();
         result
+    }
+
+    /// Run a captured family's winner through the verified positional light
+    /// bind (ADR-18580 D2, #18267 stage 4), or `None` to leave the call to
+    /// the general closure call. Only a winner a keyed stage program picked
+    /// (`key_decided`), which is a routine's own compiled body
+    /// (`compiled_routine`, the candidates `sub_value_from_multi_candidates`
+    /// builds), unwrapped, with positional arguments its light bind admits.
+    /// The body runs as the by-name dispatch of the same candidate runs it;
+    /// the dispatch frame and samewith context are the caller's.
+    // Cost: O(p) admission, p = parameters, plus the call.
+    fn call_captured_winner_light(
+        &mut self,
+        candidate: &Value,
+        args: &[Value],
+        key_decided: bool,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !key_decided {
+            return None;
+        }
+        let ValueView::Sub(data) = candidate.view() else {
+            return None;
+        };
+        let cf = data.compiled_routine.clone()?;
+        // Only an operator family: its body reaches the family through the
+        // operator's lexical import chain, never by a name the candidate's
+        // own env binds (an escaped `&b` calling `b(...)`), and only a body
+        // that reads no variable of its declaring scope by name, which the
+        // general call's captured env would answer and the light bind's
+        // caller env might not.
+        if !data.name.as_str().contains(":<")
+            || *cf
+                .outer_var_reads_cache
+                .get_or_init(|| cf.code.reads_outer_vars())
+        {
+            return None;
+        }
+        if self.has_wrap_chain_entry(data.id)
+            || args.iter().any(|a| a.unwrap_varref().is_any_pair_value())
+        {
+            return None;
+        }
+        let name_sym = data.name;
+        let name = name_sym.as_str();
+        if !self.is_positional_light_call_eligible_where(
+            &cf,
+            name,
+            Self::positional_light_argc(args),
+            args,
+            None,
+            crate::vm::LightBindTrust::Constraints,
+        ) {
+            return None;
+        }
+        let empty_fns = crate::opcode::CompiledFns::default();
+        let fns = cf.compiled_fns.as_deref().unwrap_or(&empty_fns);
+        Some(self.call_compiled_function_positional_light_verified(
+            &cf, args, fns, name, name_sym, None,
+        ))
     }
 
     /// Whether the innermost samewith context re-dispatches through a multi

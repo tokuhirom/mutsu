@@ -9458,6 +9458,17 @@ impl CompiledCode {
     /// Scan opcodes to detect if this code references outer-scope variables
     /// that aren't method-local (attributes, params, or special vars).
     pub(crate) fn compute_may_capture_outer_vars(&mut self) {
+        if self.reads_outer_vars() {
+            self.may_capture_outer_vars = true;
+        }
+    }
+
+    /// Whether this code reads or writes an outer-scope variable by name
+    /// (`GetGlobal` and kin on a name that is not its own local, an
+    /// attribute, a dynamic or a special variable). See
+    /// [`Self::may_capture_outer_vars`].
+    // Cost: O(n), n = ops.
+    pub(crate) fn reads_outer_vars(&self) -> bool {
         let locals_set: std::collections::HashSet<&str> =
             self.locals.iter().map(|s| s.as_str()).collect();
         for op in &self.ops {
@@ -9487,10 +9498,10 @@ impl CompiledCode {
                 if Self::is_non_lexical_name(name) {
                     continue;
                 }
-                self.may_capture_outer_vars = true;
-                return;
+                return true;
             }
         }
+        false
     }
 
     /// Every local's interned name, or an empty slice for a hand-built chunk
@@ -15130,6 +15141,8 @@ pub(crate) struct CompiledFunction {
     /// reads only this routine's own fields, so it cannot change after the
     /// routine is built.
     pub(crate) light_signature_cache: std::sync::OnceLock<bool>,
+    /// Memoized [`CompiledCode::reads_outer_vars`] of [`Self::code`].
+    pub(crate) outer_var_reads_cache: std::sync::OnceLock<bool>,
 }
 
 impl CompiledFunction {
@@ -15773,6 +15786,7 @@ mod compiled_fns_identity {
             source_file_sym_cache: std::sync::OnceLock::new(),
             package_routine_scoped_cache: std::sync::OnceLock::new(),
             light_signature_cache: std::sync::OnceLock::new(),
+            outer_var_reads_cache: std::sync::OnceLock::new(),
         }
     }
 

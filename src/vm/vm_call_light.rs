@@ -157,7 +157,7 @@ impl Interpreter {
     /// these arguments, so the bind does not check them again (a native `int`
     /// parameter is still checked, for its coercion). Never for a plain call.
     // Cost: as `call_compiled_function_positional_light`, minus the checks.
-    pub(super) fn call_compiled_function_positional_light_verified(
+    pub(crate) fn call_compiled_function_positional_light_verified(
         &mut self,
         cf: &CompiledFunction,
         args: &[Value],
