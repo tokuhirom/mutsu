@@ -480,3 +480,17 @@ pub(super) enum FreeVarBinding {
     /// Its declaring frame decided it is writable.
     Writable,
 }
+
+impl Interpreter {
+    /// The refusal of a positional store into the Range `range`: X::Assignment::RO,
+    /// or for a `:=` bind (a bind-marked RHS beside the index) rakudo's
+    /// target-less X::Bind, as a Range has no BIND-POS slot.
+    // Cost: O(1), plus the Range's gist on the assignment path.
+    pub(super) fn range_element_store_refusal(&self, range: Value) -> RuntimeError {
+        let mut top_two = self.stack.iter().rev().take(2);
+        if top_two.any(Self::is_bind_index_value) {
+            return RuntimeError::typed("X::Bind", crate::value::ValueMap::default());
+        }
+        RuntimeError::assignment_ro_value(range)
+    }
+}

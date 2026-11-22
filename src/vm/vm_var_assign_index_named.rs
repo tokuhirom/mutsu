@@ -1543,9 +1543,11 @@ impl Interpreter {
                 );
             if !is_ro_constant_hash {
                 if bind_mode {
+                    // rakudo's `Map.BIND-KEY` names the type, not the variable
+                    // ("Cannot bind to Map").
                     return Err(RuntimeError::typed(
                         "X::Bind",
-                        [("target".to_string(), Value::str(var_name.clone()))]
+                        [("target".to_string(), Value::str_from("Map"))]
                             .into_iter()
                             .collect(),
                     ));
@@ -1660,12 +1662,10 @@ impl Interpreter {
             );
             if is_immutable {
                 if bind_mode {
-                    return Err(RuntimeError::typed(
-                        "X::Bind",
-                        [("target".to_string(), Value::str(var_name.clone()))]
-                            .into_iter()
-                            .collect(),
-                    ));
+                    // rakudo's List/Range have no BIND-POS slot, so the bind
+                    // dies with a target-less X::Bind ("Cannot use bind
+                    // operator with this left-hand side").
+                    return Err(RuntimeError::typed("X::Bind", ValueMap::default()));
                 }
                 // A List is immutable as a *container* — its element slots cannot
                 // be replaced — but an element that IS a container is writable
