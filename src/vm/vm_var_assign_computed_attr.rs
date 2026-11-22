@@ -7,9 +7,9 @@ use std::cell::RefCell;
 /// `Owner\0<sigil>bare` (only present for a sigil-colliding attribute) and
 /// `Owner\0bare` (a private attribute declared in both a parent and a child).
 #[derive(Clone, Copy)]
-struct QualifiedAttrKeys {
-    with_sigil: crate::symbol::Symbol,
-    plain: crate::symbol::Symbol,
+pub(super) struct QualifiedAttrKeys {
+    pub(super) with_sigil: crate::symbol::Symbol,
+    pub(super) plain: crate::symbol::Symbol,
 }
 
 thread_local! {
@@ -150,7 +150,7 @@ impl Interpreter {
     /// memoized (see [`QualifiedAttrKeys`]).
     // Cost: O(1) amortized: one hash probe of three interned ids; the first
     // ask per (owner, bare, sigil) interns two strings of O(len) each.
-    fn qualified_attr_keys(
+    pub(super) fn qualified_attr_keys(
         owner: crate::symbol::Symbol,
         bare: crate::symbol::Symbol,
         sigil: char,
@@ -486,6 +486,13 @@ impl Interpreter {
         }
         if let Some(attributes) = inner_cell {
             let map = attributes.as_map();
+            // A role-owned access on an instance reblessed into a mixin type
+            // reads the copy of the level that composed the role.
+            let owner = if is_private {
+                self.private_attr_owner_in(self_val, owner, owner_is_role, bare, sigil, &map)
+            } else {
+                owner
+            };
             if let Some(key) = Self::attr_key_in_map(owner, bare, is_private, sigil, &map) {
                 if let Some((code, idx)) = site {
                     Self::fill_attr_site(code, idx, &map, key, bare, is_private);

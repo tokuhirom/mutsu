@@ -874,7 +874,9 @@ impl Value {
             },
             ValueView::Package(s) => {
                 let resolved = s.resolve();
-                if is_nameless_anon_type_name(&resolved) {
+                if let Some(renamed) = super::type_rename_display(&resolved) {
+                    format!("({renamed})")
+                } else if is_nameless_anon_type_name(&resolved) {
                     "()".to_string()
                 } else {
                     format!("({})", user_facing_type_name(&resolved))
