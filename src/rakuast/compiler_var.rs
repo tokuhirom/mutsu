@@ -88,7 +88,11 @@ pub(super) fn lower(node: &RakuAstNode) -> Result<Expr, RuntimeError> {
         _ => Err(super::lower::unsupported(node)),
     };
     Ok(match node.class {
-        RakuAstClass::VarCompilerLine | RakuAstClass::VarCompilerFile => Expr::Literal(leaf()?),
+        RakuAstClass::VarCompilerLine => Expr::Literal(leaf()?),
+        // Rakudo's `File` names the unit the node is compiled in, not the one
+        // it was parsed from: `EVAL` of a `.AST` reads the running unit's file
+        // (#18689).
+        RakuAstClass::VarCompilerFile => Expr::Var("?FILE".to_string()),
         RakuAstClass::VarCompilerDistribution => Expr::Var("?DISTRIBUTION".to_string()),
         RakuAstClass::VarCompilerResources => Expr::HashVar("?RESOURCES".to_string()),
         _ => {
