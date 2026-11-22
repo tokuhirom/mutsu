@@ -2556,8 +2556,11 @@ impl Interpreter {
                                     else {
                                         continue;
                                     };
-                                    super::regex_parse::regex_single_quote_atom(
-                                        codepoints.into_iter().collect(),
+                                    super::regex_parse_escape::codepoint_escape_atom(
+                                        super::regex_parse::regex_single_quote_atom(
+                                            codepoints.into_iter().collect(),
+                                            ignore_case,
+                                        ),
                                         ignore_case,
                                     )
                                 } else if chars.peek().is_some_and(|c| c.is_ascii_hexdigit()) {
@@ -2569,7 +2572,10 @@ impl Interpreter {
                                     if let Some(c) =
                                         u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
                                     {
-                                        RegexAtom::Literal(c)
+                                        super::regex_parse_escape::codepoint_escape_atom(
+                                            RegexAtom::Literal(c),
+                                            ignore_case,
+                                        )
                                     } else {
                                         continue;
                                     }
@@ -2587,8 +2593,11 @@ impl Interpreter {
                                     else {
                                         continue;
                                     };
-                                    super::regex_parse::regex_single_quote_atom(
-                                        codepoints.into_iter().collect(),
+                                    super::regex_parse_escape::codepoint_escape_atom(
+                                        super::regex_parse::regex_single_quote_atom(
+                                            codepoints.into_iter().collect(),
+                                            ignore_case,
+                                        ),
                                         ignore_case,
                                     )
                                 } else if chars.peek().is_some_and(|c| ('0'..='7').contains(c)) {
@@ -2600,7 +2609,10 @@ impl Interpreter {
                                     if let Some(c) =
                                         u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
                                     {
-                                        RegexAtom::Literal(c)
+                                        super::regex_parse_escape::codepoint_escape_atom(
+                                            RegexAtom::Literal(c),
+                                            ignore_case,
+                                        )
                                     } else {
                                         continue;
                                     }
@@ -2624,10 +2636,13 @@ impl Interpreter {
                                     if let Some(c) =
                                         u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
                                     {
-                                        RegexAtom::CharClass(CharClass {
-                                            negated: true,
-                                            items: vec![ClassItem::Char(c)],
-                                        })
+                                        super::regex_parse_escape::codepoint_escape_atom(
+                                            RegexAtom::CharClass(CharClass {
+                                                negated: true,
+                                                items: vec![ClassItem::Char(c)],
+                                            }),
+                                            ignore_case,
+                                        )
                                     } else {
                                         continue;
                                     }
@@ -2639,10 +2654,13 @@ impl Interpreter {
                                     if let Some(c) =
                                         u32::from_str_radix(&oct, 8).ok().and_then(char::from_u32)
                                     {
-                                        RegexAtom::CharClass(CharClass {
-                                            negated: true,
-                                            items: vec![ClassItem::Char(c)],
-                                        })
+                                        super::regex_parse_escape::codepoint_escape_atom(
+                                            RegexAtom::CharClass(CharClass {
+                                                negated: true,
+                                                items: vec![ClassItem::Char(c)],
+                                            }),
+                                            ignore_case,
+                                        )
                                     } else {
                                         continue;
                                     }
@@ -2677,23 +2695,15 @@ impl Interpreter {
                                     if resolved.is_empty() {
                                         continue;
                                     }
-                                    // Push all but last as separate literal tokens
-                                    for &c in &resolved[..resolved.len() - 1] {
-                                        tokens.push(RegexToken {
-                                            atom: RegexAtom::Literal(c),
-                                            quant: RegexQuant::One,
-                                            named_capture: None,
-                                            hash_capture: None,
-                                            secondary_named_capture: None,
-                                            force_list_capture: false,
-                                            ratchet: false,
-                                            frugal: false,
-                                            separator: None,
-                                            from_runtime_interpolation: false,
-                                            subrule_call_capture: false,
-                                        });
-                                    }
-                                    RegexAtom::Literal(*resolved.last().unwrap())
+                                    // A comma-separated list is a run of
+                                    // codepoints, one atom as `\x[…]` is.
+                                    super::regex_parse_escape::codepoint_escape_atom(
+                                        super::regex_parse::regex_single_quote_atom(
+                                            resolved.into_iter().collect(),
+                                            ignore_case,
+                                        ),
+                                        ignore_case,
+                                    )
                                 } else {
                                     RegexAtom::Literal('c')
                                 }
@@ -2714,10 +2724,13 @@ impl Interpreter {
                                     if let Some(c) =
                                         crate::token_kind::lookup_unicode_char_by_name(&name)
                                     {
-                                        RegexAtom::CharClass(CharClass {
-                                            negated: true,
-                                            items: vec![ClassItem::Char(c)],
-                                        })
+                                        super::regex_parse_escape::codepoint_escape_atom(
+                                            RegexAtom::CharClass(CharClass {
+                                                negated: true,
+                                                items: vec![ClassItem::Char(c)],
+                                            }),
+                                            ignore_case,
+                                        )
                                     } else {
                                         continue;
                                     }
@@ -2741,10 +2754,13 @@ impl Interpreter {
                                     if let Some(c) =
                                         u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
                                     {
-                                        RegexAtom::CharClass(CharClass {
-                                            negated: true,
-                                            items: vec![ClassItem::Char(c)],
-                                        })
+                                        super::regex_parse_escape::codepoint_escape_atom(
+                                            RegexAtom::CharClass(CharClass {
+                                                negated: true,
+                                                items: vec![ClassItem::Char(c)],
+                                            }),
+                                            ignore_case,
+                                        )
                                     } else {
                                         continue;
                                     }
@@ -2756,10 +2772,13 @@ impl Interpreter {
                                     if let Some(c) =
                                         u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32)
                                     {
-                                        RegexAtom::CharClass(CharClass {
-                                            negated: true,
-                                            items: vec![ClassItem::Char(c)],
-                                        })
+                                        super::regex_parse_escape::codepoint_escape_atom(
+                                            RegexAtom::CharClass(CharClass {
+                                                negated: true,
+                                                items: vec![ClassItem::Char(c)],
+                                            }),
+                                            ignore_case,
+                                        )
                                     } else {
                                         continue;
                                     }

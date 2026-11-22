@@ -31,3 +31,26 @@ pub(super) fn bracketed_codepoints(
         .collect::<Option<Vec<char>>>()
         .filter(|codepoints| !codepoints.is_empty())
 }
+
+/// A codepoint escape's atom (`\x61`, `\x[61,62]`, `\o[141]`, `\c[NAME]`,
+/// and the negated `\X`/`\O`/`\C`), made case-exact when the pattern is
+/// `:i`: rakudo's `CharClass::Specified` names exact codepoints, which `:i`
+/// does not fold (`"A" ~~ /:i \x61/` is `Nil`), unlike a quoted string
+/// holding the same escape (#18777). Outside `:i` the atom is unchanged.
+// Cost: O(1).
+pub(super) fn codepoint_escape_atom(
+    atom: super::RegexAtom,
+    ignore_case: bool,
+) -> super::RegexAtom {
+    use super::{RegexAtom, RegexPattern};
+    if !ignore_case {
+        return atom;
+    }
+    match atom {
+        RegexAtom::Group(mut pattern) => {
+            pattern.ignore_case = false;
+            RegexAtom::Group(pattern)
+        }
+        atom => RegexAtom::Group(RegexPattern::single_token(atom)),
+    }
+}
