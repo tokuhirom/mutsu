@@ -258,6 +258,7 @@ impl Interpreter {
                 params: sub_params.clone(),
                 return_type: None,
                 param_defs: None,
+                binder: None,
             };
             if !self.signature_accepts_value(candidate, &sub) {
                 return false;
@@ -301,6 +302,17 @@ impl Interpreter {
         left: &Value,
         signature: &SigInfo,
     ) -> bool {
+        // A signature whose parameter code reads its own scope binds the
+        // capture through the empty routine it was built from, so a `where`
+        // clause sees that scope, never the smartmatching caller's (#18570).
+        // A binding failure -- a type, arity or `where` mismatch, or a
+        // clause that throws -- is a non-match.
+        if let Some(binder) = &signature.binder
+            && matches!(left.view(), ValueView::Capture { .. })
+        {
+            let args = Self::capture_to_call_args(left);
+            return self.call_sub_value(binder.clone(), args).is_ok();
+        }
         let capture_source = self.coerce_via_user_capture(left);
         let Some((positional, named)) = Self::signature_capture_like(&capture_source) else {
             return false;
