@@ -177,7 +177,6 @@ impl Interpreter {
                     // `Class.^mixin(R)` is a registered class: its instances are
                     // tagged with that class, so the rename lands there too.
                     if let Some(mixin_class) = self.mixin_class_of_type_object(&args[0]) {
-                        crate::value::note_type_rename(&mixin_class, &new_name);
                         self.type_metadata_mut(mixin_class)
                             .insert("__set_name__".to_string(), Value::str(new_name.clone()));
                     }
