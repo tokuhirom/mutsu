@@ -2413,6 +2413,11 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                 let mut node = view_expr(names, &spelled.expr)?;
                 if matches!(node.class, RakuAstClass::TypeSimple | RakuAstClass::TermName) {
                     name_parts::with_leading_empty(&mut node.fields);
+                } else if node.class == RakuAstClass::TypeDefinedness {
+                    // `::Int:D`: the smiley's base type.
+                    super::infix_origins::with_child(&mut node, "base-type", |base| {
+                        name_parts::with_leading_empty(&mut base.fields)
+                    });
                 }
                 Ok(node)
             }

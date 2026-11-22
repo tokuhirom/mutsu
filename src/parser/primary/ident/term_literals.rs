@@ -219,9 +219,9 @@ pub(crate) fn class_literal(input: &str) -> PResult<'_, Expr> {
         return Ok((r, Expr::PseudoStash(format!("{full_name}::"))));
     }
     // Type smileys: ::Foo:U, ::Foo:D, ::Foo:_
-    let smiley = (r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_"))
-        && !r[2..].starts_with('<');
-    if smiley {
+    if (r.starts_with(":D") || r.starts_with(":U") || r.starts_with(":_"))
+        && !r[2..].starts_with('<')
+    {
         let smiley = &r[..2];
         full_name = format!("{}{}", full_name, smiley);
         r = &r[2..];
@@ -242,13 +242,14 @@ pub(crate) fn class_literal(input: &str) -> PResult<'_, Expr> {
             Expr::IndirectTypeLookup(Box::new(Expr::Literal(Value::str(full_name)))),
         ));
     }
-    // `::Array`: RakuAST keeps the leading `::` as the name's empty edge. A
-    // smiley (`::Foo:D`) folds into the word, so only a plain name is kept.
-    let term = Expr::BareWord(full_name);
-    if !smiley {
-        return Ok((r, Expr::spelled(term, || crate::ast::spelled::Spelling::LeadingColons)));
-    }
-    Ok((r, term))
+    // `::Array`, `::Int:D`: RakuAST keeps the leading `::` as the name's
+    // empty edge.
+    Ok((
+        r,
+        Expr::spelled(Expr::BareWord(full_name), || {
+            crate::ast::spelled::Spelling::LeadingColons
+        }),
+    ))
 }
 
 pub(crate) fn whatever(input: &str) -> PResult<'_, Expr> {

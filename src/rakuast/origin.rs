@@ -400,6 +400,12 @@ pub(super) fn named_term(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
                 None => return,
             },
         };
+        // `::Array`: a name with a leading empty edge is written after `::`.
+        let written = if super::name_parts::has_leading_empty(name) {
+            format!("::{written}")
+        } else {
+            written
+        };
         let exact = super::unit_source::with_text(span, |text| (text == written).then_some(()));
         if exact.is_some() {
             set_span(name, span);
