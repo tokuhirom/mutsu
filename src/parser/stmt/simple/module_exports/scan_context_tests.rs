@@ -24,10 +24,10 @@ fn a_scanned_block_package_is_not_the_importers_declaration() {
 /// a `use` of a module declaring a block package keeps the unit package of
 /// its exported types.
 #[test]
-fn a_unit_module_after_using_a_block_package_keeps_its_package() {
+fn a_unit_module_after_using_a_block_package_keeps_its_package() -> std::io::Result<()> {
     let dir = std::env::temp_dir().join(format!("mutsu-scan-context-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("ScCtxDep.rakumod"), "our module ScCtxDep { }\n").unwrap();
+    std::fs::create_dir_all(&dir)?;
+    std::fs::write(dir.join("ScCtxDep.rakumod"), "our module ScCtxDep { }\n")?;
     let saved = crate::parser::stmt::simple::parser_lib_paths();
     crate::parser::stmt::simple::set_parser_lib_paths(vec![dir.to_string_lossy().into_owned()]);
     crate::parser::stmt::simple::reset_package_path();
@@ -43,4 +43,5 @@ fn a_unit_module_after_using_a_block_package_keeps_its_package() {
         .map(|t| t.qualified.as_str())
         .collect();
     assert_eq!(qualified, ["ScCtxTy::ScH"]);
+    Ok(())
 }
