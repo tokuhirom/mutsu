@@ -34,6 +34,7 @@ pub(crate) mod supply_channel;
 mod supply_collector;
 mod supply_derive;
 mod supply_derive_dedup;
+mod supply_derive_eager;
 mod supply_derive_buffer;
 mod supply_derive_classify;
 pub(in crate::runtime) mod supply_derive_step;
