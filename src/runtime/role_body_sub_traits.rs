@@ -58,9 +58,55 @@ impl Interpreter {
             return false;
         };
         let code_var_key = format!("&{name}");
-        // The routine just registered, built the way the trait handlers
-        // receive it (`&name` may not be bound in env yet).
-        let fresh = self.env.get(&code_var_key).cloned().or_else(|| {
+        let Some(fresh) = self.role_body_sub_value(name) else {
+            return true;
+        };
+        let fresh = match fresh.view() {
+            ValueView::Mixin(inner, _) => inner.as_ref().clone(),
+            _ => fresh,
+        };
+        // The traited routine is cloned, closing over this composition's
+        // scope, as rakudo clones it per composition: what a trait did to it
+        // (a mixed-in role, a `.wrap`, a body NativeCall's `setup-nativecall`
+        // rebound) stays.
+        let reclose = |traited: &Value| match (traited.view(), fresh.view()) {
+            (ValueView::Sub(traited), ValueView::Sub(fresh)) => {
+                let mut clone = (**traited).clone();
+                clone.env = fresh.env.clone();
+                Some(Value::sub_value(crate::gc::Gc::new(clone)))
+            }
+            _ => None,
+        };
+        let routine = match first.view() {
+            ValueView::Mixin(traited, mixins) => Some(Value::mixin_with_state(
+                reclose(traited.as_ref()).unwrap_or_else(|| fresh.clone()),
+                (**mixins).clone(),
+            )),
+            _ => reclose(&first),
+        };
+        if let Some(routine) = routine {
+            self.env.insert(code_var_key, routine);
+        }
+        true
+    }
+
+    /// Record the routine a role-body `sub`'s traits left: the mixin a trait
+    /// bound under `&name`, or the routine the handlers received.
+    // Cost: O(1) amortized (one env lookup and one map insert).
+    pub(crate) fn record_role_body_sub_traits(&mut self, key: (String, String), name: &str) {
+        let value = self.role_body_sub_value(name).unwrap_or(Value::NIL);
+        self.registry_mut()
+            .role_body_traited_subs
+            .entry(key)
+            .or_insert(value);
+    }
+
+    /// The routine `&name` names right after its registration: the value a
+    /// trait bound in env (a mixin), else the one the trait handlers receive,
+    /// built from the registered def.
+    // Cost: O(1) amortized, plus building the routine value from its def.
+    fn role_body_sub_value(&self, name: &str) -> Option<Value> {
+        self.env.get(&format!("&{name}")).cloned().or_else(|| {
             let def = self
                 .routines()
                 .functions
@@ -69,47 +115,6 @@ impl Interpreter {
                 ))
                 .cloned()?;
             Some(self.sub_value_from_function_def((*def).clone()))
-        });
-        if let ValueView::Mixin(traited, mixins) = first.view()
-            && let Some(fresh) = fresh
-        {
-            let fresh = match fresh.view() {
-                ValueView::Mixin(inner, _) => inner.as_ref().clone(),
-                _ => fresh,
-            };
-            // A trait may have replaced the routine's body too (NativeCall's
-            // `setup-nativecall`): the traited routine is cloned, closing over
-            // this composition's scope, as rakudo clones it per composition.
-            let routine = match (traited.view(), fresh.view()) {
-                (ValueView::Sub(traited), ValueView::Sub(fresh)) => {
-                    let mut clone = (**traited).clone();
-                    clone.env = fresh.env.clone();
-                    Value::sub_value(crate::gc::Gc::new(clone))
-                }
-                _ => fresh,
-            };
-            self.env
-                .insert(code_var_key, Value::mixin_with_state(routine, (**mixins).clone()));
-        }
-        true
-    }
-
-    /// Record that a role-body `sub`'s traits ran, with the mixin they left
-    /// under `&name` if any.
-    // Cost: O(1) amortized (one env lookup and one map insert).
-    pub(crate) fn record_role_body_sub_traits(&mut self, key: (String, String), name: &str) {
-        // A trait that mixed a role into the routine left the mixin under
-        // `&name`; one that did not leaves nothing to carry over, but the
-        // traits still ran.
-        let value = self
-            .env
-            .get(&format!("&{name}"))
-            .filter(|v| matches!(v.view(), ValueView::Mixin(..)))
-            .cloned()
-            .unwrap_or(Value::NIL);
-        self.registry_mut()
-            .role_body_traited_subs
-            .entry(key)
-            .or_insert(value);
+        })
     }
 }
