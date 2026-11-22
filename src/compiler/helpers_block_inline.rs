@@ -357,6 +357,7 @@ impl Compiler {
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == stmts.len() - 1;
             if is_last {
+                let stmt = self.strip_tail_labels(stmt);
                 match stmt {
                     Stmt::Expr(expr) => {
                         self.with_stmt_root(|c| c.compile_expr(expr));

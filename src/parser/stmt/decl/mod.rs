@@ -1,3 +1,5 @@
+mod call_assign_target;
+pub(crate) use call_assign_target::call_assign_invocant;
 mod constant_subset;
 pub(crate) mod destructure;
 mod enum_decl;

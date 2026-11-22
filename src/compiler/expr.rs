@@ -457,6 +457,17 @@ impl Compiler {
                     self.code.emit(OpCode::LoadConst(idx));
                     return;
                 }
+                // A lexical type an enclosing block declared, read from a
+                // closure or method body (#17711, #18327): the type-only
+                // binding, read by name so the closure captures the declaring
+                // scope's type rather than resolving the name wherever it
+                // runs, and a same-named scalar keeps the bare key.
+                if self.reads_enclosing_lexical_type(name) {
+                    let key = crate::runtime::term_names::lexical_type_key(name);
+                    let name_idx = self.code.add_constant(Value::str(key));
+                    self.code.emit(OpCode::GetGlobal(name_idx));
+                    return;
+                }
                 // A lexical type shadowing an enclosing constant (#11517): the
                 // type's own `MY::` binding, read by name so a nested closure
                 // captures it. `GetBareWord` would find the constant's term key.
@@ -465,16 +476,6 @@ impl Compiler {
                     && !self.enclosing_sigilless.contains(name.as_str())
                 {
                     let name_idx = self.code.add_constant(Value::str(name.clone()));
-                    self.code.emit(OpCode::GetGlobal(name_idx));
-                    return;
-                }
-                // A lexical type an enclosing block declared, read from a
-                // closure body (#17711): the type-only binding, read by name
-                // so the closure captures the declaring scope's type rather
-                // than resolving the name wherever it runs.
-                if self.reads_enclosing_lexical_type(name) {
-                    let key = crate::runtime::term_names::lexical_type_key(name);
-                    let name_idx = self.code.add_constant(Value::str(key));
                     self.code.emit(OpCode::GetGlobal(name_idx));
                     return;
                 }
