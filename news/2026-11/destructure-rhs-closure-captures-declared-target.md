@@ -17,3 +17,8 @@ container the declaration made, the same shape the BEGIN-prologue split
 already used. Scalar, array and hash targets all keep their container; a
 group `is default(...)` declaration still re-declares its targets with the
 trait.
+
+That exposed an older bug: `my &go := { ... }` marked the bare name `go`
+readonly, which is also the key of a same-named `$go`, so `my $go; my &go :=
+{ 1 }; $go = 3` died with "Cannot assign to an immutable value". A code
+variable's bind now marks only its own `&go` key.

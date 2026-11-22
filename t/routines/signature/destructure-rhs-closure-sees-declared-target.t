@@ -4,7 +4,7 @@ use Test;
 # variable the declaration declares, so it sees the value the declaration
 # assigns (#18414).
 
-plan 7;
+plan 9;
 
 my &get;
 {
@@ -35,3 +35,16 @@ my $outer = 5;
 
 my ($m, $n) is default(7) = 1;
 is $n, 7, 'a group default still applies to a target the RHS did not reach';
+
+# The RHS may bind a same-named code variable; the scalar target stays
+# assignable.
+{
+    my ($e, $go) = do { my &go := { 1 }; (2, &go) };
+    is $e, 2, 'a target next to a same-named `&go` bound in the RHS';
+}
+{
+    my $go;
+    my &go := { 1 };
+    $go = 3;
+    is $go, 3, 'binding `&go` leaves a same-named `$go` writable';
+}
