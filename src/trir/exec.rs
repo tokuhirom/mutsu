@@ -550,8 +550,16 @@ impl Interpreter {
                             // A generic `nqp::` op can read the routine stack
                             // (`die`/`throw` take a backtrace, `iscont*` reads
                             // the top frame's invocant): push the deferred
-                            // entries first (ADR-8673 D1).
-                            self.trir_observe();
+                            // entries first (ADR-8673 D1), unless it is a data
+                            // op on plain data.
+                            if self.trir.lazy.pending()
+                                && !super::lazy_frames::nqp_op_never_observes(
+                                    *id,
+                                    &self.trir.os[base..],
+                                )
+                            {
+                                self.trir_observe();
+                            }
                             let mut args = std::mem::take(&mut self.trir.nqp_args);
                             args.extend(self.trir.os.drain(base..));
                             let v = self.dispatch_nqp_op_by_id(*id, &args);
@@ -575,6 +583,20 @@ impl Interpreter {
                     // alternative to proving it did not (`outers.rs`). One
                     // cell read per CALL, where the untyped path pays a
                     // by-name lookup per ACCESS.
+                    if !self.trir_reseed_outers(chunk, frame) {
+                        return Ok(TrOutcome::Bail);
+                    }
+                }
+
+                // A linked site observes nothing; the generic dispatch pushes
+                // the deferred routine-stack entries itself.
+                TrOp::CallGen(site) => {
+                    if self
+                        .exec_trir_generic_call(chunk, *site, frame, compiled_fns)?
+                        .is_none()
+                    {
+                        return Ok(TrOutcome::Bail);
+                    }
                     if !self.trir_reseed_outers(chunk, frame) {
                         return Ok(TrOutcome::Bail);
                     }

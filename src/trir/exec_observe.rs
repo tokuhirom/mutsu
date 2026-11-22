@@ -11,8 +11,12 @@
 //! - `TruthyObj`, `TruthyDefined`: `.Bool` / `.defined` of a user object;
 //! - `ClassOperand`: type-name resolution, which reads the top frame's
 //!   package on its miss path;
-//! - `MethodGen`, `CallGen`: calls out of TRIR (`callframe`, `CALLER::`,
-//!   backtraces, `&?ROUTINE`); a `CallGen` link check reads the top frame.
+//! - `MethodGen`: a call out of TRIR (`callframe`, `CALLER::`, backtraces,
+//!   `&?ROUTINE`).
+//!
+//! `CallGen` is dispatched by the main loop: a site served through its link
+//! runs a TRIR callee and observes nothing, and the generic dispatch pushes
+//! the deferred entries itself (`exec_trir_generic_call`).
 
 use super::frame::TrFrame;
 use super::{TrChunk, TrOp};
@@ -69,17 +73,6 @@ impl Interpreter {
 
             TrOp::MethodGen(site) => {
                 self.exec_trir_method_call(chunk, *site)?;
-                if !self.trir_reseed_outers(chunk, frame) {
-                    return Ok(None);
-                }
-            }
-            TrOp::CallGen(site) => {
-                if self
-                    .exec_trir_generic_call(chunk, *site, frame, compiled_fns)?
-                    .is_none()
-                {
-                    return Ok(None);
-                }
                 if !self.trir_reseed_outers(chunk, frame) {
                     return Ok(None);
                 }

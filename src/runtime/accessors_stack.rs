@@ -639,6 +639,20 @@ impl Interpreter {
         package
     }
 
+    /// [`Self::lexical_package_for_frame`] of a frame with no file, as if
+    /// `unit` were the running unit: what that frame's push would record once
+    /// the frames below it have switched to `unit` (ADR-8673 D1's deferred
+    /// TRIR entries).
+    // Cost: O(u), u = EVAL unit parents between `unit` and a module unit.
+    pub(crate) fn lexical_package_in_unit(&self, unit: Symbol) -> Option<Symbol> {
+        if self.module.world.unit_module_packages.is_empty()
+            && self.module.world.module_source_packages.is_empty()
+        {
+            return None;
+        }
+        self.lexical_package_walk(None, unit)
+    }
+
     // Cost: O(u), u = EVAL unit parents between `start` and a module unit.
     fn lexical_package_walk(&self, def_file: Option<Symbol>, start: Symbol) -> Option<Symbol> {
         let mut unit = start;

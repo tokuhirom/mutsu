@@ -92,10 +92,18 @@ pub(super) enum GenOutcome {
 
 impl Interpreter {
     fn trir_gen_context(&self) -> GenContext {
+        // The top frame's lexical package. While inner TRIR calls have
+        // deferred their routine-stack entries (ADR-8673 D1), the top frame
+        // is the innermost deferred one, and its lexical package is the one
+        // its push would record, computed without pushing anything.
+        let lexical = match self.trir_deferred_lexical_package() {
+            Some(lexical) => lexical,
+            None => self.routine_stack().last().and_then(|f| f.lexical_package),
+        };
         (
             self.caches.fn_resolve_gen,
             self.current_package_sym(),
-            self.routine_stack().last().and_then(|f| f.lexical_package),
+            lexical,
         )
     }
 
@@ -156,10 +164,14 @@ impl Interpreter {
         frame: TrFrame,
         compiled_fns: &CompiledFns,
     ) -> Result<GenOutcome, RuntimeError> {
+        if !self.trir.gen_links.links.contains_key(&(chunk.id, site)) {
+            return Ok(GenOutcome::NotLinked);
+        }
+        let ctx = self.trir_gen_context();
         let Some(link) = self.trir.gen_links.links.get(&(chunk.id, site)) else {
             return Ok(GenOutcome::NotLinked);
         };
-        if link.ctx != self.trir_gen_context() {
+        if link.ctx != ctx {
             return Ok(GenOutcome::NotLinked);
         }
         let callee = link.chunk.clone();
@@ -183,6 +195,11 @@ impl Interpreter {
             self,
             self.try_trir_gen_link(chunk, site, call, frame, compiled_fns)
         );
+        // A parameter type check can resolve a type name, whose miss path
+        // reads the top frame: push the deferred entries first.
+        if callee.params.iter().any(|p| p.check.is_some()) {
+            self.trir_observe();
+        }
         let n_values = call
             .args
             .iter()
