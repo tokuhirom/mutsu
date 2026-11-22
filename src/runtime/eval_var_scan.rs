@@ -205,16 +205,23 @@ impl UndeclaredVars<'_> {
     /// env does not hold a lexical declared after the call yet (#10511).
     // Cost: O(|name|).
     fn caller_scope_declares(&self, name: &str) -> bool {
+        self.caller_code().is_some_and(|code| code.eval_scope_names.contains(name))
+    }
+
+    /// The compiled code of the frame calling `EVAL`, whose scope the EVAL'd
+    /// code sees.
+    // Cost: O(1).
+    fn caller_code(&self) -> Option<&crate::opcode::CompiledCode> {
         // The compunit mode runs at CHECK time, outside any `EVAL` call:
         // `current_code` may still name a chunk of an earlier run.
         if self.interp.current_code == 0 || self.forward.is_some() {
-            return false;
+            return None;
         }
         // SAFETY: `current_code` is the address of the live bytecode frame's
         // `CompiledCode` (the frame calling `EVAL`), kept alive for the whole
-        // frame by `vm_call_*`.
-        let code = unsafe { &*(self.interp.current_code as *const crate::opcode::CompiledCode) };
-        code.eval_scope_names.contains(name)
+        // frame by `vm_call_*`, which outlives this scan (it runs inside that
+        // frame's `EVAL` call).
+        Some(unsafe { &*(self.interp.current_code as *const crate::opcode::CompiledCode) })
     }
 
     /// Runs `f` with the given judging state, restoring the current one.
@@ -231,8 +238,21 @@ impl UndeclaredVars<'_> {
         self.scopes.pop();
     }
 
+    /// The names a suggestion may offer: the EVAL'd code's own declarations
+    /// and the lexicals of the scope calling `EVAL`, which the code sees too
+    /// (#18747). Internal names (a leading `_`, `__mutsu_*`) are not offered.
+    // Cost: O(d + c), d = the code's declarations, c = the caller's names.
     fn all_declared(&self) -> HashSet<String> {
-        self.scopes.iter().flatten().cloned().collect()
+        let mut names: HashSet<String> = self.scopes.iter().flatten().cloned().collect();
+        if let Some(code) = self.caller_code() {
+            names.extend(
+                code.eval_scope_names
+                    .iter()
+                    .filter(|n| !n.trim_start_matches(['$', '@', '%', '&']).starts_with('_'))
+                    .cloned(),
+            );
+        }
+        names
     }
 
     fn check_var(&mut self, expr: &Expr) {
