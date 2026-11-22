@@ -1370,124 +1370,19 @@ impl Interpreter {
         let mut ignore_mark = false;
         let mut sigspace = false;
         let mut ratchet = false;
-        loop {
-            if let Some(rest) = source.strip_prefix(":ignorecase") {
-                ignore_case = true;
-                source = rest.trim_start();
-                continue;
-            }
-            if let Some(rest) = source.strip_prefix(":ignoremark") {
-                ignore_mark = true;
-                source = rest.trim_start();
-                continue;
-            }
-            if let Some(rest) = source.strip_prefix(":!ratchet") {
-                ratchet = false;
-                source = rest.trim_start();
-                continue;
-            }
-            if let Some(rest) = source.strip_prefix(":ratchet") {
-                ratchet = true;
-                source = rest.trim_start();
-                continue;
-            }
-            if let Some(rest) = source.strip_prefix(":!ignorecase") {
-                ignore_case = false;
-                source = rest.trim_start();
-                continue;
-            }
-            if let Some(rest) = source.strip_prefix(":!ignoremark") {
-                ignore_mark = false;
-                source = rest.trim_start();
-                continue;
-            }
-            if let Some(rest) = source.strip_prefix(":!sigspace") {
-                sigspace = false;
-                source = rest.trim_start();
-                continue;
-            }
-            if let Some(rest) = source.strip_prefix(":!i")
-                && (rest.is_empty()
-                    || rest.starts_with(' ')
-                    || rest.starts_with(':')
-                    || rest.starts_with('/'))
-            {
-                ignore_case = false;
-                source = rest.trim_start();
-                continue;
-            }
-            if let Some(rest) = source.strip_prefix(":!s")
-                && (rest.is_empty()
-                    || rest.starts_with(' ')
-                    || rest.starts_with(':')
-                    || rest.starts_with('/'))
-            {
-                sigspace = false;
-                source = rest.trim_start();
-                continue;
-            }
-            if let Some(rest) = source.strip_prefix(":!r")
-                && (rest.is_empty()
-                    || rest.starts_with(' ')
-                    || rest.starts_with(':')
-                    || rest.starts_with('/'))
-            {
-                ratchet = false;
-                source = rest.trim_start();
-                continue;
-            }
-            if let Some(rest) = source.strip_prefix(":!m")
-                && (rest.is_empty()
-                    || rest.starts_with(' ')
-                    || rest.starts_with(':')
-                    || rest.starts_with('/'))
-            {
-                ignore_mark = false;
-                source = rest.trim_start();
-                continue;
-            }
-            // `:i` ends at any non-identifier character, so `:i'only'|'not'`
-            // scopes the modifier over the whole alternation like `:i 'only'|'not'`.
-            if let Some(rest) = source.strip_prefix(":i")
-                && !rest.starts_with(|c: char| c.is_alphanumeric() || c == '_' || c == '-')
-            {
-                ignore_case = true;
-                source = rest.trim_start();
-                continue;
-            }
-            if let Some(rest) = source.strip_prefix(":sigspace") {
-                sigspace = true;
-                source = rest.trim_start();
-                continue;
-            }
-            if let Some(rest) = source.strip_prefix(":s") {
-                sigspace = true;
-                source = rest.trim_start();
-                continue;
-            }
-            if let Some(rest) = source.strip_prefix(":r")
-                && (rest.is_empty()
-                    || rest.starts_with(' ')
-                    || rest.starts_with(':')
-                    || rest.starts_with('/'))
-            {
-                // Make sure it's :r and not :ratchet (already handled) or other identifiers
-                ratchet = true;
-                source = rest.trim_start();
-                continue;
-            }
-            if let Some(rest) = source.strip_prefix(":m")
-                && (rest.is_empty()
-                    || rest.starts_with(' ')
-                    || rest.starts_with(':')
-                    || rest.starts_with('/'))
-            {
-                // Make sure it's :m and not :mm or :my or other identifiers
-                ignore_mark = true;
-                source = rest.trim_start();
-                continue;
-            }
-            break;
+        // Leading modifiers (`:i`, `:!s`, `:i(0)`, `:1i`) set the whole
+        // pattern's mode; they are read by the same routine as a modifier
+        // written later in the pattern, so the two spellings cannot drift.
+        while let Some(after_colon) = source.strip_prefix(':')
+            && let Some(rest) = Self::try_parse_inline_modifier(
+                after_colon,
+                &mut ratchet,
+                &mut ignore_case,
+                &mut ignore_mark,
+                &mut sigspace,
+            )
+        {
+            source = rest.trim_start();
         }
         let had_modifier = source.len() != unmarked.trim_start().len();
         source = if sigspace {
@@ -1888,10 +1783,12 @@ impl Interpreter {
             let mut alias_var_call = false;
             // $0, $1, ... — either a numbered scalar capture alias (`$0=(...)`)
             // or a backreference to a positional capture group (`$0`).
-            if c == '$' && chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
+            // The digits may be any decimal script's: `$٠` is `$0`, as in rakudo.
+            if c == '$' && chars.peek().is_some_and(|ch| crate::ucd::numeric::unicode_decimal_digit_ascii(*ch).is_some()) {
                 let mut digits = String::new();
-                while chars.peek().is_some_and(|ch| ch.is_ascii_digit()) {
-                    digits.push(chars.next().unwrap());
+                while let Some(digit) = chars.peek().and_then(|ch| crate::ucd::numeric::unicode_decimal_digit_ascii(*ch)) {
+                    chars.next();
+                    digits.push(digit);
                 }
                 // A trailing `=` (after optional whitespace) makes this a numbered
                 // capture alias: `$N=<atom>` stores the atom's capture at index N
@@ -5134,6 +5031,12 @@ impl Interpreter {
                             // Handle the greediness modifier: `**?` is frugal
                             // (non-greedy); `**!` is the explicit greedy marker
                             // (the same as a bare `**`, but written out).
+                            // `**:?` / `**:!` spell the same modifiers
+                            // with a colon.
+                            let mut colon = chars.clone();
+                            if colon.next() == Some(':') && matches!(colon.peek(), Some('?' | '!')) {
+                                chars = colon;
+                            }
                             starstar_frugal = match chars.peek() {
                                 Some(&'?') => {
                                     chars.next();
@@ -5159,15 +5062,15 @@ impl Interpreter {
                                 // Parse the count/range: N, N..M, N..*, with
                                 // optional exclusion markers (^) and underscore
                                 // separators in numeric literals.
+                                // The digits may be any decimal script's
+                                // (`a**۳` is `a**3`, as in rakudo).
                                 let mut count_str = String::new();
-                                while chars.peek().is_some_and(|ch| {
-                                    ch.is_ascii_digit()
-                                        || *ch == '.'
-                                        || *ch == '*'
-                                        || *ch == '^'
-                                        || *ch == '_'
+                                while let Some(ch) = chars.peek().and_then(|ch| {
+                                    crate::ucd::numeric::unicode_decimal_digit_ascii(*ch)
+                                        .or_else(|| matches!(ch, '.' | '*' | '^' | '_').then_some(*ch))
                                 }) {
-                                    count_str.push(chars.next().unwrap());
+                                    chars.next();
+                                    count_str.push(ch);
                                 }
                                 // A `** N..M` range whose upper endpoint is not a
                                 // digit / `*` / `^` (e.g. a negative literal

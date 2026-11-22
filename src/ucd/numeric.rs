@@ -93,6 +93,14 @@ fn unicode_general_int_value(c: char) -> Option<i64> {
     None
 }
 
+/// The ASCII digit a decimal digit of any script (`٠`, `۳`) stands for:
+/// regex positions that take a number (a positional backreference, a `**`
+/// count) accept any script's digits, as in rakudo.
+// Cost: O(log d), d = number of Unicode decimal digit ranges.
+pub(crate) fn unicode_decimal_digit_ascii(c: char) -> Option<char> {
+    unicode_decimal_digit_value(c).and_then(|d| char::from_digit(d, 10))
+}
+
 /// Return the decimal digit value (0-9) for any Unicode Nd (decimal digit) character.
 /// For ASCII digits and also Thai, Arabic, Devanagari, NKo, and all other Unicode decimal digit blocks.
 pub(crate) fn unicode_decimal_digit_value(c: char) -> Option<u32> {
