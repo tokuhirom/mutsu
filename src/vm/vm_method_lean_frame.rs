@@ -76,6 +76,21 @@ pub(super) fn lean_frame_eligible(
         })
 }
 
+/// Whether a name a lean frame's env holds is the frame's own, kept out of
+/// the runtime-name carry: a frame fixture, a parameter, a compiled local or
+/// an env-only `my` or a dynamic one (class-body statics and attribute
+/// twigil forms are tested by the caller). The lean frame admits no role binding, sub-signature,
+/// type capture or sigilless parameter, the fast binder's other own names.
+// Cost: O(p + l), p = parameters, l = locals and env-only declarations.
+fn lean_frame_owns_name(s: &str, def: &crate::runtime::MethodDef, cc: &CompiledCode) -> bool {
+    matches!(s, "self" | "__ANON_STATE#" | "?CLASS" | "?ROLE" | "_")
+        || def.params.iter().any(|p| p == s)
+        || s.starts_with(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX)
+        || cc.locals.iter().any(|l| !l.is_empty() && l == s)
+        || cc.env_only_decls.iter().any(|n| n == s)
+        || super::vm_method_dispatch::dynamic_decl_local(&cc.locals, s)
+}
+
 /// A builtin value type a lean positional parameter may be constrained to,
 /// checked per call with `type_matches_value` exactly as the general binder
 /// checks it. Native types (coercing binds) and `Positional` (bind
@@ -144,6 +159,10 @@ pub(super) struct LeanMethodCall<'a> {
     pub(super) compiled_fns: &'a CompiledFns,
     /// The plan's `method_body_package` answer (#18267 D1a), or `None` to ask.
     pub(super) body_package: Option<Option<Symbol>>,
+    /// The body neither calls nor writes the env by name, so the exit drops
+    /// the overlay; otherwise it carries the frame's pending runtime-name
+    /// writes out, as the fast binder's non-skip exit does.
+    pub(super) can_skip_merge: bool,
 }
 
 impl Interpreter {
@@ -208,6 +227,7 @@ impl Interpreter {
             cc,
             compiled_fns,
             body_package,
+            can_skip_merge,
         } = call;
         // A non-multi winner: nothing to skip (see the general binder).
         self.pending_skip_constraint_recheck = false;
@@ -232,6 +252,12 @@ impl Interpreter {
             let mut scoped = crate::env::Env::scoped_child(parent);
             scoped.mark_owns_routine_state();
             self.set_env(scoped);
+        }
+        let method_callable_id = crate::value::next_instance_id();
+        if !can_skip_merge {
+            // As the fast binder's non-skip arm: the rooted frame answers `$_`
+            // and `$!` for the callees this body runs.
+            self.env_mut().set_callable_id(method_callable_id as i64);
         }
         let saved_var_bindings = self.take_var_bindings();
         self.push_method_class_sym(owner_sym, Some(false));
@@ -274,7 +300,6 @@ impl Interpreter {
         }
 
         let class_val = Value::package(owner_sym);
-        let method_callable_id = crate::value::next_instance_id();
         self.inject_class_body_statics(owner_class);
         self.insert_fast_param_values_by_name(
             &param_values,
@@ -432,10 +457,36 @@ impl Interpreter {
         if let Some(pkg) = saved_package {
             self.set_current_package_sym(pkg);
         }
-        // `can_skip_merge` (`lean_frame_eligible`): drop the overlay.
+        // Drop the overlay. A body that calls (`lean_frame_eligible`) carries
+        // its pending runtime-name writes out first, exactly as the fast
+        // binder's non-skip exit does: every other write reached the caller
+        // through the variable's own cell (ADR-12529).
         self.dispatch.method_dispatch_pure = true;
         let frame = self.pop_call_frame();
-        self.set_env(frame.saved_env);
+        if can_skip_merge
+            || self.pending_runtime_name_writes.is_empty()
+            || self.env().ptr_eq(&frame.saved_env)
+        {
+            self.set_env(frame.saved_env);
+        } else {
+            let current_env = self.take_env();
+            let class_body_static_names = self.lexicals.class_body_static_names.snapshot();
+            let carried = self.carried_runtime_name_writes(&current_env, &|s: &str| {
+                lean_frame_owns_name(s, method_def, cc)
+                    || class_body_static_names
+                        .get(owner_class)
+                        .is_some_and(|names| names.contains(s))
+                    || attrs_cell.as_ref().is_some_and(|c| {
+                        super::vm_method_dispatch::attr_twigil_local(&c.as_map(), s)
+                    })
+            });
+            drop(current_env);
+            let mut merged = frame.saved_env;
+            for (name, v) in carried {
+                merged.insert(name, v);
+            }
+            self.set_env(merged);
+        }
 
         if let Some(current) = end_phaser_env {
             let caller = self.clone_env();
