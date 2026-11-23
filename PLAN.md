@@ -19,8 +19,11 @@
 
 Build a **Raku interpreter where installing mutsu alone gives you a well-documented standard bundled
 library, so you can write practical code immediately** — the Raku version of the positioning bun took
-for JavaScript. The official Rakudo ecosystem has no batteries-included distribution, and that gap is
-mutsu's unique position. Four components:
+for JavaScript. Bundling is not new to Raku: [Rakudo Star](https://rakudo.org/star) has shipped the
+compiler with a set of ecosystem modules (installed through zef, ~76 entries in its `etc/modules.txt`)
+since 2010. mutsu's position is the delivery: one self-contained binary (mise, Docker, WebAssembly)
+whose batteries are vendored verbatim, run against their own upstream test suites, and documented.
+Four components:
 
 1. **Fast-startup compatible interpreter** — maintain and expand raku compatibility. → §3
 2. **Standard bundled libraries (batteries)**, every one documented. → §1
