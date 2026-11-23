@@ -6,7 +6,7 @@ use Test;
 # time, before anything runs, as on rakudo (#13441). Calls inside the list keep
 # working. Each case runs a child process; the expectations are rakudo's.
 
-plan 8;
+plan 11;
 
 sub run-code(Str $code) {
     my $proc = run $*EXECUTABLE, '-I', 't/lib', '-e', $code, :out, :err;
@@ -53,4 +53,24 @@ sub run-code(Str $code) {
         say loads-at-parse-time();
         CODE
     is %r<out>, "LoadsAtParseTime loaded\nimported\n", 'a top-level use still imports unit-wide';
+}
+
+# A bareword term a hook module's `sub EXPORT` imported in a block names
+# nothing outside it (rakudo: Undeclared routine; mutsu says Undeclared name
+# for a capitalised bareword either way).
+{
+    my %r = run-code(q:to/CODE/);
+        { use EvalExportHookUpper; }
+        say "ran";
+        say Thing;
+        CODE
+    nok %r<out>.contains('ran'), 'a term imported in a block: nothing runs';
+    ok %r<err>.contains('Undeclared') && %r<err>.contains('Thing'), 'the bareword outside is undeclared';
+}
+
+{
+    my %r = run-code(q:to/CODE/);
+        { use EvalExportHookUpper; say Thing }
+        CODE
+    is %r<out>, "42\n", 'inside the block it is the imported term';
 }
