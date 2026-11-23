@@ -118,6 +118,36 @@ pub(crate) fn mark_unevaluated(bracket: char, content: &str) -> String {
     format!("{INTERP_MARK}{bracket}{content}{close}{INTERP_MARK}")
 }
 
+/// `name` with each marked `(...)` value replaced by its literal reading
+/// (`y:a\u{1}(1, 2)\u{1}` is `y:a<1 2>`), when every item of every one is a
+/// literal (an integer or a plain quoted word): what the compiler's BEGIN-time
+/// evaluation gives without evaluating anything. `None` when one is not.
+// Cost: O(n), n = length of `name`.
+pub(crate) fn literal_canonical(name: &str) -> Option<String> {
+    let mut out = String::with_capacity(name.len());
+    let mut parts = name.split(INTERP_MARK);
+    out.push_str(parts.next()?);
+    loop {
+        let Some(value) = parts.next() else {
+            return Some(out);
+        };
+        let content = value.strip_prefix('(')?.strip_suffix(')')?;
+        let literal = content.split(',').all(|item| {
+            let item = item.trim();
+            let digits = item.strip_prefix('-').unwrap_or(item);
+            (!digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()))
+                || is_all_quoted_items(item)
+        });
+        if !literal {
+            return None;
+        }
+        out.push('<');
+        out.push_str(&literal_paren_words(content));
+        out.push('>');
+        out.push_str(parts.next()?);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -2667,6 +2667,7 @@ t/io/std-handle-reopen-returns-self.t
 t/io/tail-io-builtin-return.t
 t/io/typed-slurpy.t
 t/io/user-io-handle-lines-read-eof.t
+t/lang/adverbs/adverbial-pair-variable-name-list-value.t
 t/lang/adverbs/adverbial-pair-variable-name.t
 t/lang/adverbs/colon-args-list-infix-precedence.t
 t/lang/adverbs/colon-call-argument-parsing.t
