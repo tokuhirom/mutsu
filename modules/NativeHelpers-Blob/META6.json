@@ -1,26 +1,40 @@
 {
-    "perl" : "6.c",
-    "name" : "NativeHelpers::Blob",
-    "version" : "0.1.9",
-    "auth" : "github:salortiz",
-    "description" : "NativeCall utilities for work with Blob and CArray",
-    "depends" : [ ],
-    "build-depends" : [ ],
-    "provides" : {
-	"NativeHelpers::Blob" : "lib/NativeHelpers/Blob.pm6",
-	"NativeHelpers::CStruct" : "lib/NativeHelpers/CStruct.pm6",
-	"NativeHelpers::Pointer" : "lib/NativeHelpers/Pointer.pm6",
-	"MoarVM::Guts::REPRs" : "lib/MoarVM/Guts/REPRs.pm6"
-    },
-    "repo-type" : "git",
-    "source-url": "git://github.com/salortiz/NativeHelpers-Blob.git",
-    "authors" : "Salvador Ortiz <sortiz@cpan.com>",
-    "licence" : "artistic_2",
-    "support" : {
-	"email" : "sog@msg.com.mx",
-	"source" : "https://github.com/salortiz/NativeHelpers-Blob.git"
-    },
-    "tags" : [
-	"NativeCall", "MoarVM", "Utilities", "Blob", "CArray", "Pointer"
-    ]
+  "auth": "zef:raku-community-modules",
+  "authors": [
+    "Salvador Ortiz",
+    "Raku Community"
+  ],
+  "build-depends": [
+  ],
+  "depends": [
+  ],
+  "description": "NativeCall utilities for work with Blob and CArray",
+  "license": "Artistic-2.0",
+  "name": "NativeHelpers::Blob",
+  "provides": {
+    "MoarVM::Guts::REPRs": "lib/MoarVM/Guts/REPRs.rakumod",
+    "NativeHelpers::Blob": "lib/NativeHelpers/Blob.rakumod",
+    "NativeHelpers::CStruct": "lib/NativeHelpers/CStruct.rakumod",
+    "NativeHelpers::Pointer": "lib/NativeHelpers/Pointer.rakumod"
+  },
+  "raku": "6.d",
+  "resources": [
+  ],
+  "source-url": "https://github.com/raku-community-modules/NativeHelpers-Blob.git",
+  "support": {
+    "bugtracker": "https://github.com/raku-community-modules/NativeHelpers-Blob/issues",
+    "email": "community@raku.org",
+    "source": "https://github.com/raku-community-modules/NativeHelpers-Blob.git"
+  },
+  "tags": [
+    "NATIVECALL",
+    "MOARVM",
+    "UTILITIES",
+    "BLOB",
+    "CARRAY",
+    "POINTER"
+  ],
+  "test-depends": [
+  ],
+  "version": "0.1.13"
 }

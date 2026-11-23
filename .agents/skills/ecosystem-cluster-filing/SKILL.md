@@ -29,6 +29,11 @@ scripts/ecosystem-tickets.py --json tmp/eco-tickets.json
 `scripts/ecosystem-tickets.py` (docs/ecosystem-parity.md §9) clusters the ledger's failures into
 root causes. Each cluster has a stable id that appears in issue bodies as `eco-cluster: <id>`.
 
+What the last sweep made worse is the "Regressed since the previous ledger" section of
+`ecosystem/summary.md` (also in the sweep run's report and the ledger commit message): the
+distributions whose status dropped, or whose baseline file lost parity, at an unchanged version.
+Read it first; a regression is a fresh bug in a recent `main` and is the cheapest to bisect.
+
 ## 2. File what has no issue yet
 
 Work through the clusters in the table's order, which is by number of affected distributions. For
@@ -36,8 +41,8 @@ each one, `search_issues` (or `gh issue list --search`) for `"eco-cluster: <id>"
 `tokuhirom/mutsu`. When there is no issue, file one:
 
 - The body is the output of `scripts/ecosystem-tickets.py --issue <id>`.
-- Keep the body's `eco-cluster: <id>` line: it doubles as the link the ecosystem dashboard
-  (`scripts/ecosystem-dashboard.py`) reads, expanding to every distribution in the cluster.
+- Keep the body's `eco-cluster: <id>` line: it is how an agent working one of the cluster's
+  distributions finds this issue (`ecosystem-dist-queue` step 2).
 - Label it `todo:ticket`, or `todo:deep` if the cluster plainly needs design, **and
   `ecosystem`**: a ledger cluster is by construction a set of dist files that fail against raku.
   If the cluster turns out to be slowness only (the files pass, just slower), it is a plain
@@ -45,8 +50,8 @@ each one, `search_issues` (or `gh issue list --search`) for `"eco-cluster: <id>"
 - Check the body first: any third-party text it quotes must sit inside code blocks.
 
 File **at most three issues per run**, so that one bad night cannot flood the tracker. Report the
-remaining unfiled clusters by count. Never file a cluster whose only distributions are on the lock
-board (`ecosystem-dist-queue`), because an agent is already on them.
+remaining unfiled clusters by count. Never file a cluster whose only distributions already have a
+claimed tracking issue (`ecosystem-dist-queue`), because an agent is already on them.
 
 ## 3. Report
 

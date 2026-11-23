@@ -111,13 +111,25 @@ fn substitution(
     // `s[a] = EXPR` is `infix => Assignment`, `s[a] OP= EXPR`
     // `infix => MetaInfix::Assign(Infix(OP))` with EXPR as the replacement.
     let replacement = match thunk {
-        Some(SubstThunk { expr, infix: None }) => {
+        Some(SubstThunk {
+            expr,
+            infix: None,
+            item,
+        }) => {
+            let fields_of_assign = if *item {
+                vec![RakuAstField {
+                    name: None,
+                    value: RakuAstFieldValue::Adverb("item"),
+                }]
+            } else {
+                Vec::new()
+            };
             fields.push(node_field(
                 Some("infix"),
                 RakuAstNode {
                     origin: Default::default(),
                     class: RakuAstClass::Assignment,
-                    fields: Vec::new(),
+                    fields: fields_of_assign,
                 },
             ));
             view_expr(names, expr)?
@@ -125,6 +137,7 @@ fn substitution(
         Some(SubstThunk {
             expr,
             infix: Some(op),
+            ..
         }) => {
             fields.push(node_field(
                 Some("infix"),
@@ -452,13 +465,20 @@ pub(super) fn lower_substitution(
     let samespace = bool_field(node, "samespace")?;
     // `None` for `s[a] = EXPR`, the operator of `s[a] OP= EXPR`.
     let mut compound_op = None;
+    // `Assignment.new(:item)`, kept for the view.
+    let mut item = false;
     if let Some(infix) = node.fields.iter().find(|f| f.name == Some("infix")) {
         let infix = match &infix.value {
             RakuAstFieldValue::Node(v) => rakuast_node_of(v).ok_or_else(|| unsupported(node))?,
             _ => return Err(unsupported(node)),
         };
         match infix.class {
-            RakuAstClass::Assignment => {}
+            RakuAstClass::Assignment => {
+                item = infix
+                    .fields
+                    .iter()
+                    .any(|f| matches!(f.value, RakuAstFieldValue::Adverb("item")));
+            }
             RakuAstClass::MetaInfixAssign => {
                 let plain = named_child_or_positional(infix)?;
                 if plain.class != RakuAstClass::Infix {
@@ -501,10 +521,12 @@ pub(super) fn lower_substitution(
                 Some(op) => SubstThunk {
                     expr: crate::parser::subst_compound_thunk(&op, replacement),
                     infix: Some(op.into()),
+                    item: false,
                 },
                 None => SubstThunk {
                     expr: replacement,
                     infix: None,
+                    item,
                 },
             })),
         ),
@@ -518,6 +540,7 @@ pub(super) fn lower_substitution(
         global,
         nth,
         x,
+        start,
     } = flags;
     Ok(if bool_field(node, "immutable")? {
         Expr::NonDestructiveSubst {
@@ -530,6 +553,7 @@ pub(super) fn lower_substitution(
             global,
             nth,
             x,
+            start,
             replacement_thunk: thunk,
             tree,
         }
@@ -544,6 +568,7 @@ pub(super) fn lower_substitution(
             global,
             nth,
             x,
+            start,
             replacement_thunk: thunk,
             tree,
         }

@@ -77,14 +77,15 @@ is_run 'my @x = gather { take 1 }; say @x.elems', { :0status, :out("1\n"), :err(
 is_run '$; my $b;', { :0status, :err(/"Useless use of unnamed " '$' " variable"/) },
     'bare anonymous $ in sink warns as unnamed variable';
 
-# Pure prefix operators on useless operands warn, naming the operator.
-is_run '-5', { :0status, :err(/"Useless use" .* '"-"' .* '-5'/) },
+# Pure prefix operators on useless operands warn, naming the expression by
+# its source text, as rakudo does.
+is_run '-5', { :0status, :err(/"Useless use of -5 in sink context"/) },
     'prefix minus on constant in sink warns';
-is_run '!5', { :0status, :err(/"Useless use" .* '"!"' .* '!5'/) },
+is_run '!5', { :0status, :err(/"Useless use of !5 in sink context"/) },
     'prefix bang on constant in sink warns';
-is_run '?5', { :0status, :err(/"Useless use" .* '"?"' .* '?5'/) },
+is_run '?5', { :0status, :err(/"Useless use of ?5 in sink context"/) },
     'prefix question on constant in sink warns';
-is_run 'my $x = 1; -$x', { :0status, :err(/"Useless use" .* '"-"' .* '-$x'/) },
+is_run 'my $x = 1; -$x', { :0status, :err(/'Useless use of -$x in sink context'/) },
     'prefix minus on variable in sink warns';
 
 # A prefix operator on a side-effecting operand never warns.

@@ -168,13 +168,8 @@ impl Interpreter {
                 // Every routine frame declares its own `$_`, `$/` and `$!`,
                 // so the calling frame always has them, even when mutsu has
                 // not materialized the entry yet (the frame never assigned
-                // one): bind the calling frame's.
-                // TODO: the caller does not see the bound value yet — its
-                // topic lives in its env, which the return path restores
-                // from `saved_env` and never merges a callee's `$_`/`$/`/`$!`
-                // into (`pop_caller_env_with_writeback` skips them). The
-                // correct fix carries the bind on the `CallFrameEntry` and
-                // applies it at every return site (#17453).
+                // one): bind the calling frame's, which the caller reads once
+                // the call returns (#17453).
                 let implicit = matches!(key, "_" | "/" | "!");
                 if !implicit && !self.caller_env_stack.iter().any(|env| env.contains_key(key)) {
                     return Some(Err(RuntimeError::new(format!(
@@ -185,7 +180,9 @@ impl Interpreter {
                 if implicit || self.env.contains_key_own_tier(key) {
                     // The running frame declares its own: bind the caller's
                     // binding only, which the caller drains on return.
-                    if let Some(caller) = self.caller_env_stack.last_mut() {
+                    if implicit {
+                        self.bind_caller_implicit_lexical(key, value.clone());
+                    } else if let Some(caller) = self.caller_env_stack.last_mut() {
                         caller.insert(key.to_string(), value.clone());
                     }
                     self.record_caller_var_writeback(key);

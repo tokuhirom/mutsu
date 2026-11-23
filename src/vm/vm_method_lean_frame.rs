@@ -57,7 +57,12 @@ pub(super) fn lean_frame_eligible(
         && cc.class_decl_plans.is_empty()
         && !cc.declares_inner_routines()
         && def.captured_env.is_none()
-        && def.return_type.is_none()
+        // A literal definite return (`--> Nil`) names a value, so its
+        // finalize reads no capture or owner scope (#18267).
+        && def
+            .return_type
+            .as_deref()
+            .is_none_or(|spec| matches!(spec, "Nil" | "True" | "False" | "Empty"))
         && def.role_param_bindings.is_none()
         && def.original_role.is_none()
         && def.role_origin.is_none()
@@ -74,6 +79,21 @@ pub(super) fn lean_frame_eligible(
                     )
                 })
         })
+}
+
+/// Whether a name a lean frame's env holds is the frame's own, kept out of
+/// the runtime-name carry: a frame fixture, a parameter, a compiled local or
+/// an env-only `my` or a dynamic one (class-body statics and attribute
+/// twigil forms are tested by the caller). The lean frame admits no role binding, sub-signature,
+/// type capture or sigilless parameter, the fast binder's other own names.
+// Cost: O(p + l), p = parameters, l = locals and env-only declarations.
+fn lean_frame_owns_name(s: &str, def: &crate::runtime::MethodDef, cc: &CompiledCode) -> bool {
+    matches!(s, "self" | "__ANON_STATE#" | "?CLASS" | "?ROLE" | "_")
+        || def.params.iter().any(|p| p == s)
+        || s.starts_with(crate::runtime::enum_bare_names::ENUM_BARE_PREFIX)
+        || cc.locals.iter().any(|l| !l.is_empty() && l == s)
+        || cc.env_only_decls.iter().any(|n| n == s)
+        || super::vm_method_dispatch::dynamic_decl_local(&cc.locals, s)
 }
 
 /// A builtin value type a lean positional parameter may be constrained to,
@@ -142,6 +162,12 @@ pub(super) struct LeanMethodCall<'a> {
     pub(super) method_def: &'a crate::runtime::MethodDef,
     pub(super) cc: &'a CompiledCode,
     pub(super) compiled_fns: &'a CompiledFns,
+    /// The plan's `method_body_package` answer (#18267 D1a), or `None` to ask.
+    pub(super) body_package: Option<Option<Symbol>>,
+    /// The body neither calls nor writes the env by name, so the exit drops
+    /// the overlay; otherwise it carries the frame's pending runtime-name
+    /// writes out, as the fast binder's non-skip exit does.
+    pub(super) can_skip_merge: bool,
 }
 
 impl Interpreter {
@@ -205,6 +231,8 @@ impl Interpreter {
             method_def,
             cc,
             compiled_fns,
+            body_package,
+            can_skip_merge,
         } = call;
         // A non-multi winner: nothing to skip (see the general binder).
         self.pending_skip_constraint_recheck = false;
@@ -230,15 +258,23 @@ impl Interpreter {
             scoped.mark_owns_routine_state();
             self.set_env(scoped);
         }
+        let method_callable_id = crate::value::next_instance_id();
+        if !can_skip_merge {
+            // As the fast binder's non-skip arm: the rooted frame answers `$_`
+            // and `$!` for the callees this body runs.
+            self.env_mut().set_callable_id(method_callable_id as i64);
+        }
         let saved_var_bindings = self.take_var_bindings();
         self.push_method_class_sym(owner_sym, Some(false));
-        let saved_package: Option<Symbol> = self
-            .method_body_package(owner_class, owner_sym, method_def)
-            .map(|package| {
-                let saved = self.current_package_sym();
-                self.set_current_package_sym(package);
-                saved
-            });
+        let body_package = match body_package {
+            Some(package) => package,
+            None => self.method_body_package(owner_class, owner_sym, method_def),
+        };
+        let saved_package: Option<Symbol> = body_package.map(|package| {
+            let saved = self.current_package_sym();
+            self.set_current_package_sym(package);
+            saved
+        });
 
         // Bind: the invocant, then each positional argument in order (every
         // parameter is a plain positional `$` scalar, `lean_param_ok`). The
@@ -269,7 +305,6 @@ impl Interpreter {
         }
 
         let class_val = Value::package(owner_sym);
-        let method_callable_id = crate::value::next_instance_id();
         self.inject_class_body_statics(owner_class);
         self.insert_fast_param_values_by_name(
             &param_values,
@@ -427,10 +462,36 @@ impl Interpreter {
         if let Some(pkg) = saved_package {
             self.set_current_package_sym(pkg);
         }
-        // `can_skip_merge` (`lean_frame_eligible`): drop the overlay.
+        // Drop the overlay. A body that calls (`lean_frame_eligible`) carries
+        // its pending runtime-name writes out first, exactly as the fast
+        // binder's non-skip exit does: every other write reached the caller
+        // through the variable's own cell (ADR-12529).
         self.dispatch.method_dispatch_pure = true;
         let frame = self.pop_call_frame();
-        self.set_env(frame.saved_env);
+        if can_skip_merge
+            || self.pending_runtime_name_writes.is_empty()
+            || self.env().ptr_eq(&frame.saved_env)
+        {
+            self.set_env(frame.saved_env);
+        } else {
+            let current_env = self.take_env();
+            let class_body_static_names = self.lexicals.class_body_static_names.snapshot();
+            let carried = self.carried_runtime_name_writes(&current_env, &|s: &str| {
+                lean_frame_owns_name(s, method_def, cc)
+                    || class_body_static_names
+                        .get(owner_class)
+                        .is_some_and(|names| names.contains(s))
+                    || attrs_cell.as_ref().is_some_and(|c| {
+                        super::vm_method_dispatch::attr_twigil_local(&c.as_map(), s)
+                    })
+            });
+            drop(current_env);
+            let mut merged = frame.saved_env;
+            for (name, v) in carried {
+                merged.insert(name, v);
+            }
+            self.set_env(merged);
+        }
 
         if let Some(current) = end_phaser_env {
             let caller = self.clone_env();
@@ -449,7 +510,12 @@ impl Interpreter {
         let final_result = if fail_bypass {
             final_result
         } else {
-            self.finalize_method_result_fast(cc, final_result, None, None, None)
+            // As the fast binder finalizes: a literal definite return spec
+            // is its own effective spec (`method_effective_return_spec`).
+            let spec = method_def.return_type.as_deref();
+            let return_fast = spec.and_then(|spec| self.method_return_fast(owner_class, spec));
+            let effective = spec.filter(|_| return_fast.is_none());
+            self.finalize_method_result_fast(cc, final_result, spec, effective, return_fast)
         };
         final_result.map(|v| (Self::method_frame_result_sharing(&base, v), None))
     }

@@ -1,7 +1,7 @@
 # Battery: template engine — `Template::Mustache`
 
 **Slot:** Template engine · **Chosen:** `Template::Mustache`
-(`auth<zef:raku-community-modules>`, v1.2.6, Artistic-2.0) · **Kind:** Adopted
+(`auth<zef:raku-community-modules>`, v1.2.7, Artistic-2.0) · **Kind:** Adopted
 (community module, vendored as-is) · **Yardstick:**
 [BATTERIES.md §2](../../BATTERIES.md#2-selection-criteria) — license (hard gate)
 → dependency weight → proven behaviour on mutsu → API fit → "a small web blog can
@@ -281,7 +281,7 @@ To bump the module, re-vendor — do **not** hand-edit the vendored tree:
 
 | Module | Upstream | Pinned version | Commit |
 | --- | --- | --- | --- |
-| `Template::Mustache` | <https://github.com/raku-community-modules/Template-Mustache> | v1.2.6 | `27f3e862` (2026-01-12) |
+| `Template::Mustache` | <https://github.com/raku-community-modules/Template-Mustache> | v1.2.7 | `642eafe6` (2026-09-16) |
 
 What is vendored: `lib/` plus `META6.json`, `LICENSE`, `README.md`, `Changes`.
 Upstream `t/`, `xt/`, `doc/`, `logotype/`, `dist.ini` and `.precomp` artifacts are

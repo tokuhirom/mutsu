@@ -152,6 +152,28 @@ impl Interpreter {
             return val;
         };
         let mut cells: Vec<(Symbol, Value)> = Vec::new();
+        // Under the static-outer latch the capture is the declaring scope's
+        // whole static view, each name at the slot that scope binds it in
+        // (ADR-12529 amendment A1 (b), #18787).
+        let view_plan = code
+            .sub_decl_plans
+            .iter()
+            .find(|p| p.name == data.name && !p.static_view_slots.is_empty());
+        if let Some(plan) = view_plan {
+            for &(sym, slot) in &plan.static_view_slots {
+                let slot = slot as usize;
+                if code
+                    .locals
+                    .get(slot)
+                    .is_none_or(|n| !sym.with_str(|s| s == n))
+                {
+                    continue;
+                }
+                if let Some(cell) = self.box_static_view_local(code, slot, sym) {
+                    cells.push((sym, cell));
+                }
+            }
+        }
         for sym in cf
             .code
             .free_var_syms
@@ -160,6 +182,11 @@ impl Interpreter {
         {
             if cells.iter().any(|(s, _)| s == sym) {
                 continue;
+            }
+            // The static view bound every local of `code` the sub can see,
+            // from its scope's own slot; nothing is guessed by name here.
+            if view_plan.is_some() {
+                break;
             }
             let name = sym.resolve();
             if !crate::env::is_plain_user_lexical(&name) {
@@ -277,6 +304,41 @@ impl Interpreter {
         let boxed = cur.into_container_ref();
         self.locals[slot] = boxed.clone();
         self.env_mut().insert(name.to_string(), boxed.clone());
+        Some(boxed)
+    }
+
+    /// [`Self::box_local_for_lexsub_capture`] for a static view's slot, which
+    /// a nested block may shadow where the capture is taken: the env's
+    /// binding of the name is replaced by the cell only while it is this
+    /// slot's own.
+    // Cost: O(d), d = env tiers probed for the name.
+    fn box_static_view_local(
+        &mut self,
+        code: &CompiledCode,
+        slot: usize,
+        sym: Symbol,
+    ) -> Option<Value> {
+        if code.state_locals.iter().any(|(s, _)| *s == slot)
+            || code.our_locals.iter().any(|(s, _)| *s == slot)
+        {
+            return None;
+        }
+        let cur = self.locals.get(slot)?.clone();
+        if cur.is_container_ref() {
+            return Some(cur);
+        }
+        if cur.is_nil() || sym.with_str(|name| self.type_constrained_unboxable(name)) {
+            return None;
+        }
+        let visible = self
+            .env()
+            .get_sym(sym)
+            .is_some_and(|v| v.same_binding(&cur));
+        let boxed = cur.into_container_ref();
+        self.locals[slot] = boxed.clone();
+        if visible {
+            self.env_mut().insert_sym(sym, boxed.clone());
+        }
         Some(boxed)
     }
 

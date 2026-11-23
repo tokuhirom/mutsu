@@ -41,9 +41,16 @@ impl Interpreter {
         }
         let exception = (**err.exception.as_ref()?).clone();
         let mut text = self.render_gist_value(&exception).ok()?;
-        // An error surfaced from an unhandled Failure renders both stacks.
+        // An error surfaced from an unhandled Failure renders both stacks,
+        // unless the gist already ends with the throw site's frames (a
+        // Failure sunk in the routine that made it, or in one of its callers):
+        // rakudo's top-level handler prints them only when
+        // `!$e.gist.ends-with($v.Str)`.
         if let Some(bt) = err.backtrace()
             && let Some(at) = bt.find(ACTUALLY_THROWN_AT)
+            && !text
+                .trim_end()
+                .ends_with(bt[at + ACTUALLY_THROWN_AT.len()..].trim_end())
         {
             text.push_str(&bt[at..]);
         }

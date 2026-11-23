@@ -46,9 +46,17 @@ impl Interpreter {
         role_name: &str,
     ) -> Result<Option<String>, RuntimeError> {
         let pun_name = Self::plain_role_pun_name(role_name);
+        if self.registry().classes.contains_key(&pun_name)
+            && !super::pun_compose::composed_elsewhere(&pun_name)
+        {
+            return Ok(Some(pun_name));
+        }
+        // One thread at a time composes a pun (`pun_compose.rs`, #18858).
+        let mut compose = super::pun_compose::PunComposeGuard::acquire()?;
         if self.registry().classes.contains_key(&pun_name) {
             return Ok(Some(pun_name));
         }
+        compose.mark(&pun_name);
         let language_version = {
             let registry = self.registry();
             match registry.roles.get(role_name) {

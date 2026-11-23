@@ -113,8 +113,10 @@ mod supply_lower;
 mod will_decl;
 pub(crate) use decl_compound_assign::ZIP_ASSIGN;
 mod decl_tail;
+mod decl_tail_origins;
 mod decl_traits;
 mod declarator_docs;
+mod trailing_comma_list;
 
 /// The `#|` / `#=` docs a node carries (leading, trailing).
 // Cost: O(1).
@@ -168,9 +170,12 @@ pub(crate) mod literal_queries;
 pub(crate) mod name_queries;
 pub(crate) mod parameter_queries;
 pub(crate) mod sink_call;
+mod type_capture_ctor;
+pub(crate) mod type_queries;
 pub(crate) use infix_func::add_colonpair;
 mod angle_subscript;
 mod assign_ro;
+mod bracketed_infix;
 mod call_term_origins;
 mod carried;
 mod control_statement_origins;
@@ -178,6 +183,7 @@ mod decl_postfix_origins;
 mod dotty_infix_view;
 mod finalize;
 pub(crate) mod fresh_copy;
+mod function_infix;
 mod heredoc_body_origins;
 mod hyper_infix_origins;
 mod hyper_subscript_origins;
@@ -208,6 +214,7 @@ mod name_quote_origins;
 mod named_ctor;
 mod named_param;
 mod negated_set;
+mod nested_words;
 mod nesting;
 mod nf_quote;
 mod operator_origins;
@@ -284,6 +291,7 @@ mod substitution;
 pub(crate) use indirect_bind::indirect_symbol_bind;
 mod symbolic_deref;
 mod temporize;
+mod term_bool_ctor;
 mod term_name;
 mod thunk;
 mod topic_subscript;
@@ -2080,7 +2088,17 @@ fn parse_unit_ast(
     if let Some(previous) = previous_file {
         crate::parser::set_parser_source_file(previous);
     }
-    let (mut stmts, _finish) = parsed?;
+    // A parse failure is reported against this string's unit -- its name and
+    // its text for the `------>` excerpt -- not the calling file (#18870).
+    let (mut stmts, _finish) = parsed.map_err(|mut e| {
+        if let Some(file) = file
+            && e.code().is_some_and(|c| c.is_parse())
+            && e.source_text().is_none()
+        {
+            e.set_source_file_text(file.to_string(), source.to_string());
+        }
+        e
+    })?;
     let unit_docs = crate::parser::decl_doc::take_unit_docs();
     // Rakudo's `.AST` raises the compile errors running the code does
     // (ADR-15760 Amendment 1, slice 1c): a type or term used before its
@@ -2328,6 +2346,9 @@ fn construct_values(
             ValueView::Str(_) => Some("RakuAST::StrLiteral"),
             ValueView::Num(_) => Some("RakuAST::NumLiteral"),
             ValueView::Rat(..) => Some("RakuAST::RatLiteral"),
+            // `42+i` / `v6.e` (#18979).
+            ValueView::Complex(..) => Some("RakuAST::ComplexLiteral"),
+            ValueView::Version { .. } => Some("RakuAST::VersionLiteral"),
             _ => None,
         };
         if let Some(literal) = literal {
@@ -2350,6 +2371,10 @@ fn construct_values(
     // constructors build (rakudo's `RakuAST::Lookup` helpers, used by
     // CSS::Specification::Compiler's `my RakuAST::Type::Simple $type .=
     // from-identifier-parts(|@module)`).
+    // `Type::Capture.new($name, :smiley<D>)` / `.from-identifier("T", "D")`.
+    if let Some(result) = type_capture_ctor::construct(names, class_name, method, args) {
+        return result.map(Some);
+    }
     // `.raku` prints `Type::Setting` and `Type::Capture` over a plain name the
     // same way, so the text must evaluate back.
     let name_type = match class_name {
@@ -2487,19 +2512,19 @@ fn construct_class(
         }))));
     }
     if class_name == "RakuAST::Type::Enum" && method == "new" {
-        let name = named_arg(args, "name")
-            .ok_or_else(|| RuntimeError::new("RakuAST::Type::Enum.new requires `name`"))?;
-        require_rakuast_class(&name, RakuAstClass::Name, "RakuAST::Type::Enum.new")?;
+        // The name defaults to none (an anonymous enum) and the term may be
+        // any expression, as rakudo has it (#18978).
+        let name = named_arg(args, "name").filter(|v| !v.is_nil());
+        if let Some(name) = &name {
+            require_rakuast_class(name, RakuAstClass::Name, "RakuAST::Type::Enum.new")?;
+        }
         let term = named_arg(args, "term")
             .ok_or_else(|| RuntimeError::new("RakuAST::Type::Enum.new requires `term`"))?;
-        require_rakuast_class(&term, RakuAstClass::QuotedString, "RakuAST::Type::Enum.new")
-            .or_else(|_| {
-                require_rakuast_class(
-                    &term,
-                    RakuAstClass::CircumfixParentheses,
-                    "RakuAST::Type::Enum.new",
-                )
-            })?;
+        if lower::rakuast_node_of(&term).is_none() {
+            return Err(RuntimeError::new(
+                "RakuAST::Type::Enum.new expects a RakuAST node as `term`",
+            ));
+        }
         let mut fields = Vec::with_capacity(5);
         if let Some(scope) =
             named_arg(args, "scope").filter(|s| s.as_str().is_some_and(|s| !s.is_empty()))
@@ -2509,10 +2534,12 @@ fn construct_class(
                 value: RakuAstFieldValue::Node(scope),
             });
         }
-        fields.push(RakuAstField {
-            name: Some("name"),
-            value: RakuAstFieldValue::Node(name),
-        });
+        if let Some(name) = name {
+            fields.push(RakuAstField {
+                name: Some("name"),
+                value: RakuAstFieldValue::Node(name),
+            });
+        }
         if let Some(of) = named_arg(args, "of").filter(|v| !v.is_nil()) {
             fields.push(RakuAstField {
                 name: Some("of"),
@@ -2597,8 +2624,15 @@ fn construct_class(
     // or the expression of `::($x)`. An all-identifier name is the same node
     // `from-identifier-parts` builds; the renderer picks the spelling.
     if class_name == "RakuAST::Name" && method == "new" {
+        // `:colonpairs(...)`: an operator name (`infix:<+>`), whose name parts
+        // are followed by the colonpairs (#18441).
+        let colonpairs = named_arg(args, "colonpairs").map(|pairs| match pairs.view() {
+            ValueView::Array(items, _) => items.iter().cloned().collect::<Vec<_>>(),
+            _ => vec![pairs.clone()],
+        });
         let parts = args
             .iter()
+            .filter(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
             .map(|part| {
                 if is_name_part(part) {
                     Ok(part.clone())
@@ -2609,6 +2643,11 @@ fn construct_class(
                 }
             })
             .collect::<Result<Vec<_>, RuntimeError>>()?;
+        if let Some(colonpairs) = colonpairs {
+            return Ok(Some(Value::rakuast(Box::new(
+                name_parts::name_with_colonpairs(parts, colonpairs),
+            ))));
+        }
         return Ok(Some(Value::rakuast(Box::new(RakuAstNode {
             origin: Default::default(),
             class: RakuAstClass::Name,
@@ -3580,6 +3619,9 @@ fn construct_class(
         }
         return Ok(Some(slurpy_marker_value(class)));
     }
+    if let Some(node) = term_bool_ctor::construct(class_name, method, args) {
+        return node.map(Some);
+    }
     // `Term::Enum.new(Name)`: the same node as `Term::Enum.from-identifier`,
     // from a simple (single identifier) name node.
     if class_name == "RakuAST::Term::Enum" && method == "new" {
@@ -4184,7 +4226,7 @@ fn multi_field_schema(
 /// A repeated name keeps the last one, as a Raku call does (`.new(:a(1), :a(2))`
 /// binds `2`; the idiom `.new(|%defaults, |%overrides)` relies on it).
 // Cost: O(a), a = arguments.
-fn named_arg(args: &[Value], name: &str) -> Option<Value> {
+pub(super) fn named_arg(args: &[Value], name: &str) -> Option<Value> {
     args.iter().rev().find_map(|a| match a.view() {
         ValueView::Pair(k, v) => (k.as_str() == name).then(|| v.clone()),
         ValueView::ValuePair(k, v) => (k.to_string_value() == name).then(|| v.clone()),

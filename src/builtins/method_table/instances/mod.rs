@@ -70,6 +70,7 @@ mod rakuast_name_queries;
 pub(crate) mod rakuast_node;
 mod rakuast_operator_props;
 mod rakuast_operator_purity;
+mod rakuast_origin_text;
 mod rakuast_parameter_queries;
 mod rakuast_phases;
 mod rakuast_quoted_literal;
@@ -77,6 +78,7 @@ mod rakuast_rakudoc;
 mod rakuast_replace_child;
 mod rakuast_set_operands;
 mod rakuast_set_origin;
+mod rakuast_type_queries;
 mod rakuast_var_queries;
 mod rakuast_visit;
 mod rakuast_walk;
@@ -156,6 +158,8 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     rakuast_set_origin::ROWS,
     rakuast_name_queries::ROWS,
     rakuast_name_queries::ONE_ARG_ROWS,
+    rakuast_name_queries::PART_ROWS,
+    rakuast_type_queries::ROWS,
     rakuast_apply_queries::ROWS,
     rakuast_arg_list_queries::ROWS,
     rakuast_block_queries::ROWS,

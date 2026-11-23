@@ -99,30 +99,59 @@ impl Interpreter {
         block: Option<Value>,
         span: Option<crate::slang_link::ActionSpan>,
     ) -> bool {
-        let depth = HOOK_DEPTH.with(std::cell::Cell::get);
-        let answer = if depth >= MAX_HOOK_DEPTH {
-            Err(format!(
-                "slang productions nest deeper than {MAX_HOOK_DEPTH} levels"
-            ))
-        } else {
-            HOOK_DEPTH.with(|d| d.set(depth + 1));
-            // Composed outside the class log: the host's own grammar and
-            // actions are not classes the production installed, so they must
-            // not be replayed into the unit (where the grammar would lack its
-            // host base's `panic`).
-            let composed = self.compose_slang_host();
-            super::slang_class_replay::begin_class_log();
-            let answer =
-                composed.and_then(|()| self.run_slang_hook(rule, source, start, node, block, span));
-            super::slang_class_replay::end_class_log();
-            HOOK_DEPTH.with(|d| d.set(depth));
-            answer
+        let roles = (
+            self.regex_state.slang_grammar_roles.clone(),
+            self.regex_state.slang_action_roles.clone(),
+        );
+        let request = crate::slang_link::HookRequest {
+            rule: rule.to_string(),
+            source: source.to_string(),
+            start,
+            node,
+            block,
+            span,
+            roles,
         };
+        let answer = self.hook_answer(request, true);
         HOST_LINK.with(|l| {
             l.borrow()
                 .as_ref()
                 .is_some_and(|link| link.to_parser.send(FromHost::Done(answer)).is_ok())
         })
+    }
+
+    /// Run one hook: compose the slang's grammar and actions, match the
+    /// production and read its node. `replay_log` records what the production
+    /// builds for the unit to replay (ADR-13370, ADR-17243), which a host that
+    /// is the unit's own interpreter does not need.
+    // Cost: the token and the action.
+    pub(super) fn hook_answer(
+        &mut self,
+        request: crate::slang_link::HookRequest,
+        replay_log: bool,
+    ) -> HostAnswer {
+        let depth = HOOK_DEPTH.with(std::cell::Cell::get);
+        if depth >= MAX_HOOK_DEPTH {
+            return Err(format!(
+                "slang productions nest deeper than {MAX_HOOK_DEPTH} levels"
+            ));
+        }
+        HOOK_DEPTH.with(|d| d.set(depth + 1));
+        // Composed outside the class log: the host's own grammar and
+        // actions are not classes the production installed, so they must
+        // not be replayed into the unit (where the grammar would lack its
+        // host base's `panic`).
+        let composed = self.compose_slang_host(&request.roles);
+        if replay_log {
+            super::slang_class_replay::begin_class_log();
+        }
+        let answer =
+            composed.and_then(|()| self.run_slang_hook(request));
+        if replay_log {
+            super::slang_class_replay::end_class_log();
+        }
+        HOOK_DEPTH.with(|d| d.set(depth));
+        answer
     }
 
     /// The host's entry sub, compiled on first use.
@@ -141,13 +170,13 @@ impl Interpreter {
     /// Compose (or reuse) the grammar and actions classes for the slang's
     /// current roles.
     // Cost: O(1) when the roles are unchanged; the composition otherwise.
-    fn compose_slang_host(&mut self) -> Result<(), String> {
+    fn compose_slang_host(&mut self, roles: &(Vec<Value>, Vec<Value>)) -> Result<(), String> {
         let run = self.slang_host_entry()?;
         let args = vec![
             Value::str(String::new()),
             Value::str(String::new()),
-            Value::array(self.regex_state.slang_grammar_roles.clone()),
-            Value::array(self.regex_state.slang_action_roles.clone()),
+            Value::array(roles.0.clone()),
+            Value::array(roles.1.clone()),
             Value::pair("compose-only".to_string(), Value::TRUE),
         ];
         self.call_sub_value(run, args)
@@ -158,18 +187,20 @@ impl Interpreter {
     /// Match `rule` at character offset `start` of `source` with the composed
     /// grammar and read the node its action attached.
     // Cost: the token and the action.
-    fn run_slang_hook(
-        &mut self,
-        rule: &str,
-        source: &str,
-        start: usize,
-        node: Option<Value>,
-        block: Option<Value>,
-        span: Option<crate::slang_link::ActionSpan>,
-    ) -> HostAnswer {
+    fn run_slang_hook(&mut self, request: crate::slang_link::HookRequest) -> HostAnswer {
+        let crate::slang_link::HookRequest {
+            rule,
+            source,
+            start,
+            node,
+            block,
+            span,
+            roles,
+        } = request;
+        let (rule, source) = (rule.as_str(), source.as_str());
         let run = self.slang_host_entry()?;
-        let grammar_roles = Value::array(self.regex_state.slang_grammar_roles.clone());
-        let action_roles = Value::array(self.regex_state.slang_action_roles.clone());
+        let grammar_roles = Value::array(roles.0.clone());
+        let action_roles = Value::array(roles.1.clone());
         let answer = self
             .call_sub_value(
                 run,
@@ -313,6 +344,9 @@ impl Interpreter {
         pos: usize,
         dynamics: crate::slang_link::BackCallDynamics,
     ) -> Result<HostAnswer, RuntimeError> {
+        if let Some(answer) = self.in_process_back_call(rule, pos, dynamics) {
+            return Ok(answer);
+        }
         let lost = || RuntimeError::new("the parser stopped answering the slang shim");
         HOST_LINK.with(|l| {
             let link = l.borrow();

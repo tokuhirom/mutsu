@@ -210,9 +210,9 @@ work; see `docs/mzef-install-pipeline.md`. The **REPL** (`--repl`,
       clusters are filed as `todo:*` issues), or by **distribution** with
       [`ecosystem-dist-fix`](.agents/skills/ecosystem-dist-fix/SKILL.md) (named) /
       [`ecosystem-dist-queue`](.agents/skills/ecosystem-dist-queue/SKILL.md) (the next entry of
-      `scripts/ecosystem-tickets.py --queue`, a fixed order over every failing distribution, locked
-      on [#17702](https://github.com/tokuhirom/mutsu/issues/17702) so parallel agents do not
-      collide). Prefer a root cause when one covers several distributions; working the whole queue
+      `scripts/ecosystem-tickets.py --queue`, a fixed order over every failing distribution, each
+      claimed through its tracking issue so parallel agents do not collide; what a sweep made worse
+      is the "Regressed since the previous ledger" section of `ecosystem/summary.md`). Prefer a root cause when one covers several distributions; working the whole queue
       in order, never skipping an entry for looking hard, is what keeps the published figure honest.
       Method: [docs/ecosystem-parity.md](docs/ecosystem-parity.md);
       decisions: [ADR-0085](docs/adr/0085-ecosystem-testsuite-parity-measurement.md). The campaign

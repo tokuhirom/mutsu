@@ -304,6 +304,15 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
         && let Some(Ok(canonical)) =
             super::name_colonpairs::lower(&crate::scope::NameScope::default(), node)
     {
+        // `:a(1, 2)` is `:a<1 2>`, as the compiler evaluates it (#18612).
+        let canonical = crate::adverb_name::literal_canonical(&canonical).unwrap_or(canonical);
+        return Some(Value::str(canonical));
+    }
+    // `::($x)::Foo`: an indirect part spelled as its source (#18976).
+    if method == "canonicalize"
+        && node.class == RakuAstClass::Name
+        && let Some(canonical) = super::name_queries::indirect_canonical(node)
+    {
         return Some(Value::str(canonical));
     }
     // `Name.canonicalize`: the `::`-joined spelling of a static identifier name.

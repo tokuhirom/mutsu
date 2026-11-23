@@ -55,7 +55,7 @@ impl Interpreter {
         // same-named lexical of the dying routine shadows the capture.
         let installing_upvalues = installing.and_then(|(base, depth)| {
             self.installing_call_frame(base, depth)
-                .map(|f| f.saved_upvalues.clone())
+                .map(|f| f.saved_upvalues().to_vec())
         });
         // The installing frame lies wholly below the executing one, or its
         // region cannot be trusted (a code object that grew after install).

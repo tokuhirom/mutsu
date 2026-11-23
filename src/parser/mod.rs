@@ -2,6 +2,7 @@ pub(crate) mod comment_log;
 pub(crate) mod core_type_fold;
 pub(crate) mod decl_doc;
 mod expr;
+pub(crate) mod static_outer_latch;
 mod type_qualify;
 pub(crate) use type_qualify::{UnitQualify, qualify_program as qualify_type_names};
 // ADR-0033: `crate::whatever_curry::build_closure` (the WhateverCode closure
@@ -48,6 +49,7 @@ pub(crate) use stmt::control::placeholder_loop_params;
 pub(crate) use stmt::control::{FOR_UNPACK, FOR_UNPACK_ARRAY, indexed_unpack_name};
 pub(crate) use stmt::decl::call_assign_invocant;
 pub(crate) use stmt::decl::handle_specs_from_term;
+pub(crate) use stmt::decl::leading_version_pragma_end;
 pub(crate) use stmt::simple::superseded_declarator;
 pub(crate) use stmt::simple::{
     CanonicalScans, ExportedVar, canonical_export_scans, scanned_exported_types,
@@ -129,6 +131,7 @@ mod parse_result;
 mod pod_delimited;
 mod primary;
 mod quote_shadow;
+mod sink_describe;
 pub(crate) mod sink_warn;
 pub(crate) mod soft_sorry;
 mod stmt;
@@ -221,11 +224,6 @@ pub(crate) fn is_imported_function(name: &str) -> bool {
     stmt::simple::is_imported_function(name)
 }
 
-/// Whether the unit being parsed provides `name` at the parse position: it
-/// declares it (a routine, a type, an enum value, a term) or a `use` before it
-/// imports it. A parse-time `BEGIN` that names one is left to the prologue
-/// (ADR-17558 slice 5): none of them is bound before the unit's frame exists.
-// Cost: O(s), s = enclosing parse scopes.
 /// The key of a dynamic variable named `name` (`$*X`, `%*ENV`), in any of
 /// the spellings the tree uses (`*X`, `$*X`, `%*ENV`), with its sigil: `None`
 /// for any other name.
@@ -238,6 +236,18 @@ pub(crate) fn dynamic_var_key(name: &str) -> Option<String> {
     }
 }
 
+/// Whether the unit being parsed declares `name` at the parse position (a
+/// routine, a type, an enum value, a term), apart from what it imports.
+// Cost: O(s), s = enclosing parse scopes.
+pub(crate) fn unit_declares_name(name: &str) -> bool {
+    stmt::simple::is_declared_symbol_name(name)
+}
+
+/// Whether the unit being parsed provides `name` at the parse position: it
+/// declares it (a routine, a type, an enum value, a term) or a `use` before it
+/// imports it. A parse-time `BEGIN` that names one is left to the prologue
+/// (ADR-17558 slice 5): none of them is bound before the unit's frame exists.
+// Cost: O(s), s = enclosing parse scopes.
 pub(crate) fn unit_provides_name(name: &str) -> bool {
     stmt::simple::is_declared_symbol_name(name) || stmt::simple::is_imported_function(name)
 }
@@ -691,6 +701,7 @@ pub(crate) fn parse_fragment_unfinalized(
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     // See the matching call in `parse_program`.
     crate::opcode::note_dispatcher_mention(input);
+    crate::parser::static_outer_latch::note_mention(input);
     let saved_warnings = PARSE_WARNINGS.with(|w| std::mem::take(&mut *w.borrow_mut()));
     let saved_markers = VCS_CONFLICT_MARKERS.with(|m| std::mem::take(&mut *m.borrow_mut()));
     let saved_source_state = primary::snapshot_source_state();
@@ -715,11 +726,13 @@ pub(crate) fn parse_fragment_unfinalized(
     // A fragment is part of the enclosing unit: a `BEGIN` before it still
     // precedes the unit's later `use`s, and one inside it does too.
     let effects_were_seen = stmt::simple::take_unit_effects_seen();
+    let parse_time_uses = stmt::simple::take_parse_time_uses();
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(true));
     FRAGMENT_DEPTH.with(|depth| depth.set(depth.get() + 1));
     let result = parse_program_unfinalized(input);
     FRAGMENT_DEPTH.with(|depth| depth.set(depth.get() - 1));
     SUPPRESS_SINK_WARNINGS.with(|f| f.set(false));
+    stmt::simple::restore_parse_time_uses(parse_time_uses);
     let (begin_now, prologue_now) = stmt::simple::take_unit_effects_seen();
     stmt::simple::restore_unit_effects_seen((
         effects_were_seen.0 || begin_now,
@@ -762,6 +775,24 @@ pub(super) fn add_parse_warning(msg: String, line: i64) {
     let tagged = format!("{msg}\n    at {display_file}:{line}");
     PARSE_WARNINGS.with(|w| w.borrow_mut().push((file, tagged)));
 }
+
+/// [`add_parse_warning`] for one of rakudo's "Potential difficulties": the
+/// worry is listed under that header, with its location and, when known, the
+/// `------>` line pointing at the construct (`pointer`).
+// Cost: O(m), m = the message's length.
+pub(super) fn add_parse_worry(msg: String, line: i64, pointer: Option<String>) {
+    let file = stmt::simple::parser_source_file();
+    let display_file = file.as_deref().unwrap_or("-e");
+    let mut tagged = format!("{WORRY_HEADER}\n    {msg}\n    at {display_file}:{line}");
+    if let Some(pointer) = pointer {
+        tagged.push_str("\n    ------> ");
+        tagged.push_str(&pointer);
+    }
+    PARSE_WARNINGS.with(|w| w.borrow_mut().push((file, tagged)));
+}
+
+/// The header rakudo lists a unit's compile-time worries under.
+pub(crate) const WORRY_HEADER: &str = "Potential difficulties:";
 
 /// The parse warnings `f` adds, taken back out of the unit's list so the
 /// caller can publish them later (`unit_passes`).
@@ -1365,6 +1396,7 @@ pub(crate) fn parse_program_unfinalized(
     // reach the constant-pool check after its first call already skipped
     // the frame). See `opcode::dispatcher_possible`.
     crate::opcode::note_dispatcher_mention(input);
+    crate::parser::static_outer_latch::note_mention(input);
     // Clear any stale parse warnings from previous/backtracked parses
     PARSE_WARNINGS.with(|w| w.borrow_mut().clear());
     VCS_CONFLICT_MARKERS.with(|m| m.borrow_mut().clear());

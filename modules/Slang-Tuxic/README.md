@@ -38,7 +38,7 @@ COPYRIGHT AND LICENSE
 
 Copyright 2014 - 2018 Tobias Leich
 
-Copyright 2023 - 2025 Raku Community
+Copyright 2023 - 2026 Raku Community
 
 This library is free software; you can redistribute it and/or modify it under the Artistic License 2.0.
 

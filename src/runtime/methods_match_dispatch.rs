@@ -123,14 +123,17 @@ impl Interpreter {
         };
         if global || overlap || exhaustive || repeat_bounds.is_some() || nth_arg.is_some() {
             self.reset_capture_env_vars();
+            // `:c(N)` / `:pos(N)` start the scan at N; `:pos` also anchors the
+            // first match there, and the later ones continue after it (#18883).
+            let scan_from = continue_pos.or(anchored_pos).unwrap_or(0);
             let mut selected = if exhaustive {
                 // :exhaustive keeps every possible match, ordered by start
                 // position ascending and, at each position, longest first.
-                let mut all = self.regex_match_all_with_captures(&pat, &text);
+                let mut all = self.regex_match_all_with_captures_from(&pat, &text, scan_from);
                 all.sort_by(|a, b| a.from.cmp(&b.from).then(b.to.cmp(&a.to)));
                 all
             } else if overlap {
-                let all = self.regex_match_all_with_captures(&pat, &text);
+                let all = self.regex_match_all_with_captures_from(&pat, &text, scan_from);
                 let mut best_by_start: std::collections::BTreeMap<usize, RegexCaptures> =
                     std::collections::BTreeMap::new();
                 for capture in all {
@@ -150,8 +153,14 @@ impl Interpreter {
                 // The scan skips a start a previously accepted match already
                 // covers, so the pattern is never run for a match that would be
                 // discarded (a `{ ... }` block in it would have run anyway).
-                self.regex_match_non_overlapping(&pat, &text)
+                self.regex_match_non_overlapping_from(&pat, &text, scan_from)
             };
+            if continue_pos.is_none()
+                && let Some(pos) = anchored_pos
+                && selected.first().is_some_and(|first| first.from != pos)
+            {
+                selected.clear();
+            }
             // A Callable `:nth` stands for its answer from here on, so a
             // single-index answer yields a single Match.
             if let Some(nth_val) = nth_arg.take() {

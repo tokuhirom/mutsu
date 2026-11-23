@@ -25,7 +25,7 @@
 #                   repo root; `-` means none
 name	bundled_lib	test_url	commit	test_glob	extra_includes
 zef	vendor/zef/lib	https://github.com/ugexe/zef.git	0aa54f53b55662d3a7a3b89981d34b9de97422f1	t/*.rakutest	{clone}/t/lib
-OpenSSL	modules/OpenSSL/lib	https://github.com/raku-community-modules/OpenSSL.git	8dda81950edba943d1acf3f800e01633227d3e04	t/*.rakutest	-
+OpenSSL	modules/OpenSSL/lib	https://github.com/raku-community-modules/OpenSSL.git	aab471d3902bb99b35f3f3b398eef1d42e25347b	t/*.rakutest	-
 IO::Socket::SSL	modules/IO-Socket-SSL/lib	https://github.com/raku-community-modules/IO-Socket-SSL.git	353ef4f58da07cb141715d6baa95de5d36d1e26a	t/*.rakutest	modules/OpenSSL/lib
 URI	modules/URI/lib	https://github.com/raku-community-modules/URI.git	f44892483b074a88ce76ae7f2d714df04ccd8eef	t/*.rakutest	{clone}/t/lib
 MIME::Base64	modules/MIME-Base64/lib	https://github.com/raku-community-modules/MIME-Base64.git	7964e26f72e90a25f3f2a08ed3f405466ce8d720	t/*.rakutest	-
@@ -35,13 +35,13 @@ Encode	modules/Encode/lib	https://github.com/sergot/perl6-encode.git	f61acc36653
 File::Directory::Tree	modules/File-Directory-Tree/lib	https://github.com/raku-community-modules/File-Directory-Tree.git	b34d800a087b5813a978151c4ce91d7e39ecc277	t/*.rakutest	-
 File::Temp	modules/File-Temp/lib	https://github.com/raku-community-modules/File-Temp.git	ad3445e0776df4685a970968fd0a4392d35e9ee1	t/*.rakutest	modules/File-Directory-Tree/lib
 Test::Util::ServerPort	modules/Test-Util-ServerPort/lib	https://github.com/jonathanstowe/Test-Util-ServerPort.git	f76789850998c299034afa665d2c5bb662bbb2e5	t/*.t	-
-Template::Mustache	modules/Template-Mustache/lib	https://github.com/raku-community-modules/Template-Mustache.git	27f3e862d1060c60042956b852cf39dc183b56a5	t/*.rakutest	{clone}/t/lib
+Template::Mustache	modules/Template-Mustache/lib	https://github.com/raku-community-modules/Template-Mustache.git	642eafe69f88bab0dcad290d7187282b0a8585b7	t/*.rakutest	{clone}/t/lib
 HTTP::UserAgent	modules/HTTP-UserAgent/lib	https://github.com/raku-community-modules/HTTP-UserAgent.git	1d6a31a0656a422524c266831f3d27bd62a3e3d7	t/*.rakutest	{clone}/t/lib
 YAMLish	modules/YAMLish/lib	https://github.com/Leont/yamlish.git	2a1d04ab7098e9ea0491ff8d1907fd868f938e62	t/*.rakutest	modules/MIME-Base64/lib
 NativeLibs	modules/NativeLibs/lib	https://github.com/salortiz/NativeLibs.git	f3e78510702af0eeb49b4418dc59008ff4f8cd1b	t/*.t	-
-NativeHelpers::Blob	modules/NativeHelpers-Blob/lib	https://github.com/salortiz/NativeHelpers-Blob.git	54ac6ddf7f557018a54974692a0a97a2b0aca11b	t/*.t	-
-DBIish	modules/DBIish/lib	https://github.com/raku-community-modules/DBIish.git	34f77e7f1581a67d544f88aa2f10fa90cb3df1b4	t/*.rakutest	modules/NativeLibs/lib,modules/NativeHelpers-Blob/lib
-if	modules/if/lib	https://github.com/raku-community-modules/if.git	34423f51486692f02dcf71f5129c1959cedbb0a2	t/*.rakutest	-
+NativeHelpers::Blob	modules/NativeHelpers-Blob/lib	https://github.com/raku-community-modules/NativeHelpers-Blob.git	cec918868916893ee0866d49c0f86e601465da3d	t/*.rakutest	-
+DBIish	modules/DBIish/lib	https://github.com/raku-community-modules/DBIish.git	1af110d88e6fa0929700dd74273cd5e4db25a3a9	t/*.rakutest	modules/NativeLibs/lib,modules/NativeHelpers-Blob/lib
+if	modules/if/lib	https://github.com/raku-community-modules/if.git	d97707f3e539bf5272c8f845ede19d7fefb3e95c	t/*.rakutest	-
 Crypt::Random	modules/Crypt-Random/lib	https://github.com/skinkade/crypt-random.git	c1bf9393ab736ac5e5de2d0c3f56078c178cc071	t/*.t	-
 IO::Path::ChildSecure	modules/IO-Path-ChildSecure/lib	https://github.com/raku-community-modules/IO-Path-ChildSecure.git	9f01c370ba0a15a6841113437e14c9f3bf39b015	t/*.rakutest	-
 Base64	modules/Base64/lib	https://github.com/ugexe/Raku-Base64.git	681a50faebcea1aaa5856051ef4a6e2267fcd6d8	t/*.rakutest	-
@@ -49,8 +49,8 @@ HTTP::HPACK	modules/HTTP-HPACK/lib	https://github.com/jnthn/p6-http-hpack.git	c5
 OO::Monitors	modules/OO-Monitors/lib	https://github.com/jnthn/oo-monitors.git	5f3af495443771b70d3c626d5cecb9ba7f9f3272	t/*.rakutest	-
 Digest	modules/Digest/lib	https://github.com/grondilu/libdigest-raku.git	2870e6581dab36cf895c1d31898cde925c8763f1	t/*.t	-
 Digest::HMAC	modules/Digest-HMAC/lib	https://github.com/JJ/Raku-Digest-HMAC.git	9bae022a49c14ab92a059d7a0d5aa95c4026c27f	t/*.t	modules/Digest/lib
-Slangify	modules/Slangify/lib	https://github.com/lizmat/Slangify.git	2a1a52322a2c66e38e7356b3030088571135e8bb	t/*.rakutest	{clone}/t
-Slang::Tuxic	modules/Slang-Tuxic/lib	https://github.com/raku-community-modules/Slang-Tuxic.git	e8d5ca34c3d33659f19daa175bb37d3ebb3438c9	t/*.rakutest	modules/Slangify/lib
+Slangify	modules/Slangify/lib	https://github.com/lizmat/Slangify.git	471f23d5ab20ad71e3732199a4bb7d2498bdddf2	t/*.rakutest	{clone}/t
+Slang::Tuxic	modules/Slang-Tuxic/lib	https://github.com/raku-community-modules/Slang-Tuxic.git	d6b458ce7777f08ec32b783ef31e4210f8d8f26c	t/*.rakutest	modules/Slangify/lib
 Text::CSV	modules/Text-CSV/lib	https://github.com/Tux/CSV.git	4e4ed4151dddc27583caf86f375bfc005d14c5be	t/*.t	modules/Slang-Tuxic/lib,modules/Slangify/lib,modules/File-Temp/lib,modules/File-Directory-Tree/lib
 TinyFloats	modules/TinyFloats/lib	https://github.com/japhb/TinyFloats.git	ee901975aca54e2bbf3af01c1f85e2b307ad2a55	t/*.rakutest	-
 CBOR::Simple	modules/CBOR-Simple/lib	https://github.com/japhb/CBOR-Simple.git	48104256cee6e10cc88bb07e2a643ea2ef5d1d6a	t/*.rakutest	modules/TinyFloats/lib
@@ -61,7 +61,7 @@ JSON::JWT	modules/JSON-JWT/lib	https://github.com/raku-community-modules/JSON-JW
 Log::Timeline	modules/Log-Timeline/lib	https://github.com/raku-community-modules/Log-Timeline.git	1d9dd580aa6af97e7603c044b3e741a7b1a94f0e	t/*.rakutest	modules/CBOR-Simple/lib,modules/TinyFloats/lib
 Cro::HTTP	modules/Cro-HTTP/lib	https://github.com/croservices/cro-http.git	6238e7539c32bd0e8b7962d38d778906af41f0a2	t/*.rakutest,t/*.t	modules/Cro-Core/lib,modules/Cro-TLS/lib,modules/IO-Socket-Async-SSL/lib,modules/OO-Monitors/lib,modules/IO-Path-ChildSecure/lib,modules/Base64/lib,modules/HTTP-HPACK/lib,modules/Crypt-Random/lib,modules/JSON-JWT/lib,modules/DateTime-Parse/lib,modules/Log-Timeline/lib,modules/CBOR-Simple/lib,modules/TinyFloats/lib,modules/OpenSSL/lib,modules/MIME-Base64/lib,modules/Digest-HMAC/lib,modules/Digest/lib
 JSON::Tiny	modules/JSON-Tiny/lib	https://github.com/moritz/json.git	a5ef8c179350dae44ce7fb1abb684fc62c1c2b99	t/*.t	-
-JSON::Fast	modules/JSON-Fast/lib	https://github.com/timo/json_fast.git	72af212130f190443028e5a6b23827445c95559f	t/*.t	-
+JSON::Fast	modules/JSON-Fast/lib	https://github.com/timo/json_fast.git	a06a1f4976cd296e22a55375cf96d20f3278c799	t/*.t	-
 UUID	modules/UUID/lib	https://github.com/retupmoca/P6-UUID.git	26cb869622057da286b1b60780ee39e3b4ece0a4	t/*.t	-
 Terminal::ANSI	modules/Terminal-ANSI/lib	https://git.sr.ht/~bduggan/raku-terminal-ansi	691d0959ff8ea0a7c491167b366746cdfc0fb0be	t/*.rakutest	modules/OO-Monitors/lib
 Log::Async	modules/Log-Async/lib	https://github.com/bduggan/raku-log-async.git	c238fc014bacf7a44a4e4a5b194695eab89e11e8	t/*.rakutest	modules/Terminal-ANSI/lib,modules/OO-Monitors/lib

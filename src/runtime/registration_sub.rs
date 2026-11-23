@@ -2573,14 +2573,20 @@ impl Interpreter {
                 "",
             ]))
             .is_some();
+        let mut removed: Vec<Symbol> = Vec::new();
         self.routines_mut()
             .functions_mut()
             .retain(|existing, _def| {
                 let resolved = existing.resolve();
-                resolved != key && (!resolved.starts_with(&prefix) || has_inline_markers)
+                let keep = resolved != key && (!resolved.starts_with(&prefix) || has_inline_markers);
+                if !keep {
+                    removed.push(*existing);
+                }
+                keep
             });
-        // Invalidate name-keyed resolution caches.
-        self.invalidate_fn_resolution();
+        // Invalidate name-keyed resolution caches; the base-name key index
+        // drops only the candidates removed (#12026).
+        self.invalidate_fn_resolution_changing_keys(removed);
         self.routines_mut().proto_subs_insert(key);
         let fq = self.current_package_qualified(name).to_string();
         // `proto bar {*}` declares an empty signature; record it so dispatch

@@ -11,7 +11,7 @@ sub capture($code) {
 }
 
 role TaggedStr {
-    method Str() { "tagged:{self.Numeric}" }
+    method Str() { "tagged:{self + 0}" }
 }
 
 my $mixed = 5 but TaggedStr;

@@ -1195,8 +1195,10 @@ jobs:
         run: |
           cargo miri test --no-default-features --features native \
             --lib value::cell_publish -- --test-threads=1
+          # ADR-18752's shared-side stores ride on the snapshot run: a second
+          # filter costs ~12 s, a separate invocation ~34 s of Miri startup.
           cargo miri test --no-default-features --features native \
-            --lib value::cell_snapshot -- --test-threads=1
+            --lib -- --test-threads=1 value::cell_snapshot value::array_shared_store
 
   wasm-e2e:
     # POST-MERGE ONLY (ADR-11581): runs on `main` (hourly) and in the release gate

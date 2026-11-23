@@ -220,6 +220,24 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("X::Str::Match::x"), attrs)
     }
 
+    /// `X::Str::Subst::Adverb`: `Str.subst` given `:ov` / `:ex` (`name`),
+    /// with the value it got (#18897).
+    // Cost: O(1).
+    pub(in crate::runtime) fn str_subst_adverb_error(name: &str, got: &Value) -> RuntimeError {
+        let mut attrs = std::collections::HashMap::new();
+        attrs.insert("name".to_string(), Value::str(name.to_string()));
+        attrs.insert("got".to_string(), got.clone());
+        let message = format!(
+            "Cannot use :{name} adverb in Str.subst, got {}",
+            got.to_string_value()
+        );
+        attrs.insert("message".to_string(), Value::str(message));
+        RuntimeError::from_exception_value(Value::make_instance(
+            Symbol::intern("X::Str::Subst::Adverb"),
+            attrs,
+        ))
+    }
+
     /// Build the X::Str::Match::x error for an invalid `:x` adverb value.
     pub(in crate::runtime) fn str_match_x_error(got: &Value) -> RuntimeError {
         RuntimeError::from_exception_value(Self::str_match_x_exception(got))

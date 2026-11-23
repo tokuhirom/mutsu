@@ -1,7 +1,7 @@
 # Battery: the `if` pragma — conditional module loading
 
 **Slot:** conditional `use` (`use Foo:if(EXPR)`) · **Chosen:** `if` (upstream
-`zef:raku-community-modules`, v0.1.5, Artistic-2.0) · **Kind:** Bundled, run
+`zef:raku-community-modules`, v0.1.6, Artistic-2.0) · **Kind:** Bundled, run
 verbatim (`modules/if/`) · **Decision record:**
 [ADR-0098](../adr/0098-if-pragma-actions-slang.md)
 
@@ -22,7 +22,7 @@ string, or a module that merely imports one that uses it, does not inherit it.
 Without the pragma, `:if(...)` is just an unrecognized `use` adverb: it selects
 nothing and the module is loaded anyway.
 
-It is one 93-line file with **no dependencies**, and eighteen distributions in
+It is one 111-line file with **no dependencies**, and eighteen distributions in
 the `ecosystem/` parity corpus depend on it — among them `Cro::HTTP` and
 `Cro::WebSocket` (through `Crypt::Random`), which puts much of the web half of
 the ecosystem behind it.
@@ -64,9 +64,10 @@ the actions half too, where an override is a **method** (an actions class has
 one method per production) rather than a `token`. The name
 `statement-control:sym<use>` maps onto the unit-scoped `use_if_adverb` parser
 mode, exactly as `term:sym<identifier>` maps onto Tuxic's spaced-call mode. The
-method *body* — `RakuAST::BeginTime.IMPL-BEGIN-TIME-EVALUATE`, `$/.panic`,
-`nextsame` — is Rakudo's own actions surface and is never executed, per
-ADR-0026 §4.
+method *body* — since 0.1.6 a `RakuAST::Block` wrapped around the adverb's
+expression and run through `to-begin-time` / `meta-object` (0.1.5 called
+`RakuAST::BeginTime.IMPL-BEGIN-TIME-EVALUATE`), `$/.panic`, `nextsame` — is
+Rakudo's own actions surface and is never executed, per ADR-0026 §4.
 
 Pinned by `t/modules/import-export/use-if-pragma.t`, which passes 9/9 under
 `RAKUDO_RAKUAST=1` as well (8/9 under rakudo's legacy frontend — the one
@@ -95,8 +96,8 @@ difference is the deliberately mutsu-specific `Raku.legacy` assertion).
 | | |
 | --- | --- |
 | Upstream | <https://github.com/raku-community-modules/if.git> |
-| Version | 0.1.5 |
-| Commit | `34423f51486692f02dcf71f5129c1959cedbb0a2` (tag `0.1.5`) |
+| Version | 0.1.6 |
+| Commit | `d97707f3e539bf5272c8f845ede19d7fefb3e95c` (tag `0.1.6`) |
 | License | Artistic-2.0 (`modules/if/LICENSE`) |
 | Author | Tobias Leich, `auth<zef:raku-community-modules>` |
 | Bundled at | `modules/if/` (resolved as `modules/if/lib`) |

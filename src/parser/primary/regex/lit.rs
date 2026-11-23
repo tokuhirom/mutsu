@@ -489,10 +489,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                     pattern,
                                     String::new(),
                                     &adverbs,
-                                    Some(Box::new(SubstThunk {
-                                        expr: replacement_expr,
-                                        infix: None,
-                                    })),
+                                    Some(Box::new(SubstThunk::assign(replacement_expr))),
                                 ),
                             ));
                         }
@@ -609,6 +606,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                         let thunk = SubstThunk {
                             expr: subst_compound_thunk(op_str, rhs_expr),
                             infix: Some(op_str.into()),
+                            item: false,
                         };
                         return Ok((
                             rest,
@@ -655,10 +653,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 pattern,
                                 String::new(),
                                 &adverbs,
-                                Some(Box::new(SubstThunk {
-                                    expr: replacement_expr,
-                                    infix: None,
-                                })),
+                                Some(Box::new(SubstThunk::assign(replacement_expr))),
                             ),
                         ));
                     }
@@ -773,10 +768,7 @@ pub(in crate::parser) fn regex_lit(input: &str) -> PResult<'_, Expr> {
                                 pattern,
                                 String::new(),
                                 &adverbs,
-                                Some(Box::new(SubstThunk {
-                                    expr: replacement_expr,
-                                    infix: None,
-                                })),
+                                Some(Box::new(SubstThunk::assign(replacement_expr))),
                             ),
                         ));
                     }

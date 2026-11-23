@@ -388,6 +388,15 @@ impl Interpreter {
                     return Some(Some(self.resolve_code_var(qualified.as_str())));
                 }
             }
+            // An `our sub` another thread declared lives only in the world
+            // table (ADR-17216); the whole-stash build lists it too.
+            drop(registry);
+            for (name, def) in self.published_routines_not_local(Some(&candidates)) {
+                if self.routine_stash_member(name.as_str(), &package_name, true) == Some(bare) {
+                    let qualified = crate::qualified::qualified(def.package, def.name);
+                    return Some(Some(self.resolve_code_var(qualified.as_str())));
+                }
+            }
         }
 
         // 1. The env (the first tier for keys without a declared routine).

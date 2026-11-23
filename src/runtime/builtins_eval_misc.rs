@@ -654,15 +654,23 @@ impl Interpreter {
         if let Err(ref mut e) = result
             && e.code().is_some_and(|c| c.is_parse())
         {
-            match e.exception.as_ref().map(|exc| exc.view()) {
-                Some(ValueView::Instance { attributes, .. }) => {
-                    attributes
-                        .insert_if_absent("filename".to_string(), Value::str(unit_name.clone()));
-                    attributes.insert_if_absent("file".to_string(), Value::str(unit_name));
-                }
-                Some(_) => {}
-                None if e.source_file().is_none() => e.set_source_file(unit_name),
-                None => {}
+            // An uncaught report renders the failure against the unit that
+            // failed to parse -- its name, and its text for the `------>`
+            // excerpt -- not against the calling file (#18870). A failure
+            // inside a module the EVAL'd code `use`d already names its own.
+            // rakudo compiles the unit under its name joined onto `$*CWD`
+            // (`/home/me/EVAL_0`, while `$?FILE` stays `EVAL_0`); the report
+            // and the exception's `.filename` name it so.
+            let compile_name = self.absolutify_unit_name(&unit_name);
+            if e.source_text().is_none() {
+                e.set_source_file_text(compile_name.clone(), code.to_string());
+            }
+            if let Some(ValueView::Instance { attributes, .. }) =
+                e.exception.as_ref().map(|exc| exc.view())
+            {
+                attributes
+                    .insert_if_absent("filename".to_string(), Value::str(compile_name.clone()));
+                attributes.insert_if_absent("file".to_string(), Value::str(compile_name));
             }
         }
         crate::parser::set_parser_source_file(saved_source_file);

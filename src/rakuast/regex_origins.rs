@@ -59,6 +59,7 @@ pub(super) fn walk_body(names: &NameScope, regex: &mut RakuAstNode, body: SrcSpa
         at: 0,
     };
     walk.blank();
+    walk.leader(regex);
     walk.place(names, regex);
 }
 
@@ -77,6 +78,28 @@ impl Walk<'_> {
     fn blank(&mut self) {
         let rest = &self.text[self.at..];
         self.at += rest.len() - rest.trim_start().len();
+    }
+
+    /// Skip the `|`, `||`, `&` or `&&` a regex body or group may open with
+    /// before `first`, its first node: rakudo places what follows it, except
+    /// that an alternation starts at its own leading separator.
+    // Cost: O(w), w = whitespace skipped.
+    fn leader(&mut self, first: &RakuAstNode) {
+        if matches!(
+            first.class,
+            RakuAstClass::RegexAlternation | RakuAstClass::RegexSequentialAlternation
+        ) {
+            return;
+        }
+        let rest = &self.text[self.at..];
+        let len = ["||", "&&", "|", "&"]
+            .into_iter()
+            .find(|leader| rest.starts_with(leader))
+            .map_or(0, str::len);
+        if len > 0 {
+            self.at += len;
+            self.blank();
+        }
     }
 
     /// Consume `spelling` when it is at the cursor.
@@ -110,6 +133,10 @@ impl Walk<'_> {
                 } else {
                     "||"
                 };
+                // `[ | a | b ]`: a leading separator is part of the alternation.
+                if self.eat(separator).is_some() {
+                    self.blank();
+                }
                 let count = node.fields.len();
                 for i in 0..count {
                     if i > 0 {
@@ -119,6 +146,13 @@ impl Walk<'_> {
                             return None;
                         }
                         self.blank();
+                        // `a |& b`: a branch may open with a conjunction.
+                        if self.text[self.at..].starts_with('&')
+                            && !self.text[self.at..].starts_with("&&")
+                        {
+                            self.at += 1;
+                            self.blank();
+                        }
                     }
                     self.child_at(names, node, i)?;
                 }
@@ -136,6 +170,11 @@ impl Walk<'_> {
             RakuAstClass::RegexQuantifiedAtom => self.quantified(names, node)?,
             RakuAstClass::RegexCharClass(_) => {
                 self.eat(&super::regex_char_class::written(node)?)?
+            }
+            // `$0`, `$٠`: the index in any script's digits.
+            RakuAstClass::RegexBackReferencePositional => {
+                self.at +=
+                    super::regex_modifier_origins::backreference_len(node, &self.text[self.at..])?
             }
             RakuAstClass::RegexAssertionPass => self.eat("<?>")?,
             RakuAstClass::RegexAssertionFail => self.eat("<!>")?,
@@ -280,6 +319,11 @@ impl Walk<'_> {
     ) -> Option<()> {
         self.eat(open)?;
         self.blank();
+        if let Some(RakuAstFieldValue::Node(held)) = node.fields.first().map(|f| &f.value)
+            && let ValueView::RakuAst(inner) = held.view()
+        {
+            self.leader(inner);
+        }
         self.child_at(names, node, 0)?;
         self.blank();
         self.eat(close)
@@ -345,7 +389,7 @@ impl Walk<'_> {
             return self.separator(names, node);
         }
         let lowered = super::regex_quantifier::lower_quantifier(names, quantifier)?;
-        let range;
+        let quantifier_at = self.at;
         let spelling = match lowered.kind {
             crate::regex_tree::QuantifierKind::ZeroOrMore => "*",
             crate::regex_tree::QuantifierKind::OneOrMore => "+",
@@ -356,20 +400,23 @@ impl Walk<'_> {
                 excludes_min: false,
                 excludes_max: false,
             } => {
-                range = self.range_spelling(min, max)?;
-                range.as_str()
+                self.at += super::regex_modifier_origins::range_len(
+                    &self.text[self.at..],
+                    min,
+                    max,
+                    lowered.backtrack,
+                )?;
+                ""
             }
             _ => return None,
         };
-        let backtrack = match lowered.backtrack {
-            None => "",
-            Some(crate::regex_tree::RegexBacktrack::Frugal) => "?",
-            Some(crate::regex_tree::RegexBacktrack::Greedy) => "!",
-            Some(crate::regex_tree::RegexBacktrack::Ratchet) => ":",
-        };
-        let quantifier_at = self.at;
-        self.eat(spelling)?;
-        self.eat(backtrack)?;
+        if !spelling.is_empty() {
+            self.eat(spelling)?;
+            self.at += super::regex_modifier_origins::backtrack_len(
+                lowered.backtrack,
+                &self.text[self.at..],
+            )?;
+        }
         let quantifier_span = SrcSpan::new(self.base + quantifier_at, self.base + self.at);
         super::infix_origins::with_child(node, "quantifier", |q| {
             super::origin::set_span(q, quantifier_span)
@@ -407,24 +454,6 @@ impl Walk<'_> {
     fn code(&mut self, names: &NameScope, node: &mut RakuAstNode, field: &str) -> Option<()> {
         let index = node.fields.iter().position(|f| f.name == Some(field))?;
         self.code_at(names, node, index)
-    }
-
-    /// How a `** min..max` quantifier at the cursor is written, when it is
-    /// written with these bounds: `**2`, `** 1..3`, `**2..*`.
-    // Cost: O(n), n = length of the quantifier.
-    fn range_spelling(&self, min: u64, max: Option<u64>) -> Option<String> {
-        let rest = self.text[self.at..].strip_prefix("**")?;
-        let gap = rest.len() - rest.trim_start().len();
-        let bounds = match max {
-            Some(max) if max == min && !rest[gap..].starts_with(&format!("{min}..")) => {
-                min.to_string()
-            }
-            Some(max) => format!("{min}..{max}"),
-            None => format!("{min}..*"),
-        };
-        rest[gap..]
-            .starts_with(&bounds)
-            .then(|| format!("**{}{bounds}", &rest[..gap]))
     }
 
     /// A literal: its text, each non-word character written as itself or

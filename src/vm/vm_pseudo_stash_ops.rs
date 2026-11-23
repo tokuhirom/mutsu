@@ -276,7 +276,9 @@ impl Interpreter {
             && let ValueView::Str(key_str) = key.deref_container().view()
             && matches!(key_str.as_str(), "CORE-SETTING-REV" | "$?PACKAGE")
         {
-            let (package, revision) = self.client_frame(code.source_file);
+            let (package, revision) = self
+                .client_code(code)
+                .unwrap_or_else(|| self.client_frame(code.source_file));
             let value = if key_str.as_str() == "$?PACKAGE" {
                 Value::package(package)
             } else {

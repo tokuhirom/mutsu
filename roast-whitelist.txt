@@ -1,8 +1,10 @@
+roast/6.c/APPENDICES/A03-older-specs/01-misc.t
 roast/6.c/APPENDICES/A04-experimental/01-misc.t
 roast/6.c/MISC/bug-coverage-stress.t
 roast/6.c/MISC/bug-coverage.t
 roast/6.c/MISC/misc-6.c.t
 roast/6.c/S02-names/SETTING-6c.t
+roast/6.c/S02-names/pseudo-6c.t
 roast/6.c/S02-types/subset-6c.t
 roast/6.c/S03-operators/set_precedes.t
 roast/6.c/S04-declarations/my-6c.t
@@ -130,6 +132,8 @@ roast/S02-names/is_default.t
 roast/S02-names/is_dynamic.t
 roast/S02-names/name.t
 roast/S02-names/our.t
+roast/S02-names/pseudo-6d.t
+roast/S02-names/pseudo-6e.t
 roast/S02-names/strict.t
 roast/S02-names/symbolic-deref.t
 roast/S02-one-pass-parsing/less-than.t

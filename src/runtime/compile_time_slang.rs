@@ -8,9 +8,9 @@
 //! and the `EXPORTHOW` declarators the hook bound — is kept per `use`
 //! ([`ParseTimeSlangActivation`]) for the parser to read.
 //!
-//! A slang whose productions run on a slang host (ADR-15762) still gets that
-//! host from the activation interpreter (`slang_activation.rs`) until the
-//! host's hooks run on this interpreter too.
+//! A slang whose productions run on a slang host (ADR-15762) is hosted by this
+//! interpreter too (slice 4b, `slang_host_inline.rs`): its hooks run here
+//! through the compile-time loader.
 
 use super::regex_grammar_state::ParseTimeSlangActivation;
 use super::*;
@@ -29,6 +29,8 @@ impl Interpreter {
         load: impl FnOnce(&mut Self) -> Result<(), RuntimeError>,
     ) -> Result<(), RuntimeError> {
         let rules_before = self.regex_state.defined_slang_rules.len();
+        let grammar_roles_before = self.regex_state.slang_grammar_roles.len();
+        let action_roles_before = self.regex_state.slang_action_roles.len();
         let declarators_before = self.regex_state.defined_slang_declarators.clone();
         let declares_before = self.exporthow_stash_keywords("DECLARE");
         let supersedes_before = self.exporthow_stash_keywords("SUPERSEDE");
@@ -51,14 +53,25 @@ impl Interpreter {
             }
         }
         result?;
-        let rules = self.regex_state.defined_slang_rules[rules_before..].to_vec();
-        // A production a slang host has to run cannot be answered here yet.
-        let hooked = rules.iter().any(|rule| {
+        // What this load registered is this `use`'s alone: taken out, so an
+        // enclosing load (a module whose own compile `use`s this slang) does
+        // not count it as its own (#17267).
+        let rules = self.regex_state.defined_slang_rules.split_off(rules_before);
+        let grammar_roles = self.regex_state.slang_grammar_roles.split_off(grammar_roles_before);
+        let action_roles = self.regex_state.slang_action_roles.split_off(action_roles_before);
+        // A production a slang host has to run runs here, in this interpreter.
+        let hosted = rules.iter().any(|rule| {
             crate::parser::slang_hook_rule(&rule.name).is_some()
                 || crate::parser::slang_action_rule(&rule.name)
                 || crate::parser::slang_wrapper_rule(&rule.name)
         });
-        if hooked {
+        // TODO: a declarator production's action works on the code object or
+        // package it declares (`$method.meta-object does Tallied`, EEL's
+        // `pattern`, a `FOREIGN-LANG` package), which the unit builds only when
+        // it is compiled: until the parse's nodes carry the meta-objects the
+        // unit installs, such a slang keeps the activation interpreter's host,
+        // whose actions the unit replays against the real objects (ADR-17243).
+        if hosted && rules.iter().any(|rule| declares_through_host(&rule.name)) {
             return Ok(());
         }
         let mut declarators: Vec<_> = self
@@ -103,6 +116,9 @@ impl Interpreter {
                 rules,
                 declarators,
                 supersede_keywords,
+                hosted,
+                grammar_roles,
+                action_roles,
             });
         Ok(())
     }
@@ -125,8 +141,22 @@ impl Interpreter {
             rules: found.rules.clone(),
             declarators: found.declarators.clone(),
             supersede_keywords: found.supersede_keywords.clone(),
-            host: None,
+            host: found.hosted.then(|| {
+                crate::slang_link::in_process(found.grammar_roles.clone(), found.action_roles.clone())
+            }),
             exports: Vec::new(),
         })
     }
+}
+
+/// Whether `rule`, a production a slang overrides, is a declarator whose action
+/// the unit replays against the object it declares (`routine-declarator`,
+/// `scope-declarator`, `package-declarator`): see `load_activating_slang`.
+// Cost: O(n), n = length of `rule`.
+fn declares_through_host(rule: &str) -> bool {
+    let category = rule.split(':').next().unwrap_or(rule);
+    matches!(
+        category,
+        "routine-declarator" | "scope-declarator" | "package-declarator" | "package_declarator"
+    )
 }

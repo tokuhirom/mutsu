@@ -32,8 +32,6 @@ Complain whenever we find them, except for infix:<> and prefix:<>
 
 =end overview
 
-use experimental :rakuast;
-
 use Test;
 
 use RakuDoc::Test::Files;
@@ -105,7 +103,6 @@ sub walk($node) {
 }
 
 for @files -> $file {
-    %*ENV<RAKUDO_RAKUAST>=1;
     subtest $file => {
         for $file.IO.slurp.AST.rakudoc -> $pod {
             walk($pod);

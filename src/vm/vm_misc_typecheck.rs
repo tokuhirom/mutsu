@@ -544,6 +544,16 @@ impl Interpreter {
                     if let Some(err) = self.failure_to_runtime_error_if_unhandled(&value) {
                         return Err(err);
                     }
+                    // A typed array's constraint is its ELEMENT type: a lone
+                    // initializer value is its one element (`my Int @a = "x"`).
+                    if var_name.is_some_and(|name| name.starts_with('@')) {
+                        return Err(self.typed_array_element_error(
+                            var_name,
+                            base_constraint,
+                            constraint,
+                            &value,
+                        ));
+                    }
                     return Err(if let Some(var_name) = var_name {
                         if self.is_definite_constraint(constraint) {
                             crate::runtime::utils::definite_type_check_assignment_error(
@@ -679,6 +689,17 @@ impl Interpreter {
                 } else {
                     self.type_check_binding_failure(&reported, &value)
                 });
+            }
+            // A typed array's constraint is its ELEMENT type: a lone value
+            // initializing it (`my Int @a = "x"`) becomes its one element, and
+            // the refusal is the element's ("for an element of @a").
+            if var_name.is_some_and(|name| name.starts_with('@')) {
+                return Err(self.typed_array_element_error(
+                    var_name,
+                    base_constraint,
+                    &reported,
+                    &value,
+                ));
             }
             return Err(self.typecheck_assignment_failure(&reported, &value, var_name));
         }

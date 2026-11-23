@@ -381,7 +381,7 @@ fn assignment_error_with_message(
 fn type_check_element_error(var_name: &str, expected: &str, val: &Value, repr: &str) -> String {
     let display_name = format_var_name_for_error(var_name);
     let got_type = got_type_name(val);
-    if repr.is_empty() {
+    let mut msg = if repr.is_empty() {
         format!(
             "Type check failed for an element of {}; expected {} but got {}",
             display_name, expected, got_type
@@ -391,7 +391,13 @@ fn type_check_element_error(var_name: &str, expected: &str, val: &Value, repr: &
             "Type check failed for an element of {}; expected {} but got {} {}",
             display_name, expected, got_type, repr
         )
+    };
+    // The same hint an assignment gets when a `:D` element is handed its own
+    // type object (what `Nil` resets an undefaulted element to).
+    if is_nominal_type_object_of(expected, val) {
+        msg.push_str(" (perhaps Nil was assigned to a :D which had no default?)");
     }
+    msg
 }
 
 /// Build a structured X::TypeCheck::Assignment RuntimeError for element type

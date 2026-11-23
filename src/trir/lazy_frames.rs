@@ -103,31 +103,48 @@ const CORE_CREATE_TYPES: &[&str] = &[
 /// pushed. `p6scalarwithvalue` only wraps its value; every op of
 /// [`DATA_NQP_OPS`] qualifies when its operands are plain data. Anything else
 /// (`die`, `istype`, `create`, an op on a user object) is an observer.
-// Cost: O(a), a = operands (a table probe of the op id, a tag test per
+// Cost: O(a), a = operands (one indexed load for the op id, a tag test per
 // operand).
 pub(crate) fn nqp_op_never_observes(id: u16, args: &[crate::value::Value]) -> bool {
     use crate::value::ValueView;
-    static IDS: std::sync::OnceLock<(Vec<u16>, Option<u16>)> = std::sync::OnceLock::new();
-    let (data, wrap) = IDS.get_or_init(|| {
-        (
-            DATA_NQP_OPS
-                .iter()
-                .filter_map(|n| crate::nqp_op_ids::nqp_op_id(n))
-                .collect(),
-            crate::nqp_op_ids::nqp_op_id("p6scalarwithvalue"),
-        )
-    });
-    if *wrap == Some(id) {
-        return true;
+    /// What each op id is, built once: indexed by id, so the per-op check is
+    /// one load rather than a scan of [`DATA_NQP_OPS`] and a name compare.
+    #[derive(Clone, Copy, PartialEq)]
+    enum Class {
+        Observer,
+        Data,
+        Wrap,
+        Create,
     }
-    if crate::nqp_op_ids::nqp_op_name(id) == "create" {
-        return matches!(args, [v] if matches!(
+    static CLASSES: std::sync::OnceLock<Vec<Class>> = std::sync::OnceLock::new();
+    let classes = CLASSES.get_or_init(|| {
+        let mut classes = vec![Class::Observer; crate::nqp_op_ids::nqp_op_count()];
+        let mut set = |name: &str, class: Class| {
+            if let Some(slot) =
+                crate::nqp_op_ids::nqp_op_id(name).and_then(|id| classes.get_mut(usize::from(id)))
+            {
+                *slot = class;
+            }
+        };
+        for name in DATA_NQP_OPS {
+            set(name, Class::Data);
+        }
+        set("p6scalarwithvalue", Class::Wrap);
+        set("create", Class::Create);
+        classes
+    });
+    match classes
+        .get(usize::from(id))
+        .copied()
+        .unwrap_or(Class::Observer)
+    {
+        Class::Observer => false,
+        Class::Wrap => true,
+        Class::Create => matches!(args, [v] if matches!(
             v.view(),
             ValueView::Package(name) if CORE_CREATE_TYPES.contains(&name.as_str())
-        ));
-    }
-    data.contains(&id)
-        && args.iter().all(|v| {
+        )),
+        Class::Data => args.iter().all(|v| {
             matches!(
                 v.view(),
                 ValueView::Int(_)
@@ -140,7 +157,8 @@ pub(crate) fn nqp_op_never_observes(id: u16, args: &[crate::value::Value]) -> bo
                     | ValueView::Hash(_)
                     | ValueView::Uni(_)
             )
-        })
+        }),
+    }
 }
 
 /// Whether inner TRIR calls push their entries lazily.

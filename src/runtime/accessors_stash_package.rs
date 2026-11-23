@@ -444,6 +444,12 @@ impl Interpreter {
                 .collect(),
         };
         drop(registry);
+        // An `our sub` another thread declared (`EVAL 'our sub f {...}'` on a
+        // worker) is a member of its package's stash on every thread
+        // (ADR-17216 §3.5): it is in the world routine map, not this thread's
+        // lexical routine table.
+        let mut functions = functions;
+        functions.extend(self.published_routines_not_local(candidates.as_deref()));
         // A loaded module's own routines are its importers' lexicals, never
         // `GLOBAL` members (#13802).
         let module_units = (pkg_is_global && !module_merges).then(|| self.loaded_module_units());

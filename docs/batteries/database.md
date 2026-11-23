@@ -1,7 +1,7 @@
 # Battery: database layer — `DBIish` (SQLite)
 
 **Slot:** Database / persistence · **Chosen:** `DBIish`
-(`auth<zef:raku-community-modules>`, v0.6.8, BSD-2-Clause) · **Kind:** Adopted
+(`auth<zef:raku-community-modules>`, v0.6.9, BSD-2-Clause) · **Kind:** Adopted
 (community module, to be vendored as-is) · **Yardstick:**
 [BATTERIES.md §2](../../BATTERIES.md#2-selection-criteria) — license (hard gate)
 → dependency weight → proven behaviour on mutsu → API fit → "a small web blog can
@@ -157,9 +157,9 @@ All three vendored trees are clear:
 
 | Dist | Declared where | License |
 | --- | --- | --- |
-| `DBIish` 0.6.8 | `META6.json` (`license` key; no separate `LICENSE` file upstream) | BSD-2-Clause |
+| `DBIish` 0.6.9 | `META6.json` (`license` key; no separate `LICENSE` file upstream) | BSD-2-Clause |
 | `NativeLibs` 0.0.9 | `META6.json` (`licence` key, British spelling; no separate `LICENSE` file upstream) | Artistic-2.0 |
-| `NativeHelpers::Blob` 0.1.9 | **`LICENSE` file** — `META6.json` has no `license`/`licence` key | Artistic-2.0 |
+| `NativeHelpers::Blob` 0.1.13 | **`LICENSE` file**, and since 0.1.13 (`auth<zef:raku-community-modules>`) also the `META6.json` `license` key | Artistic-2.0 |
 
 `NativeHelpers::Blob` ships the full Artistic-2.0 text with a copyright line
 ("Copyright (c) 2016 by Salvador Ortiz"), so it is declared *somewhere* and
@@ -209,7 +209,7 @@ since (ADR-0015; see `news/2026-08/nativehelpers-blob-parity-gaps-closed.md`).
 
 ```sh
 git clone https://github.com/raku-community-modules/DBIish.git /tmp/dbiish-src
-cd /tmp/dbiish-src && git checkout 0.6.8   # 34f77e7f1581a67d544f88aa2f10fa90cb3df1b4
+cd /tmp/dbiish-src && git checkout 0.6.9   # 1af110d88e6fa0929700dd74273cd5e4db25a3a9
 cp -r lib "$MUTSU_REPO/modules/DBIish/lib"
 cp Changes README.md META6.json "$MUTSU_REPO/modules/DBIish/"
 # (dist.ini, CREDITS, examples/, t/ are upstream-only; not vendored)
@@ -219,10 +219,11 @@ cd /tmp/nativelibs-src && git checkout v0.0.9   # f3e78510702af0eeb49b4418dc5900
 cp -r lib "$MUTSU_REPO/modules/NativeLibs/lib"
 cp README.md META6.json "$MUTSU_REPO/modules/NativeLibs/"
 
-git clone https://github.com/salortiz/NativeHelpers-Blob.git /tmp/nhb-src
-cd /tmp/nhb-src && git checkout 54ac6ddf7f557018a54974692a0a97a2b0aca11b  # matches META6 v0.1.9; untagged
+# Moved from salortiz/ to the raku-community-modules org (auth zef:) at 0.1.12.
+git clone https://github.com/raku-community-modules/NativeHelpers-Blob.git /tmp/nhb-src
+cd /tmp/nhb-src && git checkout 0.1.13   # cec918868916893ee0866d49c0f86e601465da3d
 cp -r lib "$MUTSU_REPO/modules/NativeHelpers-Blob/lib"
-cp README.md LICENSE META6.json "$MUTSU_REPO/modules/NativeHelpers-Blob/"
+cp Changes README.md LICENSE META6.json "$MUTSU_REPO/modules/NativeHelpers-Blob/"
 ```
 
 Then bump the three rows in [`batteries.lock`](../../batteries.lock) and

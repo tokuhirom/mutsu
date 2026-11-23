@@ -397,12 +397,19 @@ impl Interpreter {
             let Some(v) = found_val else {
                 if npb.required {
                     // Missing required named param => runtime X::AdHoc.
-                    bind_err = Some(RuntimeError::typed_msg(
+                    let err = RuntimeError::typed_msg(
                         "X::AdHoc",
                         format!(
                             "Required named parameter '{}' not passed",
                             cf.param_defs[i].name.trim_start_matches(['@', '%', '&'])
                         ),
+                    );
+                    bind_err = Some(self.enhance_binding_error_at_site(
+                        err,
+                        cf.package_sym(),
+                        func_name,
+                        &cf.param_defs,
+                        args,
                     ));
                     break 'bind;
                 }

@@ -551,8 +551,22 @@ pub(crate) fn phaser_stmt(input: &str) -> PResult<'_, Stmt> {
     // A unit-level `BEGIN` may run now, as on rakudo (ADR-17558 slice 5).
     if kind == PhaserKind::Begin {
         match super::begin_at_parse::run_unit_begin(&body, bare) {
-            super::begin_at_parse::UnitBegin::Ran => {
+            super::begin_at_parse::UnitBegin::Ran(replay) if replay.is_empty() => {
                 return block_phaser_modifier(rest, bare, Stmt::Block(Vec::new()));
+            }
+            // What it left in the unit's variables, for the prologue to write
+            // into them at this position (ADR-17558 §7.17).
+            super::begin_at_parse::UnitBegin::Ran(replay) => {
+                let replay = Stmt::Phaser {
+                    spans: None,
+                    kind: PhaserKind::Begin,
+                    body: replay,
+                    condition: None,
+                    end_index: None,
+                    bare: false,
+                    scope: 0,
+                };
+                return block_phaser_modifier(rest, bare, replay);
             }
             super::begin_at_parse::UnitBegin::Failed(message) => {
                 return Err(PError::fatal_at(message, input));

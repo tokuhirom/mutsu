@@ -121,6 +121,19 @@ pub(crate) enum BitOp {
     Xor,
 }
 
+/// `$a ?& $b`, `$a ?| $b`, `$a ?^ $b`: the operator over the operands'
+/// truthiness, as a `Bool`. The one implementation the opcodes and the
+/// reduction fold share.
+// Cost: O(1).
+pub(crate) fn bool_bitop(left: &Value, right: &Value, op: BitOp) -> Value {
+    let (l, r) = (left.truthy(), right.truthy());
+    Value::truth(match op {
+        BitOp::And => l & r,
+        BitOp::Or => l | r,
+        BitOp::Xor => l ^ r,
+    })
+}
+
 /// `$a +& $b`, `$a +| $b`, `$a +^ $b` on the operands' `Int` coercions; a
 /// non-numeric Str operand makes it an X::Str::Numeric `Failure`.
 ///

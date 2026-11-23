@@ -108,24 +108,21 @@ const SPECIAL_OPS: &[&str] = &["WHAT", "HOW", "WHO", "VAR", "WHERE", "REPR", "DE
 pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
     use RakuAstClass::*;
     match (node.class, method) {
-        // rakudo answers these through nqp integer comparisons: `0`/`1`, and
-        // `True` for an anonymous name (the last part's `is-empty`).
+        // rakudo 2026.11 answers the Name predicates with a Bool (#18976).
         (DocBlock | DocParagraph | DocMarkup | DocLegacyRow, "Str") => {
             Some(Value::str(super::doc_str::text(node)))
         }
         (Name, "is-empty") => {
             let parts = name_parts(node);
             let empty = parts.is_empty() || (parts.len() == 1 && is_empty_part(&parts[0]));
-            Some(Value::int(i64::from(empty)))
+            Some(Value::truth(empty))
         }
         (Name, "is-anonymous") => {
             // The name is just `::`.
             let parts = name_parts(node);
-            Some(if parts.len() == 2 && parts.iter().all(is_empty_part) {
-                Value::truth(true)
-            } else {
-                Value::int(0)
-            })
+            Some(Value::truth(
+                parts.len() == 2 && parts.iter().all(is_empty_part),
+            ))
         }
         (
             CallMethod | CallQuotedMethod | CallNameAsMethod | CallTermAsMethod | CallPrivateMethod,
@@ -301,11 +298,7 @@ pub(super) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
             let indirect = name_parts(node).iter().any(|part| {
                 matches!(part.view(), ValueView::RakuAst(n) if n.class == NamePartExpression)
             });
-            Some(if indirect {
-                Value::truth(true)
-            } else {
-                Value::package(crate::symbol::Symbol::intern("Mu"))
-            })
+            Some(Value::truth(indirect))
         }
         // `Term::Enum.from-identifier("Less")` keeps the identifier; rakudo
         // answers the Name.

@@ -39,6 +39,10 @@ struct Frame {
     parent: Option<usize>,
     /// The routines declared in this scope (outside any nested scope).
     routines: HashSet<String>,
+    /// A `use` in this scope imports names the walk cannot see: a call in it
+    /// (or in a scope nested in it) is not judged. The import is lexical, so
+    /// a call outside the scope still is (#13441).
+    opaque_imports: bool,
 }
 
 #[derive(Default)]
@@ -126,6 +130,11 @@ impl Scan {
     // Cost: O(v + f * r), v = `&name` references, f = frames, r = routines each.
     pub(super) fn adopt_code_vars(&mut self) {
         let code_vars = std::mem::take(&mut self.code_vars);
+        // A `&name` carries no scope here: with a `use` below the top level,
+        // one inside its scope may name what it imported (#13441).
+        if self.frames.iter().any(|f| f.opaque_imports) {
+            return;
+        }
         let saved_line = self.line;
         for (name, line) in code_vars {
             let declared_somewhere = self.declared.contains(&name)
@@ -148,7 +157,7 @@ impl Scan {
         self.calls.retain(|(name, _)| {
             let mut frame = call_frames.next().flatten();
             while let Some(i) = frame {
-                if frames[i].routines.contains(name) {
+                if frames[i].routines.contains(name) || frames[i].opaque_imports {
                     return false;
                 }
                 frame = frames[i].parent;
@@ -164,6 +173,7 @@ impl Scan {
         self.frames.push(Frame {
             parent,
             routines: HashSet::new(),
+            opaque_imports: false,
         });
         self.current = Some(self.frames.len() - 1);
         walk_stmt(self, stmt);
@@ -305,6 +315,7 @@ impl<'ast> Visit<'ast> for Scan {
         self.frames.push(Frame {
             parent,
             routines: HashSet::new(),
+            opaque_imports: false,
         });
         self.current = Some(self.frames.len() - 1);
         self.terms.push(HashSet::new());
@@ -328,7 +339,13 @@ impl<'ast> Visit<'ast> for Scan {
             Stmt::SetLine(n, _) => self.line = *n,
             Stmt::Use { module, .. } if !self.eval => {
                 if !conditional::imports_no_routines(module) {
-                    self.bail = true;
+                    // A `use` below the unit's top level imports into its own
+                    // statement list only: the calls there are not judged, the
+                    // rest of the unit still is (#13441).
+                    match self.current {
+                        Some(frame) => self.frames[frame].opaque_imports = true,
+                        None => self.bail = true,
+                    }
                 }
             }
             Stmt::No { .. } | Stmt::Need { .. } | Stmt::Import { .. } if !self.eval => {

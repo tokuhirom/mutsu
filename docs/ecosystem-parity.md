@@ -19,9 +19,10 @@ sides, and publish the difference.
   fix-versus-file-an-issue rule;
   [`.agents/skills/ecosystem-dist-queue/SKILL.md`](../.agents/skills/ecosystem-dist-queue/SKILL.md)
   wraps that in a fixed-order queue over every actionable record
-  (`scripts/ecosystem-tickets.py --queue`: most dependents first) plus a lock on
-  [#17702](https://github.com/tokuhirom/mutsu/issues/17702), so parallel agents
-  neither collide nor bias the work by cherry-picking cheap records.
+  (`scripts/ecosystem-tickets.py --queue`: most dependents first), each
+  distribution claimed through its tracking issue (an `eco-dist:` marker line),
+  so parallel agents neither collide nor bias the work by cherry-picking cheap
+  records.
 - **Sibling tools**: [docs/dist-compat-sweep.md](dist-compat-sweep.md) is the
   load-level (`use <module>`) diagnostic sampler that feeds root-cause tickets;
   [BATTERIES.md](../BATTERIES.md) / `scripts/battery-testsuite.sh` is the
@@ -100,7 +101,9 @@ Dist-level `status`: `green` · `partial` · `red` · `no_baseline` · `blocked_
 (a provided module does not even `use`) · `blocked_dep` (§3) · `skipped`.
 
 `ecosystem/exclude.txt` is orthogonal to `status` — a listed distribution keeps its record and its
-status — but it leaves the KPI: all three numbers above are computed without it, exactly as for a
+status — but it leaves the KPI and the rollup's status table, which counts it only on its own
+"out of scope" row (`summary.json`'s `status_table`; `status` keeps every record's own status), so
+its frozen `red` does not read as a failing distribution: all three numbers above are computed without it, exactly as for a
 `no_baseline` distribution, and `ecosystem-tickets.py --queue`/`ecosystem-sweep.py --all` never
 offer it. Bulk sweeps skip it, so its record is a frozen old measurement that must not steer a
 figure about the current interpreter. The definition lives in one function,
@@ -121,6 +124,23 @@ The sweep grades a match `accepted`, so it leaves the KPI and every "what to fix
 the rest of the distribution stays measured. A file that starts failing any other way is graded
 normally again. `scripts/ecosystem-sweep.py --regrade` applies an edit to the list to the stored
 records without re-measuring.
+
+`ecosystem/file-overrides.txt` changes how one known-slow test file is *run*, not how it is
+graded, so a file whose measurement depends on the runner's load stops flapping between sweeps.
+One line per file: `<Dist::Name> <test/path> <option>... -- <reason with an issue link>`. Each
+option applies to that file only, and the global `--timeout` stays the cap for every other file.
+
+- `timeout=<seconds>` gives the file a longer budget on both sides. An override never shortens the
+  default, and a first attempt that times out still gets the usual doubled retry.
+- `alone` runs the file while no other sweep job (`--jobs N` worker) runs an interpreter. It is for
+  a suite whose own timing assertion fails on a loaded runner. Every interpreter run takes a shared
+  gate, and an `alone` file takes it exclusively. Other runs wait while an `alone` file is queued,
+  so a busy pool cannot starve it.
+
+A record shows the override it ran under (`"override": {...}` on the file entry). Every entry is a
+workaround with an end: once the issue it cites is tuned, meaning the file passes comfortably
+under the normal cap and load, delete its line. The loader refuses an entry with no reason, an
+unknown option or a duplicate.
 
 ## 2. The fairness contract
 
@@ -238,6 +258,7 @@ ecosystem/
   README.md                     # [main] what this is and how to read it (points here)
   exclude.txt                   # [main] distributions confirmed permanently unfixable
   accepted-divergences.toml     # [main] per-file accepted divergences (ADR-0130)
+  file-overrides.txt            # [main] per-file run conditions for known-slow files
   index-snapshot.json           # [data] fez index provenance: fetch date, sha256, dist count
   dists/<S>/<Dist--Name>.json   # [data] ONE FILE PER DIST — the record
   summary.json                  # [data] generated rollup: the three KPIs + per-shard counts
@@ -428,7 +449,13 @@ denominator change, per ADR-0085.
   are ordered **worst first**: someone opening the page is checking whether
   their module is in trouble, not admiring the green ones.
 - **Repo**: `ecosystem/summary.md` on the `ecosystem-data` branch for readers
-  browsing the tree; linked from `README.md` and PLAN.md §1 B4.
+  browsing the tree; linked from `README.md` and PLAN.md §1 B4. Its
+  "Regressed since the previous ledger" section lists what the rollup's records
+  made worse than the ledger commit they replace (`ecosystem/.ledger-ref`, or
+  `--previous-ref REF`): a status that dropped, or a baseline file that lost
+  parity, at an unchanged version (`ecosystem_common.regressions()`). The
+  sweep's run report and ledger commit message carry the same section; it is
+  where regressions are triaged from.
 - **Raw**: `ecosystem/dists/**.json` is the machine-readable artifact the issue
   asks for — stable schema, versioned by `schema`.
 

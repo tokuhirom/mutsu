@@ -53,6 +53,12 @@ fn constraint_name(of: &Value) -> Option<String> {
 }
 
 impl Interpreter {
+    /// Whether `obj` has a `'$!descriptor'` of its own: an Array or a Hash.
+    // Cost: O(1).
+    pub(super) fn has_container_descriptor(obj: &Value) -> bool {
+        matches!(obj.view(), ValueView::Array(..) | ValueView::Hash(_))
+    }
+
     /// The `'$!descriptor'` of an Array or Hash; `None` for any other receiver.
     // Cost: O(1).
     pub(super) fn nqp_container_descriptor(obj: &Value) -> Option<Value> {
@@ -72,35 +78,50 @@ impl Interpreter {
             _ => return None,
         };
         let typed = of.as_deref().is_some_and(|t| !matches!(t, "Mu" | "Any"));
-        let class = if typed {
-            "ContainerDescriptor"
-        } else {
-            "ContainerDescriptor::Untyped"
-        };
-        let mut attrs = crate::value::ValueMap::default();
-        attrs.insert("container".to_string(), obj.clone());
+        // The names are interned once: this runs per `'$!descriptor'` read,
+        // which JSON::Fast makes for every array and hash it builds.
+        static SYMS: std::sync::OnceLock<[Symbol; 9]> = std::sync::OnceLock::new();
+        let [typed_class, untyped_class, container, name_key, dynamic, of_key, default_key, mu, any] =
+            *SYMS.get_or_init(|| {
+                [
+                    "ContainerDescriptor",
+                    "ContainerDescriptor::Untyped",
+                    "container",
+                    "name",
+                    "dynamic",
+                    "of",
+                    "default",
+                    "Mu",
+                    "Any",
+                ]
+                .map(Symbol::intern)
+            });
+        let class = if typed { typed_class } else { untyped_class };
+        let mut attrs = crate::value::AttrMap::with_capacity(5);
+        attrs.insert(container, obj.clone());
         attrs.insert(
-            "name".to_string(),
+            name_key,
             Value::str(name.unwrap_or_else(|| sigil.to_string())),
         );
-        attrs.insert("dynamic".to_string(), Value::FALSE);
+        attrs.insert(dynamic, Value::FALSE);
         // The descriptor's own `of` / `default`: what the container holds now,
         // so binding the descriptor to another container copies them. (A
         // descriptor's own state also has to exist for `set_of` and friends
         // to persist -- an attribute write only updates keys already present.)
-        let package = |name: &str| Value::package(Symbol::intern(name));
+        let package = |name: Option<&str>, fallback: Symbol| {
+            Value::package(name.map_or(fallback, Symbol::intern))
+        };
+        attrs.insert(of_key, package(of.as_deref(), mu));
         attrs.insert(
-            "of".to_string(),
-            package(of.as_deref().unwrap_or("Mu")),
-        );
-        attrs.insert(
-            "default".to_string(),
+            default_key,
             match default_value {
                 Some(v) => *v,
-                None => package(of.as_deref().unwrap_or("Any")),
+                None => package(of.as_deref(), any),
             },
         );
-        Some(Value::make_instance(Symbol::intern(class), attrs))
+        // A view, not an object with a lifetime of its own: the class has no
+        // `DESTROY`, so it skips the DESTROY queue's bookkeeping.
+        Some(Value::make_instance_without_destroy(class, attrs))
     }
 
     /// `nqp::bindattr($container, Type, '$!descriptor', $descriptor)`: install

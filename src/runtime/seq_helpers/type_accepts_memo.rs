@@ -40,6 +40,15 @@ use super::super::*;
 
 pub(crate) use crate::runtime::resolution_caches::MemoCheck;
 
+/// How a type check's caller named the type.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TypeOperand {
+    /// A name written where a type goes, resolved in the current scope.
+    Name,
+    /// A type object the caller already holds.
+    Object,
+}
+
 impl Interpreter {
     /// Whether `left` matches the type object named `type_name`
     /// (`left ~~ type_name`). See [`Self::type_object_accepts_uncached`] for
@@ -49,8 +58,28 @@ impl Interpreter {
     // Cost: O(1) expected on a memo hit (two hash probes and a scope lookup
     // of the name); a miss is the O(d) check, d = MRO length.
     pub(crate) fn type_object_accepts(&mut self, left: &Value, type_name: Symbol) -> bool {
+        self.type_object_accepts_as(left, type_name, TypeOperand::Name)
+    }
+
+    /// [`Self::type_object_accepts`] for a caller that holds the type OBJECT
+    /// (`nqp::istype($x, Failure)`, whose operand was resolved when it was
+    /// evaluated), not a name written where a type goes. A memo hit then
+    /// needs no scope lookup of the name: a constant or term that shadows it
+    /// here would have been the operand instead of the type object.
+    // Cost: O(1) expected on a memo hit (two hash probes); a miss is the full
+    // check, as for [`Self::type_object_accepts`].
+    pub(crate) fn type_object_accepts_resolved(&mut self, left: &Value, type_name: Symbol) -> bool {
+        self.type_object_accepts_as(left, type_name, TypeOperand::Object)
+    }
+
+    fn type_object_accepts_as(
+        &mut self,
+        left: &Value,
+        type_name: Symbol,
+        operand: TypeOperand,
+    ) -> bool {
         if let Some(kind) = Self::builtin_scalar_kind(left) {
-            return self.scalar_type_object_accepts(left, kind, type_name);
+            return self.scalar_type_object_accepts(left, kind, type_name, operand);
         }
         let Some((class, _)) = self.instance_nominal_memo_key(left, type_name.as_str(), false)
         else {
@@ -68,7 +97,13 @@ impl Interpreter {
     /// name still means its own type here.
     // Cost: O(1) expected on a hit (one memo probe, one capture lookup and one
     // scope lookup of the name); a miss is the full check.
-    fn scalar_type_object_accepts(&mut self, left: &Value, kind: Symbol, type_name: Symbol) -> bool {
+    fn scalar_type_object_accepts(
+        &mut self,
+        left: &Value,
+        kind: Symbol,
+        type_name: Symbol,
+        operand: TypeOperand,
+    ) -> bool {
         let ty = type_name.as_str();
         let base = ty.strip_suffix(":D").unwrap_or(ty);
         if !Self::scalar_memo_name_shape(base) {
@@ -79,7 +114,10 @@ impl Interpreter {
         let key = (kind, type_name, MemoCheck::ScalarAccepts);
         let admitted = match self.remembered_type_check(&key) {
             Some(hit) => {
-                if self.type_name_names_itself(base) {
+                // Only a hit skips the scope lookup for a type object: what a
+                // miss stores is shared with by-name callers, so admission
+                // still requires the name to mean its own type here.
+                if operand == TypeOperand::Object || self.type_name_names_itself(base) {
                     return hit;
                 }
                 false

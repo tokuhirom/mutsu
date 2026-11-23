@@ -1654,6 +1654,8 @@ impl Interpreter {
     /// Load a module without importing its exports (Raku `need` keyword).
     pub(crate) fn need_module(&mut self, module: &str) -> Result<(), RuntimeError> {
         let is_nested_need = !self.module.module_load_stack.is_empty();
+        // Another thread loading the same module finishes first (ADR-17216).
+        let _claim = self.claim_module_load(module);
         if self.module.world.loaded_modules.read().contains(module) {
             self.replay_module_visibility_grant(module);
             return Ok(());

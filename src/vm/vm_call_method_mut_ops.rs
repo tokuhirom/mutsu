@@ -1044,8 +1044,7 @@ impl Interpreter {
             )
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "pair-freeze");
-            let frozen = self.pair_freeze(&target, target_name);
-            self.stack.push(frozen);
+            self.stack.push(target.freeze_pair());
             return Ok(());
         }
         // Regex.Bool / Regex.so: match against the regex's topic (see

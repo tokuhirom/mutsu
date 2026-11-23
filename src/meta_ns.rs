@@ -141,6 +141,11 @@ pub(crate) enum MetaNs {
     /// `$!name` was bound (`:=`) to a non-container value, so it is no longer
     /// a writable container (`nqp::isrwcont`).
     BoundAttr,
+    /// `__mutsu_eval_unit::<name>` — on the capture of a closure created in an
+    /// `EVAL`'d unit's mainline, the cell of that unit's own lexical
+    /// `<name>`, which `CALLER::UNIT::` reads and no by-name lookup reaches
+    /// (ADR-12529 amendment A1 (c)).
+    EvalUnit,
     /// `__mutsu_package_lexical_pin::<name>` — a frame's hold on the cell of
     /// the package-block lexical `<name>` while an in-place mutation of it
     /// runs: the shared package table may drop the cell meanwhile
@@ -290,6 +295,7 @@ impl MetaNs {
         MetaNs::AtomicValue,
         MetaNs::BoundDecont,
         MetaNs::BoundAttr,
+        MetaNs::EvalUnit,
         MetaNs::PackageLexicalPin,
         MetaNs::Compunit,
         MetaNs::ConstantVar,
@@ -348,6 +354,7 @@ impl MetaNs {
             MetaNs::AtomicValue => "__mutsu_atomic_value::",
             MetaNs::BoundDecont => "__mutsu_bound_decont::",
             MetaNs::BoundAttr => "__mutsu_bound_attr::",
+            MetaNs::EvalUnit => "__mutsu_eval_unit::",
             MetaNs::PackageLexicalPin => "__mutsu_package_lexical_pin::",
             MetaNs::Compunit => "__mutsu_compunit::",
             MetaNs::ConstantVar => "__mutsu_constant_var::",
@@ -626,6 +633,7 @@ mod tests {
             (MetaNs::AtomicValue, "__mutsu_atomic_value::@a"),
             (MetaNs::BoundDecont, "__mutsu_bound_decont::@a"),
             (MetaNs::BoundAttr, "__mutsu_bound_attr::@a"),
+            (MetaNs::EvalUnit, "__mutsu_eval_unit::@a"),
             (MetaNs::PackageLexicalPin, "__mutsu_package_lexical_pin::@a"),
             (MetaNs::ConstantVar, "__mutsu_constant_var::@a"),
             (MetaNs::ModuleMerge, "__mutsu_module_merge::@a"),
