@@ -56,7 +56,7 @@ pub(crate) fn paragraph_from_text(text: &str) -> Result<Value, RuntimeError> {
             Some(message) => Err(RuntimeError::new(message)),
             // TODO: an ambiguous code the reader does not take (a code
             // letter right after a word character, `aB<b>`) stays the plain
-            // text; rakudo reads it as a code.
+            // text; rakudo reads it as a code (#19068).
             None => Ok(Value::str(text.to_string())),
         },
     }

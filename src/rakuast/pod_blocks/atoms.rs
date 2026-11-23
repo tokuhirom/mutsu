@@ -104,8 +104,7 @@ pub(super) fn parse_atoms(
             && ch == '|'
         {
             let tail = &rest[1..];
-            let end =
-                find_closer_nested(tail, closer).ok_or(Declined::Unterminated(None))?;
+            let end = find_closer_nested(tail, closer).ok_or(Declined::Unterminated(None))?;
             let text = &tail[..end];
             if text.chars().any(|c| matches!(c, '<' | '>' | '«' | '»')) {
                 return Err(Declined::Other);
@@ -171,7 +170,9 @@ pub(super) fn parse_atoms(
                         return Err(Declined::Other);
                     }
                     let (shown, list) = match content.split_once('|') {
-                        Some((shown, list)) => (shown, crate::rakuast::pod_entities::pairs_after_bar(list)),
+                        Some((shown, list)) => {
+                            (shown, crate::rakuast::pod_entities::pairs_after_bar(list))
+                        }
                         None => ("", crate::rakuast::pod_entities::pairs(content)),
                     };
                     atoms.push(Atom::Markup(Markup {
