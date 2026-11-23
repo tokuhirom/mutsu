@@ -866,7 +866,15 @@ impl Interpreter {
                                 "hypermethodcall",
                                 "native",
                             );
-                            native_result.unwrap_or(Value::package(crate::symbol::wk::any()))
+                            match native_result {
+                                Ok(value) => value,
+                                Err(error)
+                                    if error.is_method_not_found_for_receiver(&method, item) =>
+                                {
+                                    Value::package(crate::symbol::wk::any())
+                                }
+                                Err(error) => return Err(error),
+                            }
                         } else {
                             crate::vm::vm_stats::record_dispatch_entry_outcome(
                                 "hypermethodcall",
@@ -879,7 +887,12 @@ impl Interpreter {
                                     *item = updated;
                                     v
                                 }
-                                Err(_) => Value::package(crate::symbol::wk::any()),
+                                Err(error)
+                                    if error.is_method_not_found_for_receiver(&method, item) =>
+                                {
+                                    Value::package(crate::symbol::wk::any())
+                                }
+                                Err(error) => return Err(error),
                             }
                         }
                     } else {
@@ -892,7 +905,10 @@ impl Interpreter {
                                 *item = updated;
                                 v
                             }
-                            Err(_) => Value::package(crate::symbol::wk::any()),
+                            Err(error) if error.is_method_not_found_for_receiver(&method, item) => {
+                                Value::package(crate::symbol::wk::any())
+                            }
+                            Err(error) => return Err(error),
                         }
                     };
                     results.push(val);
