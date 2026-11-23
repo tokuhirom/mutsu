@@ -57,7 +57,12 @@ pub(super) fn lean_frame_eligible(
         && cc.class_decl_plans.is_empty()
         && !cc.declares_inner_routines()
         && def.captured_env.is_none()
-        && def.return_type.is_none()
+        // A literal definite return (`--> Nil`) names a value, so its
+        // finalize reads no capture or owner scope (#18267).
+        && def
+            .return_type
+            .as_deref()
+            .is_none_or(|spec| matches!(spec, "Nil" | "True" | "False" | "Empty"))
         && def.role_param_bindings.is_none()
         && def.original_role.is_none()
         && def.role_origin.is_none()
@@ -454,7 +459,12 @@ impl Interpreter {
         let final_result = if fail_bypass {
             final_result
         } else {
-            self.finalize_method_result_fast(cc, final_result, None, None, None)
+            // As the fast binder finalizes: a literal definite return spec
+            // is its own effective spec (`method_effective_return_spec`).
+            let spec = method_def.return_type.as_deref();
+            let return_fast = spec.and_then(|spec| self.method_return_fast(owner_class, spec));
+            let effective = spec.filter(|_| return_fast.is_none());
+            self.finalize_method_result_fast(cc, final_result, spec, effective, return_fast)
         };
         final_result.map(|v| (Self::method_frame_result_sharing(&base, v), None))
     }
