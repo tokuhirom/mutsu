@@ -19,9 +19,10 @@
 //!   `Positional` / `Associative` / `Callable` of an `@` / `%` / `&`
 //!   parameter). As in rakudo, a parameter with a default, an `is rw` one, a
 //!   `:D`/`:U` smiley and a coercion type are left to the run-time binder.
-//!   A native type (`int`, `uint8`) is left to it too, and so is a routine
-//!   written without a signature (its `@_` / placeholders are not in its
-//!   parameter list) or one with a type capture or a sub-signature.
+//!   A native type (`int`, `uint8`) is left to it too. A signature with an
+//!   optional named parameter is not judged at all, as in rakudo, and neither
+//!   is a routine written without a signature (its `@_` / placeholders are
+//!   not in its parameter list) or one with a type capture or a sub-signature.
 //!
 //! The error points at the call (`<HERE>`). Its position is found in the text
 //! of the innermost statement that holds the call, by matching the calls to
@@ -261,7 +262,11 @@ impl Interpreter {
         };
         // A routine written without a signature takes what its body uses
         // (`@_`, `%_`, placeholders), which its parameter list does not show.
-        if params.is_empty() || params.iter().any(unjudged) {
+        // rakudo's optimizer does not judge a signature with an optional
+        // named parameter at all (`sub f($n, :$a) {}; f(1, 2)` is the
+        // run-time "Too many positionals passed").
+        let optional_named = |p: &ParamDef| p.named && !p.required;
+        if params.is_empty() || params.iter().any(|p| unjudged(p) || optional_named(p)) {
             return false;
         }
         if params.iter().any(|p| p.named && p.required) {

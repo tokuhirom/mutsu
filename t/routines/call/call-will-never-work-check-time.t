@@ -4,7 +4,7 @@ use Test;
 # compile error: nothing in the unit runs, and the error points at the call.
 # Expected texts are rakudo 2026.11's.
 
-plan 14;
+plan 15;
 
 sub run-code(Str $code) {
     my $p = run $*EXECUTABLE, '-e', $code, :out, :err;
@@ -64,7 +64,8 @@ refuted q[say 1; sub f(Int $x) {}; f(Nil)],
 for q[sub f(Int:D $x) {}; f("a")],
     q[sub f(Int $x = 5) {}; f("a")],
     q[sub f(Int $x is rw) {}; f("a")],
-    q[sub f(Str() $x) { print "" }; f(1)]
+    q[sub f(Str() $x) { print "" }; f(1)],
+    q[sub f($n, :$a) {}; f(1, 2)]
     -> $tail {
     my ($out, $err, $exit) = run-code("say 1; $tail");
     is $out, "1\n", "runs before the binder decides: $tail";
