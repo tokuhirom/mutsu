@@ -12,7 +12,9 @@ const EXPERIMENTAL_TAGS: &[&str] = &["cached", "pack", "rakuast", "smallnatives"
 /// module does not export, if any.
 // Cost: O(t * k), t = tags of the `use`, k = known tags.
 pub(super) fn unknown_experimental_tag_error(tags: &[String]) -> Option<String> {
-    let unknown = tags.iter().find(|tag| !EXPERIMENTAL_TAGS.contains(&tag.as_str()))?;
+    let unknown = tags
+        .iter()
+        .find(|tag| !EXPERIMENTAL_TAGS.contains(&tag.as_str()))?;
     Some(format!(
         "Error while importing from 'experimental': no such tag '{unknown}'"
     ))
