@@ -34,7 +34,7 @@ if $dir {
     my $loop = q:to/SH/;
         dir="$1"; list="$2"
         env | grep -E '^(HARNESS|TAP|PERL|MUTSU|RAKU|HOME|XDG)' > "$dir/diag-env.txt"
-        for round in 0 1 2 3 4 5; do
+        for round in 0 1 2 3 4 5 6 7 8 9 10 11; do
           while read -r f; do
             out=$(scripts/run-t-test.sh "$f" 2>&1); rc=$?
             echo "round $round rc $rc $f" >> "$dir/diag-summary.txt"
@@ -43,7 +43,8 @@ if $dir {
                 > "$dir/diag-r$round-$(basename "$f").txt"
             fi
           done < "$list"
-          sleep 25
+          ls -l --full-time "${XDG_CACHE_HOME:-$HOME/.cache}/mutsu/precomp" > "$dir/diag-cache-r$round.txt" 2>&1
+          sleep 15
         done
         SH
     shell "setsid nohup bash -c '{$loop.subst("'", "'\\''", :g)}' diag '$dir' '$dir/../diag-files.lst' > /dev/null 2>&1 &";
