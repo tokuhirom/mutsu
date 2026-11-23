@@ -40,11 +40,12 @@ type_queries! {
     "RakuAST::Type::Setting", "is-native" => setting_is_native,
     "RakuAST::Type::Simple", "is-coercive" => simple_is_coercive,
     "RakuAST::Type::Setting", "is-coercive" => setting_is_coercive,
-    "RakuAST::Type::Definedness", "is-coercive" => definedness_is_coercive,
-    "RakuAST::Type::Parameterized", "is-coercive" => parameterized_is_coercive,
+    // Declared where rakudo declares them: `Type::Derived` (Definedness,
+    // Parameterized) and `Type` itself (Capture).
+    "RakuAST::Type::Derived", "is-coercive" => derived_is_coercive,
     "RakuAST::Type::Subset", "is-coercive" => subset_is_coercive,
     "RakuAST::Type::Coercion", "is-coercive" => coercion_is_coercive,
-    "RakuAST::Type::Capture", "is-coercive" => capture_is_coercive,
+    "RakuAST::Type", "is-coercive" => type_is_coercive,
     "RakuAST::Type::Definedness", "name" => definedness_name,
     "RakuAST::Type::Capture", "definite" => capture_definite,
 }
