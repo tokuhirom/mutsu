@@ -374,6 +374,13 @@ pub(crate) struct ResolutionCaches {
         Option<Arc<crate::vm::vm_method_call_plan::MethodCallPlan>>,
     >,
     pub(crate) method_call_plans_generation: u64,
+    /// `(user class, method)` pairs whose argument-less `.?method` on a plain
+    /// instance was proven to miss (`vm_maybe_call_miss_lane`, #17987): the
+    /// next such call answers `Nil` without the dispatch and its discarded
+    /// `X::Method::NotFound`. Valid for the registry method generation in
+    /// [`Self::maybe_call_misses_generation`].
+    pub(crate) maybe_call_misses: rustc_hash::FxHashSet<(Symbol, Symbol)>,
+    pub(crate) maybe_call_misses_generation: u64,
     /// The lane key whose dispatch tail, now running, should record its plan
     /// (`Interpreter::install_method_call_plan`).
     pub(crate) method_call_plan_candidate: Option<PlainMethodLaneKey>,

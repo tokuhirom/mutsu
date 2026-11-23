@@ -1009,6 +1009,13 @@ impl Interpreter {
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
+        // A recorded argument-less `.?name` miss (#17987). Only while no
+        // accessor-ref marker is pending: this dispatch would consume it.
+        if !self.accessor_ref_pending
+            && self.try_maybe_call_miss_lane(code, name.sym, arity, modifier_idx)
+        {
+            return Ok(());
+        }
         // ADR-15829: an unquoted `.WHAT` / `.HOW` on a plain value or type
         // object is answered without the probe chain below. Ahead of the
         // accessor-ref marker take, which the lane requires to be unset.
@@ -2055,6 +2062,11 @@ impl Interpreter {
                 }
             }
             _ => {
+                // The class an argument-less `.?` miss is recorded for
+                // (`vm_maybe_call_miss_lane`).
+                let miss_class = (modifier == Some("?") && args.is_empty())
+                    .then(|| Self::maybe_miss_class(&target))
+                    .flatten();
                 // Array-subclass instance delegation: when the Instance's class
                 // inherits from Array, delegate non-mutating Array methods to the
                 // backing __mutsu_array_storage attribute.
@@ -2437,6 +2449,9 @@ impl Interpreter {
                                 "callmethod",
                                 "notfound",
                             );
+                            if let Some(class) = miss_class {
+                                self.note_maybe_call_miss(class, method, method_sym, &e);
+                            }
                             self.stack.push(Value::NIL);
                             if mark_dirty {}
                         }
