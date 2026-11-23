@@ -120,8 +120,8 @@ pub(crate) fn nqp_op_never_observes(id: u16, args: &[crate::value::Value]) -> bo
     let classes = CLASSES.get_or_init(|| {
         let mut classes = vec![Class::Observer; crate::nqp_op_ids::nqp_op_count()];
         let mut set = |name: &str, class: Class| {
-            if let Some(slot) = crate::nqp_op_ids::nqp_op_id(name)
-                .and_then(|id| classes.get_mut(usize::from(id)))
+            if let Some(slot) =
+                crate::nqp_op_ids::nqp_op_id(name).and_then(|id| classes.get_mut(usize::from(id)))
             {
                 *slot = class;
             }
@@ -133,7 +133,11 @@ pub(crate) fn nqp_op_never_observes(id: u16, args: &[crate::value::Value]) -> bo
         set("create", Class::Create);
         classes
     });
-    match classes.get(usize::from(id)).copied().unwrap_or(Class::Observer) {
+    match classes
+        .get(usize::from(id))
+        .copied()
+        .unwrap_or(Class::Observer)
+    {
         Class::Observer => false,
         Class::Wrap => true,
         Class::Create => matches!(args, [v] if matches!(
