@@ -78,11 +78,13 @@ import INSTALL from './content/install.js';
 
 const LANDING = { en: landingEn, ja: landingJa };
 
-/* Compatibility numbers.  pages.yml writes content/stats.json at deploy time by
-   counting roast-whitelist.txt against roast/, so the figure on the site cannot
-   drift away from the suite the way a hand-written one does.  These values are
-   the fallback for a local checkout, where that file does not exist. */
-let STATS = { roastPass: 1426, roastTotal: 1454 };
+/* Compatibility numbers.  pages.yml writes content/stats.json at deploy time
+   with scripts/roast-compat.py, the one generator of the Roast figure (the
+   roast/spectest.data files that pass; docs/roast-compatibility.md), so the
+   figure on the site cannot drift away from the suite the way a hand-written
+   one does.  These values are the fallback for a local checkout, where that
+   file does not exist. */
+let STATS = { roastPass: 1425, roastTotal: 1425 };
 
 const nf = () => new Intl.NumberFormat(currentLang() === 'ja' ? 'ja' : 'en');
 

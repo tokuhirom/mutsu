@@ -220,7 +220,7 @@ mutsu --dump-bytecode -e 'say 1 + 2'   # コンパイラが何を吐いたか</c
       id: 'compat',
       title: 'どこまで互換なのか',
       body: `
-        <p>mutsu は Raku 公式仕様テストスイート <a href="https://github.com/Raku/roast" rel="noopener">roast</a> の <strong>{roastTotal} ファイル中 {roastPass} ファイル</strong>に通っています（{roastPct}%）。数え方はファイル単位で、そのファイル中のすべての表明が通った場合だけ 1 と数えます。参照実装はあくまで Rakudo で、mutsu は毎日それに対して計測されています。</p>
+        <p>mutsu は Raku 公式仕様テストスイート <a href="https://github.com/Raku/roast" rel="noopener">roast</a> のうち Rakudo が実行するファイル（<code>roast/spectest.data</code>）の <strong>{roastTotal} ファイル中 {roastPass} ファイル</strong>に通っています（{roastPct}%）。数え方はファイル単位で、<code>#?rakudo</code> の fudge を適用し、スキップしないすべての表明が通った場合だけ 1 と数えます。参照実装はあくまで Rakudo で、mutsu は毎日それに対して計測されています。</p>
 
         <h3>「まだ無いだろう」と思われがちだが、ある機能</h3>
         <ul>

@@ -279,10 +279,12 @@ mutsu --dump-bytecode -e 'say 1 + 2'   # what the compiler emitted</code></pre>
       id: 'compat',
       title: 'How compatible is it?',
       body: `
-        <p>mutsu passes <strong>{roastPass} of the {roastTotal}</strong> files in
+        <p>mutsu passes <strong>{roastPass} of the {roastTotal}</strong> files of
         <a href="https://github.com/Raku/roast" rel="noopener">roast</a>, the
-        official Raku specification suite — {roastPct}% of the suite, counted per
-        file, where a file counts only if every one of its assertions passes.
+        official Raku specification suite, that Rakudo runs
+        (<code>roast/spectest.data</code>) — {roastPct}%, counted per file with
+        the <code>#?rakudo</code> fudge applied, where a file counts only if every
+        assertion it does not skip passes.
         Rakudo remains the reference implementation; mutsu is measured against it
         daily.</p>
 

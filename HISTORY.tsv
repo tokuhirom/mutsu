@@ -1,4 +1,4 @@
-date	commit	files	pass	fail	error	panic	timeout	subtests_pass	subtests_total
+date	commit	files	pass	fail	error	panic	timeout	subtests_pass	subtests_total	spec_files	spec_pass
 2026-02-12T22:29	ac4d369	1298	147	1048	88	0	15	99354	148497
 2026-02-13T10:21	2df5464	1298	152	1068	62	0	16	99644	150827
 2026-02-13T12:02	290f0c6	1298	156	1065	60	0	17	99481	150791
