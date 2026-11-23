@@ -1,3 +1,4 @@
+use super::vm_method_call_plan::MethodFastHints;
 use super::*;
 use crate::vm::vm_method_call_attrs::CallAttrs;
 
@@ -1026,7 +1027,7 @@ impl Interpreter {
                 args,
                 target,
                 fns_ref,
-                csm,
+                MethodFastHints::unplanned(csm),
             );
             if pushed_dispatch {
                 self.pop_method_dispatch();

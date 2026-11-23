@@ -142,6 +142,8 @@ pub(super) struct LeanMethodCall<'a> {
     pub(super) method_def: &'a crate::runtime::MethodDef,
     pub(super) cc: &'a CompiledCode,
     pub(super) compiled_fns: &'a CompiledFns,
+    /// The plan's `method_body_package` answer (#18267 D1a), or `None` to ask.
+    pub(super) body_package: Option<Option<Symbol>>,
 }
 
 impl Interpreter {
@@ -205,6 +207,7 @@ impl Interpreter {
             method_def,
             cc,
             compiled_fns,
+            body_package,
         } = call;
         // A non-multi winner: nothing to skip (see the general binder).
         self.pending_skip_constraint_recheck = false;
@@ -232,13 +235,15 @@ impl Interpreter {
         }
         let saved_var_bindings = self.take_var_bindings();
         self.push_method_class_sym(owner_sym, Some(false));
-        let saved_package: Option<Symbol> = self
-            .method_body_package(owner_class, owner_sym, method_def)
-            .map(|package| {
-                let saved = self.current_package_sym();
-                self.set_current_package_sym(package);
-                saved
-            });
+        let body_package = match body_package {
+            Some(package) => package,
+            None => self.method_body_package(owner_class, owner_sym, method_def),
+        };
+        let saved_package: Option<Symbol> = body_package.map(|package| {
+            let saved = self.current_package_sym();
+            self.set_current_package_sym(package);
+            saved
+        });
 
         // Bind: the invocant, then each positional argument in order (every
         // parameter is a plain positional `$` scalar, `lean_param_ok`). The
