@@ -212,11 +212,14 @@ fn escape(text: &str) -> String {
     out
 }
 
-/// `dump-extras($indent)`: a `QuotedString`'s postprocessors.
-// Cost: O(p), p = postprocessors.
+/// `dump-extras($indent)`: an expression's thunks and a `QuotedString`'s
+/// postprocessors.
+// Cost: O(n + p + d), n = nodes in a marked expression, p = postprocessors,
+// d = output length.
 pub(crate) fn extras(node: &RakuAstNode, indent: usize) -> String {
+    let mut out = super::rakuast_thunk::dump_extras(node, indent);
     if node.class != RakuAstClass::QuotedString {
-        return String::new();
+        return out;
     }
     let processors: Vec<String> = node
         .fields
@@ -230,13 +233,14 @@ pub(crate) fn extras(node: &RakuAstNode, indent: usize) -> String {
         })
         .unwrap_or_default();
     if processors.is_empty() {
-        return String::new();
+        return out;
     }
-    format!(
+    out.push_str(&format!(
         "{}postprocessors: {}\n",
         " ".repeat(indent),
         processors.join(", ")
-    )
+    ));
+    out
 }
 
 /// `dump-children($indent)`: each child `visit-children` hands out, dumped at

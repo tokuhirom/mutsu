@@ -105,6 +105,9 @@ pub(super) const fn opaque(
             "RakuAST::Node",
             &[
                 "RakuAST::Node",
+                "RakuAST::Expression",
+                "RakuAST::PrimeThunk",
+                "RakuAST::BlockThunk",
                 "RakuAST::StatementList",
                 "RakuAST::CompUnit",
                 "RakuAST::Statement::Expression",
