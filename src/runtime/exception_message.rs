@@ -191,15 +191,20 @@ impl Interpreter {
                     return Some(text);
                 }
             }
-            // `X::AdHoc` carries `die`'s argument in `payload`, not `message`.
-            if cn == "X::AdHoc"
-                && let Some(payload) = map.get("payload")
-            {
-                let text = payload.to_string_value();
-                if !text.is_empty() {
-                    return Some(text);
-                }
+        }
+        // `X::AdHoc` carries `die`'s argument in `payload`, not `message`; its
+        // message is `$!payload.Str`, a user `Str` included (#19083).
+        let adhoc_payload = (cn == "X::AdHoc")
+            .then(|| attributes.as_map().get("payload").cloned())
+            .flatten();
+        if let Some(payload) = adhoc_payload {
+            let text = self.render_str_value(&payload);
+            if !text.is_empty() {
+                return Some(text);
             }
+        }
+        {
+            let map = attributes.as_map();
             if cn != "X::AdHoc"
                 && map.contains_key("payload")
                 && let Some(text) = self.inherited_adhoc_method(target, "message", &[])
@@ -209,7 +214,9 @@ impl Interpreter {
             // The row table's own builder first: it names the values of a
             // hand-built `X::TypeCheck::Assignment` (the thrown message is
             // stamped from here, #16047).
-            if let Some(formatted) = crate::builtins::method_table::exception_formatted_message(target) {
+            if let Some(formatted) =
+                crate::builtins::method_table::exception_formatted_message(target)
+            {
                 return Some(formatted);
             }
             if let Some(formatted) = self.inherited_builtin_exception_message(&cn, &map) {
@@ -296,6 +303,8 @@ impl Interpreter {
         // which are pure-value decisions.
         matches!(&stored, Some(v) if v.is_nil() || matches!(v.view(), ValueView::Package(_)))
             || self.has_user_method(cn, "message")
+            // An object payload renders through its `Str` (#19083).
+            || (cn == "X::AdHoc" && Self::adhoc_object_payload(target).is_some())
     }
 
     /// [`Self::exception_message_text`] with raku's fallback for an exception
