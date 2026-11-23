@@ -315,6 +315,20 @@ pub(super) fn quoted_text(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
                 _ => true,
             }
     });
+    if words {
+        let inner = super::unit_source::with_text(span, |written| {
+            let (open, close) = word_brackets(written)?;
+            Some(crate::ast::SrcSpan::new(
+                span.from as usize + open,
+                span.to as usize - close,
+            ))
+        });
+        if let Some(inner) = inner
+            && super::nested_words::place_origins(node, inner)
+        {
+            return;
+        }
+    }
     let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("segments")) else {
         return;
     };
@@ -444,8 +458,12 @@ pub(super) fn word_brackets_open(text: &str) -> Option<(usize, &'static str)> {
 /// Give a word quote (`QuotedString` over one `StrLiteral`) and its text the
 /// range `inner` between the brackets, when the text is exactly what is
 /// written there.
-// Cost: O(n), n = length of `inner`.
+// Cost: O(n * d + s log l), n = length of `inner`, d = word quote depth (at most 64), s = segments, l = source lines.
 pub(super) fn word_quote_inner(quote: &mut RakuAstNode, inner: crate::ast::SrcSpan) {
+    if super::nested_words::place_origins(quote, inner) {
+        set_span(quote, inner);
+        return;
+    }
     let written = super::unit_source::with_text(inner, |t| Some(t.to_string()));
     let matches = quote
         .fields
