@@ -545,6 +545,14 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
     // `X::Syntax::Confused`) rather than double negation of a bareword call
     // (roast/S03-metaops/not.t). Only the whole glued word matters, not a
     // longer identifier merely starting with one (`!!equals` is fine).
+    // `?|@a`, `+|(1, 2)`: a symbolic prefix glued to a prefix `|` slip. In
+    // term position the infix `?|` / `+|` / `~|` cannot start, so a `|`
+    // followed by a term is the slip.
+    let glued_slip = |s: &str| {
+        s.strip_prefix('|')
+            .and_then(|rest| rest.chars().next())
+            .is_some_and(|c| matches!(c, '(' | '@' | '$' | '%' | '['))
+    };
     let glued_word_is_infix_op = |s: &str| {
         let word_len = s.bytes().take_while(|&b| is_ident_char(Some(b))).count();
         word_len > 0 && crate::parser::primary::var::is_known_word_infix(&s[..word_len])
@@ -574,7 +582,10 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
         Some((PrefixUnaryOp::Not, 1))
     } else if input.starts_with("?^") {
         Some((PrefixUnaryOp::BoolBitNeg, 2))
-    } else if input.starts_with('?') && !input.starts_with("??") && !input.starts_with("?|") {
+    } else if input.starts_with('?')
+        && !input.starts_with("??")
+        && (!input.starts_with("?|") || glued_slip(&input[1..]))
+    {
         Some((PrefixUnaryOp::Boolify, 1))
     } else if input.starts_with("++") {
         Some((PrefixUnaryOp::PreInc, 2))
@@ -586,6 +597,7 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
         && (starts_hyper_prefix_marker(&input[1..])
             || starts_user_prefix_op(&input[1..])
             || starts_another_prefix(&input[1..])
+            || glued_slip(&input[1..])
             || (matches!(next_non_ws(&input[1..]), Some(c) if unary_term_start(c) || c == '.' || c == '\u{221E}')))
     // topic call / ∞
     {
@@ -600,6 +612,7 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
         && (starts_hyper_prefix_marker(&input[1..])
             || starts_user_prefix_op(&input[1..])
             || starts_another_prefix(&input[1..])
+            || glued_slip(&input[1..])
             || matches!(next_non_ws(&input[1..]), Some(c) if unary_term_start(c) || c == '.' || c == '\u{221E}'))
     {
         Some((PrefixUnaryOp::Positive, 1))
@@ -609,6 +622,7 @@ pub(super) fn parse_prefix_unary_op(input: &str) -> Option<(PrefixUnaryOp, usize
         && !input.starts_with("~~")
         && (starts_hyper_prefix_marker(&input[1..])
             || starts_another_prefix(&input[1..])
+            || glued_slip(&input[1..])
             || matches!(next_non_ws(&input[1..]), Some(c) if unary_term_start(c) || c == '.'))
     {
         Some((PrefixUnaryOp::Stringify, 1))
