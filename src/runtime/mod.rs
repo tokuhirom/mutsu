@@ -874,23 +874,24 @@ pub(crate) fn attribute_type_constraint(
 #[derive(Clone)]
 pub(crate) struct ReadonlySet {
     map: rustc_hash::FxHashMap<Symbol, ReadonlyKind>,
-    /// Whether the topic `_` is currently in `map`.
+    /// The topic `_`'s mark, kept here instead of in `map` (#18267).
     ///
     /// Every routine call clears the caller's readonly mark on `$_` before
     /// binding its parameters (see `call_compiled_function_positional_light_at`),
     /// and the guard for that was "is the set non-empty" -- true for any program
     /// with a single readonly parameter anywhere on the stack, so the call paid a
     /// full hash `remove` that missed, on every call. This answers the question
-    /// exactly, in one branch.
+    /// exactly, in one branch. Holding the kind here rather than in `map`
+    /// also makes that unmark, and the re-mark `pop_call_frame`'s journal
+    /// replay does when the call returns, free of hashing: a method call made
+    /// from inside a `for` loop paid both (~266 Ir per call).
     ///
     /// Kept on the set itself rather than on the `Interpreter` so that every
     /// mutation path maintains it by construction -- including
     /// [`replay_readonly_undo`], which reaches the set through a raw pointer from
-    /// a `Drop` impl and never sees the `Interpreter` at all. `topic_marked`
-    /// re-derives the slow answer under `debug_assert`, and CI runs the whole
-    /// `t/` suite on a debug binary (ADR-0014), so the invariant is checked by
-    /// 3600+ files on every push.
-    topic: bool,
+    /// a `Drop` impl and never sees the `Interpreter` at all. `map` never
+    /// holds `_`; every accessor answers it from here.
+    topic: Option<ReadonlyKind>,
     /// Direct-mapped *positive* cache over [`Self::map`], indexed by
     /// `sym.raw() & (READONLY_CACHE_SLOTS - 1)`.
     ///
@@ -929,7 +930,7 @@ impl Default for ReadonlySet {
     fn default() -> Self {
         Self {
             map: rustc_hash::FxHashMap::default(),
-            topic: false,
+            topic: None,
             cache: [None; READONLY_CACHE_SLOTS],
         }
     }
@@ -944,7 +945,7 @@ impl ReadonlySet {
     #[inline]
     pub(crate) fn insert(&mut self, sym: Symbol, kind: ReadonlyKind) -> Option<ReadonlyKind> {
         if sym == crate::symbol::wk::topic() {
-            self.topic = true;
+            return self.topic.replace(kind);
         }
         // Overwrite unconditionally: whatever this evicts stays correct in the
         // map, it merely stops being cached.
@@ -955,7 +956,7 @@ impl ReadonlySet {
     #[inline]
     pub(crate) fn remove(&mut self, sym: &Symbol) -> Option<ReadonlyKind> {
         if *sym == crate::symbol::wk::topic() {
-            self.topic = false;
+            return self.topic.take();
         }
         let slot = Self::slot(*sym);
         // Only clear a slot that still names this symbol -- a slot holding the
@@ -972,6 +973,9 @@ impl ReadonlySet {
     /// asks before doing anything, answered from the cache when it can be.
     #[inline]
     pub(crate) fn marked_with(&self, sym: Symbol, kind: ReadonlyKind) -> bool {
+        if sym == crate::symbol::wk::topic() {
+            return self.topic == Some(kind);
+        }
         if let Some((cached, cached_kind)) = self.cache[Self::slot(sym)]
             && cached == sym
         {
@@ -987,6 +991,9 @@ impl ReadonlySet {
 
     #[inline]
     pub(crate) fn contains_key(&self, sym: &Symbol) -> bool {
+        if *sym == crate::symbol::wk::topic() {
+            return self.topic.is_some();
+        }
         if let Some((cached, cached_kind)) = self.cache[Self::slot(*sym)]
             && cached == *sym
         {
@@ -1002,29 +1009,34 @@ impl ReadonlySet {
 
     #[inline]
     pub(crate) fn get(&self, sym: &Symbol) -> Option<&ReadonlyKind> {
+        if *sym == crate::symbol::wk::topic() {
+            return self.topic.as_ref();
+        }
         self.map.get(sym)
     }
 
     #[inline]
     pub(crate) fn is_empty(&self) -> bool {
-        self.map.is_empty()
+        self.map.is_empty() && self.topic.is_none()
     }
 
     /// Every marked name with its kind, in no particular order.
     // Cost: O(r), r = marked names.
     pub(crate) fn iter(&self) -> impl Iterator<Item = (Symbol, ReadonlyKind)> + '_ {
-        self.map.iter().map(|(sym, kind)| (*sym, *kind))
+        self.map
+            .iter()
+            .map(|(sym, kind)| (*sym, *kind))
+            .chain(self.topic.map(|kind| (crate::symbol::wk::topic(), kind)))
     }
 
     /// Is the topic `_` marked readonly? O(1), no hashing.
     #[inline]
     pub(crate) fn topic_marked(&self) -> bool {
-        debug_assert_eq!(
-            self.topic,
-            self.map.contains_key(&crate::symbol::wk::topic()),
-            "ReadonlySet::topic drifted from the map"
+        debug_assert!(
+            !self.map.contains_key(&crate::symbol::wk::topic()),
+            "ReadonlySet::map holds the topic"
         );
-        self.topic
+        self.topic.is_some()
     }
 }
 
