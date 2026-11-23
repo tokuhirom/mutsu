@@ -20,7 +20,8 @@ There were three causes:
   TRIR when the routine has a chunk, and otherwise through the same
   `call_compiled_function_fast` as before (`vm_call_zero_param.rs`).
 
-Routing these calls into TRIR exposed two gaps in TRIR, both now fixed:
+Routing these calls into TRIR exposed gaps in TRIR that typed routines already
+had. All are now fixed:
 
 - A `die` inside a TRIR body reported the line of whatever called the routine,
   because TRIR never updated the current source line. Each TRIR call site now
@@ -29,3 +30,7 @@ Routing these calls into TRIR exposed two gaps in TRIR, both now fixed:
   every call.
 - TRIR bodies count no lines for the profiler, so every TRIR door now declines
   while the profiler is armed.
+- A body that hands out a container (`return-rw`, or `nqp::push` / `unshift` /
+  `bindkey` / `bindpos` of a `$` variable) now leaves TRIR to the bytecode
+  path. TRIR values carry no container: `return-rw` died with an empty
+  message, and the pushed element did not follow a later assignment.

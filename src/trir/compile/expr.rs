@@ -448,6 +448,13 @@ impl TrirCompiler<'_> {
         match name {
             // Lexotic, not a call: see `ret.rs`.
             "return" => self.compile_return(args),
+            // `return-rw` hands the caller the CONTAINER it names; a TRIR
+            // value has none, and the generic call's control exception is
+            // not a lexotic return here.
+            "return-rw" => {
+                self.note_decline(|| "return-rw returns a container".to_string());
+                None
+            }
             "nqp::stmts" => self.compile_nqp_stmts(args),
             // A loop form whose value is used is a lazy Seq in rakudo (#9415);
             // sink and tail positions are compiled by `compile_expr_sink` /

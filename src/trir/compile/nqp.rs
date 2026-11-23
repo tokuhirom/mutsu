@@ -248,6 +248,18 @@ impl TrirCompiler<'_> {
             self.note_decline(|| "nqp::eqaddr needs its operand's container".to_string());
             return None;
         }
+        // `nqp::push` / `unshift` / `bindkey` / `bindpos` store their value
+        // operand as given (#17658, #12786): a `$` variable's Scalar is bound,
+        // so a later assignment to the variable shows through the aggregate.
+        // A TRIR operand is the bare value, so only a value operand that is
+        // never a container keeps the routine here.
+        if matches!(op, "push" | "unshift" | "bindkey" | "bindpos")
+            && args.last().is_some_and(|a| !self.never_a_container(a))
+        {
+            let o = op.to_string();
+            self.note_decline(|| format!("nqp::{o} binds its value operand's container"));
+            return None;
+        }
         // Everything else in the namespace goes through the ordinary
         // implementation with boxed operands. That is not a fallback arm: an
         // `nqp::` op is a primitive either way, and boxing its operands is
