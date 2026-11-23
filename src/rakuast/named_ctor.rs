@@ -19,6 +19,9 @@ enum Kind {
     Node,
     /// A list of nodes (`labels`, `module-names`, `traits`).
     List,
+    /// A list, or one item taken as a one-item list (`Doc::Markup`'s
+    /// `atoms` and `meta`, which rakudo binds as `$atoms` and flattens).
+    Items,
     /// A `Bool` flag stored only when true (`dwim-left`).
     Flag,
 }
@@ -54,7 +57,7 @@ pub(super) fn field_names(class: RakuAstClass) -> Vec<&'static str> {
     })
 }
 
-use Kind::{Flag, List, Node};
+use Kind::{Flag, Items, List, Node};
 use Missing::{DefaultFalse, DefaultStr, Omit, Required};
 
 const LABELS: Arg = ("labels", List, Omit);
@@ -169,8 +172,8 @@ fn schema(class_name: &str) -> Option<(RakuAstClass, &'static [Arg])> {
                 ("letter", Node, Required),
                 ("opener", Node, DefaultStr("<")),
                 ("closer", Node, DefaultStr(">")),
-                ("atoms", List, Omit),
-                ("meta", List, Omit),
+                ("atoms", Items, Omit),
+                ("meta", Items, Omit),
             ],
         ),
         "RakuAST::Doc::LegacyRow" => (
@@ -540,10 +543,20 @@ fn build(
             Node => RakuAstFieldValue::Node(value),
             Flag if value.truthy() => RakuAstFieldValue::Node(Value::truth(true)),
             Flag => continue,
-            List => {
-                let items = value.as_list_items().ok_or_else(|| {
-                    RuntimeError::new(format!("{class_name}.new expects `{name}` to be a list"))
-                })?;
+            List | Items => {
+                let one;
+                let items = match value.as_list_items() {
+                    Some(items) => items,
+                    None if matches!(kind, Items) => {
+                        one = [value.clone()];
+                        &one[..]
+                    }
+                    None => {
+                        return Err(RuntimeError::new(format!(
+                            "{class_name}.new expects `{name}` to be a list"
+                        )));
+                    }
+                };
                 if items.is_empty() && matches!(missing, Omit) {
                     continue;
                 }

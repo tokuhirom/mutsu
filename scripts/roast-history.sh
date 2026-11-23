@@ -101,7 +101,17 @@ mkdir -p "$OUTDIR"
 echo "Building mutsu (release)..."
 cargo build --release 2>&1 | tail -1
 
-# Collect test files (exclude 6.c, 6.d, integration, 3rdparty, APPENDICES, t/ tooling)
+# Two file sets are counted (docs/roast-compatibility.md):
+#
+# - the spectest.data files (`scripts/roast-compat.py list`), the list Rakudo
+#   runs: the headline figure, recorded in the `spec_files` / `spec_pass`
+#   columns;
+# - the legacy set below (`find`, minus 6.c, 6.d, integration, 3rdparty,
+#   APPENDICES and t/ tooling), which every column before them has counted
+#   since the first row. It is kept so the old series stays comparable.
+#
+# Each file of their union runs once; the legacy columns count only the
+# legacy files, the spec columns only the spectest.data ones.
 mapfile -t TEST_FILES < <(
   find roast -maxdepth 2 -name '*.t' \
     -not -path '*/6.c/*' \
@@ -114,6 +124,12 @@ mapfile -t TEST_FILES < <(
     -not -path '*/docs/*' \
     -not -path 'roast/t/*' \
   | sort
+)
+
+declare -A LEGACY=()
+for f in "${TEST_FILES[@]}"; do LEGACY["$f"]=1; done
+mapfile -t RUN_FILES < <(
+  { printf '%s\n' "${TEST_FILES[@]}"; python3 scripts/roast-compat.py list; } | sort -u
 )
 
 TOTAL=${#TEST_FILES[@]}
@@ -134,9 +150,16 @@ PASSED_SUBTESTS=0
 > "$OUTDIR/roast-timeout.txt"
 > "$OUTDIR/roast-panic.txt"
 
-echo "Running $TOTAL roast test files (timeout=${TIMEOUT}s each)..."
+echo "Running ${#RUN_FILES[@]} roast test files (timeout=${TIMEOUT}s each)..."
 
-for f in "${TEST_FILES[@]}"; do
+# Add $2 (default 1) to the counter named $1, for a legacy-set file only.
+bump() {
+  if [ -n "${LEGACY[$f]:-}" ]; then
+    printf -v "$1" '%d' $(( ${!1} + ${2:-1} ))
+  fi
+}
+
+for f in "${RUN_FILES[@]}"; do
   FILE_TIMEOUT=$(per_file_timeout "$f")
   # Run with timeout, capture stdout and stderr separately
   EXIT_CODE=0
@@ -150,14 +173,14 @@ for f in "${TEST_FILES[@]}"; do
 
   if [ "$EXIT_CODE" -eq 124 ]; then
     # timeout
-    TIMEDOUT=$((TIMEDOUT + 1))
+    bump TIMEDOUT
     echo "$f" >> "$OUTDIR/roast-timeout.txt"
     continue
   fi
 
   # Check for panic (Rust panic exit code is 101, or "panicked at" in stderr)
   if [ "$EXIT_CODE" -eq 101 ] || echo "$STDERR_CONTENT" | grep -q 'panicked at'; then
-    PANICKED=$((PANICKED + 1))
+    bump PANICKED
     echo "$f" >> "$OUTDIR/roast-panic.txt"
     continue
   fi
@@ -167,10 +190,10 @@ for f in "${TEST_FILES[@]}"; do
   # Sanitize: extract only digits
   PLAN=$(echo "$PLAN" | grep -oE '^[0-9]+$' || true)
   if [ -z "$PLAN" ]; then
-    ERROR=$((ERROR + 1))
+    bump ERROR
     # Check if it's a parse error (kind=parse in metadata)
     if echo "$STDERR_CONTENT" | grep -q 'kind=parse'; then
-      PARSE_ERROR=$((PARSE_ERROR + 1))
+      bump PARSE_ERROR
       echo "$f" >> "$OUTDIR/roast-parse-error.txt"
     else
       echo "$f" >> "$OUTDIR/roast-error.txt"
@@ -182,15 +205,15 @@ for f in "${TEST_FILES[@]}"; do
   NOT_OK_COUNT=$(echo "$OUTPUT" | grep -E '^not ok [0-9]' | grep -cvE '# TODO' || true)
   TODO_COUNT=$(echo "$OUTPUT" | grep -cE '^not ok [0-9]+.*# TODO' || true)
 
-  TOTAL_SUBTESTS=$((TOTAL_SUBTESTS + PLAN))
-  PASSED_SUBTESTS=$((PASSED_SUBTESTS + OK_COUNT))
+  bump TOTAL_SUBTESTS "$PLAN"
+  bump PASSED_SUBTESTS "$OK_COUNT"
 
   EFFECTIVE_OK=$((OK_COUNT + TODO_COUNT))
   if [ "$NOT_OK_COUNT" -eq 0 ] && [ "$EXIT_CODE" -eq 0 ] && [ "$EFFECTIVE_OK" -eq "$PLAN" ]; then
-    PASS=$((PASS + 1))
+    bump PASS
     echo "$f" >> "$OUTDIR/roast-pass.txt"
   else
-    FAIL=$((FAIL + 1))
+    bump FAIL
     echo "$f" >> "$OUTDIR/roast-fail.txt"
   fi
 done
@@ -210,6 +233,8 @@ echo "ParseError: $PARSE_ERROR"
 echo "Panic:      $PANICKED"
 echo "Timeout:    $TIMEDOUT"
 echo "Subtests:   $PASSED_SUBTESTS / $TOTAL_SUBTESTS"
+read -r SPEC_PASS SPEC_FILES < <(python3 scripts/roast-compat.py count --pass-list "$OUTDIR/roast-pass.txt")
+echo "Spectest:   $SPEC_PASS / $SPEC_FILES (roast/spectest.data)"
 
 echo ""
 echo "=== Category files ==="
@@ -222,15 +247,15 @@ echo "  $OUTDIR/roast-timeout.txt     ($(wc -l < "$OUTDIR/roast-timeout.txt") fi
 
 # Create header if file doesn't exist
 if [ ! -f "$HISTORY" ]; then
-  printf "date\tcommit\tfiles\tpass\tfail\terror\tpanic\ttimeout\tsubtests_pass\tsubtests_total\n" > "$HISTORY"
+  printf "date\tcommit\tfiles\tpass\tfail\terror\tpanic\ttimeout\tsubtests_pass\tsubtests_total\tspec_files\tspec_pass\n" > "$HISTORY"
 fi
 
-NEW_ROW=$(printf "%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d" \
+NEW_ROW=$(printf "%s\t%s\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d\t%d" \
   "$DATE" "$COMMIT" "$TOTAL" "$PASS" "$FAIL" "$ERROR" "$PANICKED" "$TIMEDOUT" \
-  "$PASSED_SUBTESTS" "$TOTAL_SUBTESTS")
+  "$PASSED_SUBTESTS" "$TOTAL_SUBTESTS" "$SPEC_FILES" "$SPEC_PASS")
 LAST_ROW=$(tail -n 1 "$HISTORY")
-LAST_METRICS=$(printf "%s\n" "$LAST_ROW" | cut -f 3-10)
-NEW_METRICS=$(printf "%s\n" "$NEW_ROW" | cut -f 3-10)
+LAST_METRICS=$(printf "%s\n" "$LAST_ROW" | cut -f 3-12)
+NEW_METRICS=$(printf "%s\n" "$NEW_ROW" | cut -f 3-12)
 
 if [ -n "$LAST_ROW" ] && [ "$LAST_ROW" != "$(head -n 1 "$HISTORY")" ] && [ "$LAST_METRICS" = "$NEW_METRICS" ]; then
   echo ""
@@ -249,14 +274,17 @@ if [ "$HISTORY_UPDATED" = true ]; then
   echo "Generated $HISTORY_GRAPH"
 fi
 
+# README's Roast paragraph quotes the figure and the last row's subtests.
+python3 scripts/roast-compat.py readme
+
 # Auto-commit only when --commit flag is passed.
 if [ "$COMMIT_RESULTS" = true ]; then
-  if git diff --quiet -- "$HISTORY" "$HISTORY_GRAPH"; then
-    echo "No changes to commit in $HISTORY or $HISTORY_GRAPH"
+  if git diff --quiet -- "$HISTORY" "$HISTORY_GRAPH" README.md; then
+    echo "No changes to commit in $HISTORY, $HISTORY_GRAPH or README.md"
   else
-    git add "$HISTORY" "$HISTORY_GRAPH"
-    git commit -m "Update roast history ($DATE)" -- "$HISTORY" "$HISTORY_GRAPH"
-    echo "Committed $HISTORY and $HISTORY_GRAPH"
+    git add "$HISTORY" "$HISTORY_GRAPH" README.md
+    git commit -m "Update roast history ($DATE)" -- "$HISTORY" "$HISTORY_GRAPH" README.md
+    echo "Committed $HISTORY, $HISTORY_GRAPH and README.md"
   fi
 else
   echo "Skipping commit (use --commit to auto-commit)"

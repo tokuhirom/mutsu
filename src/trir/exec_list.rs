@@ -80,12 +80,21 @@ impl Interpreter {
     /// `nqp::shift_i` off the list in absolute boxed slot `abs`, in place: a
     /// plain list or a `Uni` directly, anything else through the general op.
     // Cost: O(1) amortized.
-    #[inline]
+    // A `Uni` is answered inline; anything else out of line.
+    #[inline(always)]
     pub(super) fn trir_shift_int_local(&mut self, abs: usize) -> Result<i64, RuntimeError> {
         let slot = &self.trir.ol[abs];
         if let Some(code) = with_uni_codes_mut(slot, |codes| codes.shift()) {
             return Ok(code.map_or(0, i64::from));
         }
+        self.trir_shift_int_local_list(abs)
+    }
+
+    /// [`Self::trir_shift_int_local`] for anything but a `Uni`.
+    // Cost: O(1) amortized for a list, plus the general op otherwise.
+    #[inline(never)]
+    fn trir_shift_int_local_list(&mut self, abs: usize) -> Result<i64, RuntimeError> {
+        let slot = &self.trir.ol[abs];
         match with_list_data_mut(slot, |data| data.shift_front()) {
             Some(elem) => Ok(elem.map_or(0, |v| v.as_int().unwrap_or_else(|| to_int(&v)))),
             None => Self::nqp_shift_int(slot),
@@ -96,12 +105,21 @@ impl Interpreter {
     /// place: a `Uni`'s packed store or a plain list directly, anything else
     /// (a Buf, an `IterationBuffer`) through the general op.
     // Cost: O(1) amortized.
-    #[inline]
+    // A `Uni` is answered inline; anything else out of line.
+    #[inline(always)]
     pub(super) fn trir_push_int_local(&mut self, abs: usize, i: i64) -> Result<(), RuntimeError> {
         let slot = &self.trir.ol[abs];
         if with_uni_codes_mut(slot, |codes| codes.push(uni_code_of(i))).is_some() {
             return Ok(());
         }
+        self.trir_push_int_local_list(abs, i)
+    }
+
+    /// [`Self::trir_push_int_local`] for anything but a `Uni`.
+    // Cost: O(1) amortized for a list, plus the general op otherwise.
+    #[inline(never)]
+    fn trir_push_int_local_list(&mut self, abs: usize, i: i64) -> Result<(), RuntimeError> {
+        let slot = &self.trir.ol[abs];
         if with_list_data_mut(slot, |data| data.push(Value::int(i))).is_none() {
             crate::runtime::nqp_ops_text::push_elem("push_i", slot, Value::int(i))?;
         }
@@ -110,12 +128,21 @@ impl Interpreter {
 
     /// `nqp::elems` of the list in absolute boxed slot `abs`, read in place.
     // Cost: O(1) for a list, plus the generic `nqp::elems` for anything else.
-    #[inline]
+    // A `Uni` is answered inline; anything else out of line.
+    #[inline(always)]
     pub(super) fn trir_local_elems(&mut self, abs: usize) -> Result<i64, RuntimeError> {
         let slot = &self.trir.ol[abs];
         if let Some(len) = with_uni_codes(slot, |codes| codes.len()) {
             return Ok(len as i64);
         }
+        self.trir_local_elems_list(abs)
+    }
+
+    /// [`Self::trir_local_elems`] for anything but a `Uni`.
+    // Cost: O(1) for a list, plus the generic `nqp::elems` otherwise.
+    #[inline(never)]
+    fn trir_local_elems_list(&mut self, abs: usize) -> Result<i64, RuntimeError> {
+        let slot = &self.trir.ol[abs];
         match Self::nqp_elems_len_of(slot) {
             Some(len) => Ok(len as i64),
             None => {

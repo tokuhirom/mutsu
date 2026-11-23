@@ -524,7 +524,9 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
     // The capture name lives in `ParamDef::type_capture`, NEVER as a `"::T"`
     // spelling in `type_constraint` (#7984): a parameter can carry a capture and
     // a nominal type at once, which one `Option<String>` cannot express.
-    if let Some((after_capture, capture_name)) = super::type_constraint::strip_type_capture(rest) {
+    if let Some((after_capture, capture_name, capture_smiley)) =
+        super::type_constraint::strip_type_capture_with_smiley(rest)
+    {
         let (r, _) = ws(after_capture)?;
         rest = r;
         if rest.starts_with('=') && !rest.starts_with("==") {
@@ -587,6 +589,13 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
         // without each construction site having to remember it.
         let (r, mut p) = parse_single_param_inner(rest)?;
         crate::type_captures::note(&capture_name);
+        // A smiley on the capture (`::T:D $x`) constrains the parameter's
+        // definedness: rakudo reads it as `::T Any:D $x` (#19020).
+        if let Some(smiley) = capture_smiley.filter(|s| *s != ":_")
+            && p.type_constraint.is_none()
+        {
+            p.type_constraint = Some(format!("Any{smiley}"));
+        }
         p.type_capture = Some(capture_name);
         p.named |= named;
         p.slurpy |= slurpy;

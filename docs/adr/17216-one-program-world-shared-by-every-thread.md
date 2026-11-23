@@ -315,6 +315,48 @@ state (a module `require`d on a worker usable on the main thread), and the
 remaining per-thread `types.*` side tables (`package_type_aliases`,
 `my_scoped_package_items`, `suppressed_names`, ...).
 
+### 3.8 Status at the close of #17216 (2026-11-23)
+
+Three more PRs closed the observable gaps that slices 1-4 left:
+
+- **#19012: `our` subs and packages declared on a worker.** The stash build
+  (`Pkg::.keys`, `Pkg.WHO`), the keyed read (`Pkg::<&f>`), `EVAL`'s
+  undeclared-name check and bareword resolution now also read the world
+  tables: `OurVarTable.routines` and `Registry::package_kinds`.
+- **#19023: a per-module load claim.** It covers `use`, `need`, `require`,
+  `CompUnit::Repository.need` and the compile-time `use`. A module loads once
+  when several threads ask for it at once. A wait that would close a
+  cross-thread cycle does not wait (rakudo-divergences A5).
+- **#19037: grammar rules.** A package-owned `token`/`rule`/`regex`, and its
+  `proto` marker, is also appended to a world log (`runtime::world_tokens`).
+  Each thread replays the log at call entry, because §3.2 keeps rule
+  definitions in the per-thread routine tables.
+
+#17216's close condition holds:
+
+- The issue's repro prints what `raku` prints.
+- `spawn_clone` shares the type registry (`registry.share()`) and the handle
+  table (`Arc::clone(&io_handles)`).
+
+A probe of twenty more cross-thread shapes, run against `raku`, found no
+other difference: classes, roles, enums, subsets, `our` constants,
+attribute defaults, `BUILD`, multi and private methods, MOP-made types,
+method wraps, mixins, exceptions, `PROCESS::` variables and `augment`.
+
+`fork_for_thread` still copies some state. Each copy is either execution
+state or lexical by design:
+
+- the routine tables (§3.2);
+- the operator tables and the lexical import sets, which are lexical in
+  rakudo too;
+- the per-thread memos;
+- `type_metadata` / `instance_type_metadata` (§6);
+- `package_type_aliases`, which records a module's own import aliases.
+
+None of them showed a wrong answer in the probe. Moving one to the world
+needs a failing cross-thread program first. The spawn cost is #17217's own
+close condition and is tracked there.
+
 ## 4. Consequences
 
 - `start` and every other spawn see the program rakudo would show them: declarations, wraps,

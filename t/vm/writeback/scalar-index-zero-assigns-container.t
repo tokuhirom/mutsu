@@ -5,7 +5,7 @@ use Test;
 # variable or element holding a defined scalar assigns that container, and any
 # other index is out of range `0..0` (#18952).
 
-plan 14;
+plan 18;
 
 {
     my $x = 5;
@@ -62,4 +62,26 @@ throws-like { my @a = 1, 2; @a[0]<k> = 3 }, X::AdHoc,
     my @a;
     @a[0][0] = 1;
     is-deeply @a, [[1],], 'an absent element still autovivifies';
+}
+
+# A Pair is not Positional: the same rule (#18960).
+{
+    my $x = (a => 1);
+    $x[0] = 9;
+    is $x, 9, '$x[0] = v on a Pair assigns the variable';
+}
+
+throws-like { my $x = (a => 1); $x[1] = 9 }, X::OutOfRange,
+    message => 'Index out of range. Is: 1, should be in 0..0', '$x[1] on a Pair is out of range';
+
+{
+    my %h = k => (a => 1);
+    %h<k>[0] = 7;
+    is-deeply %h, %(k => 7), '%h<k>[0] = v over a Pair replaces the entry';
+}
+
+{
+    my $p = (c => [1, 2]);
+    $p<c> = [3, 4];
+    is-deeply $p.value, [3, 4], 'an associative store through a Pair still reaches its value';
 }

@@ -137,6 +137,7 @@ mod declared_routines;
 mod deferred_name;
 mod derived_methods;
 pub(crate) mod doc_block_edit;
+mod doc_block_paragraphs;
 pub(crate) mod doc_edit;
 mod doc_phaser;
 mod doc_source;
@@ -2732,6 +2733,9 @@ fn construct_class(
     }
     if class_name == "RakuAST::Doc::Block" && method == "from-alias" {
         return doc_block_edit::from_alias(args).map(Some);
+    }
+    if class_name == "RakuAST::Doc::Block" && method == "from-paragraphs" {
+        return doc_block_paragraphs::from_paragraphs(args).map(Some);
     }
     if class_name == "RakuAST::Doc::Block" && method == "from-config" {
         return doc_block_edit::from_config(args).map(Some);
