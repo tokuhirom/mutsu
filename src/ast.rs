@@ -657,6 +657,15 @@ impl ParamDef {
         {
             return None;
         }
+        // An untyped `$` parameter `is copy` gets a fresh container whose `of`
+        // is `Any`, a parameter's implicit type: `$p = Mu` dies and
+        // `$p.VAR.of` is `Any`, as on rakudo (#19046).
+        if self.type_constraint.is_none()
+            && !self.name.starts_with(['@', '%', '&'])
+            && self.traits.iter().any(|t| t == "copy")
+        {
+            return Some("Any");
+        }
         self.type_constraint.as_deref()
     }
 
