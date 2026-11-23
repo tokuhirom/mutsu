@@ -6,7 +6,7 @@ use Test;
 # only a declared element type. A value with no container (a literal, a
 # parameter, a `:=`-bound value, `self`) shows nothing.
 
-plan 13;
+plan 15;
 
 my $captured = '';
 my class Capture {
@@ -43,3 +43,7 @@ is dd-of({ dd $*D }), '$*D = 4', 'a dynamic variable shows its twigil';
 my class C { has $.a = 1; method m { dd $!a } }
 is dd-of({ C.new.m }), '$!a = 1', 'an attribute shows its twigil';
 is dd-of({ dd $x, @a }), "\$x = 5\n[1, 2]", 'each argument is its own line';
+my class Q::Inner { }
+is dd-of({ dd Q::Inner }), 'Q::Inner', 'a package-qualified type name is no container (#19076)';
+my \sl = 3;
+is dd-of({ dd sl }), '3', 'nor is a sigilless binding';

@@ -4109,6 +4109,10 @@ impl Compiler {
             // `A(Int)` is a coercion literal, which the call checks by the
             // argument having no variable source.
             Expr::BareWord(name) if crate::runtime::utils::is_known_type_constraint(name) => None,
+            // So is a package-qualified name (`RakuAST::IntLiteral`): no
+            // sigilless binding is spelled with `::`, and as a source `dd`
+            // labelled it as a `$` variable (#19076).
+            Expr::BareWord(name) if crate::qualified::is_qualified_str(name) => None,
             // A `::T` type capture (this routine's, or an enclosing one's read
             // from a closure) is a type too. Recorded as a source, a sigilless
             // callee parameter (`sub f(\type)`) aliased the caller's `T` and
