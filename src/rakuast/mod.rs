@@ -2034,6 +2034,20 @@ pub(crate) fn annotated_target_declaration(node: &RakuAstNode) -> Option<Value> 
     resolve::target_declaration(node)
 }
 
+/// The declaration a `ParameterTarget::Var` makes, built from its name when
+/// no parameter has embedded one yet (an untyped parameter's target, which
+/// `visit-children` hands out as rakudo does: `VarDeclaration::Simple` named
+/// `$a`, #18333).
+// Cost: O(f + n), f = fields of the target, n = length of its name.
+pub(crate) fn named_target_declaration(node: &RakuAstNode) -> Option<Value> {
+    let mut target = Value::rakuast(Box::new(node.clone()));
+    resolve::embed_declaration(&mut target, None);
+    match target.view() {
+        ValueView::RakuAst(embedded) => resolve::target_declaration(embedded),
+        _ => None,
+    }
+}
+
 /// The parameter a `RakuAST::Parameter` node declares, as the `ParamDef` the
 /// parser builds for it (`Parameter.meta-object` is made from it).
 // Cost: O(size of the parameter node).
