@@ -3361,6 +3361,7 @@ t/lang/pod-block-gist.t
 t/lang/pod-block-named-and-empty-config.t
 t/lang/pod-comment.t
 t/lang/pod-declarator-blocks-in-source-order.t
+t/lang/pod-declarator-leading-in-initializer.t
 t/lang/pod-declarator-nested-declarants.t
 t/lang/pod-declarator-trailing-adjacency.t
 t/lang/pod-delimited-end-indentation.t
@@ -7001,6 +7002,7 @@ t/rakuast/rakuast-expr.t
 t/rakuast/rakuast-expression-assignment-node.t
 t/rakuast/rakuast-expression-context-cohort.t
 t/rakuast/rakuast-expression-nodes.t
+t/rakuast/rakuast-fail-call-form.t
 t/rakuast/rakuast-fake-signature-whatevercode-where.t
 t/rakuast/rakuast-fat-arrow-key.t
 t/rakuast/rakuast-fat-arrow-whatever.t
@@ -9463,6 +9465,7 @@ t/routines/signature/parametric-type-compound-name-scope.t
 t/routines/signature/placeholder-parameter-name.t
 t/routines/signature/placeholder-scope-signature-capable.t
 t/routines/signature/plus-unpack-param-and-renamed-block-params.t
+t/routines/signature/pod-declarator-param-trailing-extent.t
 t/routines/signature/pointy-amp-param-shadows-sub.t
 t/routines/signature/pointy-anon-destructure-later-param.t
 t/routines/signature/pointy-at-param-binds-seq-through-failover.t
@@ -10585,6 +10588,7 @@ t/vm/binding/decl-lane-aggregate-values.t
 t/vm/binding/decl-marker-fusion.t
 t/vm/binding/declarator-null-name.t
 t/vm/binding/declarator-trailing-after-earlier-sub.t
+t/vm/binding/declarator-trailing-wherefore.t
 t/vm/binding/declared-comparison-word-chains.t
 t/vm/binding/declared-constraint-incdec-bake.t
 t/vm/binding/declared-constraint-slot-bake.t
@@ -10964,6 +10968,7 @@ t/vm/scope/lexical-name-resolution-static-link.t
 t/vm/scope/lexical-self-vs-invocant.t
 t/vm/scope/lexical-shadow-slots.t
 t/vm/scope/lexical-shadows-builtin-call.t
+t/vm/scope/lexical-type-declarator-pod-wherefore.t
 t/vm/scope/lexical-type-key-index.t
 t/vm/scope/lexical-type-scalar-same-name.t
 t/vm/scope/lexical-type-scope-exit.t
@@ -11090,6 +11095,7 @@ t/vm/scope/sunk-lexical-code-shadow.t
 t/vm/scope/symbolic-code-lookup-lexical-chain.t
 t/vm/scope/symbolic-scalar-lookup-sees-lexicals.t
 t/vm/scope/syntax-missing-and-unitscope-carry-what.t
+t/vm/scope/temp-non-container.t
 t/vm/scope/temp-postfix-incdec.t
 t/vm/scope/temp-process-env-restore.t
 t/vm/scope/temp-rebinds-object-keeps-aliases.t

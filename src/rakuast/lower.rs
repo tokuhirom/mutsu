@@ -750,8 +750,16 @@ pub(super) fn lower_stmt_kept(names: &NameScope, node: &RakuAstNode) -> Result<S
                     })
                 }
                 "die" => Ok(Stmt::Die(die_argument(args))),
+                // `fail("a", "b")`: the arguments as one list, as the parser
+                // keeps them (the message joins them, #16356).
+                "fail" if args.len() > 1 => Ok(Stmt::Fail(Expr::ArrayLiteral(args))),
                 "fail" => Ok(Stmt::Fail(
                     args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
+                )),
+                // `take(1, 2)`: one list, as the parser keeps it (#16356).
+                "take" | "take-rw" if args.len() > 1 => Ok(Stmt::Take(
+                    Expr::ArrayLiteral(args),
+                    name == "take-rw",
                 )),
                 "take" | "take-rw" => Ok(Stmt::Take(
                     args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
