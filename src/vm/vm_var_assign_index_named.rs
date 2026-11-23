@@ -5014,7 +5014,7 @@ impl Interpreter {
     /// ordinary scalar assignment (type check and container identity kept);
     /// any other index is out of range `0..0` (#18952, #18960).
     // Cost: O(1) besides the assignment.
-    fn store_index_zero_into_var(
+    pub(super) fn store_index_zero_into_var(
         &mut self,
         code: &CompiledCode,
         name_idx: u32,
@@ -5695,6 +5695,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         // As in the two-level op: a deferred token target has no container at
         // any level, so walk-create the whole chain from the token's path.
+        use super::vm_index_zero_chain::IndexZeroChain;
         let flags_for_token: Vec<bool> = match code.constants[positional_flags_idx as usize].view()
         {
             ValueView::Array(arr, _) => arr.items().iter().map(|v| v.truthy()).collect(),
@@ -5878,6 +5879,24 @@ impl Interpreter {
             })
             .collect();
         let val = raw_val_for_junction;
+        // A `[0]` tail over a defined scalar collapses onto the level that
+        // reached it (#18960).
+        if !Self::is_bind_index_value(&val)
+            && let IndexZeroChain::Keep(kept) = Self::index_zero_chain(
+                self.place_env_get_sym(place, var_sym),
+                &indices,
+                &positional_flags,
+            )?
+        {
+            return self.store_collapsed_index_zero_chain(
+                code,
+                name_idx,
+                target_slot,
+                positional_flags_idx,
+                &indices_val[..super::vm_index_zero_chain::collapsed_chain_len(kept, depth)],
+                val,
+            );
+        }
 
         // LHS binding (`$struct[..]<..>[..] := $scalar`): unwrap the bind
         // payload and promote the deep leaf element to a first-class
