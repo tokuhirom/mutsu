@@ -36,10 +36,7 @@ fn is_empty_part_type_object(name: &str) -> bool {
 /// Whether a name part is an empty edge, as a type object or an instance.
 pub(super) fn is_empty_part(value: &Value) -> bool {
     match value.view() {
-        ValueView::RakuAst(node) => matches!(
-            node.class,
-            RakuAstClass::NamePartEmptyEdge
-        ),
+        ValueView::RakuAst(node) => matches!(node.class, RakuAstClass::NamePartEmptyEdge),
         ValueView::Package(name) => is_empty_part_type_object(&name.resolve()),
         _ => false,
     }

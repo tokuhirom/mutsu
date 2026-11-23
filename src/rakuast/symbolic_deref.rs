@@ -147,14 +147,7 @@ pub(super) fn lower_indirect_code(
         return None;
     };
     let caller = match first.view() {
-        ValueView::RakuAst(part)
-            if matches!(
-                part.class,
-                RakuAstClass::NamePartEmptyEdge
-            ) =>
-        {
-            false
-        }
+        ValueView::RakuAst(part) if matches!(part.class, RakuAstClass::NamePartEmptyEdge) => false,
         ValueView::RakuAst(part)
             if part.class == RakuAstClass::NamePartSimple
                 && name_parts::part_identifier(first).as_deref() == Some("CALLER") =>
