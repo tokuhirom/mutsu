@@ -21,6 +21,7 @@ use crate::value::{Value, ValueView};
 pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
     match node.class {
         RakuAstClass::ApplyInfix => {
+            super::decl_tail_origins::leading_head(names, node);
             apply_infix(node);
             super::decl_compound_origins::left_call(node);
         }
@@ -52,6 +53,7 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
             super::signature_decl_origins::declaration(names, node);
         }
         RakuAstClass::ApplyListInfix => {
+            super::decl_tail_origins::leading_head(names, node);
             super::fragment_origins::list_operands(names, node);
             super::list_origins::apply_list_infix(node)
         }
