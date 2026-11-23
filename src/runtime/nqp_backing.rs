@@ -92,6 +92,11 @@ pub(crate) fn with_list_data_mut<R>(
 // Cost: O(1) plus f.
 #[inline]
 pub(crate) fn with_uni_codes<R>(v: &Value, f: impl FnOnce(&UniCodes) -> R) -> Option<R> {
+    // A bare `Uni` by its tag alone: `view()` decodes every kind through an
+    // out-of-line match, which is most of a per-codepoint op's cost.
+    if let Some(uni) = v.as_uni() {
+        return Some(f(&uni.codes));
+    }
     match v.view() {
         ValueView::Uni(uni) => Some(f(&uni.codes)),
         ValueView::ContainerRef(..) => with_uni_codes(&v.deref_container(), f),
@@ -105,6 +110,11 @@ pub(crate) fn with_uni_codes<R>(v: &Value, f: impl FnOnce(&UniCodes) -> R) -> Op
 // Cost: O(1) plus f.
 #[inline]
 pub(crate) fn with_uni_codes_mut<R>(v: &Value, f: impl FnOnce(&mut UniCodes) -> R) -> Option<R> {
+    // SAFETY: as for the `ValueView::Uni` arm below, which this is the
+    // tag-only form of.
+    if let Some(uni) = v.as_uni() {
+        return Some(f(unsafe { crate::value::gc_contents_mut(&uni.codes) }));
+    }
     match v.view() {
         // SAFETY: audited aliased in-place container write (see
         // value::aliased_mut and docs/gc-contents-mut-inventory.md) -- every

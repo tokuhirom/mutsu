@@ -730,6 +730,14 @@ impl Value {
         self.0.as_str()
     }
 
+    /// The `Uni` payload if this is exactly a `Uni` (not a container
+    /// holding one). No coercion.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn as_uni(&self) -> Option<&UniData> {
+        self.0.as_uni()
+    }
+
     /// Whether this is `Nil`.
     #[inline]
     pub fn is_nil(&self) -> bool {
