@@ -4612,20 +4612,8 @@ fn parameter(
     pd: &ParamDef,
     type_setting: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
-    // `::T:D $x`: the parser turns the capture's smiley into an `Any:D` type
-    // for the binder (#19020). RakuAST keeps it on the `Type::Capture` node
-    // and leaves the parameter's type the default one.
-    let unsmiled;
-    let pd = match pd.type_capture_smiley {
-        Some(smiley) if pd.type_constraint.as_deref() == Some(&format!("Any:{smiley}")) => {
-            unsmiled = ParamDef {
-                type_constraint: None,
-                ..pd.clone()
-            };
-            &unsmiled
-        }
-        _ => pd,
-    };
+    let unsmiled = super::type_capture_ctor::param_without_capture_smiley_type(pd);
+    let pd = unsmiled.as_ref().unwrap_or(pd);
     // The parser records an invocant (`$self:`, `Foo:D:`) as `is_invocant`
     // plus an `invocant` trait, and a synthesized one (no variable) with the
     // `implicit-invocant` trait as well; RakuAST has the one `invocant` flag.
@@ -4666,16 +4654,7 @@ fn parameter(
         return node;
     }
     let type_capture = match type_capture_name(pd) {
-        Some(name) => {
-            let mut node = type_capture_node(names, name)?;
-            if let Some(smiley) = pd.type_capture_smiley {
-                node.fields.push(RakuAstField {
-                    name: Some("smiley"),
-                    value: RakuAstFieldValue::Node(Value::str(smiley.to_string())),
-                });
-            }
-            Some(node)
-        }
+        Some(name) => Some(super::type_capture_ctor::capture_of(names, name, pd)?),
         None => None,
     };
     // A bare `::T` is represented internally by a synthetic parameter name,

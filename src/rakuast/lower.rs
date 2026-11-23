@@ -2584,8 +2584,7 @@ fn lower_parameter(
             def.type_constraint = Some(format!("::{type_capture}"));
         } else {
             def.type_capture = Some(type_capture);
-            def.type_capture_smiley =
-                super::type_capture_ctor::parameter_capture_smiley(parameter);
+            def.type_capture_smiley = super::type_capture_ctor::parameter_capture_smiley(parameter);
             if let Some(smiley @ ('D' | 'U')) = def.type_capture_smiley
                 && def.type_constraint.is_none()
             {
