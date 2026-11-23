@@ -1,0 +1,1 @@
+A regex containing an end-of-string anchor immediately followed by a code block (`${ ... }`) now keeps both nodes in its RakuAST declarator tree. Such regexes compile and round-trip through RakuAST as they do on Rakudo.
