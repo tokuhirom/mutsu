@@ -137,6 +137,7 @@ mod declared_routines;
 mod deferred_name;
 mod derived_methods;
 pub(crate) mod doc_block_edit;
+mod doc_block_paragraphs;
 pub(crate) mod doc_edit;
 mod doc_phaser;
 mod doc_source;
@@ -291,6 +292,7 @@ mod substitution;
 pub(crate) use indirect_bind::indirect_symbol_bind;
 mod symbolic_deref;
 mod temporize;
+mod term_bool_ctor;
 mod term_name;
 mod thunk;
 mod topic_subscript;
@@ -2732,6 +2734,9 @@ fn construct_class(
     if class_name == "RakuAST::Doc::Block" && method == "from-alias" {
         return doc_block_edit::from_alias(args).map(Some);
     }
+    if class_name == "RakuAST::Doc::Block" && method == "from-paragraphs" {
+        return doc_block_paragraphs::from_paragraphs(args).map(Some);
+    }
     if class_name == "RakuAST::Doc::Block" && method == "from-config" {
         return doc_block_edit::from_config(args).map(Some);
     }
@@ -3617,6 +3622,9 @@ fn construct_class(
             )));
         }
         return Ok(Some(slurpy_marker_value(class)));
+    }
+    if let Some(node) = term_bool_ctor::construct(class_name, method, args) {
+        return node.map(Some);
     }
     // `Term::Enum.new(Name)`: the same node as `Term::Enum.from-identifier`,
     // from a simple (single identifier) name node.
