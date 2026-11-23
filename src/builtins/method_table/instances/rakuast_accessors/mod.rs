@@ -70,6 +70,13 @@ pub(crate) fn pure_answer(target: &Value, method: Symbol) -> Option<Result<Value
     let ValueView::RakuAst(node) = target.view() else {
         return None;
     };
+    if method.as_str() == "sunk"
+        && crate::rakuast::hierarchy::does(node.class.printed_name(), "RakuAST::Sinkable")
+            == Some(true)
+    {
+        let id = resolve_owner_row(&["RakuAST::Sinkable"], method)?;
+        return invoke_selected(id, &target);
+    }
     static CLASSES: SymbolMemo = SymbolMemo::new();
     let index = CLASSES.get(Symbol::intern(node.class.printed_name()), class_index);
     let index = usize::from(index.checked_sub(1)?);

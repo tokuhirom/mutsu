@@ -171,6 +171,7 @@ pub(crate) mod literal_queries;
 pub(crate) mod name_queries;
 pub(crate) mod parameter_queries;
 pub(crate) mod sink_call;
+mod sink_propagation;
 mod type_capture_ctor;
 pub(crate) mod type_queries;
 pub(crate) use infix_func::add_colonpair;
@@ -362,6 +363,9 @@ pub struct NodeOrigin(
     /// (a slang action at parse time), so every call answers the same object,
     /// as rakudo memoizes it on the node (#17415).
     pub Option<Value>,
+    /// Sink and block-statement context assigned to parsed nodes.
+    pub bool,
+    pub bool,
 );
 
 impl PartialEq for NodeOrigin {
@@ -2128,6 +2132,7 @@ fn parse_unit_ast(
     let (code, _) = crate::parser::split_finish_section(source);
     pod_blocks::insert(names, &mut node, code, &stmts);
     named_docs::attach(&mut node, unit_docs);
+    sink_propagation::annotate(&mut node)?;
     Ok(Value::rakuast(Box::new(node)))
 }
 
