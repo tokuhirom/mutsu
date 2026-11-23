@@ -615,7 +615,19 @@ impl Interpreter {
             self.finish()?;
             return Ok(self.output_sink().output.clone());
         }
-        let (mut stmts, finish_content) = parse_result?;
+        let (mut stmts, finish_content) = match parse_result {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                // A module the parse already loaded registered its END phasers
+                // (ADR-17558), and rakudo runs them when the compile fails
+                // afterwards, under `-c` too: report the error first, then END.
+                // The mainline was never entered, so its LEAVE phasers do not
+                // run.
+                self.report_uncaught_early(&e);
+                let _ = self.finish_unit(false);
+                return Err(e);
+            }
+        };
         // The program's own revision, for routines it declares (ADR-17287).
         if let Some(path) = self.io.program_path_sym {
             crate::parser::unit_revisions::note_unit_language_revision(
@@ -1489,6 +1501,12 @@ impl Interpreter {
     }
 
     pub(super) fn finish(&mut self) -> Result<(), RuntimeError> {
+        self.finish_unit(true)
+    }
+
+    /// [`Self::finish`], with the mainline's LEAVE phasers run only when
+    /// `mainline_entered`: a unit whose compile failed never entered it.
+    fn finish_unit(&mut self, mainline_entered: bool) -> Result<(), RuntimeError> {
         // On wasm a fire-and-forget `start` block is a task nobody pumped: it is
         // still sitting on the cooperative scheduler's queue. Run it here, at the
         // same point a native build would collect a finished thread's output, so
@@ -1507,7 +1525,7 @@ impl Interpreter {
         // LEAVE phasers a top-level `use` attached to the main compunit
         // (`runtime::attach_target`): the mainline is left before END runs.
         // An `exit` leaves no scope in raku, so it skips them.
-        let mainline_leave = if self.control.halted {
+        let mainline_leave = if self.control.halted || !mainline_entered {
             Ok(())
         } else {
             self.run_mainline_leave_phasers()
