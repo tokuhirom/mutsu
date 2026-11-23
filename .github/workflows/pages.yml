@@ -132,15 +132,13 @@ jobs:
         run: python3 scripts/gen-internals-manifest.py
 
       - name: Record compatibility stats
-        # The landing page headlines "N% of the official spec files pass". Count
-        # it here rather than hand-writing it into the copy, so the figure cannot
-        # drift away from the suite (the README's did). The site falls back to a
+        # The landing page headlines the Roast compatibility figure: the
+        # roast/spectest.data files (the list Rakudo runs) that pass. It comes
+        # from the one generator README and HISTORY.tsv use, so the three cannot
+        # drift apart (docs/roast-compatibility.md). The site falls back to a
         # baked-in number when this file is absent, i.e. in a local checkout.
         run: |
-          pass=$(grep -c . roast-whitelist.txt)
-          total=$(find roast -name '*.t' -type f | wc -l)
-          printf '{"roastPass":%d,"roastTotal":%d}\n' "$pass" "$total" \
-            > site/content/stats.json
+          python3 scripts/roast-compat.py stats-json > site/content/stats.json
           cat site/content/stats.json
 
       - name: Render bench-trend dashboard
