@@ -3719,6 +3719,22 @@ mod tests {
     }
 
     #[test]
+    fn fresh_overlay_gets_capacity_and_leaves_the_shared_empty_map_alone() {
+        let parent = Env::new();
+        let mut a = Env::scoped_child(parent.clone());
+        let b = Env::scoped_child(parent);
+        a.insert_sym(s("overlay_cap_x"), Value::int(1));
+        assert!(a.inner.capacity() >= FRESH_OVERLAY_CAPACITY);
+        for (i, k) in ["oc1", "oc2", "oc3", "oc4", "oc5", "oc6"].iter().enumerate() {
+            a.insert_sym(s(k), Value::int(i as i64));
+        }
+        assert_eq!(a.inner.len(), 7);
+        assert!(b.inner.is_empty(), "a sibling overlay must not see the writes");
+        assert!(empty_overlay_ref().is_empty(), "the shared empty map stays empty");
+        assert_eq!(a.get_sym(s("oc6")).cloned(), Some(Value::int(5)));
+    }
+
+    #[test]
     fn plain_user_lexical_classification() {
         // Plain user lexicals (droppable by the closure upvalue capture): a
         // lowercase-identifier scalar (stored sigil-less) or @/%/&-sigiled var.
