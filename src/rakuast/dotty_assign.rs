@@ -433,7 +433,8 @@ fn expand_dot_assign(
                 quoted: false,
                 sugar: false,
             };
-            let then_expr = Expr::desugar_block(vec![Stmt::Expr(store_call), Stmt::Expr(tmp_var.clone())]);
+            let then_expr =
+                Expr::desugar_block(vec![Stmt::Expr(store_call), Stmt::Expr(tmp_var.clone())]);
             // A literal is no container: `"ab".=uc` computes the method and
             // then fails the store with rakudo's `X::Assignment::RO` naming
             // the value ("Cannot modify an immutable Str (ab)"), as
