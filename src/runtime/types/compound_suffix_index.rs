@@ -51,10 +51,15 @@ impl Interpreter {
                 .chain(reg.enum_types.keys())
                 .chain(reg.subsets.keys());
             for key in keys {
-                let mut rest = key.as_str();
-                while let Some(at) = rest.find("::") {
-                    rest = &rest[at + 2..];
-                    suffixes.insert(Box::<str>::from(rest));
+                // Each enclosing package of the key (`A::B` and `A` for
+                // `A::B::C`) leaves the suffix after it.
+                let key = key.as_str();
+                for pkg in crate::qualified::package_ancestors(crate::symbol::Symbol::intern(key))
+                    .skip(1)
+                {
+                    if let Some(rest) = key.get(pkg.as_str().len() + 2..) {
+                        suffixes.insert(Box::<str>::from(rest));
+                    }
                 }
             }
             *cache = Some(CompoundSuffixes {
