@@ -815,15 +815,31 @@ impl Interpreter {
                             && !has_junction
                             && !call_has_slip
                             && !call_has_named
-                            && cl.is_none()
+                            && (cl.is_none()
+                                || Self::is_callsite_line_marker(&self.stack[self.stack.len() - 1]))
                         {
-                            let start = self.stack.len() - arity_usize;
+                            // A parenthesized zero-argument call (`f()`)
+                            // carries the parser's callsite-line marker last:
+                            // record its line as the light path does, and
+                            // hand TRIR the arguments without it (#18080).
+                            // Restored on a decline, so the chain below sees
+                            // the stack exactly as it was.
+                            let marker = if cl.is_some() {
+                                loan_env!(self, set_pending_callsite_line(cl));
+                                self.stack.pop()
+                            } else {
+                                None
+                            };
+                            let start = self.stack.len() - (arity_usize - marker.is_some() as usize);
                             if let Some(result) =
                                 self.try_call_trir(cf, start, Some(code), compiled_fns)
                             {
                                 self.stack.push(result?);
                                 self.drain_and_reconcile_after_cached_call(code);
                                 return Ok(());
+                            }
+                            if let Some(marker) = marker {
+                                self.stack.push(marker);
                             }
                         }
                         if !has_junction

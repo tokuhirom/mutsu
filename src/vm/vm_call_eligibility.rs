@@ -533,7 +533,6 @@ impl Interpreter {
             // `is rw` stays out: its lvalue-return contract
             // (`rw_return_context`) is only set up by the full path.
             && !cf.is_rw
-            && !cf.empty_sig
             && cf.param_local_slots.is_some()
             // Exclude functions with inner routines, `for` loops or code-value
             // calls (phasers, the routine registry snapshot, ...). A body whose
@@ -556,7 +555,6 @@ impl Interpreter {
                 .as_deref()
                 .is_none_or(Self::is_fast_return_type_name)
                 || cf.return_definite_const.is_some())
-            && !cf.param_defs.is_empty()
             && cf.param_defs.iter().enumerate().all(|(i, pd)| {
                 !pd.named
                     && (pd.where_constraint.is_none()
