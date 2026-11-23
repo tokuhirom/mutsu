@@ -531,6 +531,8 @@ impl Interpreter {
         // dynamic, an `@`/`%` lane, an `our` mirror, an unmerged package
         // variable or a twigil alias, so of the `get_env_with_main_alias_sym`
         // cascade only its direct env probe can answer for one (#18274).
+        // (A lexical type's `\u{1}` key is not: the cascade finds a module's
+        // file-scope `my class` under `Pkg::\u{1}Name`.)
         let term_candidate = name_str.starts_with(crate::term_names::TERM_PREFIX);
         // Each step's `<sigil><pkg>::<rest>` key and the walk itself are
         // memoized per symbol: no `format!` and no `"::"` search per read.
@@ -545,6 +547,9 @@ impl Interpreter {
             }
             let env_hit = if term_candidate {
                 let narrow = self.env().get_sym(candidate).cloned();
+                // `term_key_may_be_bound_outside_env` relies on this: no
+                // env binds a package-qualified term key.
+                debug_assert!(narrow.is_none(), "an env binds {candidate:?}");
                 debug_assert_eq!(
                     narrow.is_some(),
                     self.get_env_with_main_alias_sym(candidate.as_str(), candidate)

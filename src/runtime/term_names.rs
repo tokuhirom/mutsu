@@ -68,14 +68,61 @@ impl Interpreter {
             // routine call -- a class attribute's default -- finds it there.
             self.unit_lexical_slot(key, Some(key_sym))
                 .map(|v| v.deref_container())
-                .or_else(|| self.module_imported_lexical(key))
-                .or_else(|| self.module_scope_lexical(key))
-                // A package block's own `my constant`, kept for its routines in
-                // `package_lexicals` once the block has exited.
-                .or_else(|| self.package_chain_var_fallback(key_sym))
-                // An `our`-scoped constant of a block that has since exited.
-                .or_else(|| self.get_our_var(key))
+                .or_else(|| {
+                    // A core type name (`Bool`, `Str`) asked on every type-check
+                    // memo hit is bound in none of the stores below; their
+                    // name filters say so without walking the package chain
+                    // (#18274).
+                    if !self.term_key_may_be_bound_outside_env(key, key_sym) {
+                        debug_assert!(
+                            self.term_key_stores_lookup(key, key_sym).is_none(),
+                            "the term-key filter missed {key:?}"
+                        );
+                        return None;
+                    }
+                    self.term_key_stores_lookup(key, key_sym)
+                })
         })
+    }
+
+    /// The term stores past `env` and the unit lexicals, in resolution order.
+    // Cost: O(p) for the module-scope and package-chain probes, p = packages
+    // the running routine could belong to.
+    fn term_key_stores_lookup(&self, key: &str, key_sym: Symbol) -> Option<Value> {
+        self.module_imported_lexical(key)
+            .or_else(|| self.module_scope_lexical(key))
+            // A package block's own `my constant`, kept for its routines in
+            // `package_lexicals` once the block has exited.
+            .or_else(|| self.package_chain_var_fallback(key_sym))
+            // An `our`-scoped constant of a block that has since exited.
+            .or_else(|| self.get_our_var(key))
+    }
+
+    /// Whether any store [`Self::term_key_stores_lookup`] asks may hold the
+    /// term key `key`, from the stores' own name filters: the module-scope
+    /// table's key union (it also decides `module_imported_lexical`), the
+    /// package-lexical table's key union (the package chain's
+    /// `package_lexicals` probe), and the `our` table's key set and its
+    /// append-only index of unqualified parts (the package chain's
+    /// `Pkg::\X` probes and the bare `\X` probe share the unqualified part
+    /// `\X`). The package chain's env probe of `Pkg::\X` is not filtered:
+    /// nothing binds a package-qualified term key in an env, which the
+    /// debug assertion in `package_chain_var_fallback` checks. `false` is a
+    /// definitive miss.
+    // Cost: four hash probes.
+    fn term_key_may_be_bound_outside_env(&self, key: &str, key_sym: Symbol) -> bool {
+        if self
+            .module
+            .world
+            .module_scope_lexicals
+            .read()
+            .contains_name(key)
+            || self.lexicals.package_lexicals.read().contains_name(key)
+        {
+            return true;
+        }
+        let our = self.our_table();
+        our.contains_key(key) || our.has_unqualified(crate::qualified::unqualified_part(key_sym))
     }
 
     /// What a bare `name` written where a TYPE goes is bound to: a sigil-less

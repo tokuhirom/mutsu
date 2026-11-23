@@ -29,4 +29,13 @@ nok M::C.chk-bool(5), 'not Bool';
 for ^3 { ok M::C.chk-bool(True), "repeat $_" }
 ok N::K.chk("x"), "constant shadows Bool in the package chain";
 nok N::K.chk(True), 'shadowed Bool is Str';
+sub outer(\Bool) {
+    my sub inner($x) { $x ~~ Bool }
+    inner("s"), inner(1)
+}
+is-deeply outer(Str).List, (True, False), 'sigilless parameter shadows a type name in a nested sub';
+my \Real = Str;
+sub r($x) { $x ~~ Real }
+for ^3 { ok r("x"), "file-scope sigilless term shadows a core type in a sub ($_)" }
+nok r(1.5), 'the shadowing term is Str';
 done-testing;
