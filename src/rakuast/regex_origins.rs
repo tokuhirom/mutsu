@@ -173,10 +173,8 @@ impl Walk<'_> {
             }
             // `$0`, `$٠`: the index in any script's digits.
             RakuAstClass::RegexBackReferencePositional => {
-                self.at += super::regex_modifier_origins::backreference_len(
-                    node,
-                    &self.text[self.at..],
-                )?
+                self.at +=
+                    super::regex_modifier_origins::backreference_len(node, &self.text[self.at..])?
             }
             RakuAstClass::RegexAssertionPass => self.eat("<?>")?,
             RakuAstClass::RegexAssertionFail => self.eat("<!>")?,
