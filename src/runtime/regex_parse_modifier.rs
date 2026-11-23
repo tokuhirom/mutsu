@@ -366,6 +366,12 @@ impl Interpreter {
                 i += 1 + consumed;
                 continue;
             }
+            // A `$name` the parse entry points hoisted as a match-time lexical
+            // (`with_match_time_scalars`, #14510) is left in the text below for
+            // the structural parser's `VarInterp`; that is every bound scalar.
+            // What is still spliced here: a `constant` (inlined at compile
+            // time, part of the declarative LTM prefix, as on rakudo), a
+            // `"..."` literal's text, and a name no scope binds.
             if ch == '$' {
                 // `$$` is the end-of-line anchor, not a scalar reference. It has
                 // to be recognised BEFORE the `${…}` branch below: in `/ . $${ … } /`
@@ -504,7 +510,13 @@ impl Interpreter {
                     // atom instead of pre-substituting an outer-scope value here.
                     if is_regex_local(&name, &declared_my_vars) {
                         out.extend(chars[i..j].iter());
-                        i = j;
+                        // `$foo=ATOM` is an alias to the variable: the atom
+                        // is dropped (#14628).
+                        i = if quotes.inside_double(&chars, i) {
+                            j
+                        } else {
+                            super::regex_variable_alias::variable_alias_end(&chars, j).unwrap_or(j)
+                        };
                         continue;
                     }
                     // A `<$re>` reference re-resolving `$re`'s OWN

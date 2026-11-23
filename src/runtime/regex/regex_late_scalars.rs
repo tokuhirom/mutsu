@@ -17,8 +17,8 @@
 
 /// The plain scalar names the pattern `text` writes, in order of first use, and
 /// whether it contains a code block. A name a `=` follows is an alias
-/// (`$x=ATOM`, dropped by the interpolation pre-pass) and is left out, as is
-/// that alias's atom.
+/// (`$x=ATOM`): the variable is still read, and the interpolation pre-pass
+/// drops the alias's atom, which is left out here.
 // Cost: O(n), n = the text's length.
 pub(crate) fn scalars_in_pattern(text: &str) -> (Vec<String>, bool) {
     let (names, saw_block) = scan_scalars(text);
@@ -54,6 +54,8 @@ fn scan_scalars(text: &str) -> (Vec<(String, bool)>, bool) {
                     i += 1;
                 }
             }
+            // `<<` is the left word boundary, not a `<...>` assertion.
+            '<' if chars.get(i + 1) == Some(&'<') => i += 2,
             '<' if matches!(chars.get(i + 1), Some('[' | '-' | '+')) => {
                 // A character class: its braces and dollars are plain members.
                 while i < chars.len() && chars[i] != '>' {
@@ -102,33 +104,34 @@ fn scan_scalars(text: &str) -> (Vec<(String, bool)>, bool) {
                     i += 1;
                 }
             }
-            '$' if chars
-                    .get(i + 1)
-                    .is_some_and(|c| c.is_alphabetic() || *c == '_') =>
+            '$' if chars.get(i + 1).is_some_and(|c| c.is_alphabetic() || *c == '_')
+                || (chars.get(i + 1) == Some(&'^')
+                    && chars.get(i + 2).is_some_and(|c| c.is_alphabetic() || *c == '_')) =>
             {
                 let start = i + 1;
-                let mut j = start;
+                // A placeholder (`$^a`) keeps its twigil in the name.
+                let mut j = if chars[start] == '^' { start + 1 } else { start };
                 while j < chars.len() {
                     let ch = chars[j];
                     let kebab = ch == '-'
                         && chars
                             .get(j + 1)
                             .is_some_and(|n| n.is_alphabetic() || *n == '_');
-                    if ch.is_alphanumeric() || ch == '_' || kebab {
+                    // `$Pkg::var`: a package-qualified scalar.
+                    let qualified = ch == ':'
+                        && chars.get(j + 1) == Some(&':')
+                        && chars
+                            .get(j + 2)
+                            .is_some_and(|n| n.is_alphabetic() || *n == '_');
+                    if qualified {
+                        j += 2;
+                    } else if ch.is_alphanumeric() || ch == '_' || kebab {
                         j += 1;
                     } else {
                         break;
                     }
                 }
                 let name: String = chars[start..j].iter().collect();
-                let mut k = j;
-                while chars.get(k).is_some_and(|c| c.is_whitespace()) {
-                    k += 1;
-                }
-                if chars.get(k) == Some(&'=') && !matches!(chars.get(k + 1), Some('=' | '>')) {
-                    i = j;
-                    continue;
-                }
                 // The atom of a variable alias (`$x=$re`) is dropped and an
                 // in-angle `<a=$re>` is a call of its own, so neither is read
                 // as an interpolation. The atom of a sigil alias (`$<a>=$re`,
@@ -170,31 +173,31 @@ fn scan_scalars(text: &str) -> (Vec<(String, bool)>, bool) {
 }
 
 impl super::super::Interpreter {
-    /// Whether a `$name` after a code block should be read at match time: the
-    /// variable is a lexical scalar holding a plain value, a list (matched as its
-    /// string), a junction (an alternation) or a regex, which `VarInterp`
-    /// matches exactly as the splice did. Anything else (a callable, an unbound
-    /// name) keeps the splice path.
+    /// Whether a `$name` should be read at match time: the variable is bound
+    /// to anything but a hash. `VarInterp` matches a plain value or a callable
+    /// as its string, a list as its string, a junction as an alternation, a
+    /// regex as a call frame and a type object as nothing, exactly as the
+    /// splice did (#14510). An unbound name keeps the pre-pass, which resolves
+    /// it through the package chain.
     // Cost: O(1).
     pub(crate) fn late_scalar_reads_at_match_time(&self, name: &str, allow_regex: bool) -> bool {
         use crate::value::ValueView;
-        let value = self
-            .env
-            .get(name)
-            .or_else(|| self.env.get(&format!("${name}")))
-            .cloned()
+        let value = super::regex_helpers::interp_closure_scope_get(name)
+            .or_else(|| self.env.get(name).cloned())
+            .or_else(|| self.env.get(&format!("${name}")).cloned())
+            // A package-qualified scalar (`$Pkg::v`) lives in its package.
+            .or_else(|| {
+                crate::qualified::is_qualified_str(name)
+                    .then(|| self.regex_package_chain_var_fallback(&format!("${name}")))
+                    .flatten()
+            })
             .map(crate::value::Value::into_deref);
-        value.is_some_and(|v| {
-            matches!(
-                v.view(),
-                ValueView::Str(_)
-                    | ValueView::Int(_)
-                    | ValueView::Num(_)
-                    | ValueView::Array(..)
-                    | ValueView::Junction { .. }
-                    | ValueView::Nil
-            ) || (allow_regex
-                && matches!(v.view(), ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)))
+        value.is_some_and(|v| match v.view() {
+            // A hash is rejected by the interpolation pre-pass
+            // (`X::Syntax::Reserved`), at parse time as rakudo does.
+            ValueView::Hash(_) => false,
+            ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => allow_regex,
+            _ => true,
         })
     }
 }
@@ -271,7 +274,10 @@ mod tests {
     fn every_scalar_of_a_pattern_is_read_at_match_time() {
         assert_eq!(scalars_in_pattern("$a { 1 } $b").0, ["a", "b"]);
         assert_eq!(scalars_in_pattern("$a $b").0, ["a", "b"]);
-        assert!(scalars_in_pattern("$a=$b").0.is_empty());
+        // An alias reads its variable; its atom is dropped.
+        assert_eq!(scalars_in_pattern("$a=$b").0, ["a"]);
+        assert_eq!(scalars_in_pattern("$^a $P::v").0, ["^a", "P::v"]);
+        assert_eq!(scalars_in_pattern("<<$n>>").0, ["n"]);
         assert!(scalars_in_pattern("<a=$b>").0.is_empty());
         assert_eq!(scalars_in_pattern("$<a>=$b").0, ["b"]);
         assert_eq!(scalars_in_pattern("$0 = $b").0, ["b"]);
