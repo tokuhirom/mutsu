@@ -1007,7 +1007,7 @@ impl Interpreter {
         // Under the static-outer latch, a routine this very code declares
         // below its unit's top level runs as its code object of this
         // activation, linked to the declaring scope (ADR-12529 A1 (b)).
-        if crate::static_outer_latch::static_outer_observed()
+        if crate::parser::static_outer_latch::static_outer_observed()
             && let Some(done) =
                 self.try_static_view_call(code, name_idx, arity, arg_sources_idx, compiled_fns)
         {

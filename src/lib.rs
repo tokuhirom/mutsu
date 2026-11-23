@@ -72,7 +72,6 @@ pub(crate) mod sigilless_alias_index;
 pub(crate) mod slang_link;
 pub(crate) mod source_comments;
 mod state_scope;
-pub(crate) mod static_outer_latch;
 pub(crate) mod static_str;
 mod stats_gate;
 mod str_scan;

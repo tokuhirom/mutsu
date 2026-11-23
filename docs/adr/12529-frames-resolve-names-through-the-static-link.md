@@ -2250,7 +2250,7 @@ Landed with these differences from §9.2. Each is narrower than the text above
 or a measured necessity:
 
 - **(a) The latch is process-global and set from source text.**
-  `crate::static_outer_latch` scans every unit's source when it is parsed (and
+  `crate::parser::static_outer_latch` scans every unit's source when it is parsed (and
   when a bytecode-cache hit loads it unparsed), as `opcode::note_dispatcher_mention`
   does: it looks for `CALLER`/`CALLERS`/`DYNAMIC` followed by
   `::OUTER`/`UNIT`/`LEXICAL`/`SETTING`/`::(`, and for those words spelled as

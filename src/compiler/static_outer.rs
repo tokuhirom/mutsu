@@ -1,5 +1,5 @@
 //! What the compiler does for a program that may read another frame's
-//! lexical chain (`crate::static_outer_latch`, ADR-12529 amendment A1,
+//! lexical chain (`crate::parser::static_outer_latch`, ADR-12529 amendment A1,
 //! #18787).
 
 use super::*;
@@ -25,7 +25,7 @@ impl Compiler {
     /// declarations too (rakudo's pad holds them).
     // Cost: O(p), p = `decls`.
     pub(super) fn note_static_view_plans(&mut self, decls: &[u32]) {
-        if !crate::static_outer_latch::static_outer_observed() {
+        if !crate::parser::static_outer_latch::static_outer_observed() {
             return;
         }
         let at_unit_top = !self.in_lexical_scope

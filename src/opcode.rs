@@ -5561,7 +5561,7 @@ pub(crate) struct CompiledSubDeclPlan {
     /// seeds the cell the declaration later adopts (#9911; see
     /// `vm/vm_hoist_capture_cells.rs`). Set on the hoisted plan only.
     pub(crate) hoist_seed_slots: Vec<u32>,
-    /// Under the static-outer latch (`crate::static_outer_latch`), a sub
+    /// Under the static-outer latch (`crate::parser::static_outer_latch`), a sub
     /// declared below its unit's top level: every plain user lexical visible
     /// in the declaring scope -- later declarations of that scope included --
     /// with the DECLARING frame's slot that holds it there. The sub's code
