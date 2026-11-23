@@ -824,6 +824,8 @@ impl Interpreter {
         modifier_idx: Option<u32>,
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
+        // A grammar rule another thread declared is a method here too.
+        self.sync_world_tokens();
         let name = self.perl_as_raku_name(name, modifier_idx, arity);
         let quoted = name.quoted;
         if modifier_idx.is_none()
