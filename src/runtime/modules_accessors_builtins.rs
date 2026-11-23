@@ -40,6 +40,7 @@ mod builtins_control_flow;
 mod builtins_fail_site;
 mod builtins_dispatch_next;
 mod builtins_dispatch_next_core;
+mod builtins_dd;
 mod builtins_eval_misc;
 mod builtins_feed;
 mod builtins_io;
