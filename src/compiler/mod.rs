@@ -2236,10 +2236,26 @@ pub(super) enum PhaserBlockResult {
 }
 
 impl Compiler {
+    /// A fresh chunk, stamped with the revision it is compiled under.
+    // Cost: O(1).
+    fn new_chunk() -> CompiledCode {
+        let mut code = CompiledCode::new();
+        code.caller_topic_dynamic = Self::caller_topic_dynamic_now();
+        code
+    }
+
+    /// Whether `$_` is dynamic under the revision being compiled (6.c), so
+    /// the chunk may read or assign a caller's `$_` through `CALLER::`
+    /// (#18988).
+    // Cost: O(1).
+    fn caller_topic_dynamic_now() -> bool {
+        compile_inputs::current_language_version_starts_with("6.c")
+    }
+
     pub(crate) fn new() -> Self {
         decl_reset::note_compiler_created();
         Self {
-            code: CompiledCode::new(),
+            code: Self::new_chunk(),
             local_map: HashMap::new(),
             loop_exit_guards: Vec::new(),
             fatal_pragma_active: false,
@@ -5322,6 +5338,8 @@ impl Compiler {
     /// the second pass.
     pub(crate) fn compile(mut self, stmts: &[Stmt]) -> (CompiledCode, CompiledFns) {
         let _session = compile_session::enter();
+        // An `EVAL`'d unit's own `use v6.x` is in force only from here on.
+        self.code.caller_topic_dynamic = Self::caller_topic_dynamic_now();
         // Subroutines are hoisted and compiled before the mainline executes
         // its declarations. Seed constant type aliases from the source AST so
         // native local storage decisions do not depend on runtime declaration

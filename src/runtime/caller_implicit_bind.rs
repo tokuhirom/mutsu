@@ -22,12 +22,25 @@ impl Interpreter {
         }
     }
 
-    /// Whether `name` is the caller's `$_` reached through `CALLER::` under
-    /// a language revision where `$_` is not dynamic (6.d on; 6.c declares
-    /// it dynamic): a read or an assignment is `X::Caller::NotDynamic`, and
-    /// only a bind reaches it (#18988).
+    /// Whether `name` is the caller's `$_` reached through `CALLER::` from
+    /// code compiled under a language revision where `$_` is not dynamic
+    /// (6.d on; 6.c declares it dynamic): a read or an assignment is
+    /// `X::Caller::NotDynamic`, and only a bind reaches it (#18988). The
+    /// revision is the one the accessing chunk was compiled under
+    /// (`CompiledCode::caller_topic_dynamic`), which an `EVAL`'d unit's own
+    /// `use v6.c` sets too.
     // Cost: O(1).
-    pub(crate) fn caller_topic_is_not_dynamic(name: &str) -> bool {
-        name == "_" && !crate::parser::current_language_version_starts_with("6.c")
+    pub(crate) fn caller_topic_is_not_dynamic(&self, name: &str) -> bool {
+        if name != "_" {
+            return false;
+        }
+        if self.current_code == 0 {
+            return self.running_revision_letter() != 'c';
+        }
+        // SAFETY: `current_code` is the address of the live bytecode frame's
+        // `CompiledCode` running the `CALLER::` access, kept alive for the
+        // whole frame by `vm_call_*`; it is only read here, synchronously.
+        let code = unsafe { &*(self.current_code as *const crate::opcode::CompiledCode) };
+        !code.caller_topic_dynamic
     }
 }

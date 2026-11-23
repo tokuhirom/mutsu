@@ -3773,7 +3773,7 @@ impl Interpreter {
                 Err(plain) => (plain, false),
             };
             // `$_` is not dynamic: only a bind reaches the caller's (#18988).
-            if !is_bind && (!self.is_var_dynamic(key) || Self::caller_topic_is_not_dynamic(key)) {
+            if !is_bind && (!self.is_var_dynamic(key) || self.caller_topic_is_not_dynamic(key)) {
                 return Err(crate::runtime::utils::caller_not_dynamic_error(key));
             }
             self.bind_caller_implicit_lexical(key, plain.clone());

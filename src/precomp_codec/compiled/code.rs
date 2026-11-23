@@ -58,6 +58,7 @@ impl Encode for CompiledCode {
             is_routine,
             lexically_in_routine,
             method_fatal_pragma,
+            caller_topic_dynamic,
             succeed_passes_through,
             reads_topic,
             mentions_native_scalar_type_name,
@@ -232,6 +233,7 @@ impl Encode for CompiledCode {
         is_routine.encode(encoder)?;
         lexically_in_routine.encode(encoder)?;
         method_fatal_pragma.encode(encoder)?;
+        caller_topic_dynamic.encode(encoder)?;
         succeed_passes_through.encode(encoder)?;
         reads_topic.encode(encoder)?;
         mentions_native_scalar_type_name.encode(encoder)?;
@@ -389,6 +391,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             is_routine: Decode::decode(decoder)?,
             lexically_in_routine: Decode::decode(decoder)?,
             method_fatal_pragma: Decode::decode(decoder)?,
+            caller_topic_dynamic: Decode::decode(decoder)?,
             succeed_passes_through: Decode::decode(decoder)?,
             reads_topic: Decode::decode(decoder)?,
             mentions_native_scalar_type_name: Decode::decode(decoder)?,

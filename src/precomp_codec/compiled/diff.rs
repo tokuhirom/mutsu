@@ -124,6 +124,7 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         is_routine,
         lexically_in_routine,
         method_fatal_pragma,
+        caller_topic_dynamic,
         succeed_passes_through,
         reads_topic,
         mentions_native_scalar_type_name,

@@ -317,7 +317,7 @@ impl Interpreter {
         if let Some(val) = found {
             // Check that the variable is declared `is dynamic`
             if !self.is_var_dynamic(name)
-                || (caller_topic_strict && Self::caller_topic_is_not_dynamic(name))
+                || (caller_topic_strict && self.caller_topic_is_not_dynamic(name))
             {
                 return Err(crate::runtime::utils::caller_not_dynamic_error(reported));
             }
@@ -456,7 +456,7 @@ impl Interpreter {
                 "Cannot access caller variable '${name}' — not enough caller frames"
             )));
         }
-        if !self.is_var_dynamic(name) || Self::caller_topic_is_not_dynamic(name) {
+        if !self.is_var_dynamic(name) || self.caller_topic_is_not_dynamic(name) {
             return Err(crate::runtime::utils::caller_not_dynamic_error(name));
         }
         if name == "_" && depth == 1 {
