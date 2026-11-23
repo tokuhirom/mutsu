@@ -292,8 +292,8 @@ pub fn format_date_ordered(order: &str, year: i64, month: i64, day: i64, sep: &s
 /// Build a structured X::Temporal::InvalidFormat error carrying `invalid-str`
 /// (the offending input) and `target` (the type being constructed, e.g.
 /// 'DateTime' / 'Date').
-/// Rakudo's `X::Temporal::InvalidFormat`: "Invalid <target> string
-/// '<invalid-str>'; use <format> instead", with all three as attributes.
+/// Rakudo's `X::Temporal::InvalidFormat`: `"Invalid <target> string
+/// '<invalid-str>'; use <format> instead"`, with all three as attributes.
 // Cost: O(n), n = the invalid string's length.
 fn temporal_invalid_format_error(invalid_str: &str, target: &str, format: &str) -> RuntimeError {
     let message = format!("Invalid {target} string '{invalid_str}'; use {format} instead");
