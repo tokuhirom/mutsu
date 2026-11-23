@@ -441,7 +441,17 @@ impl Interpreter {
             return;
         }
         let plan = self.class_body_statics_plan(class_name);
-        for (k, v) in plan.iter() {
+        if plan.writes.is_empty() {
+            return;
+        }
+        // A frame that has written nothing yet takes the pre-built overlay
+        // (#18274): the same entries, without an insert per static per call.
+        if let Some(tier) = &plan.tier
+            && self.env.adopt_fresh_overlay(tier)
+        {
+            return;
+        }
+        for (k, v) in plan.writes.iter() {
             self.env.insert_sym_noting(*k, v.clone());
         }
     }
