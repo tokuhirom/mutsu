@@ -277,6 +277,9 @@ impl UndeclaredName<'_> {
             || self.declared.contains(name)
             || interp.has_type(name)
             || interp.has_class(name)
+            // A top-level `package`/`module` another thread declared: its
+            // GLOBAL entry is world state (ADR-17216), its env binding is not.
+            || interp.is_bare_package_decl(name)
             || interp.has_function(name)
             || interp.has_multi_function_unindexed(name)
             // A type of the CORE setting mutsu has no registry entry for

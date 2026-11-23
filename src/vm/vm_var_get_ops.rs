@@ -1047,6 +1047,11 @@ impl Interpreter {
             // bare binding is in the loading scope's env, which a loaded
             // module's routine does not see (ADR-12529).
             Value::package(name_sym)
+        } else if self.is_bare_package_decl(name) {
+            // A top-level `package`/`module` declared on another thread: its
+            // GLOBAL entry is world state (ADR-17216), but the env binding the
+            // declaration made is that thread's own.
+            Value::package(name_sym)
         } else if Self::is_builtin_type(name) || Self::is_type_with_smiley(name, self) {
             Value::package(Symbol::intern(self.resolve_core_type_alias(name)))
         } else if name == "RakuAST" {
