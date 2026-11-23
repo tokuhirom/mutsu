@@ -4,7 +4,7 @@ use Test;
 # compile error: nothing in the unit runs, and the error points at the call.
 # Expected texts are rakudo 2026.11's.
 
-plan 29;
+plan 35;
 
 sub run-code(Str $code) {
     my $p = run $*EXECUTABLE, '-e', $code, :out, :err;
@@ -84,6 +84,19 @@ refuted q[say 1; sub f(Int $x) {}; my Str $s = "a"; f($s)],
     "===SORRY!=== Error while compiling -e\nCalling f(Str) will never work with declared signature (Int \$x)\nat -e:1\n------> say 1; sub f(Int \$x) \{}; my Str \$s = \"a\"; <HERE>f(\$s)",
     'a variable declared with an unrelated type';
 
+refuted q[say 1; sub f(Int $x) {}; sub g(Str $s) { f($s) }],
+    "===SORRY!=== Error while compiling -e\nCalling f(Str) will never work with declared signature (Int \$x)\nat -e:1\n------> ay 1; sub f(Int \$x) \{}; sub g(Str \$s) \{ <HERE>f(\$s) }",
+    'a parameter declared with an unrelated type';
+refuted q[say 1; sub f(Int $x) {}; class A { method m(Str:D $s) { f($s) } }],
+    "===SORRY!=== Error while compiling -e\nCalling f(Str) will never work with declared signature (Int \$x)\nat -e:1\n------>  \$x) \{}; class A \{ method m(Str:D \$s) \{ <HERE>f(\$s) } }",
+    'a method parameter with a smiley';
+refuted q[say 1; sub f(Int $x) {}; { my Str $s = "a"; f($s) }],
+    "===SORRY!=== Error while compiling -e\nCalling f(Str) will never work with declared signature (Int \$x)\nat -e:1\n------> 1; sub f(Int \$x) \{}; \{ my Str \$s = \"a\"; <HERE>f(\$s) }",
+    'a variable declared in a nested block';
+refuted q[say 1; sub f(Int $x) {}; for <a> -> Str $s { f($s) }],
+    "===SORRY!=== Error while compiling -e\nCalling f(Str) will never work with declared signature (Int \$x)\nat -e:1\n------> ; sub f(Int \$x) \{}; for <a> -> Str \$s \{ <HERE>f(\$s) }",
+    'a loop parameter';
+
 refuted q[say 1; sub f(Int $x) {}; my $r = &f; f("a")],
     "===SORRY!=== Error while compiling -e\nCalling f(Str) will never work with declared signature (Int \$x)\nat -e:1\n------> say 1; sub f(Int \$x) \{}; my \$r = &f; <HERE>f(\"a\")",
     'a routine also referred to as &f';
@@ -102,7 +115,9 @@ for q[sub f(Int:D $x) {}; f("a")],
     q[sub f(Int $x) {}; my Str $s; { my $s = 1; f($s) }],
     q[sub f(Int $x) {}; { my &f = -> $x { }; f("a") }],
     q[proto p(|) {*}; multi p(Int $x) {}; sub o(Str $s) {}; BEGIN &p.add_dispatchee(&o); p("a")],
-    q[multi min(Int $a) { "u" }; my $m = min(3, 4)]
+    q[multi min(Int $a) { "u" }; my $m = min(3, 4)],
+    q[sub f(Int $x) {}; sub g(Cool $s) { f($s) }],
+    q[sub f(Int $x) {}; sub g(Str() $s) { f($s) }]
     -> $tail {
     my ($out, $err, $exit) = run-code("say 1; $tail");
     is $out, "1\n", "runs before the binder decides: $tail";

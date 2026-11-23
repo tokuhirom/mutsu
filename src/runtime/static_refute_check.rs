@@ -18,9 +18,12 @@
 //!   routine, and the unit imports no module. It is refuted when every
 //!   candidate is, by the dispatcher's rules: a default, a `:D` smiley and an
 //!   optional named parameter do not save a candidate;
-//! - every argument is a literal (`Int`, `Num`, `Rat`, `Str`, `Bool`, `Nil`)
-//!   or a core type object (`Str`; a supertype of the parameter's type, such
-//!   as `Cool` for `Int`, may still bind and is not refuted), none is named,
+//! - every argument is a literal (`Int`, `Num`, `Rat`, `Str`, `Bool`, `Nil`),
+//!   a core type object (`Str`; a supertype of the parameter's type, such
+//!   as `Cool` for `Int`, may still bind and is not refuted) or a scalar
+//!   variable or parameter declared with a core type (`my Str $s`,
+//!   `sub g(Str $s)`, at any depth), which stands for its type object when
+//!   its name is declared nowhere else in the unit; none is named,
 //!   and none is written as a word quote (`<a>`, which rakudo does not judge);
 //! - the refutation is an arity mismatch, a required named parameter with no
 //!   named argument, or a literal that fails a core nominal type (or the
@@ -40,13 +43,15 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::ast::{CallArg, Expr, ParamDef, SrcSpan, Stmt};
-use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt, walk_stmts};
+use crate::ast::{Expr, ParamDef, SrcSpan, Stmt};
+use crate::ast_visit::{NameKind, Visit, walk_expr, walk_param, walk_stmt, walk_stmts};
 use crate::value::{RuntimeError, Value, ValueView};
 
 use super::Interpreter;
 
+mod args;
 mod report;
+use args::{static_arg, static_call_args, static_expr_args, typed_param, typed_var_decl, typed_vars};
 use report::{call_offset, refutation_error, written_with_word_quote};
 
 /// One call whose arguments are all static-shaped (see [`static_arg`]).
@@ -81,20 +86,30 @@ struct Survey<'ast> {
     /// How often each variable name (without its sigil) is declared, at any
     /// depth: a `my`/`our`/`state`, a parameter, a block or loop parameter.
     var_decls: HashMap<String, usize>,
+    /// Every typed scalar declaration or parameter, at any depth, as its
+    /// name and type (see `typed_vars`).
+    typed: Vec<(&'ast str, &'ast str)>,
     /// Every by-name call whose arguments are all literals, in source order.
     sites: Vec<Site<'ast>>,
     /// The span of the statement the walk is in.
     span: SrcSpan,
+    /// The flat parameter names of the declaration being walked, which the
+    /// walk reports before the same parameters' `ParamDef`s: a parameter
+    /// is one declaration, counted once. Cleared at every statement and
+    /// expression, so a name is only ever matched within its declaration.
+    flat: Vec<String>,
 }
 
 impl<'ast> Visit<'ast> for Survey<'ast> {
     fn visit_stmts(&mut self, body: &'ast [Stmt]) {
+        self.flat.clear();
         let outer = self.span;
         walk_stmts(self, body);
         self.span = outer;
     }
 
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        self.flat.clear();
         match stmt {
             Stmt::SetLine(_, span) if *span != SrcSpan::NONE => self.span = *span,
             Stmt::Call { name, args, .. } => {
@@ -108,10 +123,14 @@ impl<'ast> Visit<'ast> for Survey<'ast> {
             }
             _ => {}
         }
+        if let Some(typed) = typed_var_decl(stmt) {
+            self.typed.push(typed);
+        }
         walk_stmt(self, stmt);
     }
 
     fn visit_expr(&mut self, expr: &'ast Expr) {
+        self.flat.clear();
         if let Expr::Call { name, args, .. } = expr
             && let Some(args) = static_expr_args(args)
         {
@@ -122,6 +141,11 @@ impl<'ast> Visit<'ast> for Survey<'ast> {
             });
         }
         walk_expr(self, expr);
+    }
+
+    fn visit_param(&mut self, param: &'ast ParamDef) {
+        self.typed.extend(typed_param(param));
+        walk_param(self, param);
     }
 
     fn visit_name(&mut self, name: &str, kind: NameKind) {
@@ -146,108 +170,25 @@ impl<'ast> Visit<'ast> for Survey<'ast> {
                     self.code_vars.insert(code.to_string());
                 }
                 let bare = name.trim_start_matches(['$', '@', '%', '&']);
+                if kind == NameKind::Param
+                    && let Some(at) = self.flat.iter().position(|flat| flat == bare)
+                {
+                    self.flat.swap_remove(at);
+                    return;
+                }
+                if kind == NameKind::BlockParam {
+                    self.flat.push(bare.to_string());
+                }
+                *self.var_decls.entry(bare.to_string()).or_insert(0) += 1;
+            }
+            // `has $x` is read as `$x` in the class's methods.
+            NameKind::Attribute => {
+                let bare = name.trim_start_matches(['$', '@', '%', '&', '.', '!']);
                 *self.var_decls.entry(bare.to_string()).or_insert(0) += 1;
             }
             _ => {}
         }
     }
-}
-
-/// The static value of a call argument, when it is one a refutation can be
-/// judged on: a literal (`Int`, `Num`, `Rat`, `Str`, `Bool`, `Nil`), a core
-/// type object, or a variable `typed_vars` gives a declared core type, which
-/// stands for its type object (every value it can hold is of that type).
-/// `None` for anything else.
-// Cost: O(1).
-fn static_arg(arg: &Expr, typed_vars: &HashMap<&str, &str>) -> Option<Value> {
-    match arg {
-        Expr::Literal(value)
-            if matches!(
-                value.view(),
-                ValueView::Int(_)
-                    | ValueView::BigInt(_)
-                    | ValueView::Num(_)
-                    | ValueView::Rat(..)
-                    | ValueView::Str(_)
-                    | ValueView::Bool(_)
-                    | ValueView::Nil
-            ) =>
-        {
-            Some(value.clone())
-        }
-        // A core type object (`f(Str)`); a smiley (`Int:D`) is a run-time check.
-        Expr::BareWord(name) => core_type_object(name),
-        Expr::Var(name) => typed_vars.get(name.as_str()).and_then(|ty| core_type_object(ty)),
-        _ => None,
-    }
-}
-
-/// The type object of the core type `name`, unless it is a smiley or native.
-// Cost: O(1).
-fn core_type_object(name: &str) -> Option<Value> {
-    (!name.contains(':')
-        && crate::known_types::is_known_type_constraint(name)
-        && !crate::native_types::is_native_type_name(name))
-    .then(|| Value::package(crate::symbol::Symbol::intern(name)))
-}
-
-/// Whether `arg` can be a static argument at all (its value or type is
-/// decided once the unit's declarations are known).
-// Cost: O(1).
-fn static_shaped(arg: &Expr) -> bool {
-    matches!(arg, Expr::Literal(_) | Expr::BareWord(_) | Expr::Var(_))
-}
-
-/// Whether `arg` is the line marker the parser adds to a call (not an argument).
-// Cost: O(1).
-fn is_callsite_marker(arg: &Expr) -> bool {
-    matches!(arg, Expr::Binary { left, op: crate::token_kind::TokenKind::FatArrow, .. }
-        if matches!(left.as_ref(), Expr::Literal(key)
-            if matches!(key.view(), ValueView::Str(key)
-                if key.as_str() == crate::parser::TEST_CALLSITE_LINE_KEY)))
-}
-
-// Cost: O(a), a = arguments.
-fn static_expr_args(args: &[Expr]) -> Option<Vec<&Expr>> {
-    args.iter()
-        .filter(|arg| !is_callsite_marker(arg))
-        .map(|arg| static_shaped(arg).then_some(arg))
-        .collect()
-}
-
-// Cost: O(a), a = arguments.
-fn static_call_args(args: &[CallArg]) -> Option<Vec<&Expr>> {
-    args.iter()
-        .filter_map(|arg| match arg {
-            CallArg::Named { name, .. } if name == crate::parser::TEST_CALLSITE_LINE_KEY => None,
-            CallArg::Positional(expr) if is_callsite_marker(expr) => None,
-            CallArg::Positional(expr) => Some(static_shaped(expr).then_some(expr)),
-            _ => Some(None),
-        })
-        .collect()
-}
-
-/// The unit's top-level scalars declared with a core type (`my Str $s`), by
-/// name, when the name is declared nowhere else in the unit: every use of
-/// it then reads that variable.
-// Cost: O(s), s = top-level statements.
-fn typed_vars<'ast>(stmts: &'ast [Stmt], survey: &Survey<'_>) -> HashMap<&'ast str, &'ast str> {
-    stmts
-        .iter()
-        .filter_map(|stmt| match stmt {
-            Stmt::VarDecl {
-                name,
-                type_constraint: Some(ty),
-                ..
-            } if !name.starts_with(['@', '%', '&'])
-                && survey.var_decls.get(name.as_str()) == Some(&1) =>
-            {
-                // `Str:D` holds only `Str`s too.
-                Some((name.as_str(), ty.strip_suffix(":D").unwrap_or(ty)))
-            }
-            _ => None,
-        })
-        .collect()
 }
 
 /// Which of rakudo's two static checks judges a callee: an `only` sub's, or a
@@ -315,7 +256,7 @@ impl Interpreter {
             return Ok(());
         }
         let callees = callees(stmts, &survey);
-        let typed_vars = typed_vars(stmts, &survey);
+        let typed_vars = typed_vars(&survey);
         for (index, site) in survey.sites.iter().enumerate() {
             let Some((rules, candidates)) = callees.get(site.name) else {
                 continue;
