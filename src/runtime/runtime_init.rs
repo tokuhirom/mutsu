@@ -61,7 +61,12 @@ impl Interpreter {
     }
 
     fn build_builtin_registry() -> Registry {
-        let mut classes = rustc_hash::FxHashMap::default();
+        // Sized for the ~450 built-in classes, so the table is not rehashed
+        // (and every `ClassDef` moved) as it grows.
+        let mut classes = rustc_hash::FxHashMap::with_capacity_and_hasher(
+            BUILTIN_CLASS_CAPACITY,
+            Default::default(),
+        );
         classes.insert(
             "Mu".to_string(),
             ClassDef {
@@ -3341,6 +3346,10 @@ impl Interpreter {
 /// in Rakudo's order, so `Mu.raku` renders them as Rakudo does
 /// (`Distro.new(release => "24.04", ...)`); the methods that read them are
 /// rows (ADR-11276 §9.155).
+/// Room for the built-in class table `build_builtin_registry` fills (about
+/// 450 classes); a few more only rehash once.
+const BUILTIN_CLASS_CAPACITY: usize = 512;
+
 fn systemic_attributes(names: &[&str]) -> super::class_attributes::ClassAttributes {
     names
         .iter()
