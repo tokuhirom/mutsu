@@ -524,11 +524,14 @@ impl Interpreter {
         // handed back): read them out before rendering them.
         self.seed_cstruct_fields_for_method(&class_key, Some(target));
         self.raku_cycle_guards.leaf.enter(target_id);
-        let public_attrs = self.collect_public_raku_attrs(
+        // Read the values under the attribute lock, then render them with it
+        // released: rendering runs user code that may write this instance.
+        let values = self.collect_public_raku_attr_values(
             &class_key,
             &(attributes).as_map(),
             mixin.map(|(overrides, _)| overrides),
         );
+        let public_attrs = self.render_public_raku_attrs(values);
         let cycle_hit = self.raku_cycle_guards.leaf.leave(&target_id);
         let body = if public_attrs.is_empty() {
             format!("{}.new", display_name)

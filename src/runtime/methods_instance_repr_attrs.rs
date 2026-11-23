@@ -6,16 +6,18 @@ use crate::meta_ns::MetaNs;
 use crate::value::{AttrMap, MixinOverrides};
 
 impl Interpreter {
-    /// Render public class and role attributes from their respective live
-    /// cells. A role mixed into an instance does not put its attributes in the
-    /// wrapped class's attribute map.
+    /// Read the public class and role attributes the default `.raku` and
+    /// `.gist` render, from their respective live cells. A role mixed into an
+    /// instance does not put its attributes in the wrapped class's attribute
+    /// map. Only reads: [`Self::render_public_raku_attrs`] renders them once
+    /// the caller has released the attribute map.
     // Cost: O(a log a + r), a = public attributes, r = composed roles.
-    pub(crate) fn collect_public_raku_attrs(
+    pub(crate) fn collect_public_raku_attr_values(
         &mut self,
         class_name: &str,
         attributes: &AttrMap,
         mixin: Option<&MixinOverrides>,
-    ) -> Vec<String> {
+    ) -> Vec<(ClassAttributeDef, Value)> {
         let class_attrs = self.collect_class_attributes_display_order(class_name);
         // A punned role's temporary class has been withdrawn by the time its
         // instance renders, but its attribute values remain on that instance.
@@ -59,7 +61,7 @@ impl Interpreter {
         if !punned_role {
             entries.extend(class_attrs.into_iter().map(|attr| (attr, None)));
         }
-        let mut parts = Vec::new();
+        let mut values = Vec::new();
         for (attr, role) in entries {
             // Rakudo's `Mu.raku` lists the attributes `.new` builds: the public
             // ones and a private one declared `is built`.
@@ -74,6 +76,26 @@ impl Interpreter {
                 _ => attributes.get_vivify(attr.name.as_str()).cloned(),
             };
             let Some(value) = value else { continue };
+            values.push((attr, value));
+        }
+        values
+    }
+
+    /// Render what [`Self::collect_public_raku_attr_values`] read, as
+    /// `name => value.raku` parts.
+    ///
+    /// This runs user code (a value's `.raku`, a Proxy's FETCH), so the
+    /// caller must not hold the instance's attribute lock any more: a FETCH
+    /// that writes an attribute of the same instance (`AttrX::Mooish`'s lazy
+    /// builder bumping a counter with `++⚛$!builds`) would wait for that
+    /// lock forever.
+    // Cost: O(a), a = the values, plus each value's `.raku`.
+    pub(crate) fn render_public_raku_attrs(
+        &mut self,
+        values: Vec<(ClassAttributeDef, Value)>,
+    ) -> Vec<String> {
+        let mut parts = Vec::with_capacity(values.len());
+        for (attr, value) in values {
             let value = value.deref_container();
             let rendered = self
                 .dispatch_raku_leaf(&value)
