@@ -140,8 +140,7 @@ impl Interpreter {
         // supposedly-immutable List in place without ever reaching that check.
         // Checked before the (also kind-blind) `shared_vars_active` branch so
         // both single-threaded and threaded programs reject it alike.
-        if let Some(ValueView::Array(_, kind)) =
-            self.push_target(decl, target_sym).map(Value::view)
+        if let Some(ValueView::Array(_, kind)) = self.push_target(decl, target_sym).map(Value::view)
             && !kind.is_real_array()
         {
             let _ = self.stack.pop();
@@ -252,8 +251,7 @@ impl Interpreter {
         // dimension metadata check in Interpreter. See ledger §1.
         // Check for shaped arrays — must fall back to interpreter
         // (push is illegal on fixed-dimension arrays)
-        if let Some(ValueView::Array(_, kind)) =
-            self.push_target(decl, target_sym).map(Value::view)
+        if let Some(ValueView::Array(_, kind)) = self.push_target(decl, target_sym).map(Value::view)
             && kind == crate::value::ArrayKind::Shaped
         {
             let val = self.stack.pop().unwrap_or(Value::NIL);
