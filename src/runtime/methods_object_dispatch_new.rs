@@ -941,7 +941,10 @@ impl Interpreter {
                     .cloned()
                     .collect();
                 let mut datetime_ctor_args = Vec::new();
-                if positional_args.len() >= 3 {
+                // Only the six-positional candidate spells out components;
+                // any other count goes to `DateTime.new` as it is, which takes
+                // one positional and refuses the rest (#18944).
+                if positional_args.len() == 6 {
                     datetime_ctor_args
                         .push(Value::pair("year".to_string(), positional_args[0].clone()));
                     datetime_ctor_args
