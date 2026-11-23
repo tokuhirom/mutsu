@@ -3763,6 +3763,19 @@ impl Interpreter {
             self.stack.push(stored);
             return Ok(());
         }
+        // `CALLER::<$_> := v` binds the calling frame's own `$_` (or `$/`,
+        // `$!`), which the caller sees once the call returns (#17453).
+        if stash_name == "CALLER::" {
+            let key = &Self::const_str(code, key_name_idx)[1..];
+            let val = self.stack.pop().unwrap_or(Value::NIL);
+            let plain = match Self::split_bind_index_marker(val) {
+                Ok((bound, _)) => bound,
+                Err(plain) => plain,
+            };
+            self.bind_caller_implicit_lexical(key, plain.clone());
+            self.stack.push(plain);
+            return Ok(());
+        }
         // `DYNAMIC::<$*x> := v` (6.e): a frame's `my $*x` is bound first;
         // the dynamic chain then ends in `GLOBAL` and `PROCESS`, so a `$*x`
         // no frame binds is bound where the chain finds it.

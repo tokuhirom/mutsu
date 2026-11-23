@@ -45,6 +45,7 @@ mod run_prelude_formatter;
 mod run_prelude_trait_export;
 mod run_prelude_x_comp;
 mod run_roast_preprocess;
+mod caller_implicit_bind;
 mod runtime_caller_env;
 mod caller_scope_routines;
 mod runtime_class_query;
