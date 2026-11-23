@@ -1096,6 +1096,25 @@ impl Interpreter {
             // declaring frame through the code object's captured env, which
             // only the closure path installs.
             if cf.code.links_frame_to_unit()
+            && !cf.code.declared_in_block
+                // The body resolves nothing through the env (#18083): no free
+                // variable and no lexical sub. A routine declared in a block
+                // or loop body reads that block's lexicals only through the
+                // code object's capture (#13595), and a light frame linked to
+                // the program scope would not find them.
+                && cf.code.free_var_syms.is_empty()
+                && cf.code.lexsub_refs.is_empty()
+                && !data.env.is_activation_capture()
+                // A sigilless or `is raw`/`is rw` parameter binds the caller's
+                // container by a path the closure entry owns.
+                && !cf.param_defs.iter().any(|pd| {
+                    pd.sigilless || pd.traits.iter().any(|t| matches!(t.as_str(), "raw" | "rw"))
+                })
+                // The light path's arity errors word an optional tail
+                // differently; a call that supplies exactly the positionals
+                // the signature declares cannot raise one.
+                && Self::positional_light_argc(&args)
+                    == cf.param_defs.iter().filter(|pd| !pd.named && !pd.is_invocant).count()
                 && data.assumed_positional.is_empty()
                 && data.assumed_named.is_empty()
                 && !args.iter().any(|a| a.is_string_pair_value())

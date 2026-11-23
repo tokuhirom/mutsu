@@ -6,7 +6,7 @@ use Test;
 # closure path: free variables read live, a binding failure stays
 # X::TypeCheck::Binding, and the shapes the light path does not take (a nested
 # routine, named arguments, `is rw`, optionals, `state`) still work.
-plan 13;
+plan 15;
 
 my $k = 10;
 sub add-k(Int $x) { $x + $k }
@@ -52,3 +52,11 @@ my @called;
 sub record($x) { @called.push($x); $x }
 (1..3).grep(&record);
 is @called.join(','), '1,2,3', 'a routine writing a program-scope array';
+
+{
+    my $m = 3;
+    sub in-block(Int $x) { $x * $m }
+    is (1..3).map(&in-block).join(','), '3,6,9', 'a routine declared in a block reads that block';
+    sub fact(Int $n) { $n <= 1 ?? 1 !! $n * fact($n - 1) }
+    is (1..4).map(&fact).join(','), '1,2,6,24', 'a block-declared routine recursing by name';
+}

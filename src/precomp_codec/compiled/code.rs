@@ -75,6 +75,7 @@ impl Encode for CompiledCode {
             writes_topic,
             declared_in_routine,
             outer_is_unit,
+            declared_in_block,
             unit_hidden_lexicals,
             reads_args_array,
             reads_args_hash,
@@ -250,6 +251,7 @@ impl Encode for CompiledCode {
         writes_topic.encode(encoder)?;
         declared_in_routine.encode(encoder)?;
         outer_is_unit.encode(encoder)?;
+        declared_in_block.encode(encoder)?;
         unit_hidden_lexicals.is_some().encode(encoder)?;
         if let Some(hidden) = unit_hidden_lexicals {
             encode_sym_set(hidden, encoder)?;
@@ -409,6 +411,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             writes_topic: Decode::decode(decoder)?,
             declared_in_routine: Decode::decode(decoder)?,
             outer_is_unit: Decode::decode(decoder)?,
+            declared_in_block: Decode::decode(decoder)?,
             unit_hidden_lexicals: if bool::decode(decoder)? {
                 Some(std::sync::Arc::new(decode_set(decoder)?))
             } else {
