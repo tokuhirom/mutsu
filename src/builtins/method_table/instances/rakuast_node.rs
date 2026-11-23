@@ -159,17 +159,6 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
-    // An imported routine (`use Test; plan`) and a unit-declared package.
-    // Rakudo 2026.11 declares `compile-time-value` on `External::Constant`,
-    // `Import`'s parent (#19059).
-    MethodRow {
-        owner: "RakuAST::Declaration::External::Constant",
-        name: "compile-time-value",
-        arity: 0,
-        handler: Handler::Interp(external_value),
-        flags: RowFlags::OWNER_ONLY,
-        named: &[],
-    },
     MethodRow {
         owner: "RakuAST::Declaration::LexicalPackage",
         name: "compile-time-value",
