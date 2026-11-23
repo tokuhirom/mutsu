@@ -693,6 +693,7 @@ impl Interpreter {
             does_target: Default::default(),
             target: Default::default(),
             type_capture: None,
+            type_capture_smiley: None,
             name: String::new(),
             default: None,
             multi_invocant: true,

@@ -729,6 +729,7 @@ fn walk_param(name: &str, slurpy: bool) -> crate::ast::ParamDef {
         does_target: Default::default(),
         target: Default::default(),
         type_capture: None,
+        type_capture_smiley: None,
         name: name.to_string(),
         default: None,
         multi_invocant: true,

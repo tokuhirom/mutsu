@@ -19,6 +19,7 @@ pub(crate) fn make_wc_param(name: String) -> ParamDef {
         spans: Default::default(),
         trait_meta: Default::default(),
         type_capture: None,
+        type_capture_smiley: None,
         name,
         default: None,
         multi_invocant: true,

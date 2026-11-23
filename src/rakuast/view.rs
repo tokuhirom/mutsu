@@ -4612,6 +4612,8 @@ fn parameter(
     pd: &ParamDef,
     type_setting: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
+    let unsmiled = super::type_capture_ctor::param_without_capture_smiley_type(pd);
+    let pd = unsmiled.as_ref().unwrap_or(pd);
     // The parser records an invocant (`$self:`, `Foo:D:`) as `is_invocant`
     // plus an `invocant` trait, and a synthesized one (no variable) with the
     // `implicit-invocant` trait as well; RakuAST has the one `invocant` flag.
@@ -4652,7 +4654,7 @@ fn parameter(
         return node;
     }
     let type_capture = match type_capture_name(pd) {
-        Some(name) => Some(type_capture_node(names, name)?),
+        Some(name) => Some(super::type_capture_ctor::capture_of(names, name, pd)?),
         None => None,
     };
     // A bare `::T` is represented internally by a synthetic parameter name,

@@ -2584,6 +2584,12 @@ fn lower_parameter(
             def.type_constraint = Some(format!("::{type_capture}"));
         } else {
             def.type_capture = Some(type_capture);
+            def.type_capture_smiley = super::type_capture_ctor::parameter_capture_smiley(parameter);
+            if let Some(smiley @ ('D' | 'U')) = def.type_capture_smiley
+                && def.type_constraint.is_none()
+            {
+                def.type_constraint = Some(format!("Any:{smiley}"));
+            }
         }
     }
     // `$y = EXPR` -> an optional positional with a default value.
@@ -2671,6 +2677,7 @@ pub(super) fn positional_param(name: &str) -> ParamDef {
         spans: Default::default(),
         trait_meta: Default::default(),
         type_capture: None,
+        type_capture_smiley: None,
         name: name.to_string(),
         target: ParamTarget::of_name(name),
         default: None,

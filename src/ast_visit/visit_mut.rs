@@ -66,6 +66,7 @@ pub(crate) fn walk_param_mut<V: VisitMut + ?Sized>(v: &mut V, p: &mut ParamDef) 
         sigilless: _,
         type_constraint: _,
         type_capture: _,
+        type_capture_smiley: _,
         literal_value: _,
         sub_signature,
         where_constraint,

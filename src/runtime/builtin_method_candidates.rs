@@ -88,6 +88,7 @@ fn blank_param(name: &str) -> ParamDef {
         target: Default::default(),
         trait_meta: Default::default(),
         type_capture: None,
+        type_capture_smiley: None,
         name: name.to_string(),
         default: None,
         multi_invocant: false,
