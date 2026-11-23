@@ -72,6 +72,8 @@ DBIish	37-pg-datetime.rakutest
 DBIish	38-pg-connection-lock.rakutest
 DBIish	38-pg-errors.rakutest
 DBIish	38-pg-threads.rakutest
+DBIish	46-sqlite-blob.rakutest
+DBIish	48-sqlite-errors.rakutest
 DBIish	55-oracle-common.rakutest
 DBIish	56-oracle-blob.rakutest
 DBIish	57-oracle-datetime.rakutest
@@ -176,10 +178,9 @@ MIME::Base64	basic.rakutest
 MIME::Base64	binary-and-long-line.rakutest
 MIME::Base64	oneline.rakutest
 MIME::Base64	rfc4648-test-vector.rakutest
-NativeHelpers::Blob	00-trivial.t
-NativeHelpers::Blob	01-basic.t
-NativeHelpers::Blob	03-pointer.t
-NativeHelpers::Blob	99-my-meta.t
+NativeHelpers::Blob	00-trivial.rakutest
+NativeHelpers::Blob	01-basic.rakutest
+NativeHelpers::Blob	03-pointer.rakutest
 NativeLibs	01-basic.t
 NativeLibs	02-cannon-name.t
 NativeLibs	10-search.t
