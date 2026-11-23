@@ -233,7 +233,17 @@ pub(super) fn current_line() -> Option<i64> {
 pub(super) fn set_span(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     if node.origin.0.is_none() {
         let span = angle_number(node, span);
-        node.origin.0 = super::unit_source::span_origin_value(span);
+        // The nodes rakudo's grammar attaches as key origins (`<.key-origin>`,
+        // a blockoid): `Node.dump` marks them `𝄞` (#18333).
+        let key = matches!(
+            node.class,
+            super::RakuAstClass::StatementList
+                | super::RakuAstClass::Blockoid
+                | super::RakuAstClass::Sub
+                | super::RakuAstClass::Method
+                | super::RakuAstClass::Submethod
+        );
+        node.origin.0 = super::unit_source::span_origin(span, key);
     }
 }
 
