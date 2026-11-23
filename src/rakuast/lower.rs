@@ -757,10 +757,9 @@ pub(super) fn lower_stmt_kept(names: &NameScope, node: &RakuAstNode) -> Result<S
                     args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
                 )),
                 // `take(1, 2)`: one list, as the parser keeps it (#16356).
-                "take" | "take-rw" if args.len() > 1 => Ok(Stmt::Take(
-                    Expr::ArrayLiteral(args),
-                    name == "take-rw",
-                )),
+                "take" | "take-rw" if args.len() > 1 => {
+                    Ok(Stmt::Take(Expr::ArrayLiteral(args), name == "take-rw"))
+                }
                 "take" | "take-rw" => Ok(Stmt::Take(
                     args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
                     name == "take-rw",
