@@ -152,11 +152,10 @@ agents running at once — use
 instead. It works `scripts/ecosystem-tickets.py --queue`, a fixed order over every
 actionable record here (most dependents first; working the whole remainder in
 order is what keeps the published figure honest, where picking the
-cheapest-looking record games it), takes a lock on
-[#17702](https://github.com/tokuhirom/mutsu/issues/17702) so no two agents work the
-same distribution, and then hands over to `ecosystem-dist-fix`. A distribution
-has no issue of its own to carry a claim, which is why the lock lives on that one
-board issue's comments rather than in this tree.
+cheapest-looking record games it), claims the distribution through the open
+`ecosystem` issue that tracks it (an `eco-dist:` marker line in its body; one is
+filed when none exists) so no two agents work the same distribution, and then
+hands over to `ecosystem-dist-fix`.
 
 **When a run concludes a distribution can never pass** — its own suite depends
 on behavior mutsu has already, deliberately, decided never to provide (see

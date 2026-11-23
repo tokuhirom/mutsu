@@ -19,9 +19,10 @@ sides, and publish the difference.
   fix-versus-file-an-issue rule;
   [`.agents/skills/ecosystem-dist-queue/SKILL.md`](../.agents/skills/ecosystem-dist-queue/SKILL.md)
   wraps that in a fixed-order queue over every actionable record
-  (`scripts/ecosystem-tickets.py --queue`: most dependents first) plus a lock on
-  [#17702](https://github.com/tokuhirom/mutsu/issues/17702), so parallel agents
-  neither collide nor bias the work by cherry-picking cheap records.
+  (`scripts/ecosystem-tickets.py --queue`: most dependents first), each
+  distribution claimed through its tracking issue (an `eco-dist:` marker line),
+  so parallel agents neither collide nor bias the work by cherry-picking cheap
+  records.
 - **Sibling tools**: [docs/dist-compat-sweep.md](dist-compat-sweep.md) is the
   load-level (`use <module>`) diagnostic sampler that feeds root-cause tickets;
   [BATTERIES.md](../BATTERIES.md) / `scripts/battery-testsuite.sh` is the
@@ -448,7 +449,13 @@ denominator change, per ADR-0085.
   are ordered **worst first**: someone opening the page is checking whether
   their module is in trouble, not admiring the green ones.
 - **Repo**: `ecosystem/summary.md` on the `ecosystem-data` branch for readers
-  browsing the tree; linked from `README.md` and PLAN.md §1 B4.
+  browsing the tree; linked from `README.md` and PLAN.md §1 B4. Its
+  "Regressed since the previous ledger" section lists what the rollup's records
+  made worse than the ledger commit they replace (`ecosystem/.ledger-ref`, or
+  `--previous-ref REF`): a status that dropped, or a baseline file that lost
+  parity, at an unchanged version (`ecosystem_common.regressions()`). The
+  sweep's run report and ledger commit message carry the same section; it is
+  where regressions are triaged from.
 - **Raw**: `ecosystem/dists/**.json` is the machine-readable artifact the issue
   asks for — stable schema, versioned by `schema`.
 
