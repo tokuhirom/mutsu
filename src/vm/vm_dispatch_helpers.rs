@@ -1088,6 +1088,35 @@ impl Interpreter {
                 .as_deref()
                 .or(compiled_fns)
                 .unwrap_or(&empty_fns);
+            // A routine declared at program scope resolves its names through
+            // its static link to that scope (ADR-12529), wherever it is called
+            // from, so a value call can bind it exactly as a direct call
+            // does: on the positional light path when its signature and these
+            // arguments admit it (#18083). A nested routine reads its
+            // declaring frame through the code object's captured env, which
+            // only the closure path installs.
+            if cf.code.links_frame_to_unit()
+                && data.assumed_positional.is_empty()
+                && data.assumed_named.is_empty()
+                && !args.iter().any(|a| a.is_string_pair_value())
+                && self.is_positional_light_call_eligible(
+                    &cf,
+                    data.name.as_str(),
+                    Self::positional_light_argc(&args),
+                    &args,
+                    None,
+                )
+            {
+                let name_sym = data.name;
+                return self.call_compiled_function_positional_light(
+                    &cf,
+                    &args,
+                    fns,
+                    name_sym.as_str(),
+                    name_sym,
+                    None,
+                );
+            }
             // A value call is never compile-time-diagnosable: keep a binding
             // failure's runtime X::TypeCheck::Binding identity instead of
             // reclassifying it as X::TypeCheck::Argument (raku throws Binding
