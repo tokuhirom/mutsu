@@ -10,9 +10,17 @@ SYNOPSIS
 
 ```raku
 use OpenSSL;
-my $openssl = OpenSSL.new;
-$openssl.set-fd(123);
-$openssl.write("GET / HTTP/1.1\r\nHost: somehost\r\n\r\n");
+
+my $conn = IO::Socket::INET.new: :host<raku.org>, :port(443);
+
+my $openssl = OpenSSL.new(:client);
+$openssl.set-fd($conn.native-descriptor);
+
+$openssl.connect;
+
+$openssl.write("HEAD / HTTP/1.1\r\nHost: raku.org\r\n\r\n");
+say $openssl.read(1024);
+$openssl.close;
 ```
 
 DESCRIPTION
@@ -27,10 +35,12 @@ method new
 ----------
 
 ```raku
-method new(Bool :$client = False, Int :$version?)
+method new(Bool :$client = False, ProtocolVersion :$version = -1)
 ```
 
-A constructor. Initializes OpenSSL library, sets method and context. If $version is not specified, the highest possible version is negotiated.
+A constructor. Initializes OpenSSL library, sets method and context. If `$version` is not specified, the highest possible version is negotiated.
+
+For client connections, construct the object with `:client` or call `.set-connect-state` before `.connect`.
 
 method set-fd
 -------------
@@ -39,9 +49,9 @@ method set-fd
 method set-fd(OpenSSL:, int32 $fd)
 ```
 
-Assigns connection's file descriptor (file handle) $fd to the SSL object.
+Assigns connection's file descriptor (file handle) `$fd` to the SSL object.
 
-To get the $fd we should use C to set up the connection. (See [NativeCall](NativeCall)) I hope we will be able to use Raku's IO::Socket module instead of connecting through C soon-ish.
+This must be done before calling `.connect` or `.accept`.
 
 method set-connect-state
 ------------------------
@@ -53,6 +63,8 @@ method set-connect-state(OpenSSL:)
 Sets SSL object to connect (client) state.
 
 Use it when you want to connect to SSL servers.
+
+If the object was not constructed with `:client`, call this before `.connect`.
 
 method set-accept-state
 -----------------------
@@ -72,9 +84,11 @@ method connect
 method connect(OpenSSL:)
 ```
 
-Connects to the server using $fd (passed using .set-fd).
+Connects to the server using `$fd` (passed using `.set-fd`).
 
 Does all the SSL stuff like handshaking.
+
+For client connections, construct with `:client` or call `.set-connect-state` first.
 
 method accept
 -------------
@@ -94,7 +108,7 @@ method write
 method write(OpenSSL:, Str $s)
 ```
 
-Sends $s to the other side (server/client).
+Sends `$s` to the other side (server/client).
 
 method read
 -----------
@@ -103,9 +117,9 @@ method read
 method read(OpenSSL:, Int $n, Bool :$bin)
 ```
 
-Reads $n bytes from the other side (server/client).
+Reads `$n` bytes from the other side (server/client).
 
-Bool :$bin if we want it to return Buf instead of Str.
+Use `:$bin` if you want it to return `Buf` instead of `Str`.
 
 method use-certificate-file
 ---------------------------
@@ -114,7 +128,7 @@ method use-certificate-file
 method use-certificate-file(OpenSSL:, Str $file)
 ```
 
-Assings a certificate (from file) to the SSL object.
+Assigns a certificate (from file) to the SSL object.
 
 method use-privatekey-file
 --------------------------
@@ -123,7 +137,7 @@ method use-privatekey-file
 method use-privatekey-file(OpenSSL:, Str $file)
 ```
 
-Assings a private key (from file) to the SSL object.
+Assigns a private key (from file) to the SSL object.
 
 method check-private-key
 ------------------------
@@ -133,6 +147,78 @@ method check-private-key(OpenSSL:)
 ```
 
 Checks if private key is valid.
+
+method version-code
+-------------------
+
+```raku
+method version-code(--> Int)
+```
+
+Returns the negotiated protocol version as an OpenSSL numeric constant.
+
+This method is useful after a successful `.connect` or `.accept`.
+
+method version-name
+-------------------
+
+```raku
+method version-name(--> Str)
+```
+
+Returns the negotiated protocol version as a string, for example `TLSv1.2` or `TLSv1.3`.
+
+This method is useful after a successful `.connect` or `.accept`.
+
+method protocol-version
+-----------------------
+
+```raku
+method protocol-version(--> ProtocolVersion)
+```
+
+Returns the negotiated protocol version normalized to `ProtocolVersion`.
+
+Returns one of the values accepted by `ProtocolVersion`, including `1.3`, or `-1` if the negotiated version is unknown.
+
+This method is useful after a successful `.connect` or `.accept`.
+
+method set-sni-host-name
+------------------------
+
+```raku
+method set-sni-host-name(Str $host --> OpenSSL)
+```
+
+Sets the TLS SNI (Server Name Indication) host name.
+
+For client connections this should usually be called before `.connect`, especially when connecting to virtual hosts or HTTPS servers by name.
+
+method set-alpn-protocols
+-------------------------
+
+```raku
+method set-alpn-protocols(*@protos --> OpenSSL)
+```
+
+Sets the ALPN protocols offered by the client, for example `h2` and `http/1.1`.
+
+This must be called before `.connect`.
+
+Each protocol must be non-empty and must not exceed 255 bytes.
+
+method selected-alpn
+--------------------
+
+```raku
+method selected-alpn(--> Str)
+```
+
+Returns the negotiated ALPN protocol as a string, for example `h2` or `http/1.1`.
+
+Returns `Nil` if no ALPN protocol was selected.
+
+This method is useful after a successful `.connect` or `.accept`.
 
 method shutdown
 ---------------
@@ -170,7 +256,7 @@ method close(OpenSSL:)
 
 Closes the connection.
 
-Unlike .shutdown it calls ssl-free, ctx-free, and then it shutdowns.
+Unlike `.shutdown`, this also calls `.ssl-free` and `.ctx-free`.
 
 TOOLS
 =====

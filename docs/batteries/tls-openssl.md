@@ -1,7 +1,7 @@
 # Battery: TLS / HTTPS socket — `OpenSSL` + `IO::Socket::SSL`
 
 **Slot:** TLS / HTTPS socket (foundation) · **Providers:** `OpenSSL`
-(`auth<zef:raku-community-modules>`, v0.2.7) + `IO::Socket::SSL`
+(`auth<zef:raku-community-modules>`, v0.2.10) + `IO::Socket::SSL`
 (`auth<raku-community-modules>`, v0.0.4) · **Kind:** Adopted (community modules,
 vendored as-is) · **License:** MIT / MIT
 
@@ -70,7 +70,7 @@ to build out, not a subsystem we are reluctantly touching for TLS. (User decisio
 
 ```
 IO::Socket::SSL v0.0.4  (MIT)
-└─ OpenSSL v0.2.7        (MIT, zero Raku deps; native dep on system libssl/libcrypto)
+└─ OpenSSL v0.2.10       (MIT, zero Raku deps; native dep on system libssl/libcrypto)
 ```
 
 Both MIT — clears the [license gate](../../BATTERIES.md#4-license-policy). `OpenSSL`
@@ -157,7 +157,7 @@ do **not** hand-edit the vendored tree:
 
 | Module | Upstream | Pinned version |
 | --- | --- | --- |
-| `OpenSSL` | <https://github.com/raku-community-modules/OpenSSL> | v0.2.7 |
+| `OpenSSL` | <https://github.com/raku-community-modules/OpenSSL> | v0.2.10 (tag `0.2.10`, commit `aab471d3902bb99b35f3f3b398eef1d42e25347b`) |
 | `IO::Socket::SSL` | <https://github.com/raku-community-modules/IO-Socket-SSL> | v0.0.4 |
 
 ```sh
