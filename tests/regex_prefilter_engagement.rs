@@ -216,7 +216,7 @@ fn a_rule_reached_through_another_rule_is_still_narrowed() {
     // The walk follows the call chain, and each body resolves its own
     // unqualified references against the package that DEFINED it.
     let stats = prefilter_stats(&format!(
-        "grammar G {{ token outer {{ <inner> }} token inner {{ 'zzzq' }} }}\n{}",
+        "grammar G {{ token outer {{ <inner> }}; token inner {{ 'zzzq' }} }}\n{}",
         failing_scan("/ <G::outer> /", 200)
     ));
     assert!(
