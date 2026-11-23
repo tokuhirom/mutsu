@@ -862,6 +862,21 @@ impl Interpreter {
     /// from GLOBAL: a nested compound name is not a global type of its own.
     // Cost: O(c * d), c = running package candidates (4), d = package nesting depth.
     pub(crate) fn resolve_relative_compound_type(&self, name: &str) -> Option<&'static str> {
+        // `Pkg::name` can be a registered type only if some registered name
+        // ends in `::name`: a core name such as `Metamodel::GenericHOW`,
+        // checked on every type-check memo hit, skips the walk (#18274).
+        if !self.registered_type_suffix_possible(name) {
+            debug_assert!(
+                self.resolve_relative_compound_type_walk(name).is_none(),
+                "the compound suffix filter missed {name}"
+            );
+            return None;
+        }
+        self.resolve_relative_compound_type_walk(name)
+    }
+
+    // Cost: O(c * d), as `resolve_relative_compound_type`.
+    fn resolve_relative_compound_type_walk(&self, name: &str) -> Option<&'static str> {
         let name_sym = crate::symbol::Symbol::intern(name);
         for candidate in self.running_package_candidates().into_iter().flatten() {
             for pkg in crate::qualified::package_ancestors(crate::symbol::Symbol::intern(candidate))
