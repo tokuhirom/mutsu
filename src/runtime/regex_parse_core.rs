@@ -462,6 +462,15 @@ fn try_consume_quantifier(
         '*' => {
             if chars.peek() == Some(&'*') {
                 chars.next();
+                // `** :? 3`: blanks, and a colon spelling (`**:!2..4`), may
+                // come before the backtracking modifier.
+                while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+                    chars.next();
+                }
+                let mut ahead = chars.clone();
+                if ahead.next() == Some(':') && matches!(ahead.peek(), Some('?' | '!')) {
+                    chars.next();
+                }
                 starstar_frugal = match chars.peek() {
                     Some(&'?') => {
                         chars.next();
@@ -5101,7 +5110,11 @@ impl Interpreter {
                             // (non-greedy); `**!` is the explicit greedy marker
                             // (the same as a bare `**`, but written out).
                             // `**:?` / `**:!` spell the same modifiers
-                            // with a colon.
+                            // with a colon, and blanks may come before it
+                            // (`** :? 3`).
+                            while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+                                chars.next();
+                            }
                             let mut colon = chars.clone();
                             if colon.next() == Some(':') && matches!(colon.peek(), Some('?' | '!')) {
                                 chars = colon;
