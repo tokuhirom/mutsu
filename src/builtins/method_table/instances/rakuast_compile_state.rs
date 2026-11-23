@@ -119,8 +119,6 @@ pub(super) fn implicit_constant_value(
     Some(Ok(Value::NIL))
 }
 
-
-
 const fn unit_row(
     name: &'static str,
     arity: u8,
