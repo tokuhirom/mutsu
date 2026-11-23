@@ -31,8 +31,8 @@ pub(in crate::rakuast) enum Declined {
     /// such code (rakudo's "RakuDoc markup code B missing endtag '>'").
     /// `None` only while the code being read has not yet named itself.
     Unterminated(Option<(char, &'static str)>),
-    /// Text the plain reader does not take: an ambiguous code, an `E<...>`
-    /// it cannot read.
+    /// Text the plain reader does not take: an empty code, metadata or an
+    /// `E<...>` holding angle brackets.
     Other,
 }
 
@@ -69,8 +69,8 @@ fn find_closer_nested(tail: &str, closer: &str) -> Option<usize> {
 
 /// The atoms of `text` up to `closer` (or its end), the metadata after a `|`
 /// when `meta_ok`, and the length consumed with the closer. [`Declined`] for
-/// text the plain reader does not take: an `E<...>`, an unterminated or
-/// ambiguous code.
+/// text the plain reader does not take: an unterminated code, or one of the
+/// shapes [`Declined::Other`] lists.
 // Cost: O(n), n = length of the text.
 pub(super) fn parse_atoms(
     text: &str,
@@ -81,7 +81,6 @@ pub(super) fn parse_atoms(
     let mut atoms = Vec::new();
     let mut buf = String::new();
     let mut at = 0;
-    let mut previous: Option<char> = None;
     // Unclosed `<` / `«` of the code's text read so far.
     let mut nest = 0usize;
     loop {
@@ -119,11 +118,9 @@ pub(super) fn parse_atoms(
                 .into_iter()
                 .find(|o| after.starts_with(o));
             if let Some(opener) = opener {
-                // `E<...>` is an entity, and a letter after a word character
-                // is not told apart from its text here.
-                if previous.is_some_and(char::is_alphanumeric) {
-                    return Err(Declined::Other);
-                }
+                // A code letter right after a word character still starts a
+                // code, as in rakudo's reader: `aB<b>` is `a` then `B<b>`
+                // (#19068).
                 let closer = match opener {
                     "<<<" => ">>>",
                     "<<" => ">>",
@@ -157,7 +154,6 @@ pub(super) fn parse_atoms(
                         entities: None,
                     }));
                     at += 1 + 3 + end + 3;
-                    previous = Some('>');
                     continue;
                 }
                 if ch == 'E' {
@@ -200,7 +196,6 @@ pub(super) fn parse_atoms(
                         entities: Some(list),
                     }));
                     at += 1 + opener.len() + end + closer.len();
-                    previous = closer.chars().last();
                     continue;
                 }
                 let (inner, used, inner_meta) = parse_atoms(
@@ -237,7 +232,6 @@ pub(super) fn parse_atoms(
                     entities: None,
                 }));
                 at += 1 + opener.len() + used;
-                previous = closer.chars().last();
                 continue;
             }
         }
@@ -249,7 +243,6 @@ pub(super) fn parse_atoms(
             nest = nest.checked_sub(1).ok_or(Declined::Other)?;
         }
         buf.push(ch);
-        previous = Some(ch);
         at += ch.len_utf8();
     }
     if !buf.is_empty() {
