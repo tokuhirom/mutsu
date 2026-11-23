@@ -487,8 +487,7 @@ impl Interpreter {
         // none of those, but a module's file-scope `my class` is a unit
         // lexical, which the cascade finds under `Pkg::\u{1}Name` before its
         // env probe; those two probes, in that order, are all it needs.
-        let lexical_type_candidate =
-            name_str.starts_with(crate::term_names::LEXICAL_TYPE_PREFIX);
+        let lexical_type_candidate = name_str.starts_with(crate::term_names::LEXICAL_TYPE_PREFIX);
         // Each step's `<sigil><pkg>::<rest>` key and the walk itself are
         // memoized per symbol: no `format!` and no `"::"` search per read.
         for pkg in crate::qualified::package_ancestors(cur_sym) {
