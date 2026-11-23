@@ -9,12 +9,6 @@
 The C<RakuAST::Doc::Paragraph> class contains the information about a
 logical paragraph in a C<RakuDoc> block.
 
-Support for L<C<RakuAST>|/type/RakuAST> functionality is available in language version
-C<6.e+> and was added in Rakudo compiler release 2023.02.  In earlier
-language versions it is only available when specifying:
-
-    use experimental :rakuast;
-
 =head2 Object introspection
 
 C<RakuAST::Doc::Paragraph> objects are typically created when parsing
@@ -60,7 +54,9 @@ object.
 
 =head2 method new
 
-    method new(*@atoms)
+=begin code
+method new(*@atoms)
+=end code
 
 The C<new> method must be called to create a new C<RakuAST::Doc::Paragraph>
 object.  It takes any number of positional arguments as the atoms of
@@ -70,7 +66,7 @@ L<C<RakuAST::Doc::Markup>|/type/RakuAST::Doc::Markup> object.
 Typically a C<RakuAST::Doc::Paragraph> object is only created if a
 logical paragraph has at least one markup object.
 
-=begin code :lang<raku> :preamble<use experimental :rakuast>
+=begin code
 my $paragraph = RakuAST::Doc::Paragraph.new(
   "Text before ",
   RakuAST::Doc::Markup.new(:letter<B>, :atoms("and")),
