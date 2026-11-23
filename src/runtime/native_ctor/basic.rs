@@ -59,7 +59,7 @@ impl Interpreter {
         _c: &CtorCall<'_>,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        Ok(self.build_native_failure_value(&args))
+        self.build_native_failure_value(&args)
     }
 
     /// `Capture.new` is named-only (`Mu.new`): a positional arg dies. Its build

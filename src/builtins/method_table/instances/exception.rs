@@ -127,7 +127,17 @@ fn message(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError
     if class_of(target) == "X::AdHoc"
         && let Some(payload) = attr(target, "payload")
     {
-        return Some(Ok(payload));
+        // rakudo's `X::AdHoc.message` is `$!payload.Str`: a list payload
+        // renders as its space-joined elements, not its gist (#18984).
+        // TODO: an instance payload needs its (possibly user) `Str` method,
+        // which this pure row cannot call; it is still returned as is.
+        if matches!(
+            payload.view(),
+            ValueView::Instance { .. } | ValueView::Package(_)
+        ) {
+            return Some(Ok(payload));
+        }
+        return Some(Ok(Value::str(payload.to_string_value())));
     }
     if class_of(target) == "CX::Warn" {
         return Some(Ok(Value::str(String::new())));

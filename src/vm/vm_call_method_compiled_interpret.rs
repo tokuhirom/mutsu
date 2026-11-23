@@ -241,7 +241,7 @@ impl Interpreter {
             && class_name == "Failure"
         {
             self.dispatch.method_dispatch_pure = true;
-            return Ok(self.build_native_failure_value(&args));
+            return self.build_native_failure_value(&args);
         }
         // Native Seq construction: `Seq.new($iterator?)` — registers the
         // iterator into the VM-owned predictive/deferred carrier tables (no

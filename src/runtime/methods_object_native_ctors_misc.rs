@@ -260,7 +260,19 @@ impl Interpreter {
         Value::seq_deferred(crate::value::SeqSource::Taken)
     }
 
-    pub(crate) fn build_native_failure_value(&self, args: &[Value]) -> Value {
+    /// `Failure.new` with two or more payloads takes rakudo's
+    /// `|cap (*@msg)` candidate: the exception is
+    /// `X::AdHoc.from-slurpy(|cap)`, whose message concatenates every
+    /// payload (#18984).
+    // Cost: O(n), n = total length of the payloads' stringifications.
+    pub(crate) fn build_native_failure_value(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if args.len() >= 2 {
+            let exception = self.dispatch_adhoc_from_slurpy(args)?;
+            return Ok(Self::failure_wrapping(exception));
+        }
         let default_exception = || {
             let mut attrs = HashMap::new();
             // `Failure.new` with no explicit exception defaults to X::AdHoc in
@@ -297,6 +309,12 @@ impl Interpreter {
         } else {
             wrap_adhoc(raw_exception)
         };
+        Ok(Self::failure_wrapping(exception))
+    }
+
+    /// An unhandled `Failure` carrying `exception`.
+    // Cost: O(1).
+    fn failure_wrapping(exception: Value) -> Value {
         let mut attrs = HashMap::new();
         attrs.insert("exception".to_string(), exception);
         attrs.insert("handled".to_string(), Value::FALSE);

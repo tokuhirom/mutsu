@@ -244,7 +244,7 @@ impl Interpreter {
             && class_name == "Failure"
         {
             self.dispatch.method_dispatch_pure = true;
-            return Ok(self.build_native_failure_value(&args));
+            return self.build_native_failure_value(&args);
         }
         // Native Seq construction (mut path twin of the above).
         if let Some(class_name) = new_on_package
