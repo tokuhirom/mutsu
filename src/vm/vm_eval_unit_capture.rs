@@ -35,11 +35,8 @@ impl Interpreter {
                     continue;
                 }
                 seen.push(sym);
-                // EXPERIMENT (#19025 CI bisect): by value, no boxing.
-                if let Some(value) = self.locals.get(slot).cloned()
-                    && !value.is_nil()
-                {
-                    env.insert_sym(crate::meta_ns::MetaNs::EvalUnit.key(sym), value);
+                if let Some(cell) = self.box_static_view_local(code, slot, sym) {
+                    env.insert_sym(crate::meta_ns::MetaNs::EvalUnit.key(sym), cell);
                 }
             }
         }
