@@ -130,6 +130,7 @@ mod parse_result;
 mod pod_delimited;
 mod primary;
 mod quote_shadow;
+mod sink_describe;
 pub(crate) mod sink_warn;
 pub(crate) mod soft_sorry;
 mod stmt;
@@ -772,6 +773,24 @@ pub(super) fn add_parse_warning(msg: String, line: i64) {
     let tagged = format!("{msg}\n    at {display_file}:{line}");
     PARSE_WARNINGS.with(|w| w.borrow_mut().push((file, tagged)));
 }
+
+/// [`add_parse_warning`] for one of rakudo's "Potential difficulties": the
+/// worry is listed under that header, with its location and, when known, the
+/// `------>` line pointing at the construct (`pointer`).
+// Cost: O(m), m = the message's length.
+pub(super) fn add_parse_worry(msg: String, line: i64, pointer: Option<String>) {
+    let file = stmt::simple::parser_source_file();
+    let display_file = file.as_deref().unwrap_or("-e");
+    let mut tagged = format!("{WORRY_HEADER}\n    {msg}\n    at {display_file}:{line}");
+    if let Some(pointer) = pointer {
+        tagged.push_str("\n    ------> ");
+        tagged.push_str(&pointer);
+    }
+    PARSE_WARNINGS.with(|w| w.borrow_mut().push((file, tagged)));
+}
+
+/// The header rakudo lists a unit's compile-time worries under.
+pub(crate) const WORRY_HEADER: &str = "Potential difficulties:";
 
 /// The parse warnings `f` adds, taken back out of the unit's list so the
 /// caller can publish them later (`unit_passes`).

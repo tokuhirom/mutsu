@@ -20,6 +20,7 @@ pub(crate) use number::{decimal_literal_value, numeric_literal_value};
 pub(in crate::parser) mod quote_adverbs;
 pub(crate) mod regex;
 mod source_regions;
+pub(in crate::parser) mod span_text;
 pub(in crate::parser) mod string;
 pub(in crate::parser) mod trivia_runs;
 pub(crate) mod var;

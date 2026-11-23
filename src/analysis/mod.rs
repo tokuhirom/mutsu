@@ -238,6 +238,16 @@ fn recovered_parse_errors(source: &str, already: &[Diagnostic]) -> Vec<Diagnosti
 /// persists message text only. Parsing it back is therefore the supported way
 /// to recover the line, not a hack around a missing accessor.
 fn split_warning_location(warning: &str) -> (String, Option<u32>, Option<String>) {
+    // A worry (`add_parse_worry`) also carries rakudo's "Potential
+    // difficulties:" header and a `------>` pointer line after its location:
+    // neither is part of the message itself.
+    let warning = warning
+        .split_once("\n    ------> ")
+        .map_or(warning, |(head, _)| head);
+    let warning = warning
+        .strip_prefix(crate::parser::WORRY_HEADER)
+        .and_then(|rest| rest.strip_prefix("\n    "))
+        .unwrap_or(warning);
     let Some((message, location)) = warning.rsplit_once("\n    at ") else {
         return (warning.to_string(), None, None);
     };
@@ -493,6 +503,16 @@ mod tests {
     #[test]
     fn the_undeclared_check_does_not_run_the_document() {
         assert_eq!(check("say 'THIS MUST NOT BE PRINTED';\n"), Vec::new());
+    }
+
+    #[test]
+    fn split_warning_location_drops_a_worry_header_and_pointer() {
+        let (message, line, file) = split_warning_location(
+            "Potential difficulties:\n    Useless use of 1 + 2 in sink context\n    at -e:2\n    ------> <BOL><HERE>1 + 2",
+        );
+        assert_eq!(message, "Useless use of 1 + 2 in sink context");
+        assert_eq!(line, Some(2));
+        assert_eq!(file, None);
     }
 
     #[test]
