@@ -202,6 +202,10 @@ impl<'ast> Visit<'ast> for CallNames {
 
 
 /// The first bareword term that names nothing in scope.
+/// Whether a statement list imports names the walk cannot see (see
+/// `UndeclaredName::opaque`).
+pub(super) type OpaqueList = dyn Fn(&[Stmt]) -> bool;
+
 struct UndeclaredName<'a> {
     interp: &'a Interpreter,
     /// Everything the unit declares, scope-blind (the safe direction: a name
@@ -228,7 +232,7 @@ struct UndeclaredName<'a> {
     /// A statement list below the unit's own that this answers for imports
     /// names the walk cannot see (a `use` in it): the walk does not judge
     /// the names in it (#13441).
-    opaque: Option<&'a dyn Fn(&[Stmt]) -> bool>,
+    opaque: Option<&'a OpaqueList>,
 }
 
 impl UndeclaredName<'_> {
@@ -419,7 +423,7 @@ impl Interpreter {
         declared: &HashSet<String>,
         type_like_only: bool,
         collect_all: bool,
-        opaque: Option<&dyn Fn(&[Stmt]) -> bool>,
+        opaque: Option<&OpaqueList>,
     ) -> Vec<(String, i64)> {
         let revision_6e = crate::parser::current_language_version().starts_with("6.e")
             || stmts.iter().any(|stmt| {
