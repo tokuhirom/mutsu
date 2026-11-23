@@ -792,7 +792,8 @@ impl Interpreter {
             if matches!(val.view(), ValueView::RakuAst(_)) {
                 let text = self.deparse_node(val.clone(), &[])?.to_string_value();
                 let text = text.strip_suffix('\n').unwrap_or(&text);
-                self.emit_stderr(&format!("{text}\n"));
+                // Through the dynamic `$*ERR`, like every other `dd` line (#19048).
+                self.write_to_named_handle("$*ERR", text, true)?;
                 continue;
             }
             let source_name = arg_sources.get(i).and_then(|entry| entry.as_deref());
