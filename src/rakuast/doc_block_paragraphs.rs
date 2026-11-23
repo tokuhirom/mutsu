@@ -31,9 +31,12 @@ pub(crate) fn from_paragraphs(args: &[Value]) -> Result<Value, RuntimeError> {
             _ => rest.push(arg.clone()),
         }
     }
-    let block = super::named_ctor::construct("RakuAST::Doc::Block", &rest).unwrap_or_else(|| {
-        Err(RuntimeError::new("RakuAST::Doc::Block.new is not available"))
-    })?;
+    let block =
+        super::named_ctor::construct("RakuAST::Doc::Block", &rest).unwrap_or_else(|| {
+            Err(RuntimeError::new(
+                "RakuAST::Doc::Block.new is not available",
+            ))
+        })?;
     let ValueView::RakuAst(node) = block.view() else {
         return Ok(block);
     };
@@ -69,7 +72,12 @@ pub(crate) fn from_paragraphs(args: &[Value]) -> Result<Value, RuntimeError> {
             }
         }
         k if IMPLICIT.contains(&k) => implicit_code_blocks(&paragraphs, &mut out),
-        _ => out = paragraphs.into_iter().map(|p| from_string_value(&p)).collect(),
+        _ => {
+            out = paragraphs
+                .into_iter()
+                .map(|p| from_string_value(&p))
+                .collect()
+        }
     }
     for paragraph in out {
         super::doc_block_edit::add_paragraph(&mut node, &paragraph)?;
@@ -82,7 +90,12 @@ pub(crate) fn from_paragraphs(args: &[Value]) -> Result<Value, RuntimeError> {
 fn items(value: &Value) -> Vec<Value> {
     value.as_list_items().map_or_else(
         || vec![value.clone()],
-        |items| items.iter().map(|i| i.with_deref(|v| v.descalarize().clone())).collect(),
+        |items| {
+            items
+                .iter()
+                .map(|i| i.with_deref(|v| v.descalarize().clone()))
+                .collect()
+        },
     )
 }
 
