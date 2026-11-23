@@ -41,7 +41,9 @@ is pos-pair(1, :a(5)), "x=1 a=5", 'named syntax binds the named param';
 sub typed(Int $n, :$m) { $n + ($m // 0) }
 is typed(41, :m(1)), 42, 'typed positional binds';
 my $type-err;
-{ typed("s"); CATCH { default { $type-err = $_ } } }
+# Through a variable: a literal `typed("s")` is refuted at CHECK time (#18874).
+my $s = "s";
+{ typed($s); CATCH { default { $type-err = $_ } } }
 ok $type-err.defined, 'type mismatch on positional raises';
 
 # Junction in the positional slot still autothreads through the cached path.
@@ -52,7 +54,8 @@ is-deeply f(1|2, :c(0)).gist, any("1/0", "2/0").gist,
 sub g($a, :$k!) { "$a $k" }
 is g(1, :k(2)), "1 2", 'mixed with required named binds';
 my $missing-named;
-{ g(1); CATCH { default { $missing-named = $_ } } }
+my $one = 1;
+{ g($one); CATCH { default { $missing-named = $_ } } }
 ok $missing-named ~~ X::AdHoc, 'missing required named on mixed throws X::AdHoc';
 
 # Closure capture of both kinds of params.

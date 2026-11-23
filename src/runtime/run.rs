@@ -677,6 +677,10 @@ impl Interpreter {
         // A term used before its declaration, judged in source order for the
         // same reason (ADR-15760 Amendment 1, 1b).
         let premature_term = crate::runtime::undeclared_routines::check_terms_in_source_order(&stmts);
+        // A call rakudo's optimizer refutes ("Calling f(Str) will never
+        // work ...") is a CHECK-time error too (#18874), judged on the
+        // statements as written, whose spans index `input`.
+        let static_refuted = self.check_static_refutations(&stmts, input);
         // `my $x will leave { ... }` expands to a scopeless `SyntheticBlock`
         // holding the declaration and its exit phasers. Those phasers belong to
         // the unit's scope, so lift them out where `split_block_phasers` sees
@@ -786,6 +790,7 @@ impl Interpreter {
                 self.check_undeclared_names_mainline(&body_main)?;
                 post_declared?;
                 premature_term?;
+                static_refuted?;
                 forward_vars?;
                 Ok(guards)
             });
