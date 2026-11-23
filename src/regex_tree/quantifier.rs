@@ -140,6 +140,8 @@ impl Parser {
             // A range takes its modifier before the range (`**?2..5`).
             '*' if self.chars.get(self.pos + 1) == Some(&'*') => {
                 self.pos += 2;
+                // `** :? 3`: blanks may come before the modifier too.
+                self.skip_whitespace();
                 range_backtrack = self.parse_backtrack();
                 self.skip_whitespace();
                 match self.parse_range() {
