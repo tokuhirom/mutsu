@@ -246,7 +246,13 @@ fn fuse(ops: &[TrOp], i: usize) -> Option<(usize, Vec<TrOp>)> {
             let Some(TrOp::OrdAtLocal(text)) = at(1) else {
                 return None;
             };
-            Some((2, vec![TrOp::OrdAtLocalSlot { text: *text, pos: *pos }]))
+            Some((
+                2,
+                vec![TrOp::OrdAtLocalSlot {
+                    text: *text,
+                    pos: *pos,
+                }],
+            ))
         }
         TrOp::GetRefI(pos_ref) if matches!(at(1), Some(TrOp::OrdAtLocal(_))) => {
             let Some(TrOp::OrdAtLocal(text)) = at(1) else {
