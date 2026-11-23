@@ -13,3 +13,9 @@ say $f({ $CALLER::UNIT::u });   # 2, as on rakudo (was 1)
 
 A name that a nested block of the unit redeclares resolves to the unit's
 outermost variable, which is the one `UNIT::` names.
+
+The unit's arrays, hashes and code objects are recorded as themselves, so
+the unit's own in-place writes keep working. A unit run by
+`Perl6::Compiler.eval` without an outer context no longer sees a caller
+lexical just because a closure captured it: it dies as undeclared, as on
+rakudo.

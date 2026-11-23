@@ -2283,7 +2283,14 @@ or a measured necessity:
   names the unit's outermost scope. The env is rebound only while that slot
   is the visible binding. Boxing the shadow that was visible where the
   closure was created had handed it to the by-name readers of the outer
-  variable, which is what failed Red's test the first time.
+  variable, which is what failed Red's test the first time. Only scalars
+  are boxed. An `@`/`%`/`&` slot holds its aggregate or code object, which
+  in-place writes already share, so it is recorded as itself: wrapping it in
+  a scalar cell itemized it under the unit's own readers, and the
+  `EVAL(slurp($file).AST)` check of every `t/` file caught that. A boxed
+  scalar of the code calling `Perl6::Compiler.eval` is handed to the unit as
+  a run-time binding for its callbacks (#16977), so the unit's
+  undeclared-variable check does not count it as a declaration.
 - **The caller-frame entry's flushed-slot overlay is a block tier**, not a
   frame root, so `Env::enclosing_scopes` of the entry starts at the calling
   frame's own root and link. A frame flattened into the bottom of its chain
