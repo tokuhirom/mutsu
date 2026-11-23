@@ -60,9 +60,7 @@ impl Compiler {
         self.compile_expr(index);
         self.compile_expr(value);
         self.code.emit(OpCode::Pop);
-        self.code.emit(OpCode::Index {
-            is_positional,
-        });
+        self.code.emit(OpCode::Index { is_positional });
         if !is_positional {
             // AT-KEY answers an unhandled Failure for scalar values. A store
             // must raise it here rather than discard it as an assigned value.
