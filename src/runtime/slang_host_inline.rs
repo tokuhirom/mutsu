@@ -63,16 +63,7 @@ impl Interpreter {
                 unit_parse: Some(unit_parse),
             })
         });
-        let HookRequest {
-            rule,
-            source,
-            start,
-            node,
-            block,
-            span,
-            roles,
-        } = request;
-        let answer = self.hook_answer(&rule, &source, start, node, block, span, &roles, false);
+        let answer = self.hook_answer(request, false);
         // Dropping the entry puts the unit's parser state back.
         let hook = INLINE_HOOKS.with(|hooks| hooks.borrow_mut().pop());
         drop(hook);

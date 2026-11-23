@@ -103,7 +103,16 @@ impl Interpreter {
             self.regex_state.slang_grammar_roles.clone(),
             self.regex_state.slang_action_roles.clone(),
         );
-        let answer = self.hook_answer(rule, source, start, node, block, span, &roles, true);
+        let request = crate::slang_link::HookRequest {
+            rule: rule.to_string(),
+            source: source.to_string(),
+            start,
+            node,
+            block,
+            span,
+            roles,
+        };
+        let answer = self.hook_answer(request, true);
         HOST_LINK.with(|l| {
             l.borrow()
                 .as_ref()
@@ -116,18 +125,21 @@ impl Interpreter {
     /// builds for the unit to replay (ADR-13370, ADR-17243), which a host that
     /// is the unit's own interpreter does not need.
     // Cost: the token and the action.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn hook_answer(
         &mut self,
-        rule: &str,
-        source: &str,
-        start: usize,
-        node: Option<Value>,
-        block: Option<Value>,
-        span: Option<crate::slang_link::ActionSpan>,
-        roles: &(Vec<Value>, Vec<Value>),
+        request: crate::slang_link::HookRequest,
         replay_log: bool,
     ) -> HostAnswer {
+        let crate::slang_link::HookRequest {
+            rule,
+            source,
+            start,
+            node,
+            block,
+            span,
+            roles,
+        } = request;
+        let (rule, source, roles) = (rule.as_str(), source.as_str(), &roles);
         let depth = HOOK_DEPTH.with(std::cell::Cell::get);
         if depth >= MAX_HOOK_DEPTH {
             return Err(format!(
