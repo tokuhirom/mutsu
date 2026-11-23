@@ -65,6 +65,15 @@ impl Interpreter {
                 || crate::parser::slang_action_rule(&rule.name)
                 || crate::parser::slang_wrapper_rule(&rule.name)
         });
+        // TODO: a declarator production's action works on the code object or
+        // package it declares (`$method.meta-object does Tallied`, EEL's
+        // `pattern`, a `FOREIGN-LANG` package), which the unit builds only when
+        // it is compiled: until the parse's nodes carry the meta-objects the
+        // unit installs, such a slang keeps the activation interpreter's host,
+        // whose actions the unit replays against the real objects (ADR-17243).
+        if hosted && rules.iter().any(|rule| declares_through_host(&rule.name)) {
+            return Ok(());
+        }
         let mut declarators: Vec<_> = self
             .regex_state
             .defined_slang_declarators
@@ -138,4 +147,16 @@ impl Interpreter {
             exports: Vec::new(),
         })
     }
+}
+
+/// Whether `rule`, a production a slang overrides, is a declarator whose action
+/// the unit replays against the object it declares (`routine-declarator`,
+/// `scope-declarator`, `package-declarator`): see `load_activating_slang`.
+// Cost: O(n), n = length of `rule`.
+fn declares_through_host(rule: &str) -> bool {
+    let category = rule.split(':').next().unwrap_or(rule);
+    matches!(
+        category,
+        "routine-declarator" | "scope-declarator" | "package-declarator" | "package_declarator"
+    )
 }
