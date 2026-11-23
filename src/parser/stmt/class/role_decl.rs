@@ -372,12 +372,7 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
         .filter_map(|pd| pd.name.strip_prefix(crate::ast::TYPE_CAPTURE_PREFIX))
         .collect();
     let brace = rest;
-    let (rest, mut body) =
-        package_body_block_with_captures(
-            rest,
-            &sigilless_terms,
-            &captures,
-        )?;
+    let (rest, mut body) = package_body_block_with_captures(rest, &sigilless_terms, &captures)?;
     let spans = crate::parser::stmt::sub::package_spans(name_span, brace, rest, &body);
     crate::rakuast::nested_methods::hoist(&mut body);
     // Handle `also is rw;` in the role body
