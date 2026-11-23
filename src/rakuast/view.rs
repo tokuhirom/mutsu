@@ -3389,8 +3389,9 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             operands.push(right);
             let infix = super::decl_tail::list_infix_operator(op, operands[0]);
             let mut nodes = Vec::with_capacity(operands.len());
-            for e in operands {
-                nodes.push(Value::rakuast(Box::new(view_expr(names, e)?)));
+            for (index, e) in operands.into_iter().enumerate() {
+                let viewed = super::thunk::lazy_operand(view_expr(names, e)?, index, op);
+                nodes.push(Value::rakuast(Box::new(viewed)));
             }
             Ok(RakuAstNode {
                 origin: Default::default(),

@@ -327,6 +327,7 @@ pub use lower::lower;
 pub(crate) use name_parts::is_name_part;
 pub use subclass::gist as subclass_gist;
 pub(crate) use subclass::is_node_value;
+pub(crate) use thunk::modeled_thunks;
 
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -690,6 +691,8 @@ pub enum RakuAstClass {
     // ADR-0033 Phase 2: a `*` that participates in Whatever-priming
     // (`* + 1`'s left operand) vs a bare Whatever value.
     WhateverCodeArgument,
+    PrimeThunk,
+    BlockThunk,
     // ADR-0033 Phase 2: the `**` hyper-whatever term (read direction only —
     // `**` is out of scope for priming, see the ADR's §1).
     TermHyperWhatever,
@@ -1061,6 +1064,8 @@ impl RakuAstClass {
             TermEmptySet => "RakuAST::Term::EmptySet",
             TermRand => "RakuAST::Term::Rand",
             WhateverCodeArgument => "RakuAST::WhateverCode::Argument",
+            PrimeThunk => "RakuAST::PrimeThunk",
+            BlockThunk => "RakuAST::BlockThunk",
             TermHyperWhatever => "RakuAST::Term::HyperWhatever",
             FatArrow => "RakuAST::FatArrow",
             StatementPrefixDo => "RakuAST::StatementPrefix::Do",
@@ -1620,6 +1625,8 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::TermRand,
     RakuAstClass::PrefixMultislice,
     RakuAstClass::WhateverCodeArgument,
+    RakuAstClass::PrimeThunk,
+    RakuAstClass::BlockThunk,
     RakuAstClass::TermHyperWhatever,
     RakuAstClass::FatArrow,
     RakuAstClass::StatementPrefixDo,
