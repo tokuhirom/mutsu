@@ -263,6 +263,9 @@ impl Interpreter {
             let Some(at) = call_offset(&survey.sites, index, source) else {
                 continue;
             };
+            if written_with_word_quote(source, at + site.name.len(), site.span) {
+                continue;
+            }
             return Err(refutation_error(site.name, *rules, candidates, &site.args, source, at));
         }
         Ok(())
@@ -398,6 +401,21 @@ fn call_offset(sites: &[Site<'_>], index: usize, source: &str) -> Option<usize> 
     let text = source.get(span.from as usize..span.to as usize)?;
     let occurrences = word_occurrences(text, site.name);
     (occurrences.len() == total).then(|| span.from as usize + occurrences[rank])
+}
+
+/// Whether the rest of the call's statement, from byte `from`, holds a word
+/// quote (`<a>`, `«a»`, `qw/a/`, `q:w/a/`). The parser folds `<a>` to the
+/// same `Str` literal as `"a"`, but rakudo does not judge a word quote
+/// statically (`f(<a>)` is a run-time type check failure), so such a call
+/// is left to the binder. A `<` that is not a quote only makes the pass
+/// skip a call it could have judged.
+// Cost: O(s), s = length of the statement.
+fn written_with_word_quote(source: &str, from: usize, span: SrcSpan) -> bool {
+    source
+        .get(from..(span.to as usize).max(from))
+        .is_none_or(|rest| {
+            rest.contains(['<', '\u{ab}']) || rest.contains("qw") || rest.contains(":w")
+        })
 }
 
 /// The byte offsets in `text` where `name` stands as a whole routine name.

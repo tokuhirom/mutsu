@@ -4,7 +4,7 @@ use Test;
 # compile error: nothing in the unit runs, and the error points at the call.
 # Expected texts are rakudo 2026.11's.
 
-plan 19;
+plan 21;
 
 sub run-code(Str $code) {
     my $p = run $*EXECUTABLE, '-e', $code, :out, :err;
@@ -83,6 +83,8 @@ for q[sub f(Int:D $x) {}; f("a")],
     q[sub f(Str() $x) { print "" }; f(1)],
     q[sub f($n, :$a) {}; f(1, 2)],
     q[multi f(Int $x) {}; multi f($x) { print "" }; f("a")],
+    q[sub f(Int $x) {}; f(<a>)],
+    q[sub f(Int $x) {}; f(qw/a/)],
     q[multi min(Int $a) { "u" }; my $m = min(3, 4)]
     -> $tail {
     my ($out, $err, $exit) = run-code("say 1; $tail");
