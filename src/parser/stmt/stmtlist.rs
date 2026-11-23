@@ -75,12 +75,27 @@ pub(crate) fn package_body_block_with_terms<'a>(
     input: &'a str,
     terms: &[&str],
 ) -> PResult<'a, Vec<Stmt>> {
+    package_body_block_with_captures(input, terms, &[])
+}
+
+/// [`package_body_block_with_terms`] for a role body whose signature also
+/// captures types (`role R[::T]`): each capture is a type and a term there,
+/// as a routine signature's is (`register_body_type_captures`, #18939).
+pub(crate) fn package_body_block_with_captures<'a>(
+    input: &'a str,
+    terms: &[&str],
+    captures: &[&str],
+) -> PResult<'a, Vec<Stmt>> {
     let (input, _) =
         parse_char(input, '{').map_err(|_| PError::expected_at(MISSING_BLOCK, input))?;
     simple::push_scope();
     simple::clear_current_scope_self_available();
     for term in terms {
         simple::register_user_term_symbol(term);
+    }
+    for capture in captures {
+        simple::register_user_type_verbatim(capture);
+        simple::register_user_term_symbol(capture);
     }
     let mut result = block_inner(input);
     simple::finish_block_anon_states(&mut result);
