@@ -1625,8 +1625,6 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::TermRand,
     RakuAstClass::PrefixMultislice,
     RakuAstClass::WhateverCodeArgument,
-    RakuAstClass::PrimeThunk,
-    RakuAstClass::BlockThunk,
     RakuAstClass::TermHyperWhatever,
     RakuAstClass::FatArrow,
     RakuAstClass::StatementPrefixDo,
