@@ -10,17 +10,23 @@
   "description": "Provide an easy interface to activating slangs",
   "license": "Artistic-2.0",
   "name": "Slangify",
-  "perl": "6.d",
   "provides": {
     "Slangify": "lib/Slangify.rakumod"
   },
+  "raku": "6.d",
   "resources": [
   ],
-  "source-url": "https://github.com/lizmat/Slangify.git",
+  "source-url": "https://codeberg.org/lizmat/Slangify.git",
+  "support": {
+    "bugtracker": "https://codeberg.org/lizmat/Slangify/issues",
+    "email": "liz@raku.rocks",
+    "source": "https://codeberg.org/lizmat/Slangify.git"
+  },
   "tags": [
-    "SLANG"
+    "SLANG",
+    "GRAMMAR"
   ],
   "test-depends": [
   ],
-  "version": "0.0.4"
+  "version": "0.0.5"
 }

@@ -1,8 +1,8 @@
 # Battery: slang activation — `Slangify` + `Slang::Tuxic`
 
 **Slot:** Slang activation (ADR-0026) · **Chosen:** `Slangify` (upstream
-`zef:lizmat`, v0.0.4, Artistic-2.0) + `Slang::Tuxic` (upstream
-`zef:raku-community-modules` / Tux, v0.0.5, Artistic-2.0) · **Kind:** Bundled,
+`zef:lizmat`, v0.0.5, Artistic-2.0) + `Slang::Tuxic` (upstream
+`zef:raku-community-modules` / Tux, v0.0.6, Artistic-2.0) · **Kind:** Bundled,
 run verbatim (`modules/Slangify/`, `modules/Slang-Tuxic/`)
 
 ## What they are
@@ -72,3 +72,21 @@ batteries gate (8/8).
 - The `Text::CSV` campaign (docs/batteries/csv.md) is the consumer this
   battery exists for: `use Text::CSV` now clears the `use Slang::Tuxic;`
   parse barrier.
+
+## Provenance and re-vendoring
+
+| | `Slangify` | `Slang::Tuxic` |
+| --- | --- | --- |
+| Upstream | <https://codeberg.org/lizmat/Slangify.git> (mirrored at <https://github.com/lizmat/Slangify.git>) | <https://github.com/raku-community-modules/Slang-Tuxic.git> |
+| Version | 0.0.5 | 0.0.6 |
+| Commit | `471f23d5ab20ad71e3732199a4bb7d2498bdddf2` (tag `0.0.5`) | `d6b458ce7777f08ec32b783ef31e4210f8d8f26c` (tag `0.0.6`) |
+| License | Artistic-2.0 (`modules/Slangify/LICENSE`) | Artistic-2.0 (`modules/Slang-Tuxic/LICENSE`) |
+| Bundled at | `modules/Slangify/` | `modules/Slang-Tuxic/` |
+
+Both trees are the fez release tarballs' `lib/`, `LICENSE`, `META6.json` and
+`README.md`, copied unchanged; `batteries.lock` pins the same commits. The
+0.0.5/0.0.6 releases changed nothing mutsu executes: `Slangify` gained
+`# UNCOVERABLE` markers and moved its source to Codeberg, and `Slang::Tuxic`'s
+`term:sym<identifier>` override now passes `$*R.is-identifier-type` a plain
+string instead of a one-element list — a grammar body mutsu maps onto its
+spaced-call parser mode rather than running.
