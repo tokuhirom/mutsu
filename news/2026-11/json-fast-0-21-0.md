@@ -12,3 +12,10 @@ assignment. Behaviour is unchanged. `batteries.lock` pins the new commit and
 the upstream suite stays whole in the release gate. These two subs are on the
 hot path of every decode, so the `#8673` decode benchmarks are re-baselined on
 this version.
+
+One local test changed with it. `t/modules/batteries/json-jsonc.t` asserted that
+`from-json("[1] // trailing", :allow-jsonc)` returns `[1]`, which mutsu did
+under 0.20.1 but rakudo never did. Under 0.21.0 mutsu and rakudo agree that a
+line comment running into end of input without a newline is "additional text"
+(the module's comment skipper steps one past the end), so the test now pins
+that, plus the newline-terminated and block-comment shapes that both accept.
