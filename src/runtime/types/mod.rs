@@ -1685,6 +1685,21 @@ pub(crate) fn binds_as_code_variable(value: &Value) -> bool {
     }
 }
 
+/// The symbol of a name the `&str` readonly-set accessors are asked about.
+/// Topicalizers (`given`, `with`, `for`, smartmatch, `s///`) save, mark and
+/// restore the topic's readonly state by its name `_` several times per
+/// execution, so it is answered from the well-known symbol instead of an
+/// intern probe each time (#18274).
+// Cost: O(1) for the topic; one intern otherwise.
+#[inline]
+fn readonly_name_sym(name: &str) -> Symbol {
+    if name == "_" {
+        crate::symbol::wk::topic()
+    } else {
+        Symbol::intern(name)
+    }
+}
+
 #[cfg(test)]
 mod value_is_defined_tests {
     use super::*;
@@ -1706,17 +1721,3 @@ mod value_is_defined_tests {
     }
 }
 
-/// The symbol of a name the `&str` readonly-set accessors are asked about.
-/// Topicalizers (`given`, `with`, `for`, smartmatch, `s///`) save, mark and
-/// restore the topic's readonly state by its name `_` several times per
-/// execution, so it is answered from the well-known symbol instead of an
-/// intern probe each time (#18274).
-// Cost: O(1) for the topic; one intern otherwise.
-#[inline]
-fn readonly_name_sym(name: &str) -> Symbol {
-    if name == "_" {
-        crate::symbol::wk::topic()
-    } else {
-        Symbol::intern(name)
-    }
-}

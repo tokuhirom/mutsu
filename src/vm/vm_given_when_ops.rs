@@ -166,7 +166,8 @@ impl Interpreter {
                 .given_pointy_topic_values
                 .push(pointy_value);
         }
-        self.env_mut().insert_sym(crate::symbol::wk::topic(), body_topic);
+        self.env_mut()
+            .insert_sym(crate::symbol::wk::topic(), body_topic);
         loan_env!(self, set_when_matched(false));
         // A read-only topic (`given @a` / `given 42` / `given expr()`) forbids
         // `$_ = ...`; container *mutation* (`.push`) is still allowed and is
@@ -179,11 +180,16 @@ impl Interpreter {
         // present, don't mark `$_` read-only: that would propagate read-only to
         // `@p` through its synthetic bound declaration and block element
         // assignment.
-        let mark_ro = topic_readonly && pointy_param.is_none() && !self.is_readonly_sym(crate::symbol::wk::topic());
+        let mark_ro = topic_readonly
+            && pointy_param.is_none()
+            && !self.is_readonly_sym(crate::symbol::wk::topic());
         if mark_ro {
             // `given 42 { $_ = 1 }`: the topic aliases the value itself, with no
             // container behind it.
-            self.mark_readonly_sym_with(crate::symbol::wk::topic(), crate::ast::ReadonlyKind::Immutable);
+            self.mark_readonly_sym_with(
+                crate::symbol::wk::topic(),
+                crate::ast::ReadonlyKind::Immutable,
+            );
         }
 
         // Depth of the pointy-topic scope stack at body entry. A `when`-succeed (or
@@ -228,7 +234,8 @@ impl Interpreter {
             while this.topic_state.topic_source_save_stack.len() > saved_pointy_depth {
                 let (saved_topic, saved_source) =
                     this.topic_state.topic_source_save_stack.pop().unwrap();
-                this.env_mut().insert_sym(crate::symbol::wk::topic(), saved_topic);
+                this.env_mut()
+                    .insert_sym(crate::symbol::wk::topic(), saved_topic);
                 this.topic_state.topic_source_var = saved_source;
             }
             this.topic_state
@@ -676,7 +683,11 @@ impl Interpreter {
             let v = if statement_modifier {
                 Value::slip(Vec::new())
             } else {
-                Self::when_falsy_value(matcher_kind, &cond_val, self.env().get_sym(crate::symbol::wk::topic()))
+                Self::when_falsy_value(
+                    matcher_kind,
+                    &cond_val,
+                    self.env().get_sym(crate::symbol::wk::topic()),
+                )
             };
             self.stack.push(v);
         }
