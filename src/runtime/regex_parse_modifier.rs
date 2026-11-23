@@ -1107,15 +1107,16 @@ impl Interpreter {
         err
     }
 
-    /// Create an X::SecurityPolicy error for prohibited regex interpolation.
+    /// The `X::SecurityPolicy::Eval` a prohibited regex interpolation throws,
+    /// with rakudo's payload; its message is the class's own.
     pub(super) fn make_security_policy_error() -> RuntimeError {
-        let msg = "Prohibited regex interpolation";
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("message".to_string(), Value::str(msg.to_string()));
-        let ex = Value::make_instance(Symbol::intern("X::SecurityPolicy"), attrs);
-        let mut err = RuntimeError::new(msg);
-        err.exception = Some(Box::new(ex));
-        err
+        attrs.insert(
+            "payload".to_string(),
+            Value::str("Prohibited regex interpolation".to_string()),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::SecurityPolicy::Eval"), attrs);
+        RuntimeError::from_exception_value(ex)
     }
 }
 
