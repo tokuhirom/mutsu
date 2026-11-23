@@ -13,7 +13,7 @@
 //! declarations, `say`/`print`, regex matches, ...) is never flagged.
 
 use super::sink_describe::{
-    describe_literal, describe_literal_with_src, distributes_sink,
+    describe_literal, describe_literal_with_src, distributes_sink, is_callsite_line_marker,
     is_operator_expr, is_type_name, pure_op_symbol, pure_prefix_symbol,
 };
 use crate::ast::parsed::{ModifierKind, ParsedStmt};
@@ -453,6 +453,21 @@ fn render_source(expr: &Expr) -> Option<String> {
         Expr::LiteralSrc(_, src) => Some(src.to_string()),
         Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => expr.sigiled_var_name(),
         Expr::BareWord(s) => Some(s.clone()),
+        // A call spelled with parentheses: `f()`, `f(1, 2)` (#18973).
+        Expr::Call {
+            name,
+            args,
+            listop: false,
+            ..
+        } => Some(format!(
+            "{}({})",
+            name.resolve(),
+            args.iter()
+                .filter(|arg| !is_callsite_line_marker(arg))
+                .map(render_source)
+                .collect::<Option<Vec<_>>>()?
+                .join(", ")
+        )),
         Expr::BracketArray(elems, _) => Some(format!(
             "[{}]",
             elems

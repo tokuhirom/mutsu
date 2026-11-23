@@ -115,3 +115,12 @@ pub(super) fn distributes_sink(expr: &Expr) -> bool {
 pub(super) fn is_operator_expr(expr: &Expr) -> bool {
     matches!(expr, Expr::Binary { .. } | Expr::Unary { .. })
 }
+
+/// Whether `arg` is the call-site marker the parser stamps onto a call
+/// (`crate::parser::callsite_line_arg`), which the source never wrote.
+// Cost: O(1).
+pub(super) fn is_callsite_line_marker(arg: &Expr) -> bool {
+    matches!(arg, Expr::Binary { left, .. }
+        if matches!(left.as_ref(), Expr::Literal(v)
+            if v.to_string_value() == crate::parser::TEST_CALLSITE_LINE_KEY))
+}
