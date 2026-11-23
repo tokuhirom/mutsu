@@ -20,24 +20,27 @@ use std::sync::OnceLock;
 /// on first access for a built-in exception class.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ClassAttributes {
-    /// The built-in exception class whose table rows `list` still lacks, with
-    /// the attributes declared before it was marked. `None` once `list` holds
-    /// the full declaration, and for every other class.
+    /// The declaration; for a deferred class, only the attributes declared
+    /// before it was marked.
+    attrs: Vec<ClassAttributeDef>,
+    /// Table attributes a built-in method row already reads: built from their
+    /// named argument (`is built`) although they are declared private.
+    built: Vec<&'static str>,
+    /// The built-in exception class whose table rows `attrs` still lacks.
+    /// A read declares them into its cell; the first write moves the cell's
+    /// declaration into `attrs` and drops this.
     deferred: Option<Deferred>,
-    list: OnceLock<Declared>,
 }
 
 #[derive(Debug, Clone)]
 struct Deferred {
     class: Symbol,
-    base: Vec<ClassAttributeDef>,
+    declared: OnceLock<Declared>,
 }
 
 #[derive(Debug, Clone, Default)]
 struct Declared {
     attrs: Vec<ClassAttributeDef>,
-    /// Table attributes a built-in method row already reads: built from their
-    /// named argument (`is built`) although they are declared private.
     built: Vec<&'static str>,
 }
 
@@ -46,8 +49,10 @@ impl ClassAttributes {
     /// access, after the ones the list holds now.
     // Cost: O(1).
     pub(crate) fn defer_builtin_exception(&mut self, class: Symbol) {
-        let base = self.list.take().map(|d| d.attrs).unwrap_or_default();
-        self.deferred = Some(Deferred { class, base });
+        self.deferred = Some(Deferred {
+            class,
+            declared: OnceLock::new(),
+        });
     }
 
     /// Whether the table rows are still undeclared: the class's accessor rows
@@ -55,25 +60,34 @@ impl ClassAttributes {
     /// answers from this list instead.
     // Cost: O(1).
     pub(crate) fn is_deferred(&self) -> bool {
-        self.deferred.is_some() && self.list.get().is_none()
+        self.deferred
+            .as_ref()
+            .is_some_and(|deferred| deferred.declared.get().is_none())
     }
 
-    // Cost: O(r) on the first call for a deferred class, r = its table rows
-    // (plus the one-time table parse); O(1) after that and for any other class.
-    #[inline]
-    fn declared(&self) -> &Declared {
-        self.list.get_or_init(|| self.materialize())
-    }
-
-    // Cost: O(r), r = the deferred class's table rows.
+    // Cost: O(r), r = the deferred class's table rows (plus the one-time
+    // table parse).
     #[cold]
-    fn materialize(&self) -> Declared {
-        let Some(deferred) = &self.deferred else {
-            return Declared::default();
-        };
-        let mut attrs = deferred.base.clone();
-        let built = super::builtin_exception_attrs::declare(deferred.class.as_str(), &mut attrs);
+    fn materialize(&self, class: Symbol) -> Declared {
+        let mut attrs = self.attrs.clone();
+        let mut built = self.built.clone();
+        built.extend(super::builtin_exception_attrs::declare(class.as_str(), &mut attrs));
         Declared { attrs, built }
+    }
+
+    // Cost: O(r) on the first call for a deferred class, r = its table rows;
+    // O(1) after that and for any other class.
+    #[inline]
+    fn declared(&self) -> (&Vec<ClassAttributeDef>, &[&'static str]) {
+        match &self.deferred {
+            None => (&self.attrs, &self.built),
+            Some(deferred) => {
+                let declared = deferred
+                    .declared
+                    .get_or_init(|| self.materialize(deferred.class));
+                (&declared.attrs, &declared.built)
+            }
+        }
     }
 
     /// Whether `name` is a table attribute built from its named argument
@@ -81,7 +95,7 @@ impl ClassAttributes {
     /// `is built` records in `ClassDef::attribute_built`.
     // Cost: O(b), b = such attributes of this class (0 or 1 in practice).
     pub(crate) fn builtin_is_built(&self, name: &str) -> bool {
-        self.declared().built.contains(&name)
+        self.declared().1.contains(&name)
     }
 }
 
@@ -91,7 +105,7 @@ impl std::ops::Deref for ClassAttributes {
     // Cost: O(1) after the first access (see `declared`).
     #[inline]
     fn deref(&self) -> &Vec<ClassAttributeDef> {
-        &self.declared().attrs
+        self.declared().0
     }
 }
 
@@ -99,13 +113,15 @@ impl std::ops::DerefMut for ClassAttributes {
     // Cost: O(1) after the first access (see `declared`).
     #[inline]
     fn deref_mut(&mut self) -> &mut Vec<ClassAttributeDef> {
-        self.declared();
-        self.deferred = None;
-        &mut self
-            .list
-            .get_mut()
-            .expect("`declared` initialized the list")
-            .attrs
+        if let Some(deferred) = self.deferred.take() {
+            let declared = deferred
+                .declared
+                .into_inner()
+                .unwrap_or_else(|| self.materialize(deferred.class));
+            self.attrs = declared.attrs;
+            self.built = declared.built;
+        }
+        &mut self.attrs
     }
 }
 
@@ -113,11 +129,9 @@ impl From<Vec<ClassAttributeDef>> for ClassAttributes {
     // Cost: O(1).
     fn from(attrs: Vec<ClassAttributeDef>) -> Self {
         Self {
+            attrs,
+            built: Vec::new(),
             deferred: None,
-            list: OnceLock::from(Declared {
-                attrs,
-                built: Vec::new(),
-            }),
         }
     }
 }
