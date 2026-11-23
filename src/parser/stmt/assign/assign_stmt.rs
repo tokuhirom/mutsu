@@ -596,20 +596,26 @@ pub(in crate::parser) fn assign_stmt(input: &str) -> PResult<'_, Stmt> {
         // `try_parse_assign_expr` recognizes the trailing `%h<k> := 5` indexed
         // bind, which a plain expression parser would leave behind. (Fasta binds
         // `$current := %labels{.substr(1)} := my str @`.)
-        let (rest, expr) = parse_assign_expr_or_comma(rest).map_err(|err| PError {
-            messages: merge_expected_messages(
-                "expected right-hand expression after ':='",
-                &err.messages,
-            ),
-            remaining_len: err.remaining_len.or(Some(rest.len())),
-            exception: None,
-        })?;
+        // `:=` is item-assignment precedence, so a loose word-logical ends the
+        // source and applies to the bind (`$x := 5 andthen 7`, #18938).
+        let (rest, expr) =
+            parse_assign_expr_or_comma_no_word_logical(rest).map_err(|err| PError {
+                messages: merge_expected_messages(
+                    "expected right-hand expression after ':='",
+                    &err.messages,
+                ),
+                remaining_len: err.remaining_len.or(Some(rest.len())),
+                exception: None,
+            })?;
+        let seed = crate::parser::stmt::word_logical_split::seed_read_expr(&name);
         let stmt = Stmt::Assign {
             name,
             expr,
             op: AssignOp::Bind,
             target_is_sigilless: false,
         };
+        let (rest, stmt) =
+            crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(rest, stmt, seed)?;
         return parse_statement_modifier(rest, stmt);
     }
 
