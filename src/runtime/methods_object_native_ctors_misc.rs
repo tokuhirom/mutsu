@@ -271,7 +271,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         if args.len() >= 2 {
             let exception = self.dispatch_adhoc_from_slurpy(args)?;
-            return Ok(Self::failure_wrapping(exception));
+            return Ok(self.failure_wrapping(exception));
         }
         let default_exception = || {
             let mut attrs = HashMap::new();
@@ -309,13 +309,23 @@ impl Interpreter {
         } else {
             wrap_adhoc(raw_exception)
         };
-        Ok(Self::failure_wrapping(exception))
+        Ok(self.failure_wrapping(exception))
     }
 
-    /// An unhandled `Failure` carrying `exception`.
-    // Cost: O(1).
-    fn failure_wrapping(exception: Value) -> Value {
+    /// An unhandled `Failure` carrying `exception`. An exception that was
+    /// never thrown has no backtrace, so the Failure records where it was
+    /// created, as rakudo's `Failure.new` does (#18987).
+    // Cost: O(s), s = routine-stack depth, for an unthrown exception; else O(1).
+    fn failure_wrapping(&self, exception: Value) -> Value {
         let mut attrs = HashMap::new();
+        let thrown = matches!(exception.view(), ValueView::Instance { attributes, .. }
+            if attributes.as_map().contains_key("backtrace"));
+        if !thrown {
+            attrs.insert(
+                Self::FAILURE_ORIGIN_BACKTRACE_ATTR.to_string(),
+                self.build_backtrace_value_of_caller(),
+            );
+        }
         attrs.insert("exception".to_string(), exception);
         attrs.insert("handled".to_string(), Value::FALSE);
         Value::make_instance(Symbol::intern("Failure"), attrs)
