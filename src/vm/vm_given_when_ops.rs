@@ -63,11 +63,11 @@ impl Interpreter {
             self.topic_state.given_pointy_captured.push(None);
         }
 
-        let saved_topic = self.env().get("_").cloned();
+        let saved_topic = self.env().get_sym(crate::symbol::wk::topic()).cloned();
         // The body's `$_` is a fresh, untyped lexical: an enclosing routine's
         // typed `$_` parameter (`method load(IO() $_)`) must not coerce or
         // check what the body assigns to it.
-        let saved_topic_type = self.var_type_constraint("_");
+        let saved_topic_type = self.var_type_constraint_sym(crate::symbol::wk::topic());
         if saved_topic_type.is_some() {
             self.set_var_type_constraint("_", None);
         }
@@ -82,8 +82,8 @@ impl Interpreter {
         // scopes restore it after this topicalizer exits.
         let clears_inherited_topic_readonly = !topic_readonly && pointy_param.is_none();
         let saved_topic_readonly = clears_inherited_topic_readonly.then(|| {
-            let saved = self.readonly_kind("_");
-            self.unmark_readonly("_");
+            let saved = self.readonly_kind_sym(crate::symbol::wk::topic());
+            self.unmark_readonly_sym(crate::symbol::wk::topic());
             saved
         });
         let container_binding_full = self.take_container_ref_for(code);
@@ -166,7 +166,8 @@ impl Interpreter {
                 .given_pointy_topic_values
                 .push(pointy_value);
         }
-        self.env_mut().insert("_".to_string(), body_topic);
+        self.env_mut()
+            .insert_sym(crate::symbol::wk::topic(), body_topic);
         loan_env!(self, set_when_matched(false));
         // A read-only topic (`given @a` / `given 42` / `given expr()`) forbids
         // `$_ = ...`; container *mutation* (`.push`) is still allowed and is
@@ -179,11 +180,16 @@ impl Interpreter {
         // present, don't mark `$_` read-only: that would propagate read-only to
         // `@p` through its synthetic bound declaration and block element
         // assignment.
-        let mark_ro = topic_readonly && pointy_param.is_none() && !self.is_readonly("_");
+        let mark_ro = topic_readonly
+            && pointy_param.is_none()
+            && !self.is_readonly_sym(crate::symbol::wk::topic());
         if mark_ro {
             // `given 42 { $_ = 1 }`: the topic aliases the value itself, with no
             // container behind it.
-            self.mark_readonly_with("_", crate::ast::ReadonlyKind::Immutable);
+            self.mark_readonly_sym_with(
+                crate::symbol::wk::topic(),
+                crate::ast::ReadonlyKind::Immutable,
+            );
         }
 
         // Depth of the pointy-topic scope stack at body entry. A `when`-succeed (or
@@ -228,14 +234,15 @@ impl Interpreter {
             while this.topic_state.topic_source_save_stack.len() > saved_pointy_depth {
                 let (saved_topic, saved_source) =
                     this.topic_state.topic_source_save_stack.pop().unwrap();
-                this.env_mut().insert("_".to_string(), saved_topic);
+                this.env_mut()
+                    .insert_sym(crate::symbol::wk::topic(), saved_topic);
                 this.topic_state.topic_source_var = saved_source;
             }
             this.topic_state
                 .given_pointy_topic_values
                 .truncate(given_pointy_topic_value_depth);
             if mark_ro {
-                this.unmark_readonly("_");
+                this.unmark_readonly_sym(crate::symbol::wk::topic());
             }
             if let Some(saved) = saved_topic_readonly {
                 this.restore_topic_readonly(saved);
@@ -263,9 +270,9 @@ impl Interpreter {
             }
             this.set_when_matched(saved_when);
             if let Some(v) = saved_topic.clone() {
-                this.env_mut().insert("_".to_string(), v);
+                this.env_mut().insert_sym(crate::symbol::wk::topic(), v);
             } else {
-                this.env_mut().remove("_");
+                this.env_mut().remove_sym(crate::symbol::wk::topic());
             }
             if let Some(tc) = &saved_topic_type {
                 this.set_var_type_constraint("_", Some(tc.clone()));
@@ -371,7 +378,7 @@ impl Interpreter {
         let body_start = *ip + 1;
         let end = body_end as usize;
 
-        let saved_topic = self.env().get("_").cloned();
+        let saved_topic = self.env().get_sym(crate::symbol::wk::topic()).cloned();
         // A prior lexical `$_` declaration (for example, from
         // `given ... -> $_ is copy`) gives topic reads a local slot. Keep that
         // slot synchronized with the expression-form topic just as `Given`
@@ -430,7 +437,7 @@ impl Interpreter {
                 saved_source_for_restore.clone(),
             ));
         }
-        self.env_mut().insert("_".to_string(), topic);
+        self.env_mut().insert_sym(crate::symbol::wk::topic(), topic);
         loan_env!(self, set_when_matched(false));
 
         let mut last = Value::NIL;
@@ -467,9 +474,9 @@ impl Interpreter {
             Err(e) => {
                 loan_env!(self, set_when_matched(saved_when));
                 if let Some(v) = saved_topic {
-                    self.env_mut().insert("_".to_string(), v);
+                    self.env_mut().insert_sym(crate::symbol::wk::topic(), v);
                 } else {
-                    self.env_mut().remove("_");
+                    self.env_mut().remove_sym(crate::symbol::wk::topic());
                 }
                 if let Some(slot) = topic_local_slot {
                     self.locals[slot] = saved_local_topic.unwrap_or(Value::NIL);
@@ -493,9 +500,9 @@ impl Interpreter {
         }
         loan_env!(self, set_when_matched(saved_when));
         if let Some(v) = saved_topic {
-            self.env_mut().insert("_".to_string(), v);
+            self.env_mut().insert_sym(crate::symbol::wk::topic(), v);
         } else {
-            self.env_mut().remove("_");
+            self.env_mut().remove_sym(crate::symbol::wk::topic());
         }
         if let Some(slot) = topic_local_slot {
             self.locals[slot] = saved_local_topic.unwrap_or(Value::NIL);
@@ -523,7 +530,7 @@ impl Interpreter {
         let topic_snapshot = self
             .find_local_slot(code, "_")
             .map(|slot| self.locals[slot].clone())
-            .or_else(|| self.env().get("_").cloned())
+            .or_else(|| self.env().get_sym(crate::symbol::wk::topic()).cloned())
             .unwrap_or(Value::NIL);
 
         // `when 2` numifies the topic as `~~ 2` does (#16750); `when *` arrives
@@ -676,7 +683,11 @@ impl Interpreter {
             let v = if statement_modifier {
                 Value::slip(Vec::new())
             } else {
-                Self::when_falsy_value(matcher_kind, &cond_val, self.env().get("_"))
+                Self::when_falsy_value(
+                    matcher_kind,
+                    &cond_val,
+                    self.env().get_sym(crate::symbol::wk::topic()),
+                )
             };
             self.stack.push(v);
         }
