@@ -21,18 +21,32 @@ use crate::symbol::Symbol;
 use crate::value::Value;
 use std::sync::Arc;
 
-/// The prepared lists, by class: the `(package_lexicals,
-/// class_body_static_types)` generations each was built under, and the
-/// writes in order.
-pub(crate) type Plans = rustc_hash::FxHashMap<Symbol, ((u64, u64), Arc<[(Symbol, Value)]>)>;
+/// One class's prepared writes: the list in order, and the same writes
+/// pre-applied to an overlay tier (see [`StaticsPlan::tier`]).
+#[derive(Clone)]
+pub(crate) struct StaticsPlan {
+    pub(crate) writes: Arc<[(Symbol, Value)]>,
+    /// The writes applied, in order, to an empty tier: what a frame overlay
+    /// that has had no write yet holds after the injection. A frame adopts it
+    /// as its overlay (`Env::adopt_fresh_overlay`) instead of inserting each
+    /// write; its first own write copies it on write. `None` when a write's
+    /// key has an insert side effect a pre-built tier would skip (`?FILE`,
+    /// `&return`).
+    pub(crate) tier: Option<Arc<crate::env::Tier>>,
+}
+
+/// The prepared plans, by class, with the `(package_lexicals,
+/// class_body_static_types)` generations each was built under.
+pub(crate) type Plans = rustc_hash::FxHashMap<Symbol, ((u64, u64), StaticsPlan)>;
 
 impl Interpreter {
     /// The env writes for `class_name`'s visible class-body statics, as
     /// [`Interpreter::collect_class_body_statics`] builds them, kept until
     /// either table they read is written.
-    // Cost: O(1) expected on a hit (one intern, one probe); O(s) on a miss,
-    // s = the statics of the class and its enclosing packages.
-    pub(crate) fn class_body_statics_plan(&mut self, class_name: &str) -> Arc<[(Symbol, Value)]> {
+    // Cost: O(1) expected on a hit (one intern, one probe, two `Arc`
+    // clones); O(s) on a miss, s = the statics of the class and its
+    // enclosing packages.
+    pub(crate) fn class_body_statics_plan(&mut self, class_name: &str) -> StaticsPlan {
         let key = Symbol::intern(class_name);
         let generations = (
             self.lexicals.package_lexicals.generation(),
@@ -41,12 +55,16 @@ impl Interpreter {
         if let Some((built, plan)) = self.caches.class_body_statics_plans.get(&key)
             && *built == generations
         {
-            return Arc::clone(plan);
+            return plan.clone();
         }
-        let plan: Arc<[(Symbol, Value)]> = self.collect_class_body_statics(class_name).into();
+        let writes: Arc<[(Symbol, Value)]> = self.collect_class_body_statics(class_name).into();
+        let plan = StaticsPlan {
+            tier: crate::env::Env::seed_tier_for_writes(&writes),
+            writes,
+        };
         self.caches
             .class_body_statics_plans
-            .insert(key, (generations, Arc::clone(&plan)));
+            .insert(key, (generations, plan.clone()));
         plan
     }
 }

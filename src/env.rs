@@ -27,6 +27,7 @@ mod outer_scope;
 mod rebind;
 mod record_lookup;
 mod routine_owned;
+mod seeded_overlay;
 pub(crate) mod static_link;
 use static_link::same_variable;
 pub(crate) use static_link::{
