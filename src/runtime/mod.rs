@@ -1102,7 +1102,10 @@ mod readonly_set_cache_tests {
         assert!(set.contains_key(&topic));
         assert!(set.marked_with(topic, ReadonlyKind::Alias));
         assert_eq!(set.get(&topic), Some(&ReadonlyKind::Alias));
-        assert_eq!(set.iter().collect::<Vec<_>>(), vec![(topic, ReadonlyKind::Alias)]);
+        assert_eq!(
+            set.iter().collect::<Vec<_>>(),
+            vec![(topic, ReadonlyKind::Alias)]
+        );
         assert_eq!(set.remove(&topic), Some(ReadonlyKind::Alias));
         assert!(!set.topic_marked());
         assert!(set.is_empty());
