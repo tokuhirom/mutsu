@@ -68,6 +68,7 @@ fn sketch(op: &TrOp) -> String {
         TrOp::ConstI(v) => format!("ConstI({v})"),
         TrOp::IncIVoid(n) => format!("IncIVoid({n})"),
         TrOp::OrdAtLocal(n) => format!("OrdAtLocal({n})"),
+        TrOp::OrdAtLocalRef { text, pos_ref } => format!("OrdAtLocalRef({text}, {pos_ref})"),
         TrOp::AtPosIOuter(n) => format!("AtPosIOuter({n})"),
         TrOp::JumpIfFalseI(t) => format!("JumpIfFalseI({t})"),
         TrOp::Jump(t) => format!("Jump({t})"),
@@ -97,10 +98,10 @@ fn nom_ws_compiles_to_the_typed_scanner_loop() {
             // `$pos` is `is rw`, so it is a REFERENCE to the caller's slot
             // (ADR-0110 §3.3's `getlexref_i`) and every read and increment of
             // it goes through that reference.
-            "GetRefI(0)",
-            "OrdAtLocal(0)",
+            // The position read through it feeds `ordat` directly.
+            "OrdAtLocalRef(0, 0)",
             "AtPosIOuter(0)",
-            "JumpIfFalseI(6)",
+            "JumpIfFalseI(5)",
             "IncRefIVoid(0)",
             "Jump(0)",
             // The loop's `Nil` value, pushed and dropped, is gone

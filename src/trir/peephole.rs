@@ -31,6 +31,10 @@
 //!   [`TrOp::JumpCmpC`]; with a slot left operand too, [`TrOp::JumpCmpLC`],
 //!   which touches no bank at all. `ElemsLocal(n); JumpIfFalseI(t)` is
 //!   [`TrOp::JumpIfEmptyLocal`].
+//! - **Codepoint reads.** `LoadI(p); OrdAtLocal(t)` is
+//!   [`TrOp::OrdAtLocalSlot`] and `GetRefI(r); OrdAtLocal(t)` is
+//!   [`TrOp::OrdAtLocalRef`]: the position comes straight from the slot or
+//!   through the reference, with no int-bank round trip.
 //! - **Discarded push.** `PushILocal(n); PopObj` is [`TrOp::PushILocalVoid`].
 //! - **Slot-to-slot list ops.** `ShiftILocal(l); [WrapI;] StoreI(s)` is
 //!   [`TrOp::ShiftIStoreLocal`] and `LoadI(s); PushILocalVoid(l)` is
@@ -236,6 +240,25 @@ fn fuse(ops: &[TrOp], i: usize) -> Option<(usize, Vec<TrOp>)> {
         }
         TrOp::PushILocal(n) if matches!(at(1), Some(TrOp::PopObj)) => {
             Some((2, vec![TrOp::PushILocalVoid(*n)]))
+        }
+        // ---- a codepoint read at a slot or `is rw` position ----
+        TrOp::LoadI(pos) if matches!(at(1), Some(TrOp::OrdAtLocal(_))) => {
+            let Some(TrOp::OrdAtLocal(text)) = at(1) else {
+                return None;
+            };
+            Some((2, vec![TrOp::OrdAtLocalSlot { text: *text, pos: *pos }]))
+        }
+        TrOp::GetRefI(pos_ref) if matches!(at(1), Some(TrOp::OrdAtLocal(_))) => {
+            let Some(TrOp::OrdAtLocal(text)) = at(1) else {
+                return None;
+            };
+            Some((
+                2,
+                vec![TrOp::OrdAtLocalRef {
+                    text: *text,
+                    pos_ref: *pos_ref,
+                }],
+            ))
         }
         // ---- slot-to-slot list ops ----
         TrOp::ShiftILocal(list) => {
