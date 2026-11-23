@@ -2343,6 +2343,9 @@ fn construct_values(
             ValueView::Str(_) => Some("RakuAST::StrLiteral"),
             ValueView::Num(_) => Some("RakuAST::NumLiteral"),
             ValueView::Rat(..) => Some("RakuAST::RatLiteral"),
+            // `42+i` / `v6.e` (#18979).
+            ValueView::Complex(..) => Some("RakuAST::ComplexLiteral"),
+            ValueView::Version { .. } => Some("RakuAST::VersionLiteral"),
             _ => None,
         };
         if let Some(literal) = literal {
