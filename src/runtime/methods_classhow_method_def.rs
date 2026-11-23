@@ -74,7 +74,19 @@ impl Interpreter {
             }
             defs
         } else if keep_invocant {
-            sub_data.param_defs.to_vec()
+            let mut defs = sub_data.param_defs.to_vec();
+            // A method written outside any class (`my method g2(Str $x)`)
+            // has rakudo's invocant `Mu`, not the class it is added to, and
+            // the multi ranking weighs that position: `(Mu: Str)` ties with
+            // `(Late: Cool)` (#18868). A method a class declared (a
+            // `^find_method` carrier) keeps its class.
+            if sub_data.env.get("__mutsu_lookup_class").is_none()
+                && let Some(invocant) = defs.iter_mut().find(|pd| pd.is_invocant)
+                && invocant.type_constraint.is_none()
+            {
+                invocant.type_constraint = Some("Mu".into());
+            }
+            defs
         } else {
             sub_data
                 .param_defs

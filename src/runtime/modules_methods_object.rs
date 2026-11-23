@@ -28,6 +28,7 @@ pub(crate) mod methods_signature;
 mod methods_signature_candidates;
 pub(crate) mod builtin_method_sigs;
 pub(crate) mod methods_signature_errors;
+mod method_ambiguity;
 mod methods_signature_shaped;
 mod native_ctor;
 mod methods_string;
