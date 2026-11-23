@@ -786,6 +786,15 @@ impl Interpreter {
     pub(super) fn builtin_dd(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let arg_sources = self.pending_call_arg_sources.clone().unwrap_or_default();
         for (i, val) in args.iter().enumerate() {
+            // A RakuAST node prints as the source it stands for, without a
+            // variable label, as rakudo 2026.11's `dd` does (#18980); inside a
+            // container it stays `.raku`.
+            if matches!(val.view(), ValueView::RakuAst(_)) {
+                let text = self.deparse_node(val.clone(), &[])?.to_string_value();
+                let text = text.strip_suffix('\n').unwrap_or(&text);
+                self.emit_stderr(&format!("{text}\n"));
+                continue;
+            }
             let source_name = arg_sources.get(i).and_then(|entry| entry.as_deref());
             // A user-class instance's `.raku` needs the class registry to collect
             // its public attributes, which the static `raku_value` cannot reach

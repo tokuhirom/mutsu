@@ -77,6 +77,26 @@ impl Interpreter {
         Self::prepend_deparse_prelude(stmts);
     }
 
+    /// `$node.DEPARSE(|@roles)`: the node and the roles handed to the
+    /// deparser routine, declared on first use. The deparser is declared per
+    /// interpreter: a unit that mentions `DEPARSE` carries it as a prelude,
+    /// but another interpreter (the slang host's, which a production's action
+    /// runs in, or a unit that only calls `dd`) has not seen that unit.
+    // Cost: O(1) plus the deparser's own cost, linear in the tree it prints.
+    pub(crate) fn deparse_node(
+        &mut self,
+        node: Value,
+        roles: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        if !self.has_function("MUTSU_DEPARSE::run") {
+            self.ensure_deparse_class()?;
+        }
+        let mut args = Vec::with_capacity(roles.len() + 1);
+        args.push(node);
+        args.extend(roles.iter().cloned());
+        self.call_function("MUTSU_DEPARSE::run", args)
+    }
+
     /// Declare the deparser now if no unit has, for a module that asks for it
     /// by `nqp::gethllsym('Raku', 'DEPARSE')` (the unit that loads it does not
     /// mention `DEPARSE` itself, so no prelude was injected).
