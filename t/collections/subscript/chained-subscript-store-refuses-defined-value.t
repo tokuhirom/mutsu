@@ -8,28 +8,29 @@ plan 29;
 # container" as "vivify me" and silently clobbered the value (or, through a
 # hash root, dropped the write entirely).
 
-# --- positional outer subscript: X::Assignment::RO naming the value ---------
+# --- positional outer subscript into a defined scalar element -------------
+# Index 0 is the element's own container and any other index is out of range
+# `0..0`, as rakudo's `Any.ASSIGN-POS` answers (#18952).
 
 {
     my @a = 1, 2, 3;
-    throws-like { @a[1][0] = 9 }, X::Assignment::RO,
-        message => 'Cannot modify an immutable Int (2)',
-        'positional store through a defined Int element is refused';
+    throws-like { @a[1][1] = 9 }, X::OutOfRange,
+        message => 'Index out of range. Is: 1, should be in 0..0',
+        'positional store past index 0 of a defined Int element is out of range';
     is-deeply @a[1], 2, 'the refused store left the element alone';
 }
 
 {
     my @a = "x", 2;
-    throws-like { @a[0][0] = 9 }, X::Assignment::RO,
-        message => 'Cannot modify an immutable Str (x)',
-        'a Str element is refused too';
+    throws-like { @a[0][3] = 9 }, X::OutOfRange,
+        message => 'Index out of range. Is: 3, should be in 0..0',
+        'a Str element too';
 }
 
 {
     my @a = 1.5, 2;
-    throws-like { @a[0][0] = 9 }, X::Assignment::RO,
-        message => 'Cannot modify an immutable Rat (1.5)',
-        'a Rat element is refused, and the message names the gist';
+    @a[0][0] = 9;
+    is-deeply @a, [9, 2], 'index 0 of a Rat element replaces it';
 }
 
 {
@@ -53,9 +54,9 @@ plan 29;
 
 {
     my %h = a => 1;
-    throws-like { %h<a>[0] = 9 }, X::Assignment::RO,
-        message => 'Cannot modify an immutable Int (1)',
-        'a hash entry holding a defined value is refused, not silently dropped';
+    throws-like { %h<a>[1] = 9 }, X::OutOfRange,
+        message => 'Index out of range. Is: 1, should be in 0..0',
+        'a hash entry holding a defined value is out of range past index 0, not silently dropped';
     is %h<a>, 1, 'the entry is unchanged';
 }
 
