@@ -12,10 +12,10 @@
 //! Anything that may have a side effect (calls, method calls, assignments,
 //! declarations, `say`/`print`, regex matches, ...) is never flagged.
 
+use super::sink_describe::describe_useless;
 use crate::ast::parsed::{ModifierKind, ParsedStmt};
 use crate::ast::{DoBlockOrigin, Expr, SrcSpan, Stmt};
 use crate::ast_visit::{Visit, walk_expr, walk_stmt as walk_ast_stmt};
-use super::sink_describe::describe_useless;
 
 /// A source `do` block evaluates every statement but its last in sink context,
 /// regardless of whether the block's result is used. Scan all expression
