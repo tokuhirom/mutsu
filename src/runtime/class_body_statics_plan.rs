@@ -52,7 +52,13 @@ impl Interpreter {
     // clones); O(s) on a miss, s = the statics of the class and its
     // enclosing packages.
     pub(crate) fn class_body_statics_plan(&mut self, class_name: &str) -> StaticsPlan {
-        let key = Symbol::intern(class_name);
+        self.class_body_statics_plan_sym(Symbol::intern(class_name))
+    }
+
+    /// [`Self::class_body_statics_plan`] keyed by the class name's symbol.
+    // Cost: as `class_body_statics_plan`, without the intern.
+    pub(crate) fn class_body_statics_plan_sym(&mut self, key: Symbol) -> StaticsPlan {
+        let class_name = key.as_str();
         let generations = (
             self.lexicals.package_lexicals.generation(),
             self.lexicals.class_body_static_types.generation(),
