@@ -13,6 +13,7 @@
 
 use super::super::{Handler, MethodRow, Named, RowFlags};
 use super::rakuast_fileline::{fileline, original_file};
+use super::rakuast_origin_text::origin_str;
 use crate::rakuast::{RakuAstFieldValue, RakuAstNode};
 use crate::runtime::Interpreter;
 use crate::symbol::Symbol;
@@ -186,6 +187,7 @@ pub(super) static ROWS: &[MethodRow] = &[
     origin_row!("RakuAST::Origin::Match", "orig", 0, match_orig),
     super::narrow_row!("RakuAST::Origin::Match", "Str", 0, match_str),
     origin_row!("RakuAST::Origin::Match", "chars", 0, match_chars),
+    origin_row!("RakuAST::Origin", "Str", 0, origin_str),
     origin_row!("RakuAST::Origin", "from", 0, origin_position),
     origin_row!("RakuAST::Origin", "to", 0, origin_end),
     origin_row!("RakuAST::Origin", "source", 0, origin_source),
