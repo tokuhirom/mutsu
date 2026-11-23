@@ -40,6 +40,13 @@ pub(crate) fn is_head(head: &Stmt) -> bool {
 pub(crate) fn head_name(head: &Stmt) -> Option<&str> {
     match head {
         Stmt::VarDecl { name, .. } | Stmt::Assign { name, .. } => Some(name),
+        // `my $x := 1 orelse 2`: the binding declaration as written.
+        Stmt::Ast(node) if let super::parsed::ParsedStmt::BindDecl(decl) = node.as_ref() => {
+            match decl.as_ref() {
+                Stmt::VarDecl { name, .. } => Some(name),
+                _ => None,
+            }
+        }
         Stmt::Expr(Expr::CompoundAssign { target, .. }) => variable_name(target),
         // The same compound assignment as a `.AST` parse keeps it.
         Stmt::Expr(Expr::Ast(node)) => match node.as_ref() {
