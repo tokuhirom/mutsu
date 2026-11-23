@@ -12,10 +12,14 @@
 //! Anything that may have a side effect (calls, method calls, assignments,
 //! declarations, `say`/`print`, regex matches, ...) is never flagged.
 
-use super::sink_describe::describe_useless;
+use super::sink_describe::{
+    bracket_array_elems, describe_literal, describe_literal_with_src, distributes_sink,
+    is_operator_expr, is_type_name, pure_op_symbol, pure_prefix_symbol,
+};
 use crate::ast::parsed::{ModifierKind, ParsedStmt};
 use crate::ast::{DoBlockOrigin, Expr, SrcSpan, Stmt};
 use crate::ast_visit::{Visit, walk_expr, walk_stmt as walk_ast_stmt};
+use crate::value::ValueView;
 
 /// A source `do` block evaluates every statement but its last in sink context,
 /// regardless of whether the block's result is used. Scan all expression
@@ -338,17 +342,14 @@ pub(super) fn warn_expr_sink(expr: &Expr, nil_hint: bool, line: i64) {
 fn warn_statement_expr(expr: &Expr, nil_hint: bool, line: i64, span: SrcSpan) {
     // A list, a parenthesized expression and a `do` block distribute or
     // suppress the sink; only a single term or operator is reported here.
-    if matches!(
-        expr,
-        Expr::ArrayLiteral(_) | Expr::Grouped(_) | Expr::Spelled(_) | Expr::DoBlock { .. }
-    ) {
+    if distributes_sink(expr) {
         warn_expr_sink(expr, nil_hint, line);
         return;
     }
     let Some(desc) = describe_useless(expr) else {
         return;
     };
-    let desc = if matches!(expr, Expr::Binary { .. } | Expr::Unary { .. }) {
+    let desc = if is_operator_expr(expr) {
         super::primary::span_text::span_text(span).unwrap_or(desc)
     } else {
         desc
@@ -377,4 +378,109 @@ fn emit_at(desc: String, nil_hint: bool, line: i64, at: Option<u32>) {
         line,
         at.and_then(super::primary::span_text::here_pointer),
     );
+}
+
+/// Returns the description (the "X" in "Useless use of X in sink context") if
+/// `expr` is a pure, side-effect-free value/expression, otherwise `None`.
+fn describe_useless(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Grouped(inner) => describe_useless(inner),
+        Expr::Spelled(spelled) => describe_useless(&spelled.expr),
+        Expr::PositionalPair(inner) => describe_useless(inner),
+        Expr::Literal(v) => describe_literal(v),
+        // A source-preserving numeric literal: describe by the inner value's
+        // category but render the number using the original source text so the
+        // warning keeps the radix / scientific / Unicode form the user wrote.
+        Expr::LiteralSrc(v, src) => describe_literal_with_src(v, src),
+        // A `Var` node whose name already carries a sigil (`@a`, `%h`) is a
+        // synthetic artifact of `:=` bind desugaring — the trailing result
+        // expression a container bind leaves in its SyntheticBlock — not a
+        // user-written bare scalar. A real bare `@a` parses to `ArrayVar("a")`,
+        // so this never suppresses a genuine sink warning; it only stops the
+        // spurious "Useless use of $@a in sink context" on `my @a := @b`.
+        // A bare anonymous `$` (the unnamed state scalar) parses to a synthetic
+        // `__ANON_STATE#<id>__` name. Raku reports it as "unnamed $ variable",
+        // not by its internal name.
+        Expr::Var(n) if n.starts_with("__ANON_STATE#") => Some("unnamed $ variable".to_string()),
+        // The reserved `$self` lexical key already carries its sigil (ADR-0061),
+        // so it must be reported before the generic sigiled-name skip below.
+        Expr::Var(n) if n == crate::env::LEX_SELF => Some(crate::env::LEX_SELF.to_string()),
+        Expr::Var(n) if n.starts_with(['$', '@', '%', '&']) => None,
+        // `$.name` / `@.name` / `%.name` is a method call on `self`
+        // (`gather { $.take-subs }` in Test::Describe), never a useless value.
+        Expr::Var(n) | Expr::ArrayVar(n) | Expr::HashVar(n) if n.starts_with('.') => None,
+        Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => expr.sigiled_var_name(),
+        Expr::ArrayLiteral(elems) if elems.is_empty() => Some("()".to_string()),
+        Expr::BareWord(s) if is_type_name(s) => Some(s.clone()),
+        Expr::Binary {
+            left, op, right, ..
+        } => {
+            pure_op_symbol(op)?;
+            // Only flag when both operands are themselves useless (no side
+            // effects), e.g. `1 + 2` but not `$x + foo()`. Rakudo names the
+            // expression by its spelling, which `render_source` approximates
+            // (the whole-statement case reads the source itself).
+            // An array constructor of useless values is a useless operand too
+            // (`[] + 1`), though a bare `[]` statement is not reported.
+            for operand in [left, right] {
+                let elems = bracket_array_elems(operand);
+                let pure = match elems {
+                    Some(elems) => elems.iter().all(|e| describe_useless(e).is_some()),
+                    None => describe_useless(operand).is_some(),
+                };
+                if !pure {
+                    return None;
+                }
+            }
+            render_source(expr)
+        }
+        Expr::Unary {
+            op, expr: inner, ..
+        } => {
+            pure_prefix_symbol(op)?;
+            // Only flag when the operand itself is useless (no side effects),
+            // e.g. `-5` / `?5` / `-$x` but not `-foo()`.
+            describe_useless(inner)?;
+            render_source(expr)
+        }
+        _ => None,
+    }
+}
+
+/// Approximate the source text of a useless expression, for an operator
+/// expression whose own text the warning cannot read back.
+fn render_source(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Grouped(inner) | Expr::PositionalPair(inner) => render_source(inner),
+        Expr::Literal(lit) => match lit.view() {
+            ValueView::Str(s) => Some(format!("\"{}\"", *s)),
+            _ => Some(lit.to_string_value()),
+        },
+        Expr::LiteralSrc(_, src) => Some(src.to_string()),
+        Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => expr.sigiled_var_name(),
+        Expr::BareWord(s) => Some(s.clone()),
+        Expr::BracketArray(elems, _) => Some(format!(
+            "[{}]",
+            elems
+                .iter()
+                .map(render_source)
+                .collect::<Option<Vec<_>>>()?
+                .join(", ")
+        )),
+        Expr::Unary {
+            op, expr: inner, ..
+        } => {
+            let sym = pure_prefix_symbol(op)?;
+            Some(format!("{}{}", sym, render_source(inner)?))
+        }
+        Expr::Binary {
+            left, op, right, ..
+        } => {
+            let sym = pure_op_symbol(op)?;
+            let l = render_source(left)?;
+            let r = render_source(right)?;
+            Some(format!("{} {} {}", l, sym, r))
+        }
+        _ => None,
+    }
 }
