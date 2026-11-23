@@ -35,6 +35,19 @@ pub(super) fn is_block_ending_stmt(stmt: &Stmt, consumed: &str) -> bool {
             is_our: false,
             ..
         } => true,
+        // A `token`/`rule`/`regex` declaration ends with its body too
+        // (`token a { x } token b { y }` on one line is the same error as two
+        // `sub`s, #19030). `my`/`our` ones go through `my_decl`, as methods do.
+        Stmt::TokenDecl {
+            is_my: false,
+            is_our: false,
+            ..
+        }
+        | Stmt::RuleDecl {
+            is_my: false,
+            is_our: false,
+            ..
+        } => true,
         // Stmt::Block, Stmt::If, Stmt::For, ClassDecl, RoleDecl, Package, etc. are
         // also excluded for similar reasons -- they may go through paths that consume
         // trailing separators before returning to stmt_list_with_mode.
@@ -67,6 +80,8 @@ pub(super) fn routine_decl_continuation_follows(stmt: &Stmt, rest: &str) -> bool
         Stmt::SubDecl { .. }
             | Stmt::ProtoDecl { .. }
             | Stmt::ProtoToken { .. }
+            | Stmt::TokenDecl { .. }
+            | Stmt::RuleDecl { .. }
             | Stmt::MethodDecl {
                 is_my: false,
                 is_our: false,

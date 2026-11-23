@@ -806,7 +806,19 @@ impl Interpreter {
             } else {
                 crate::builtins::methods_0arg::raku_repr::raku_value(val)
             };
-            let repr = format!("{}{}", self.dd_prefix(source_name), value_repr);
+            // A bareword records its own name as the source, as a scalar `$x`
+            // records `x`; the type object a bareword names is no container,
+            // so it takes no `$name = ` prefix (`dd IO::Path`, #19065).
+            let names_itself = matches!(val.view(), ValueView::Package(pkg)
+                if source_name.is_some_and(|source| {
+                    crate::value::user_facing_type_name(&pkg.resolve()) == source
+                }));
+            let prefix = if names_itself {
+                String::new()
+            } else {
+                self.dd_prefix(source_name)
+            };
+            let repr = format!("{prefix}{value_repr}");
             self.write_to_named_handle("$*ERR", &repr, true)?;
         }
         Ok(args.first().cloned().unwrap_or(Value::NIL))
