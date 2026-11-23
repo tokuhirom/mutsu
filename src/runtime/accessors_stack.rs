@@ -32,7 +32,8 @@ impl Interpreter {
         let generation = self.dispatch.wraps.generation();
         if generation != self.caches.wraps_gen_seen {
             self.caches.wraps_gen_seen = generation;
-            self.invalidate_fn_resolution();
+            // A wrap moves no registry key, so the base-name key index stays.
+            self.invalidate_fn_resolution_changing_keys(std::iter::empty());
         }
     }
 

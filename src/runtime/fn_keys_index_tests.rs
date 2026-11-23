@@ -16,6 +16,9 @@ fn evicted_base_names_refill_in_one_pass() {
     let mut i = Interpreter::new();
     i.run("sub alpha() { 1 }\nsub beta() { 2 }\nsub gamma() { 3 }\n")
         .expect("setup program runs");
+    // The tail index answers once some reader has started it (a cold one
+    // defers to a registry pass, see `tail_index_keys`).
+    crate::qualified_tail_index::names_ending_in("alpha");
     i.invalidate_fn_resolution();
 
     // First miss: that name only, index still incomplete.
@@ -62,6 +65,9 @@ fn an_unqualified_key_is_refilled_without_a_pass() {
     let mut i = Interpreter::new();
     i.run("sub alpha() { 1 }\nsub beta() { 2 }\n")
         .expect("setup program runs");
+    // The tail index answers once some reader has started it (a cold one
+    // defers to a registry pass, see `tail_index_keys`).
+    crate::qualified_tail_index::names_ending_in("alpha");
     i.invalidate_fn_resolution();
     i.fn_keys_for_base("alpha");
     i.fn_keys_for_base("beta");
@@ -107,6 +113,9 @@ fn the_audit_scans_once_per_functions_map_state() {
     let mut i = Interpreter::new();
     i.run("sub alpha() { 1 }\nsub beta() { 2 }\n")
         .expect("setup program runs");
+    // The tail index answers once some reader has started it (a cold one
+    // defers to a registry pass, see `tail_index_keys`).
+    crate::qualified_tail_index::names_ending_in("alpha");
 
     assert!(i.fn_base_name_registered("alpha"));
     let first = i.dispatch.fn_keys_index.audit_scans;
@@ -165,6 +174,9 @@ fn a_name_registered_after_completion_is_found() {
     let mut i = Interpreter::new();
     i.run("sub alpha() { 1 }\nsub beta() { 2 }\n")
         .expect("setup program runs");
+    // The tail index answers once some reader has started it (a cold one
+    // defers to a registry pass, see `tail_index_keys`).
+    crate::qualified_tail_index::names_ending_in("alpha");
     i.invalidate_fn_resolution();
     i.fn_keys_for_base("alpha");
     i.fn_keys_for_base("beta");
@@ -186,6 +198,9 @@ fn a_complete_index_answers_a_shared_reader_without_a_scan() {
     let mut i = Interpreter::new();
     i.run("sub alpha() { 1 }\nsub beta() { 2 }\n")
         .expect("setup program runs");
+    // The tail index answers once some reader has started it (a cold one
+    // defers to a registry pass, see `tail_index_keys`).
+    crate::qualified_tail_index::names_ending_in("alpha");
     i.invalidate_fn_resolution();
     // Incomplete: only a scan can tell.
     assert!(i.peek_fn_keys_for_base("beta").is_none());
