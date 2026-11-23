@@ -18,8 +18,10 @@
 //!   named argument, or a literal that fails a core nominal type (or the
 //!   `Positional` / `Associative` / `Callable` of an `@` / `%` / `&`
 //!   parameter). As in rakudo, a parameter with a default, an `is rw` one, a
-//!   `:D`/`:U` smiley and a coercion type are left to the run-time binder,
-//!   and a signature with a type capture or a sub-signature is not judged.
+//!   `:D`/`:U` smiley and a coercion type are left to the run-time binder.
+//!   A native type (`int`, `uint8`) is left to it too, and so is a routine
+//!   written without a signature (its `@_` / placeholders are not in its
+//!   parameter list) or one with a type capture or a sub-signature.
 //!
 //! The error points at the call (`<HERE>`). Its position is found in the text
 //! of the innermost statement that holds the call, by matching the calls to
@@ -183,7 +185,11 @@ fn judged_type<'a>(param: &'a ParamDef, user_types: &HashSet<String>) -> Option<
         (None, Some('&')) => "Callable",
         (None, _) => return None,
     };
+    // A native type (`int`, `uint8`) unboxes at run time: rakudo refutes
+    // some of its mismatches statically and not others (`int` takes a Rat
+    // until the binder truncates it), so the binder decides.
     if ty.contains([':', '(', '[', '{'])
+        || crate::native_types::is_native_type_name(ty)
         || user_types.contains(ty)
         || !crate::known_types::is_known_type_constraint(ty)
     {
@@ -253,7 +259,9 @@ impl Interpreter {
                 || p.literal_value.is_some()
                 || p.is_invocant
         };
-        if params.iter().any(unjudged) {
+        // A routine written without a signature takes what its body uses
+        // (`@_`, `%_`, placeholders), which its parameter list does not show.
+        if params.is_empty() || params.iter().any(unjudged) {
             return false;
         }
         if params.iter().any(|p| p.named && p.required) {
@@ -261,10 +269,17 @@ impl Interpreter {
         }
         let positional: Vec<&ParamDef> = params
             .iter()
-            .filter(|p| !p.named && !p.double_slurpy)
+            // `*%h` takes named arguments only (`double_slurpy` is `**@a`).
+            .filter(|p| !p.named && !(p.slurpy && p.name.starts_with('%')))
             .collect();
-        let slurpy = positional.iter().any(|p| p.slurpy);
-        let fixed: Vec<&ParamDef> = positional.iter().copied().filter(|p| !p.slurpy).collect();
+        // `*@a`, `+@a` and `|c` take any number of positionals.
+        let takes_many = |p: &ParamDef| p.slurpy || p.onearg;
+        let slurpy = positional.iter().any(|p| takes_many(p));
+        let fixed: Vec<&ParamDef> = positional
+            .iter()
+            .copied()
+            .filter(|p| !takes_many(p))
+            .collect();
         let required = fixed
             .iter()
             .filter(|p| !p.optional_marker && p.default.is_none())

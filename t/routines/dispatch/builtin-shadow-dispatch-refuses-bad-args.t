@@ -28,11 +28,14 @@ throws-like { pick(1, 'two') }, X::TypeCheck::Binding::Parameter,
 
 # The same for a plainly typed shadow: no type capture is needed to reach it.
 sub roll(Int $x, Int $y) { "user:$x/$y" } #OK shadow
-dies-ok { roll(1, 'two') }, 'plainly typed shadow of a native-table name dies';
+# Through a variable: a literal `roll(1, 'two')` is refuted at CHECK time (#18874).
+my $two = 'two';
+dies-ok { roll(1, $two) }, 'plainly typed shadow of a native-table name dies';
 is roll(1, 2), "user:1/2", 'the matching call reaches the user sub';
 
 # An arity mismatch is a binding failure too, not a call to CORE's routine.
-dies-ok { roll(1) }, 'too few positionals is a binding failure, not CORE roll';
+# A slip: a literal `roll(1)` is refuted at CHECK time (#18874).
+dies-ok { roll(|(1,)) }, 'too few positionals is a binding failure, not CORE roll';
 
 # A `multi`, unlike an `only` sub, ADDS candidates to the core ones rather
 # than hiding them, so a call no user candidate accepts still reaches CORE

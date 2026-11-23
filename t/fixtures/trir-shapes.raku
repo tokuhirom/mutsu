@@ -158,7 +158,8 @@ nom-ws($doc, $shared);
 say "rw-through-cell={$shared},{$peek()}";
 
 # --- arity mismatch --------------------------------------------------------
-say "arity={(try arith(1)) // 'FAILED'}";
+# A slip: a literal `arith(1)` is refuted at CHECK time (#18874).
+say "arity={(try arith(|(1,))) // 'FAILED'}";
 
 # --- a parameter whose BINDING the general binder alone performs -----------
 # An attributive parameter writes straight to `self`'s attribute cell. Its
