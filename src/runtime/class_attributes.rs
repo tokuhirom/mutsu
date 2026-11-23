@@ -50,6 +50,14 @@ impl ClassAttributes {
         self.deferred = Some(Box::new(Deferred { class, base }));
     }
 
+    /// Whether the table rows are still undeclared: the class's accessor rows
+    /// are not in the method table yet, and `Registry::accessor_is_public_sym`
+    /// answers from this list instead.
+    // Cost: O(1).
+    pub(crate) fn is_deferred(&self) -> bool {
+        self.deferred.is_some() && self.list.get().is_none()
+    }
+
     // Cost: O(r) on the first call for a deferred class, r = its table rows
     // (plus the one-time table parse); O(1) after that and for any other class.
     #[inline]
@@ -111,6 +119,13 @@ impl From<Vec<ClassAttributeDef>> for ClassAttributes {
                 built: Vec::new(),
             }),
         }
+    }
+}
+
+impl FromIterator<ClassAttributeDef> for ClassAttributes {
+    // Cost: O(n), n = the attributes.
+    fn from_iter<I: IntoIterator<Item = ClassAttributeDef>>(iter: I) -> Self {
+        Self::from(iter.into_iter().collect::<Vec<_>>())
     }
 }
 

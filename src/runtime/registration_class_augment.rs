@@ -1313,7 +1313,7 @@ impl Interpreter {
         };
         let punned_class = ClassDef {
             parents: class_parents.clone(),
-            attributes: all_attributes,
+            attributes: all_attributes.into(),
             attribute_types,
             attribute_smileys,
             attribute_built,
