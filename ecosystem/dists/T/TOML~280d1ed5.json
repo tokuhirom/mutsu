@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.15,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,29 +24,30 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.46,
+        "secs": 0.41,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "partial",
       "mutsu": {
-        "nok": 0,
-        "ok": 66,
+        "first_failure": "t/valid/datetime-timezone.json",
+        "nok": 1,
+        "ok": 13,
         "plan": 66,
-        "secs": 0.36,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "fail"
       },
       "path": "t/01-valid.t",
       "raku": {
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 1.32,
+        "secs": 1.31,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +59,7 @@
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 0.12,
+        "secs": 0.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,51 +69,53 @@
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 0.71,
+        "secs": 0.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "===TOML",
         "nok": 0,
-        "ok": 66,
+        "ok": 13,
         "plan": 66,
-        "secs": 0.71,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/03-encoder.t",
       "raku": {
         "nok": 0,
         "ok": 66,
         "plan": 66,
-        "secs": 1.06,
+        "secs": 1.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "Cannot resolve caller new(DateTime:U: Int:D, Int:D, Int:D, Int:D, Int:D, Int:D, Int:D, :timezone(Int)); none of these signatures matches:",
         "nok": 0,
-        "ok": 102,
+        "ok": 47,
         "plan": 102,
-        "secs": 0.1,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/04-nqp.t",
       "raku": {
         "nok": 0,
         "ok": 102,
         "plan": 102,
-        "secs": 1.37,
+        "secs": 1.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -129,7 +132,7 @@
     "date": "2026-11-23",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "e52d3f1c",
+    "mutsu_commit": "33461166",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -140,13 +143,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/OM/TOML/bd464ba01277d124c4498ed7932280b377cfabde.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 302,
     "baseline_files": 5,
-    "mutsu_assertions": 302,
-    "parity_files": 5,
-    "regressed_files": 0
+    "mutsu_assertions": 141,
+    "parity_files": 2,
+    "regressed_files": 3
   },
   "version": "3"
 }

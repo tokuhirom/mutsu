@@ -58,25 +58,17 @@
   "dist": "PDF::Font::Loader::CSS",
   "files": [
     {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 11.69,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
+      "cmp": "no_baseline",
       "path": "t/01basic.t",
       "raku": {
+        "first_failure": "SWEEP-TIMEOUT",
         "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 165.96,
+        "ok": 0,
+        "plan": null,
+        "secs": 240.1,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "timeout"
       }
     }
   ],
@@ -88,7 +80,7 @@
     "date": "2026-11-23",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "e52d3f1c",
+    "mutsu_commit": "33461166",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -99,12 +91,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/P/DF/PDF_FONT_LOADER_CSS/cac2fa07550d5e0360360821bfc2b4b685bc5ead.tar.gz"
   },
-  "status": "green",
+  "status": "no_baseline",
   "totals": {
-    "baseline_assertions": 4,
-    "baseline_files": 1,
-    "mutsu_assertions": 4,
-    "parity_files": 1,
+    "baseline_assertions": 0,
+    "baseline_files": 0,
+    "mutsu_assertions": 0,
+    "parity_files": 0,
     "regressed_files": 0
   },
   "version": "0.0.1"

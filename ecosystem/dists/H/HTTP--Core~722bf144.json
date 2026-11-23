@@ -13,25 +13,280 @@
     "unresolved": []
   },
   "dist": "HTTP::Core",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/01-parse.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-vbwt487u/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-vbwt487u/dist/resource",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/02-server.rakutest",
+      "raku": {
+        "first_failure": "the server never answered http://127.0.0.1:41013/hello",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 4.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/03-threads.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-vbwt487u/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-vbwt487u/dist/resource",
+        "nok": 0,
+        "ok": 0,
+        "plan": 1,
+        "secs": 0.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/04-serialization.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-vbwt487u/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-vbwt487u/dist/resource",
+        "nok": 0,
+        "ok": 0,
+        "plan": 6,
+        "secs": 1.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/05-routing-diff.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-vbwt487u/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-vbwt487u/dist/resource",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 1.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/06-codec.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-vbwt487u/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-vbwt487u/dist/resource",
+        "nok": 0,
+        "ok": 0,
+        "plan": 11,
+        "secs": 1.87,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/07-live-client.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-vbwt487u/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-vbwt487u/dist/resource",
+        "nok": 0,
+        "ok": 0,
+        "plan": 3,
+        "secs": 1.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/08-wire-oracle.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-vbwt487u/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-vbwt487u/dist/resource",
+        "nok": 0,
+        "ok": 0,
+        "plan": 5,
+        "secs": 2.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/09-responses.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-vbwt487u/dist/resources/libraries/http_wire.dll': /home/runner/.cache/mutsu-ecosystem/run/ecosweep-vbwt487u/dist/resource",
+        "nok": 0,
+        "ok": 0,
+        "plan": 5,
+        "secs": 2.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/10-client-m3.rakutest",
+      "raku": {
+        "first_failure": "HTTP::Core protocol error: GET http://api.test/hello: cannot encode request: Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-vbwt487u/dist/resources/libraries/http_wire.",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 2.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/11-m5-tls-chunked-gzip.rakutest",
+      "raku": {
+        "first_failure": "An exception X::Method::NotFound+{X::Comp} occurred while evaluating a BEGIN:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.96,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 1.11,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/12-pool-queue.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 2.68,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/13-pool-concurrency.rakutest",
+      "raku": {
+        "first_failure": "64 simultaneous requests through a cap of 4: all of them succeed",
+        "nok": 5,
+        "ok": 2,
+        "plan": 7,
+        "secs": 2.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/14-serialise-threads.rakutest",
+      "raku": {
+        "first_failure": "no thread saw an exception on the first-call race",
+        "nok": 4,
+        "ok": 0,
+        "plan": 4,
+        "secs": 4.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/15-stale-retry.rakutest",
+      "raku": {
+        "first_failure": "HTTP::Core protocol error: GET http://127.0.0.1:38667/one: cannot encode request: Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-vbwt487u/dist/resources/libraries/http_",
+        "nok": 0,
+        "ok": 0,
+        "plan": 2,
+        "secs": 2.03,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/16-listen-failure.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/17-registry-release.rakutest",
+      "raku": {
+        "first_failure": "Could not send data to socket: Broken pipe",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 1.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    }
+  ],
   "load": {
-    "HTTP::Core": "Runtime error: Failed to parse module 'HTTP::Core': Failed to parse module 'HTTP::Core::Request': Failed to parse module 'HTTP::Core::Codec': Failed to parse module 'HTTP::Core::Response': Too late to",
+    "HTTP::Core": "ok",
     "HTTP::Core::Bytes": "ok",
-    "HTTP::Core::Client": "Runtime error: Failed to parse module 'HTTP::Core::Client': Too late to switch language version. Must be used as the very first statement.",
+    "HTTP::Core::Client": "ok",
     "HTTP::Core::Client::URL": "ok",
-    "HTTP::Core::Codec": "Runtime error: Failed to parse module 'HTTP::Core::Codec': Failed to parse module 'HTTP::Core::Response': Too late to switch language version. Must be used as the very first statement.",
-    "HTTP::Core::Codec::Content": "Runtime error: Failed to parse module 'HTTP::Core::Codec::Content': Too late to switch language version. Must be used as the very first statement.",
+    "HTTP::Core::Codec": "ok",
+    "HTTP::Core::Codec::Content": "ok",
     "HTTP::Core::Codec::Raku": "ok",
-    "HTTP::Core::Connection": "Runtime error: Failed to parse module 'HTTP::Core::Connection': Too late to switch language version. Must be used as the very first statement.",
+    "HTTP::Core::Connection": "ok",
     "HTTP::Core::Deadline": "ok",
-    "HTTP::Core::Framing": "Runtime error: Failed to parse module 'HTTP::Core::Framing': Failed to parse module 'HTTP::Core': Failed to parse module 'HTTP::Core::Request': Failed to parse module 'HTTP::Core::Codec': Failed to pa",
-    "HTTP::Core::Framing::Response": "Runtime error: Failed to parse module 'HTTP::Core::Framing::Response': Failed to parse module 'HTTP::Core::Framing': Failed to parse module 'HTTP::Core': Failed to parse module 'HTTP::Core::Request': ",
+    "HTTP::Core::Framing": "ok",
+    "HTTP::Core::Framing::Response": "ok",
     "HTTP::Core::Native": "ok",
-    "HTTP::Core::Pool": "Runtime error: Failed to parse module 'HTTP::Core::Pool': Failed to parse module 'HTTP::Core::Connection': Too late to switch language version. Must be used as the very first statement.",
-    "HTTP::Core::Request": "Runtime error: Failed to parse module 'HTTP::Core::Request': Failed to parse module 'HTTP::Core::Codec': Failed to parse module 'HTTP::Core::Response': Too late to switch language version. Must be use",
-    "HTTP::Core::Response": "Runtime error: Failed to parse module 'HTTP::Core::Response': Too late to switch language version. Must be used as the very first statement.",
+    "HTTP::Core::Pool": "ok",
+    "HTTP::Core::Request": "ok",
+    "HTTP::Core::Response": "ok",
     "HTTP::Core::Router": "ok",
-    "HTTP::Core::Server": "Runtime error: Failed to parse module 'HTTP::Core::Server': Too late to switch language version. Must be used as the very first statement.",
+    "HTTP::Core::Server": "ok",
     "HTTP::Core::Transport": "ok",
     "HTTP::Core::Transport::InMemory": "ok",
     "HTTP::Core::Transport::TCP": "ok",
@@ -40,10 +295,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-22",
+    "date": "2026-11-23",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "e52d3f1c",
+    "mutsu_commit": "33461166",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -54,12 +309,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/H/TT/HTTP_CORE/5be5b391e0d7819361703434758866628492f679.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 10,
+    "baseline_files": 2,
+    "mutsu_assertions": 10,
+    "parity_files": 2,
     "regressed_files": 0
   },
   "version": "0.1.0"

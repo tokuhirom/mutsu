@@ -22,16 +22,53 @@
     "unresolved": []
   },
   "dist": "rakudoc2man",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-use.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.56,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/10-rakudoc2man.rakutest",
+      "raku": {
+        "first_failure": "generated *roff ok",
+        "nok": 4,
+        "ok": 2,
+        "plan": 6,
+        "secs": 0.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    }
+  ],
   "load": {
-    "rakudoc2man": "Failed to parse module 'rakudoc2man': Failed to parse module 'Pod::Load': An error in RakuDoc syntax is suspected. Perhaps an '=end pod' marker was forgotten or was improperly nested? Or such a marker [at dist/lib/rakudoc2man.rakumod:28]"
+    "rakudoc2man": "ok"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-11-23",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "e52d3f1c",
+    "mutsu_commit": "33461166",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -42,12 +79,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/R/AK/RAKUDOC2MAN/8696839181b1c0640ec36546edbac9bbe44735d9.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 1,
+    "baseline_files": 1,
+    "mutsu_assertions": 1,
+    "parity_files": 1,
     "regressed_files": 0
   },
   "version": "0.0.2"

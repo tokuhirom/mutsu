@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.09,
+        "secs": 0.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,73 +24,76 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.52,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "No such method '__hide' for invocant of type 'Int'",
         "nok": 0,
-        "ok": 13,
+        "ok": 0,
         "plan": 13,
-        "secs": 0.25,
+        "secs": 0.07,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/02-string-code-chunks-processing-markdown.rakutest",
       "raku": {
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 1.76,
+        "secs": 2.13,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "No such method '__hide' for invocant of type 'Int'",
         "nok": 0,
-        "ok": 9,
+        "ok": 0,
         "plan": 9,
-        "secs": 0.14,
+        "secs": 0.07,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/03-string-code-chunks-processing-org-mode.rakutest",
       "raku": {
         "nok": 0,
         "ok": 9,
         "plan": 9,
-        "secs": 1.7,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "No such method '__hide' for invocant of type 'Int'",
         "nok": 0,
-        "ok": 6,
+        "ok": 0,
         "plan": 6,
-        "secs": 0.13,
+        "secs": 0.09,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/04-string-code-chunks-processing-pod6.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 1.23,
+        "secs": 1.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -102,7 +105,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.06,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,7 +115,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.65,
+        "secs": 0.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -126,7 +129,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 0.55,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -140,29 +143,30 @@
         "nok": 0,
         "ok": 0,
         "plan": 3,
-        "secs": 0.65,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
       }
     },
     {
-      "cmp": "parity",
+      "cmp": "regression",
       "mutsu": {
+        "first_failure": "No such method '__hide' for string '0.25 do not export it '",
         "nok": 0,
-        "ok": 4,
+        "ok": 2,
         "plan": 4,
-        "secs": 0.12,
+        "secs": 0.07,
         "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       },
       "path": "t/08-header-parameters.rakutest",
       "raku": {
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.83,
+        "secs": 0.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -179,7 +183,7 @@
     "date": "2026-11-23",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "e52d3f1c",
+    "mutsu_commit": "33461166",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -190,13 +194,13 @@
     "index": "fez",
     "url": "https://360.zef.pm/T/EX/TEXT_CODEPROCESSING/59651e580a78f00c75336cad8cebf6e182f584cf.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
     "baseline_assertions": 37,
     "baseline_files": 6,
-    "mutsu_assertions": 37,
-    "parity_files": 6,
-    "regressed_files": 0
+    "mutsu_assertions": 7,
+    "parity_files": 2,
+    "regressed_files": 4
   },
   "version": "0.6.0"
 }

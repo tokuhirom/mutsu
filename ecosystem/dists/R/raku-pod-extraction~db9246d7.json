@@ -31,9 +31,24 @@
     "unresolved": []
   },
   "dist": "raku-pod-extraction",
-  "files": [],
+  "files": [
+    {
+      "cmp": "no_baseline",
+      "path": "t/00-sanity.rakutest",
+      "raku": {
+        "first_failure": "RakuDocRender module can be use-d ok",
+        "nok": 1,
+        "ok": 2,
+        "plan": 3,
+        "secs": 7.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "fail"
+      }
+    }
+  ],
   "load": {
-    "PodExtraction": "Failed to parse module 'PodExtraction': Failed to parse module 'Pod::Load': An error in RakuDoc syntax is suspected. Perhaps an '=end pod' marker was forgotten or was improperly nested? Or such a mark [at dist/lib/PodExtraction.rakumod:28]",
+    "PodExtraction": "ok",
     "RakuDocRender": "raku_also_fails"
   },
   "measured": {
@@ -41,7 +56,7 @@
     "date": "2026-11-23",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "e52d3f1c",
+    "mutsu_commit": "33461166",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -52,7 +67,7 @@
     "index": "fez",
     "url": "https://360.zef.pm/R/AK/RAKUPODEXTRACTION/57ebffdda5e9217ed11223f1a604b9eeb9bc2135.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "no_baseline",
   "totals": {
     "baseline_assertions": 0,
     "baseline_files": 0,

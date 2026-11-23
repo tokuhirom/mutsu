@@ -1,10 +1,12 @@
 {
-  "axis": "native",
+  "axis": "pure",
   "deps": {
     "bundled_would_supply": [],
     "mode": "flat-closure",
     "resolved": [
       "Alien::Libduckdb",
+      "Arrow::IPC",
+      "Compress::Zlib::Raw",
       "Concurrent::Stack",
       "DB",
       "DB::DuckDB",
@@ -26,21 +28,34 @@
   "files": [],
   "load": {
     "Duckula": "raku_also_fails",
+    "Duckula::Accessor": "ok",
     "Duckula::Arrow": "ok",
     "Duckula::ArrowIPC": "ok",
     "Duckula::ArrowRead": "raku_also_fails",
+    "Duckula::AsOf": "expected statement: expected expected statement: expected expression statement or '.' or digits or generic radix literal or unicode numeric literal or ... [at lib/Duckula/AsOf.rakumod:37]",
     "Duckula::Clean": "ok",
+    "Duckula::Dtype": "expected statement: expected expected statement: expected expression statement or '.' or digits or generic radix literal or unicode numeric literal or ... [at lib/Duckula/Dtype.rakumod:37]",
+    "Duckula::ExcelRead": "ok",
+    "Duckula::ExcelWrite": "ok",
     "Duckula::Expr": "ok",
     "Duckula::Frame": "raku_also_fails",
+    "Duckula::FrameOps": "expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at lib/Duckula/FrameOps.rakumod:54]",
     "Duckula::GroupBy": "expected statement: expected expected statement: expected expected statement: expected expression statement or expected statement: expected expression statement or expression after infix operator or ' [at lib/Duckula/GroupBy.rakumod:35]",
+    "Duckula::GroupOps": "ok",
     "Duckula::Guard": "ok",
+    "Duckula::IO": "ok",
+    "Duckula::Index": "ok",
+    "Duckula::IndexLabels": "ok",
     "Duckula::Join": "ok",
     "Duckula::LazyFrame": "expected statement: expected expected statement: expected expected statement: expected expression statement or expected statement: expected expression statement or expression after infix operator or ' [at lib/Duckula/LazyFrame.rakumod:35]",
     "Duckula::Plan": "ok",
     "Duckula::Reshape": "ok",
     "Duckula::SQL": "ok",
-    "Duckula::Series": "ok",
+    "Duckula::Series": "expected statement: expected expected statement: expected use statement or import statement or no statement or need statement or unit statement or ... [at lib/Duckula/Series.rakumod:54]",
     "Duckula::Session": "raku_also_fails",
+    "Duckula::SqlDb": "ok",
+    "Duckula::Stats": "ok",
+    "Duckula::TimeSeries": "ok",
     "Duckula::Write": "ok",
     "Duckula::X::Frame": "ok",
     "Duckula::X::Guard": "ok",
@@ -52,7 +67,7 @@
     "date": "2026-11-23",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "e52d3f1c",
+    "mutsu_commit": "33461166",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -61,7 +76,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/D/UC/DUCKULA/96af4f64e78984f3251fc7c6191697fc4a1d3a9f.tar.gz"
+    "url": "https://360.zef.pm/D/UC/DUCKULA/3fdcac594d23007a513c776b8a6960b7fe9efe0f.tar.gz"
   },
   "status": "blocked_load",
   "totals": {
@@ -71,5 +86,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.18.0"
+  "version": "0.32.0"
 }

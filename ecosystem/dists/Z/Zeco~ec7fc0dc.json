@@ -73,7 +73,7 @@
         "nok": 1,
         "ok": 0,
         "plan": 1,
-        "secs": 3.58,
+        "secs": 4.53,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -87,7 +87,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 5,
-        "secs": 2.2,
+        "secs": 2.96,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -119,7 +119,7 @@
     "date": "2026-11-23",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "e52d3f1c",
+    "mutsu_commit": "33461166",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
