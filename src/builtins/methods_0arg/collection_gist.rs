@@ -194,22 +194,63 @@ fn gist_route(v: &Value) -> GistRoute {
 /// One element's gist inside a list, `Seq` or `Slip`.
 // Cost: O(d), d = rendered size of the element (nested aggregates render in full).
 fn gist_item(v: &Value) -> String {
+    let mut out = String::new();
+    gist_item_into(v, &mut out);
+    out
+}
+
+/// Append one element's gist to `out`. A nested list renders its elements
+/// into the same buffer, so a structure nested d levels deep copies O(d)
+/// bytes, not O(d^2) (#12714).
+// Cost: O(d), d = rendered size of the element.
+fn gist_item_into(v: &Value, out: &mut String) {
     if let Some(rendered) = crate::value::render_guard::render_on_fresh_segment(|| gist_item(v)) {
-        return rendered;
+        out.push_str(&rendered);
+        return;
     }
     match v.view() {
-        ValueView::Nil => "Nil".to_string(),
         // Clone the contents out and drop the guard before
         // recursing: a cycle can close through a cell
         // (`my @e; @e.push(@e)`), and holding the lock across
         // the recursion deadlocks instead of recursing.
-        ValueView::ContainerRef(cell) => {
-            let inner = cell.load();
-            gist_item(&inner)
-        }
+        ValueView::ContainerRef(cell) => gist_item_into(&cell.load(), out),
         // `$(...)` itemized element: `.gist` drops the itemization
         // sigil, so it gists like its inner value.
-        ValueView::Scalar(inner) => gist_item(inner),
+        ValueView::Scalar(inner) => gist_item_into(&inner, out),
+        ValueView::Array(inner, kind) if kind != crate::value::ArrayKind::Lazy => {
+            let (open, close) = super::gist_array_brackets(kind);
+            gist_items_into(inner.iter(), open, close, gist_item_into, out);
+        }
+        ValueView::Seq(inner) => gist_items_into(inner.iter(), "(", ")", gist_item_into, out),
+        ValueView::Slip(inner) => gist_items_into(inner.iter(), "(", ")", gist_item_into, out),
+        _ => out.push_str(&gist_item_node(v)),
+    }
+}
+
+/// `open`, each item rendered by `render` and separated by a space, `close`.
+// Cost: O(t), t = rendered size of the items.
+fn gist_items_into<'a>(
+    items: impl Iterator<Item = &'a Value>,
+    open: &str,
+    close: &str,
+    render: fn(&Value, &mut String),
+    out: &mut String,
+) {
+    out.push_str(open);
+    for (i, item) in items.enumerate() {
+        if i > 0 {
+            out.push(' ');
+        }
+        render(item, out);
+    }
+    out.push_str(close);
+}
+
+/// The gist of one element that is not a list or a container.
+// Cost: O(d), d = rendered size of the element.
+fn gist_item_node(v: &Value) -> String {
+    match v.view() {
+        ValueView::Nil => "Nil".to_string(),
         ValueView::Array(_, crate::value::ArrayKind::Lazy) => "[...]".to_string(),
         ValueView::LazyList(ll) if ll.is_genuinely_lazy() => {
             crate::value::lazy_list_placeholder("gist", ll.in_array_context())
@@ -217,18 +258,12 @@ fn gist_item(v: &Value) -> String {
         // A pulled finite lazy list (a `gather` element) is a Seq:
         // the shared gist renders it parenthesised.
         ValueView::LazyList(_) => crate::value::gist::gist_value(v),
-        ValueView::Array(inner, kind) => {
-            let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
-            gist_array_wrap(&elems, kind)
-        }
-        ValueView::Seq(inner) => {
-            let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
-            format!("({})", elems)
-        }
-        ValueView::Slip(inner) => {
-            let elems = inner.iter().map(gist_item).collect::<Vec<_>>().join(" ");
-            format!("({})", elems)
-        }
+        // Lists, containers and itemized values render in `gist_item_into`.
+        ValueView::Array(..)
+        | ValueView::Seq(_)
+        | ValueView::Slip(_)
+        | ValueView::ContainerRef(_)
+        | ValueView::Scalar(_) => gist_item(v),
         ValueView::Hash(map) => {
             let mut sorted_keys: Vec<&String> = map.keys().collect();
             sorted_keys.sort();
@@ -296,22 +331,27 @@ fn gist_item(v: &Value) -> String {
 // cells the same way. Gist such a cell as the type object `(Any)`.
 // Lists/Seqs keep a genuine Nil, so this only applies to real arrays.
 fn gist_real_array_item(v: &Value) -> String {
+    let mut out = String::new();
+    gist_real_array_item_into(v, &mut out);
+    out
+}
+
+/// [`gist_real_array_item`], appended to `out`.
+// Cost: O(d), d = rendered size of the element.
+fn gist_real_array_item_into(v: &Value, out: &mut String) {
     if let Some(rendered) =
         crate::value::render_guard::render_on_fresh_segment(|| gist_real_array_item(v))
     {
-        return rendered;
+        out.push_str(&rendered);
+        return;
     }
     match v.view() {
-        ValueView::Nil => "(Any)".to_string(),
+        ValueView::Nil => out.push_str("(Any)"),
         ValueView::Array(inner, kind) if kind.is_real_array() => {
-            let elems = inner
-                .iter()
-                .map(gist_real_array_item)
-                .collect::<Vec<_>>()
-                .join(" ");
-            gist_array_wrap(&elems, kind)
+            let (open, close) = super::gist_array_brackets(kind);
+            gist_items_into(inner.iter(), open, close, gist_real_array_item_into, out);
         }
-        _ => gist_item(v),
+        _ => gist_item_into(v, out),
     }
 }
 
