@@ -104,11 +104,11 @@ impl<'ast> Visit<'ast> for Survey<'ast> {
                     self.type_decls.insert(name.to_string());
                 }
             }
-            NameKind::CodeVar | NameKind::VarDecl | NameKind::Param | NameKind::BlockParam => {
-                if kind == NameKind::CodeVar || name.starts_with('&') {
-                    self.code_vars
-                        .insert(name.trim_start_matches('&').to_string());
-                }
+            NameKind::CodeVar | NameKind::VarDecl | NameKind::Param | NameKind::BlockParam
+                if kind == NameKind::CodeVar || name.starts_with('&') =>
+            {
+                self.code_vars
+                    .insert(name.trim_start_matches('&').to_string());
             }
             _ => {}
         }
