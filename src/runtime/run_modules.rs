@@ -2016,6 +2016,9 @@ impl Interpreter {
             self.module.module_loading_unit_stack.pop();
             self.current_unit = saved_unit;
             self.set_current_package(saved_package);
+            // The epilogue below moves routines in and out of the registry;
+            // the invalidation after it evicts exactly the keys it changed.
+            let fn_keys_before_epilogue = self.fn_key_snapshot();
             if result.is_ok() {
                 // A `sub MAIN` defined in a used module is NOT the program's MAIN
                 // and must not be auto-dispatched at program end -- unless the
@@ -2046,7 +2049,10 @@ impl Interpreter {
             // hidden.
             self.restore_toplevel_global_routines(hidden_toplevel);
             // Invalidate name-keyed resolution caches.
-            self.invalidate_fn_resolution();
+            self.invalidate_fn_resolution_since(&fn_keys_before_epilogue);
+            // The export below (`sub EXPORT`, hidden export routines coming
+            // back, leaked MAINs leaving) is diffed the same way.
+            let fn_keys_before_export = self.fn_key_snapshot();
             // If the module defined `sub EXPORT`, call it with the `use` args and
             // install the symbols it returns into the caller's scope. The
             // enclosing compunit's hook comes back either way -- an aborted
@@ -2097,7 +2103,7 @@ impl Interpreter {
                 &before_function_keys,
                 main_exported,
             );
-            self.invalidate_fn_resolution();
+            self.invalidate_fn_resolution_since(&fn_keys_before_export);
             // The module's own package-less `our sub`s are part of its GLOBAL
             // merge (ADR-11136).
             if unit_name.is_none() {
