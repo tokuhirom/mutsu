@@ -260,49 +260,8 @@ impl Interpreter {
                 }
             }
             // A `$` name whose container is a shared cell that knows the
-            // variable it was declared as -- an `is rw` / `is raw` / `\x`
-            // parameter aliasing the caller's `$a` -- reports that name, as
-            // rakudo's container descriptor does (#11196).
-            let cell_name = (!target_var.starts_with(['@', '%', '&']))
-                .then(|| {
-                    // A `:=` binding cell wraps the container it aliases; the
-                    // aliased container's declaration names the variable.
-                    fn named(v: &Value) -> Option<Symbol> {
-                        match v.view() {
-                            ValueView::ContainerRef(cell) => {
-                                // The aliased (inner) container wins over the
-                                // wrapper, which the binding variable named.
-                                let inner = cell.load();
-                                if inner.is_container_ref() {
-                                    named(&inner).or_else(|| cell.descriptor_name())
-                                } else {
-                                    cell.descriptor_name()
-                                }
-                            }
-                            _ => None,
-                        }
-                    }
-                    named(&target)
-                        .or_else(|| self.env.get(target_var).and_then(named))
-                        .map(|s| s.resolve())
-                        // A `:=`-bound variable is another name for its root's
-                        // container, whose declaration names it:
-                        // `my $c := $x; $c.VAR.name` is `$x` (#16931).
-                        .or_else(|| {
-                            let root = self.resolve_alias_root(target_var);
-                            (root != target_var
-                                && !root.starts_with("__")
-                                && !root.starts_with(['@', '%', '&']))
-                            .then(|| {
-                                if root.starts_with('$') {
-                                    root.to_string()
-                                } else {
-                                    format!("${root}")
-                                }
-                            })
-                        })
-                })
-                .flatten();
+            // variable it was declared as reports that name (#11196).
+            let cell_name = self.scalar_container_name(target_var, &target);
             let display_name = if let Some(src) = container_source_name.clone().or(cell_name) {
                 src
             } else if target_var.starts_with('$')

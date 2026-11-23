@@ -1101,6 +1101,7 @@ mod control_for;
 mod control_for_tail;
 mod control_if;
 mod control_repeat;
+mod dd_call;
 mod decl_plan;
 mod decl_reset;
 mod destructure_lane;
