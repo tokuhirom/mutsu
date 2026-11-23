@@ -14,7 +14,7 @@
 
 use super::sink_describe::{
     describe_literal, describe_literal_with_src, distributes_sink, is_callsite_line_marker,
-    is_operator_expr, is_type_name, pure_op_symbol, pure_prefix_symbol,
+    is_operator_expr, is_pure_operator_expr, is_type_name, pure_op_symbol, pure_prefix_symbol,
 };
 use crate::ast::parsed::{ModifierKind, ParsedStmt};
 use crate::ast::{DoBlockOrigin, Expr, SrcSpan, Stmt};
@@ -348,11 +348,7 @@ fn warn_statement_expr(expr: &Expr, nil_hint: bool, line: i64, span: SrcSpan) {
     }
     // A pure operator whose operand the fallback rendering cannot spell
     // (`f() + 1`) is still named by the statement's own text (#18973).
-    let pure_operator = match expr {
-        Expr::Binary { op, .. } => pure_op_symbol(op).is_some(),
-        Expr::Unary { op, .. } => pure_prefix_symbol(op).is_some(),
-        _ => false,
-    };
+    let pure_operator = is_pure_operator_expr(expr);
     let Some(desc) = describe_useless(expr).or_else(|| {
         pure_operator
             .then(|| super::primary::span_text::span_text(span))

@@ -124,3 +124,14 @@ pub(super) fn is_callsite_line_marker(arg: &Expr) -> bool {
         if matches!(left.as_ref(), Expr::Literal(v)
             if v.to_string_value() == crate::parser::TEST_CALLSITE_LINE_KEY))
 }
+
+/// Whether `expr` applies a pure operator (one whose value a sink discards,
+/// whatever its operands do: #18973).
+// Cost: O(1).
+pub(super) fn is_pure_operator_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::Binary { op, .. } => pure_op_symbol(op).is_some(),
+        Expr::Unary { op, .. } => pure_prefix_symbol(op).is_some(),
+        _ => false,
+    }
+}
