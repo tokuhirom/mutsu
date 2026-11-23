@@ -7448,6 +7448,11 @@ pub(crate) struct CompiledCode {
     /// of lexicals skip the caller frames (ADR-12529 phase 3,
     /// `env::static_link`). Set by the sub-body compile.
     pub(crate) outer_is_unit: bool,
+    /// A named routine declared inside a mainline block (a bare block, a loop
+    /// body, a closure body): its names resolve through that block's
+    /// activation, not only the program scope, so a value call must keep the
+    /// code object's captured env (#18083). Set by the sub-body compile.
+    pub(crate) declared_in_block: bool,
     /// On a routine declared at a compunit's top level whose body names
     /// lexicals by string (`static_name_lookup`): the plain user lexicals
     /// (env keys) declared only in the unit's nested blocks. The program scope
@@ -8932,6 +8937,7 @@ impl CompiledCode {
             writes_topic: false,
             declared_in_routine: false,
             outer_is_unit: false,
+            declared_in_block: false,
             unit_hidden_lexicals: None,
             reads_args_array: false,
             reads_args_hash: false,

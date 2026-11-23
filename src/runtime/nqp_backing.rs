@@ -90,13 +90,22 @@ pub(crate) fn with_list_data_mut<R>(
 /// A `Uni`'s codepoint store, read in place. `None` for anything else. A
 /// `Uni` bound into a container (`my $codes := ...`) reads through it.
 // Cost: O(1) plus f.
-#[inline]
+// The bare-`Uni` test is inlined into every caller; anything else takes
+// the out-of-line `view()` decode.
+#[inline(always)]
 pub(crate) fn with_uni_codes<R>(v: &Value, f: impl FnOnce(&UniCodes) -> R) -> Option<R> {
     // A bare `Uni` by its tag alone: `view()` decodes every kind through an
     // out-of-line match, which is most of a per-codepoint op's cost.
     if let Some(uni) = v.as_uni() {
         return Some(f(&uni.codes));
     }
+    with_uni_codes_viewed(v, f)
+}
+
+/// [`with_uni_codes`] for anything but a bare `Uni`.
+// Cost: O(1) plus f.
+#[inline(never)]
+fn with_uni_codes_viewed<R>(v: &Value, f: impl FnOnce(&UniCodes) -> R) -> Option<R> {
     match v.view() {
         ValueView::Uni(uni) => Some(f(&uni.codes)),
         ValueView::ContainerRef(..) => with_uni_codes(&v.deref_container(), f),
@@ -108,13 +117,22 @@ pub(crate) fn with_uni_codes<R>(v: &Value, f: impl FnOnce(&UniCodes) -> R) -> Op
 /// every holder of the `Uni` (they share the store's `Gc` node). `None` for
 /// anything else.
 // Cost: O(1) plus f.
-#[inline]
+// The bare-`Uni` test is inlined into every caller; anything else takes
+// the out-of-line `view()` decode.
+#[inline(always)]
 pub(crate) fn with_uni_codes_mut<R>(v: &Value, f: impl FnOnce(&mut UniCodes) -> R) -> Option<R> {
-    // SAFETY: as for the `ValueView::Uni` arm below, which this is the
-    // tag-only form of.
+    // SAFETY: as for the `ValueView::Uni` arm of `with_uni_codes_mut_viewed`,
+    // which this is the tag-only form of.
     if let Some(uni) = v.as_uni() {
         return Some(f(unsafe { crate::value::gc_contents_mut(&uni.codes) }));
     }
+    with_uni_codes_mut_viewed(v, f)
+}
+
+/// [`with_uni_codes_mut`] for anything but a bare `Uni`.
+// Cost: O(1) plus f.
+#[inline(never)]
+fn with_uni_codes_mut_viewed<R>(v: &Value, f: impl FnOnce(&mut UniCodes) -> R) -> Option<R> {
     match v.view() {
         // SAFETY: audited aliased in-place container write (see
         // value::aliased_mut and docs/gc-contents-mut-inventory.md) -- every

@@ -135,10 +135,11 @@ class Walk {
 }
 
 {
+    # A Pair is not Positional: index 0 is the element's own container, as
+    # rakudo's `Any.ASSIGN-POS` answers (#18960).
     my @a = ((c => 1),);
-    throws-like { @a[0][0] = 9 }, X::Assignment::RO,
-        'a POSITIONAL subscript on a Pair names the Pair itself',
-        message => 'Cannot modify an immutable Pair (c => 1)';
+    @a[0][0] = 9;
+    is-deeply @a, [9], 'a POSITIONAL subscript at index 0 of a Pair element replaces it';
 }
 
 {

@@ -139,6 +139,7 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         writes_topic,
         declared_in_routine,
         outer_is_unit,
+        declared_in_block,
         reads_args_array,
         reads_args_hash,
         has_env_writes,

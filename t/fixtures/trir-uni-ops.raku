@@ -29,6 +29,13 @@ my sub drain(Uni:D \codes --> int) {
 
 my sub count(Uni:D \codes --> int) { nqp::elems(codes) }
 
+my sub count-list(Mu \l --> int) { nqp::elems(l) }
+my sub drain-list(Mu \l --> int) {
+    my int $n = 0;
+    nqp::while(nqp::elems(l), ($n = nqp::add_i(nqp::mul_i($n, 31), nqp::shift_i(l))));
+    $n
+}
+
 my sub buffer(int $k) {
     my $b := nqp::create(IterationBuffer);
     my int $i = 0;
@@ -42,6 +49,18 @@ my sub buffer(int $k) {
     nqp::elems($b)
 }
 
+# The same three ops on a native int list (`nqp::list_i`), which takes the
+# out-of-line list path rather than the `Uni` one.
+my sub ints(int $k) {
+    my $l := nqp::list_i;
+    my int $i = 0;
+    nqp::while(
+      nqp::islt_i($i, $k),
+      nqp::stmts(nqp::push_i($l, nqp::mul_i($i, 3)), ($i = nqp::add_i($i, 1)))
+    );
+    $l
+}
+
 my $u := fill(5);
 say 'filled=', count($u), ' ', $u.list.join(',');
 say 'drained=', drain($u), ' left=', count($u);
@@ -50,3 +69,6 @@ my $bound := Uni.new(72, 105, 33);
 say 'bound=', count($bound), ' ', drain($bound), ' left=', count($bound);
 
 say 'buffer=', buffer(7);
+
+my $ints := ints(4);
+say 'ints=', count-list($ints), ' ', drain-list($ints), ' left=', count-list($ints);
