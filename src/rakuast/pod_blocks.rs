@@ -16,6 +16,7 @@
 mod atoms;
 mod margin;
 
+pub(super) use atoms::Declined;
 use atoms::{Atom, paragraph_node, parse_atoms};
 
 use super::infix_origins::byte_range;
@@ -122,14 +123,20 @@ fn split_level(name: &str) -> (String, Option<i64>) {
 /// formatting codes.
 // Cost: O(n), n = length of the text.
 fn part_in(kind: &str, text: String) -> Option<Part> {
+    read_part(kind, text).ok()
+}
+
+/// [`part_in`], saying why the reader declined the text.
+// Cost: O(n), n = length of the text.
+fn read_part(kind: &str, text: String) -> Result<Part, Declined> {
     if kind == "comment" {
-        return Some(Part::Text(text));
+        return Ok(Part::Text(text));
     }
     if !text.chars().any(|c| matches!(c, '<' | '«')) {
-        return Some(Part::Text(text));
+        return Ok(Part::Text(text));
     }
     let (atoms, _, _) = parse_atoms(&text, None, false)?;
-    Some(if atoms.iter().any(|a| matches!(a, Atom::Markup(_))) {
+    Ok(if atoms.iter().any(|a| matches!(a, Atom::Markup(_))) {
         Part::Para(atoms)
     } else {
         Part::Text(text)
@@ -784,12 +791,12 @@ fn verbatim(lines: &Lines, mut i: usize, kind: &str) -> Option<(Vec<Part>, usize
 }
 
 /// The `Doc::Paragraph` of a table cell's `text` (rakudo's
-/// `Paragraph.from-string`): `Some(None)` for a cell without a formatting
-/// code, which stays a plain string, `None` for text the reader does not
-/// take.
+/// `Paragraph.from-string`): `Ok(None)` for a cell without a formatting
+/// code, which stays a plain string, [`Declined`] for text the reader does
+/// not take.
 // Cost: O(n), n = length of the text.
-pub(super) fn cell_paragraph(text: &str) -> Option<Option<RakuAstNode>> {
-    Some(match part_in("table", text.to_string())? {
+pub(super) fn cell_paragraph(text: &str) -> Result<Option<RakuAstNode>, Declined> {
+    Ok(match read_part("table", text.to_string())? {
         Part::Para(atoms) => Some(paragraph_node(&atoms)),
         _ => None,
     })

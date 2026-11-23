@@ -24,16 +24,59 @@ pub(super) enum Atom {
     Markup(Markup),
 }
 
+/// Why the reader declined a paragraph's text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(in crate::rakuast) enum Declined {
+    /// A code whose closer never comes: its letter and closer, the innermost
+    /// such code (rakudo's "RakuDoc markup code B missing endtag '>'").
+    /// `None` only while the code being read has not yet named itself.
+    Unterminated(Option<(char, &'static str)>),
+    /// Text the plain reader does not take: an ambiguous code, an `E<...>`
+    /// it cannot read.
+    Other,
+}
+
+impl Declined {
+    /// The error rakudo raises for an unterminated code, `None` otherwise.
+    // Cost: O(1).
+    pub(in crate::rakuast) fn unterminated_message(self) -> Option<String> {
+        match self {
+            Declined::Unterminated(Some((letter, closer))) => Some(format!(
+                "RakuDoc markup code {letter} missing endtag '{closer}'."
+            )),
+            _ => None,
+        }
+    }
+}
+
+/// The offset in `tail` of `closer` outside every balanced `<...>` / `«...»`,
+/// or `None` when it never comes.
+// Cost: O(n), n = length of the tail.
+fn find_closer_nested(tail: &str, closer: &str) -> Option<usize> {
+    let mut nest = 0usize;
+    for (i, ch) in tail.char_indices() {
+        if nest == 0 && tail[i..].starts_with(closer) {
+            return Some(i);
+        }
+        match ch {
+            '<' | '«' => nest += 1,
+            '>' | '»' => nest = nest.saturating_sub(1),
+            _ => {}
+        }
+    }
+    None
+}
+
 /// The atoms of `text` up to `closer` (or its end), the metadata after a `|`
-/// when `meta_ok`, and the length consumed with the closer. `None` for text
-/// the plain reader does not take: an `E<...>`, an unterminated or ambiguous
-/// code.
+/// when `meta_ok`, and the length consumed with the closer. [`Declined`] for
+/// text the plain reader does not take: an `E<...>`, an unterminated or
+/// ambiguous code.
 // Cost: O(n), n = length of the text.
 pub(super) fn parse_atoms(
     text: &str,
     closer: Option<&str>,
     meta_ok: bool,
-) -> Option<(Vec<Atom>, usize, Option<String>)> {
+) -> Result<(Vec<Atom>, usize, Option<String>), Declined> {
     let mut meta = None;
     let mut atoms = Vec::new();
     let mut buf = String::new();
@@ -45,7 +88,7 @@ pub(super) fn parse_atoms(
         let rest = &text[at..];
         let Some(ch) = rest.chars().next() else {
             if closer.is_some() {
-                return None;
+                return Err(Declined::Unterminated(None));
             }
             break;
         };
@@ -61,10 +104,11 @@ pub(super) fn parse_atoms(
             && ch == '|'
         {
             let tail = &rest[1..];
-            let end = tail.find(closer)?;
+            let end =
+                find_closer_nested(tail, closer).ok_or(Declined::Unterminated(None))?;
             let text = &tail[..end];
             if text.chars().any(|c| matches!(c, '<' | '>' | '«' | '»')) {
-                return None;
+                return Err(Declined::Other);
             }
             meta = Some(text.to_string());
             at += 1 + end + closer.len();
@@ -79,7 +123,7 @@ pub(super) fn parse_atoms(
                 // `E<...>` is an entity, and a letter after a word character
                 // is not told apart from its text here.
                 if previous.is_some_and(char::is_alphanumeric) {
-                    return None;
+                    return Err(Declined::Other);
                 }
                 let closer = match opener {
                     "<<<" => ">>>",
@@ -94,14 +138,16 @@ pub(super) fn parse_atoms(
                     // A triple-delimited code holds its content as one raw
                     // string: no nested codes and no metadata are read in it.
                     let body = &after[3..];
-                    let end = body.find(">>>")?;
+                    let end = body
+                        .find(">>>")
+                        .ok_or(Declined::Unterminated(Some((ch, ">>>"))))?;
                     let content = &body[..end];
                     if body.starts_with('<')
                         || content.is_empty()
                         || ch == 'E'
                         || content.contains(['|', '«', '»'])
                     {
-                        return None;
+                        return Err(Declined::Other);
                     }
                     atoms.push(Atom::Markup(Markup {
                         letter: ch,
@@ -117,10 +163,12 @@ pub(super) fn parse_atoms(
                 }
                 if ch == 'E' {
                     let body = &after[opener.len()..];
-                    let end = body.find(closer)?;
+                    let end = body
+                        .find(closer)
+                        .ok_or(Declined::Unterminated(Some((ch, closer))))?;
                     let content = &body[..end];
                     if content.chars().any(|c| matches!(c, '<' | '>' | '«' | '»')) {
-                        return None;
+                        return Err(Declined::Other);
                     }
                     let (shown, list) = match content.split_once('|') {
                         Some((shown, list)) => (shown, crate::rakuast::pod_entities::pairs_after_bar(list)),
@@ -158,9 +206,14 @@ pub(super) fn parse_atoms(
                     &after[opener.len()..],
                     Some(closer),
                     META_LETTERS.contains(ch),
-                )?;
+                )
+                .map_err(|why| match why {
+                    // The code being read names itself; a deeper one already did.
+                    Declined::Unterminated(None) => Declined::Unterminated(Some((ch, closer))),
+                    other => other,
+                })?;
                 if inner.is_empty() && inner_meta.is_none() {
-                    return None;
+                    return Err(Declined::Other);
                 }
                 atoms.push(Atom::Markup(Markup {
                     letter: ch,
@@ -183,7 +236,7 @@ pub(super) fn parse_atoms(
                     entities: None,
                 }));
                 at += 1 + opener.len() + used;
-                previous = Some(closer.chars().last()?);
+                previous = closer.chars().last();
                 continue;
             }
         }
@@ -192,7 +245,7 @@ pub(super) fn parse_atoms(
         if closer.is_some() && matches!(ch, '<' | '«') {
             nest += 1;
         } else if closer.is_some() && matches!(ch, '>' | '»') {
-            nest = nest.checked_sub(1)?;
+            nest = nest.checked_sub(1).ok_or(Declined::Other)?;
         }
         buf.push(ch);
         previous = Some(ch);
@@ -201,7 +254,7 @@ pub(super) fn parse_atoms(
     if !buf.is_empty() {
         atoms.push(Atom::Text(buf));
     }
-    Some((atoms, at, meta))
+    Ok((atoms, at, meta))
 }
 
 /// The `Doc::Paragraph` of `atoms`.
