@@ -266,6 +266,7 @@ mod vm_env_helpers;
 mod vm_eval_capture_cells;
 mod vm_eval_unit_package_capture;
 mod vm_exec_dispatch;
+mod vm_topic_read_gate;
 mod vm_exec_route;
 pub(crate) mod vm_flipflop_ops;
 mod vm_for_loop_alias;
