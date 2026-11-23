@@ -1,5 +1,19 @@
 Revision history for OpenSSL
 
+0.2.10  2026-10-06T15:28:23+02:00
+    - Fix issue on MacOS because OpenSSL@4 no longer supports
+      TLSv1, see  https://docs.openssl.org/master/man7/ossl-removed-api/
+
+0.2.9  2026-08-08T19:07:23+02:00
+    - O.2.5 made the various subs return a blob8 rather than a buf8,
+      which broke the PKCSS and Auth::Scram modules.  So revert to
+      returning a (mutable) buf8, at least for now.  Spotted by
+      ugexe++
+
+0.2.8  2026-08-01T19:28:51+02:00
+    - Update JSON::Fast dependency to its new home
+	- Add support for ALPN, SNI, and negotiated protocol version, keatumal++
+
 0.2.7  2026-04-20T23:52:44+02:00
     - Fix improper use of namespace nesting, ugexe++
     - Update copyright year
