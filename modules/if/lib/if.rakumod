@@ -45,28 +45,46 @@ my role BetterWorld {
 }
 
 my role Actions {
+
     use experimental :rakuast;
+
+    # The value of the :if adverb, from running its expression in the scope
+    # of the use statement.
+    my sub evaluate($colonpair) {
+        if $colonpair ~~ RakuAST::ColonPair::True {
+            True
+        }
+        else {
+            my $block := RakuAST::Block.new(
+              body => RakuAST::Blockoid.new(
+                RakuAST::StatementList.new(
+                  RakuAST::Statement::Expression.new(
+                    expression => $colonpair.value
+                  )
+                )
+              )
+            );
+            $block.to-begin-time($*R, $*CU.context);
+            $block.meta-object()()
+        }
+    }
 
     method statement-control:sym<use>(Mu $/) {
         if $/.hash<module-name>.ast -> $ast {
-            if my @cp = $ast.colonpairs {
-                my $last := @cp.pop;
-                if $last.key eq 'if' {
-                    my $value := RakuAST::BeginTime.IMPL-BEGIN-TIME-EVALUATE(
-                      $last.value, $*R, $*CU.context
-                    );
-                    if $value.defined {
-                        if $value {
-                            $ast.set-colonpairs(@cp.FLATTENABLE_LIST);
-                        }
-                        else {
-                            self.attach: $/, RakuAST::Statement::Empty.new;
-                            return;
-                        }
+            my @cp = $ast.colonpairs;
+            with @cp.first(*.key eq 'if', :k) -> $index {
+                my $value := evaluate(@cp.splice($index, 1).head);
+                if $value.defined {
+                    if $value {
+                        $ast.set-colonpairs(@cp.FLATTENABLE_LIST);
                     }
                     else {
-                        $/.panic("Did not provide compile-time-value for :if adverb in use statement");
+                        self.attach: $/, RakuAST::Statement::Empty.new;
+                        return;
                     }
+                }
+                else {
+                    $/.panic("Did not provide compile-time-value for :if adverb in use statement");
                 }
             }
         }
