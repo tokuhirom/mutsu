@@ -127,6 +127,19 @@ impl Collector {
                     });
                 }
             }
+            // `#| doc enum E <a b>` / `subset S of Int`: filed under the bare
+            // name, as the parser files a non-container package (#16356).
+            C::TypeEnum | C::TypeSubset => {
+                if let (Some(name), Some(doc)) = (resolve::package_name(node), doc) {
+                    self.out.push(DocComment {
+                        doc,
+                        wherefore_name: name.clone(),
+                        key: name,
+                        kind: DocDeclKind::Package,
+                        ..DocComment::default()
+                    });
+                }
+            }
             C::VarDeclarationSimple if str_field(node, "scope").as_deref() == Some("has") => {
                 if let (Some(name), Some(doc)) = (
                     resolve::package_name(node).or_else(|| {
