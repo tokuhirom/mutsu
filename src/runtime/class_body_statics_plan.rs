@@ -26,6 +26,11 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub(crate) struct StaticsPlan {
     pub(crate) writes: Arc<[(Symbol, Value)]>,
+    /// The class's own statics, typed lanes and stale lanes only, without
+    /// the enclosing class bodies' (`collect_own_class_body_statics`): what
+    /// a class-scoped routine call injects and later restores
+    /// (`inject_class_body_statics_saving_except`).
+    pub(crate) own: Arc<[(Symbol, Value)]>,
     /// The writes applied, in order, to an empty tier: what a frame overlay
     /// that has had no write yet holds after the injection. A frame adopts it
     /// as its overlay (`Env::adopt_fresh_overlay`) instead of inserting each
@@ -58,9 +63,12 @@ impl Interpreter {
             return plan.clone();
         }
         let writes: Arc<[(Symbol, Value)]> = self.collect_class_body_statics(class_name).into();
+        let mut own = Vec::new();
+        self.collect_own_class_body_statics(class_name, &mut own);
         let plan = StaticsPlan {
             tier: crate::env::Env::seed_tier_for_writes(&writes),
             writes,
+            own: own.into(),
         };
         self.caches
             .class_body_statics_plans

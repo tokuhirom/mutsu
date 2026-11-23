@@ -392,7 +392,7 @@ impl Interpreter {
         // names: a same-named lexical of the calling frame (a class static its
         // method injected) must not answer for them. The named-call entry
         // injects the declaring package's statics the same way.
-        let mut shadowed_by_statics: Vec<(String, Option<Value>)> = Vec::new();
+        let mut shadowed_by_statics: Vec<(crate::symbol::Symbol, Option<Value>)> = Vec::new();
         if let ValueView::Sub(data) = candidate.view()
             && !crate::qualified::is_global_package(data.package)
         {
@@ -412,12 +412,7 @@ impl Interpreter {
                 self.call_sub_value(candidate, args)
             }
         };
-        for (name, previous) in shadowed_by_statics.into_iter().rev() {
-            match previous {
-                Some(v) => self.env_mut().insert(name, v),
-                None => self.env_mut().remove(&name),
-            };
-        }
+        self.restore_class_body_statics(shadowed_by_statics.into_iter());
         // Not consumed (the call took a path with no general bind): never let
         // it reach an unrelated later bind.
         self.pending_skip_constraint_recheck = false;
