@@ -53,6 +53,7 @@ pub(crate) mod rakuast_accessors;
 mod rakuast_apply_queries;
 mod rakuast_arg_list_queries;
 mod rakuast_block_queries;
+mod rakuast_dump;
 mod rakuast_capture_var_queries;
 mod rakuast_check_time_routine;
 mod rakuast_compile_state;
@@ -157,6 +158,7 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     rakuast_declaration_edits::ROWS,
     rakuast_set_origin::ROWS,
     rakuast_name_queries::ROWS,
+    rakuast_dump::ROWS,
     rakuast_name_queries::ONE_ARG_ROWS,
     rakuast_name_queries::PART_ROWS,
     rakuast_type_queries::ROWS,
