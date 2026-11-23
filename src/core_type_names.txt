@@ -530,7 +530,6 @@ RakuAST::Module
 RakuAST::ModuleLoading
 RakuAST::Name
 RakuAST::Name::Part
-RakuAST::Name::Part::Empty
 RakuAST::Name::Part::Expression
 RakuAST::Name::Part::Simple
 RakuAST::NamedArg

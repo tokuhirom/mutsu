@@ -2743,7 +2743,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             caller,
         } => super::symbolic_deref::view_indirect_code(names, package, name, *caller),
         // `::("x")` / `::($name)` ->
-        // `Term::Name(Name(Part::Empty.new, Part::Expression(EXPR)))`, the
+        // `Term::Name(Name(Part::EmptyEdge.new, Part::Expression(EXPR)))`, the
         // leading `::` being an empty name edge (measured on 2026.09). The
         // parser keeps this as an IndirectTypeLookup, so preserving the
         // expression part is necessary for `.AST` and for a later EVAL round
@@ -2765,7 +2765,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             })
         }
         // `::(EXPR)::A::B` / `::(EXPR)::` -> the indirect name above followed
-        // by its static parts and, for a trailing `::`, the `Part::Empty` type
+        // by its static parts and, for a trailing `::`, the `Part::EmptyEdge` type
         // object (measured on 2026.09).
         Expr::IndirectTypeLookupTail {
             head,
@@ -2789,7 +2789,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             })
         }
         // A stash lookup `Foo::` / `MY::` / `::` -> a `Name` ending in the
-        // `Part::Empty` type object. Rakudo wraps it in a `Term::Name` when the
+        // `Part::EmptyEdge` type object. Rakudo wraps it in a `Term::Name` when the
         // package resolves at parse time and in an argument-less `Call::Name`
         // otherwise (measured: `class F {}; F::` vs. an undeclared `F::`).
         Expr::PseudoStash(stash) => {

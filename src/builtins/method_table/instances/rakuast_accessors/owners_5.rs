@@ -3,10 +3,6 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
-        "RakuAST::QuoteWordsAtom",
-        &["RakuAST::QuoteWordsAtom", "RakuAST::Node"],
-    ),
-    (
         "RakuAST::QuotedRegex",
         &[
             "RakuAST::QuotedRegex",
@@ -205,6 +201,18 @@ pub(super) const CHAINS: &[OwnerChain] = &[
         "RakuAST::Regex::Assertion::Named::Args",
         &[
             "RakuAST::Regex::Assertion::Named::Args",
+            "RakuAST::Regex::Assertion::Named",
+            "RakuAST::Regex::Assertion",
+            "RakuAST::Regex::Atom",
+            "RakuAST::Regex::Term",
+            "RakuAST::Regex",
+            "RakuAST::Node",
+        ],
+    ),
+    (
+        "RakuAST::Regex::Assertion::Named::RegexArg",
+        &[
+            "RakuAST::Regex::Assertion::Named::RegexArg",
             "RakuAST::Regex::Assertion::Named",
             "RakuAST::Regex::Assertion",
             "RakuAST::Regex::Atom",

@@ -1,7 +1,7 @@
 use Test;
 use experimental :rakuast;
 
-plan 13;
+plan 15;
 
 # `name`, `is-empty` and `is-pseudo-package` on the `RakuAST::Name::Part::*`
 # classes, as raku-doc/doc/Type/RakuAST/Name/Part/*.rakudoc document them and
@@ -28,3 +28,8 @@ is-deeply RakuAST::Name::Part::Simple.new('PROCESS').is-pseudo-package, False, '
 is-deeply RakuAST::Name::Part::Simple.new('CORE').is-pseudo-package, True, 'CORE is';
 is RakuAST::Name::Part::EmptyEdge.^methods(:local).map(*.name).grep(!*.starts-with('IMPL')).sort.join(','),
     'is-empty,name,new', "EmptyEdge's own methods";
+
+# rakudo 2026.11 has no `Name::Part::Empty` (renamed to `EmptyEdge`).
+dies-ok { EVAL 'RakuAST::Name::Part::Empty.new' }, 'Name::Part::Empty is gone';
+isa-ok Q[Foo::].AST.statements.head.expression.name.parts.tail, RakuAST::Name::Part::EmptyEdge,
+    'a trailing :: parses to an EmptyEdge';
