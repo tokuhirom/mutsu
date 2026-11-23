@@ -8,6 +8,8 @@ there with `Unknown function` (#13441).
 
 A `use` below the unit's top level now leaves only its own statement list
 unjudged (and the lists nested in it); the rest of the unit is still checked,
-so the call outside the block is reported before anything runs. A top-level
+so the call outside the block is reported before anything runs. The
+undeclared-name check does the same, so `{ use M; }; say Thing` for a term `M`
+imports is an undeclared name at compile time, not the string `Thing`. A top-level
 `use` still turns the check off for the whole unit, and the `EVAL` form of
 the check is unchanged for now.
