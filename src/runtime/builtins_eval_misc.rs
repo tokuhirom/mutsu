@@ -821,7 +821,8 @@ impl Interpreter {
             let repr = format!("{prefix}{value_repr}");
             self.write_to_named_handle("$*ERR", &repr, true)?;
         }
-        Ok(args.first().cloned().unwrap_or(Value::NIL))
+        // `dd` returns `Nil`, as rakudo 2026.11's does (#19056).
+        Ok(Value::NIL)
     }
 
     /// The part of a `dd` line before the value, as rakudo's `dd`
