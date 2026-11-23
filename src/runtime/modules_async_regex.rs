@@ -30,6 +30,7 @@ pub(crate) mod regex;
 pub(crate) mod regex_grammar_state;
 mod regex_ltm_split;
 pub(crate) mod regex_parse;
+mod regex_dollar_brace;
 mod regex_parse_charclass;
 mod regex_parse_charclass_alts;
 mod regex_parse_charclass_union;

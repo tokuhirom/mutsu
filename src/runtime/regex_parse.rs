@@ -720,6 +720,7 @@ pub(crate) fn validate_regex_structurally(pattern: &str) -> Result<(), RuntimeEr
     // former validator's first check.
     check_bare_sym_usage(pattern)?;
     check_spaces_in_bare_range(pattern)?;
+    super::regex_dollar_brace::check_obsolete_dollar_brace(pattern)?;
     PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = None);
     let _ = take_regex_sorrows();
     let parsed = VALIDATE_INTERP

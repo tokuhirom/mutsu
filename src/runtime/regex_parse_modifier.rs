@@ -400,6 +400,16 @@ impl Interpreter {
                             continue;
                         }
                         let name: String = chars[name_start..j].iter().collect();
+                        // `${name}` is Perl 5's braced scalar: rejected, as on
+                        // rakudo, rather than spliced (#18925). The parse-time
+                        // validator already refuses it in a literal pattern;
+                        // this covers a pattern built at run time.
+                        if let Some(err) = super::regex_dollar_brace::obsolete_braced_name(
+                            &name,
+                            quotes.inside_double(&chars, i),
+                        ) {
+                            return Err(err);
+                        }
                         // A `:my`-declared regex-local var: leave `${name}`
                         // verbatim for the parser's match-time `VarInterp` lowering.
                         if is_regex_local(&name, &declared_my_vars) {
