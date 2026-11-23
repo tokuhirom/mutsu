@@ -1081,6 +1081,12 @@ impl Interpreter {
             let _ = self.finish();
             return Err(e);
         }
+        // `-c` on a unit that compiled: rakudo runs no END phaser, not even
+        // one a module the compile loaded registered (#18921). A failed
+        // compile still runs them (above).
+        if compile_only {
+            self.control.skip_end_phasers = true;
+        }
         self.finish()?;
         // GC program-end collect: deliver DESTROY for leaked cycles. Skipped
         // when nothing can observe it (no DESTROY classes, no gc log/verify/
