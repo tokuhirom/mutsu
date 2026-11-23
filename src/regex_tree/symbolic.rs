@@ -1,7 +1,7 @@
 //! `<::(EXPR)>`: a subrule call whose rule name an expression computes.
 //!
 //! Measured on rakudo 2026.09, `/ <::("alpha")> /` is a
-//! `Regex::Assertion::Named` whose name is `Name(Part::Empty,
+//! `Regex::Assertion::Named` whose name is `Name(Part::EmptyEdge,
 //! Part::Expression(EXPR))`, `capturing => True` unless written `<.::(…)>`.
 //! The matcher resolves the name at match time from the regex text, so the
 //! node only records the expression and the source it was written as.

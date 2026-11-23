@@ -295,7 +295,7 @@ fn substr(line: &str, start: usize, len: i64) -> &str {
 /// not take.
 // Cost: O(n), n = length of the cell.
 fn cell(text: &str) -> Option<Cell> {
-    Some(match super::pod_blocks::cell_paragraph(text)? {
+    Some(match super::pod_blocks::cell_paragraph(text).ok()? {
         Some(paragraph) => Cell::Markup(text.to_string(), paragraph),
         None => Cell::Text(text.to_string()),
     })

@@ -18,7 +18,9 @@
 //!   candidate is, by the dispatcher's rules: a default, a `:D` smiley and an
 //!   optional named parameter do not save a candidate;
 //! - every argument is a literal (`Int`, `Num`, `Rat`, `Str`, `Bool`, `Nil`)
-//!   and none is named;
+//!   or a core type object (`Str`; a supertype of the parameter's type, such
+//!   as `Cool` for `Int`, may still bind and is not refuted), none is named,
+//!   and none is written as a word quote (`<a>`, which rakudo does not judge);
 //! - the refutation is an arity mismatch, a required named parameter with no
 //!   named argument, or a literal that fails a core nominal type (or the
 //!   `Positional` / `Associative` / `Callable` of an `@` / `%` / `&`
@@ -39,9 +41,12 @@ use std::collections::{HashMap, HashSet};
 
 use crate::ast::{CallArg, Expr, ParamDef, SrcSpan, Stmt};
 use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt, walk_stmts};
-use crate::value::{RuntimeError, RuntimeErrorCode, Value, ValueView};
+use crate::value::{RuntimeError, Value, ValueView};
 
 use super::Interpreter;
+
+mod report;
+use report::{call_offset, refutation_error, written_with_word_quote};
 
 /// One call to a candidate callee, with literal arguments only.
 struct Site<'ast> {
@@ -152,6 +157,14 @@ fn literal_arg(arg: &Expr) -> Option<Value> {
         {
             Some(value.clone())
         }
+        // A core type object (`f(Str)`); a smiley (`Int:D`) is a run-time check.
+        Expr::BareWord(name)
+            if !name.contains(':')
+                && crate::known_types::is_known_type_constraint(name)
+                && !crate::native_types::is_native_type_name(name) =>
+        {
+            Some(Value::package(crate::symbol::Symbol::intern(name)))
+        }
         _ => None,
     }
 }
@@ -254,6 +267,15 @@ impl Interpreter {
             let Some((rules, candidates)) = callees.get(site.name) else {
                 continue;
             };
+            // A type object the unit redeclares (a class, a sub of the name)
+            // is not the core one.
+            let redeclared = site.args.iter().any(|arg| {
+                matches!(arg.view(), ValueView::Package(name)
+                    if survey.decls.contains_key(name.resolve().as_str()))
+            });
+            if redeclared {
+                continue;
+            }
             let refuted = candidates
                 .iter()
                 .all(|params| self.refutes(params, &site.args, &survey.type_decls, *rules));
@@ -315,17 +337,31 @@ impl Interpreter {
             .copied()
             .filter(|p| !takes_many(p))
             .collect();
+        // A type object that is a supertype of its parameter's type (`f(Cool)`
+        // for `Int $x`, `f(Mu)`) may still name a value that binds: rakudo then
+        // leaves the whole call to the binder (#10944), arity included and
+        // whatever the other arguments are.
+        let mut mismatched = false;
+        for (param, arg) in fixed.iter().zip(args) {
+            let Some(ty) = judged_type(param, user_types, rules) else {
+                continue;
+            };
+            if self.type_matches_value(ty, arg) {
+                continue;
+            }
+            if let ValueView::Package(name) = arg.view() {
+                let param_type = Value::package(crate::symbol::Symbol::intern(ty));
+                if self.type_matches_value(&name.resolve(), &param_type) {
+                    return false;
+                }
+            }
+            mismatched = true;
+        }
         let required = fixed
             .iter()
             .filter(|p| !p.optional_marker && p.default.is_none())
             .count();
-        if args.len() < required || (!slurpy && args.len() > fixed.len()) {
-            return true;
-        }
-        fixed.iter().zip(args).any(|(param, arg)| {
-            judged_type(param, user_types, rules)
-                .is_some_and(|ty| !self.type_matches_value(ty, arg))
-        })
+        mismatched || args.len() < required || (!slurpy && args.len() > fixed.len())
     }
 }
 
@@ -381,112 +417,4 @@ fn callees<'ast>(
         whole && declared == candidates.len() + protos && !survey.code_vars.contains(*name)
     });
     found
-}
-
-/// The byte offset of the `index`-th site's call in `source`: the k-th
-/// occurrence of its name in its statement's text, when the statement holds
-/// exactly as many calls to the name as the text has occurrences.
-// Cost: O(c + s), c = sites, s = length of the statement.
-fn call_offset(sites: &[Site<'_>], index: usize, source: &str) -> Option<usize> {
-    let site = &sites[index];
-    let span = site.span;
-    if span == SrcSpan::NONE {
-        return None;
-    }
-    let inside = |other: &Site<'_>| {
-        other.name == site.name && other.span.from >= span.from && other.span.to <= span.to
-    };
-    let rank = sites[..index].iter().filter(|other| inside(other)).count();
-    let total = sites.iter().filter(|other| inside(other)).count();
-    let text = source.get(span.from as usize..span.to as usize)?;
-    let occurrences = word_occurrences(text, site.name);
-    (occurrences.len() == total).then(|| span.from as usize + occurrences[rank])
-}
-
-/// Whether the rest of the call's statement, from byte `from`, holds a word
-/// quote (`<a>`, `«a»`, `qw/a/`, `q:w/a/`). The parser folds `<a>` to the
-/// same `Str` literal as `"a"`, but rakudo does not judge a word quote
-/// statically (`f(<a>)` is a run-time type check failure), so such a call
-/// is left to the binder. A `<` that is not a quote only makes the pass
-/// skip a call it could have judged.
-// Cost: O(s), s = length of the statement.
-fn written_with_word_quote(source: &str, from: usize, span: SrcSpan) -> bool {
-    source
-        .get(from..(span.to as usize).max(from))
-        .is_none_or(|rest| {
-            rest.contains(['<', '\u{ab}']) || rest.contains("qw") || rest.contains(":w")
-        })
-}
-
-/// The byte offsets in `text` where `name` stands as a whole routine name.
-// Cost: O(s), s = length of `text`.
-fn word_occurrences(text: &str, name: &str) -> Vec<usize> {
-    let word_char = |c: char| c.is_alphanumeric() || c == '_';
-    text.match_indices(name)
-        .map(|(at, _)| at)
-        .filter(|&at| {
-            let before = text[..at].chars().next_back();
-            let after = text[at + name.len()..].chars().next();
-            let joins_after = |c: char| {
-                word_char(c)
-                    || (matches!(c, '-' | '\'')
-                        && text[at + name.len() + 1..]
-                            .chars()
-                            .next()
-                            .is_some_and(char::is_alphabetic))
-            };
-            !before.is_some_and(|c| word_char(c) || matches!(c, '$' | '@' | '%' | '&' | '.' | '!' | '-' | '\'' | ':'))
-                && !after.is_some_and(joins_after)
-        })
-        .collect()
-}
-
-/// The compile-time `X::TypeCheck::Argument` for the call at byte `at`.
-// Cost: O(p + a + s), p = parameters, a = arguments, s = length of `source`.
-fn refutation_error(
-    name: &str,
-    rules: Rules,
-    candidates: &[&[ParamDef]],
-    args: &[Value],
-    source: &str,
-    at: usize,
-) -> RuntimeError {
-    let arg_types = Interpreter::arg_type_names(args);
-    let signatures: Vec<String> = candidates
-        .iter()
-        .map(|params| Interpreter::build_signature_string(params))
-        .collect();
-    let call = format!("Calling {name}({})", arg_types.join(", "));
-    let message = match rules {
-        Rules::Only => format!("{call} will never work with declared signature {}", signatures[0]),
-        Rules::Multi => format!(
-            "{call} will never work with any of these multi signatures:\n    {}",
-            signatures.join("\n    ")
-        ),
-    };
-    let signature = signatures.join("\n");
-    let line = 1 + source[..at].matches('\n').count();
-    let column = 1 + source[..at].rsplit('\n').next().map_or(0, |l| l.chars().count());
-    let pos = source[..at].chars().count();
-    let mut attrs = std::collections::HashMap::new();
-    attrs.insert("message".to_string(), Value::str(message.clone()));
-    attrs.insert("objname".to_string(), Value::str(name.to_string()));
-    attrs.insert("signature".to_string(), Value::str(signature));
-    attrs.insert(
-        "arguments".to_string(),
-        Value::array(arg_types.into_iter().map(Value::str).collect()),
-    );
-    attrs.insert("line".to_string(), Value::int(line as i64));
-    attrs.insert("column".to_string(), Value::int(column as i64));
-    attrs.insert("pos".to_string(), Value::int(pos as i64));
-    let mut err = RuntimeError::new(message);
-    err.set_code(Some(RuntimeErrorCode::ParseGeneric));
-    err.set_line(Some(line));
-    err.set_column(Some(column));
-    err.set_parse_pos(pos);
-    err.exception = Some(Box::new(Value::make_instance(
-        crate::symbol::Symbol::intern("X::TypeCheck::Argument"),
-        attrs,
-    )));
-    err
 }

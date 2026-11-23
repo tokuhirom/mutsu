@@ -673,6 +673,9 @@ impl Interpreter {
             if let Some(&built) = def.attribute_built.get(attr_name) {
                 return built.is_built();
             }
+            if def.attributes.builtin_is_built(attr_name) {
+                return true;
+            }
             let mut declared = false;
             for attr in def.attributes.iter().filter(|a| a.name == attr_name) {
                 declared = true;

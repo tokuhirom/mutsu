@@ -82,7 +82,5 @@ fn raise(interp: &mut Interpreter, target: &Value, method: &str) -> Answer {
 /// `Failure.new($exception)` builds.
 // Cost: O(1).
 fn failure(interp: &mut Interpreter, target: &Value) -> Answer {
-    Some(Ok(
-        interp.build_native_failure_value(std::slice::from_ref(target))
-    ))
+    Some(interp.build_native_failure_value(std::slice::from_ref(target)))
 }

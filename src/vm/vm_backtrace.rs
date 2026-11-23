@@ -254,6 +254,15 @@ impl BacktraceCapture {
     /// The attributes of the `Backtrace` [`Self::render_value`] builds.
     // Cost: O(s), s = the captured stack's depth.
     pub(super) fn render_attrs(&self, leading: &[&str]) -> Vec<(&'static str, Value)> {
+        self.render_attrs_skipping(leading, 0)
+    }
+
+    // Cost: O(s), s = the captured stack's depth; `skip` drops innermost frames.
+    pub(super) fn render_attrs_skipping(
+        &self,
+        leading: &[&str],
+        skip: usize,
+    ) -> Vec<(&'static str, Value)> {
         use crate::symbol::Symbol;
         use std::collections::HashMap;
 
@@ -304,7 +313,7 @@ impl BacktraceCapture {
             ));
         }
 
-        for (i, frame) in reversed.iter().enumerate() {
+        for (i, frame) in reversed.iter().enumerate().skip(skip) {
             let (line, file) = if i == 0 {
                 (current_line, executing_file.clone())
             } else {
@@ -390,8 +399,10 @@ impl BacktraceCapture {
             }
         }
 
-        // Add <unit> frame at bottom if needed
-        if stack.is_empty() {
+        // Add <unit> frame at bottom if needed.
+        if stack.is_empty() && skip > 0 {
+            // The skipped innermost frame was this synthetic `<unit>`.
+        } else if stack.is_empty() {
             let location = Self::format_location(current_file.as_deref(), current_line);
             text_lines.push(format!("  in block <unit>{}", location));
 

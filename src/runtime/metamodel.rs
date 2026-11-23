@@ -771,7 +771,7 @@ impl Interpreter {
             .registry()
             .classes
             .get(class_name)
-            .map(|class_def| class_def.attributes.clone())
+            .map(|class_def| class_def.attributes.to_vec())
             .unwrap_or_default();
         for attr in &attrs {
             let object = self.make_attribute_object(attr, class_name);

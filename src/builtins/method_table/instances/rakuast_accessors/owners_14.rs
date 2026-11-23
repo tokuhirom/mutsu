@@ -3,14 +3,6 @@ use super::*;
 
 pub(super) const CHAINS: &[OwnerChain] = &[
     (
-        "RakuAST::Trait::WillBuild",
-        &[
-            "RakuAST::Trait::WillBuild",
-            "RakuAST::Trait",
-            "RakuAST::Node",
-        ],
-    ),
-    (
         "RakuAST::Transliteration",
         &[
             "RakuAST::Transliteration",

@@ -6,7 +6,7 @@ use Test;
 # only a declared element type. A value with no container (a literal, a
 # parameter, a `:=`-bound value, `self`) shows nothing.
 
-plan 13;
+plan 19;
 
 my $captured = '';
 my class Capture {
@@ -43,3 +43,17 @@ is dd-of({ dd $*D }), '$*D = 4', 'a dynamic variable shows its twigil';
 my class C { has $.a = 1; method m { dd $!a } }
 is dd-of({ C.new.m }), '$!a = 1', 'an attribute shows its twigil';
 is dd-of({ dd $x, @a }), "\$x = 5\n[1, 2]", 'each argument is its own line';
+
+# #19065: a bareword type object names no container, so it gets no `$name = `.
+my class Foo19065 { }
+is dd-of({ dd Foo19065 }), 'Foo19065', 'a class type object shows only itself';
+is dd-of({ dd IO::Path }), 'IO::Path', 'a qualified core type object too';
+my $t = IO::Path;
+is dd-of({ dd $t }), '$t = IO::Path', 'a scalar holding a type object still shows its name';
+is dd-of({ dd Int }), 'Int', 'a core type object';
+
+# #19056: dd returns Nil, as rakudo 2026.11's does.
+my $r = 0;
+dd-of({ $r = dd 7 });
+is $r.raku, 'Any', 'dd returns Nil (assigned, a Scalar holds Any)';
+is dd-of({ (dd 5).raku.note }), "5\nNil", 'the call itself is Nil';

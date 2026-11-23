@@ -2764,7 +2764,7 @@ impl Interpreter {
     /// module's own `Int` is still the core type.
     // Cost: O(1) when no such subset was declared; otherwise one registry
     // probe.
-    fn core_name_subset_applies(&self, constraint: &str) -> bool {
+    pub(crate) fn core_name_subset_applies(&self, constraint: &str) -> bool {
         if !self.types.core_scalar_name_subset {
             return false;
         }

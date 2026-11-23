@@ -4,7 +4,7 @@ use Test;
 # compile error: nothing in the unit runs, and the error points at the call.
 # Expected texts are rakudo 2026.11's.
 
-plan 21;
+plan 24;
 
 sub run-code(Str $code) {
     my $p = run $*EXECUTABLE, '-e', $code, :out, :err;
@@ -76,6 +76,10 @@ refuted q[say 1; proto f($) {*}; multi f(Int $x = 1) {}; f("a")],
     "===SORRY!=== Error while compiling -e\nCalling f(Str) will never work with any of these multi signatures:\n    (Int \$x = 1)\nat -e:1\n------> say 1; proto f(\$) \{*}; multi f(Int \$x = 1) \{}; <HERE>f(\"a\")",
     'a multi candidate with a default is still judged';
 
+refuted q[say 1; sub f(Int $x) {}; f(Str)],
+    "===SORRY!=== Error while compiling -e\nCalling f(Str) will never work with declared signature (Int \$x)\nat -e:1\n------> say 1; sub f(Int \$x) \{}; <HERE>f(Str)",
+    'a type object unrelated to the parameter type';
+
 # Left to the run-time binder, as in rakudo: the unit runs first.
 for q[sub f(Int:D $x) {}; f("a")],
     q[sub f(Int $x = 5) {}; f("a")],
@@ -85,6 +89,8 @@ for q[sub f(Int:D $x) {}; f("a")],
     q[multi f(Int $x) {}; multi f($x) { print "" }; f("a")],
     q[sub f(Int $x) {}; f(<a>)],
     q[sub f(Int $x) {}; f(qw/a/)],
+    q[sub f(Int $x) {}; f(Cool)],
+    q[sub f(Int $x, Str $y) {}; f(Cool, 1)],
     q[multi min(Int $a) { "u" }; my $m = min(3, 4)]
     -> $tail {
     my ($out, $err, $exit) = run-code("say 1; $tail");

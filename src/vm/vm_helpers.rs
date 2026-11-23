@@ -109,8 +109,11 @@ impl Interpreter {
     // Cost: O(1) expected (at most two env probes, none in a program that
     // declares no typed lexical).
     fn declared_scalar_type(&self, name: &str) -> Option<String> {
+        // A sigil-less spelling (how a scalar local is stored) has only the
+        // one key: asking it twice interned and probed it twice (#18274).
+        let bare = name.trim_start_matches('$');
         self.var_type_constraint(name)
-            .or_else(|| self.var_type_constraint(name.trim_start_matches('$')))
+            .or_else(|| (bare.len() != name.len()).then(|| self.var_type_constraint(bare))?)
     }
 
     /// Say on `value`'s cell that it was made from the untyped scalar `name`,
