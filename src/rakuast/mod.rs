@@ -291,6 +291,7 @@ mod substitution;
 pub(crate) use indirect_bind::indirect_symbol_bind;
 mod symbolic_deref;
 mod temporize;
+mod term_bool_ctor;
 mod term_name;
 mod thunk;
 mod topic_subscript;
@@ -3617,6 +3618,9 @@ fn construct_class(
             )));
         }
         return Ok(Some(slurpy_marker_value(class)));
+    }
+    if let Some(node) = term_bool_ctor::construct(class_name, method, args) {
+        return node.map(Some);
     }
     // `Term::Enum.new(Name)`: the same node as `Term::Enum.from-identifier`,
     // from a simple (single identifier) name node.
