@@ -113,6 +113,7 @@ mod supply_lower;
 mod will_decl;
 pub(crate) use decl_compound_assign::ZIP_ASSIGN;
 mod decl_tail;
+mod trailing_comma_list;
 mod decl_traits;
 mod declarator_docs;
 
