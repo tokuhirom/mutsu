@@ -1215,14 +1215,7 @@ impl Interpreter {
             // the variable, as `$x = v` does (type check included), and any
             // other index is out of range `0..0` (#18952).
             if is_positional && let ValueView::Int(i) = idx.view() {
-                if i != 0 {
-                    return Err(RuntimeError::out_of_range("Index", Value::int(i), "0..0"));
-                }
-                self.stack.push(val.into_deref());
-                return match target_slot {
-                    Some(slot) => self.exec_assign_expr_local_op_inner(code, slot),
-                    None => self.exec_assign_expr_op(code, name_idx, false),
-                };
+                return self.store_index_zero_into_var(code, name_idx, target_slot, i, val);
             }
             return Err(err);
         }
@@ -1577,6 +1570,18 @@ impl Interpreter {
         // `my $p = (c => [1,2]); $p<c> = [3,4]` STOREs into the Array the Pair
         // holds, leaving the Pair itself (and every other alias of that Array)
         // in place.
+        // A Pair is not Positional: `$p[0]` is the variable's own container,
+        // as for a scalar (#18960), and any other index is out of range.
+        if !bind_mode
+            && is_positional
+            && !var_name.starts_with(['@', '%'])
+            && let ValueView::Int(i) = idx.view()
+            && self
+                .place_env_get_sym(place, var_sym)
+                .is_some_and(|t| matches!(t.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
+        {
+            return self.store_index_zero_into_var(code, name_idx, target_slot, i, val);
+        }
         if !bind_mode
             && let Some(aggregate) = self.place_env_get_sym(place, var_sym).and_then(|t| {
                 Self::pair_subscript_aggregate(t, Some(idx.to_string_value().as_str()))
@@ -5004,6 +5009,29 @@ impl Interpreter {
         aggregate.replace_container_contents(&coerced)
     }
 
+    /// `$x[i] = val` where `$x` holds a defined value that is not Positional:
+    /// index 0 is the variable's own container, which takes `val` through the
+    /// ordinary scalar assignment (type check and container identity kept);
+    /// any other index is out of range `0..0` (#18952, #18960).
+    // Cost: O(1) besides the assignment.
+    fn store_index_zero_into_var(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        target_slot: Option<u32>,
+        index: i64,
+        val: Value,
+    ) -> Result<(), RuntimeError> {
+        if index != 0 {
+            return Err(RuntimeError::out_of_range("Index", Value::int(index), "0..0"));
+        }
+        self.stack.push(val.into_deref());
+        match target_slot {
+            Some(slot) => self.exec_assign_expr_local_op_inner(code, slot),
+            None => self.exec_assign_expr_op(code, name_idx, false),
+        }
+    }
+
     /// What a positional store at `key` into `slot`, an element holding a
     /// defined bare scalar, does: rakudo's `Any.ASSIGN-POS` stores through
     /// `AT-POS`, and a defined scalar's `AT-POS(0)` is its own container. So
@@ -5017,7 +5045,8 @@ impl Interpreter {
         key: &str,
     ) -> Option<Result<(), RuntimeError>> {
         if !positional
-            || !Self::is_bare_scalar(slot)
+            || !(Self::is_bare_scalar(slot)
+                || matches!(slot.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
             || !crate::runtime::types::value_is_defined(slot)
         {
             return None;

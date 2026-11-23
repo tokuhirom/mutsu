@@ -34,10 +34,11 @@ plan 29;
 }
 
 {
+    # A Pair is not Positional either: index 0 is the element's own
+    # container (#18960).
     my @a = (a => 1), 3;
-    throws-like { @a[0][0] = 9 }, X::Assignment::RO,
-        message => 'Cannot modify an immutable Pair (a => 1)',
-        'a Pair element is refused';
+    @a[0][0] = 9;
+    is-deeply @a, [9, 3], 'index 0 of a Pair element replaces it';
 }
 
 # --- the same rule one level deeper ----------------------------------------
