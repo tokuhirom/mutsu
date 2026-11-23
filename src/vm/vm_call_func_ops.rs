@@ -830,7 +830,8 @@ impl Interpreter {
                             } else {
                                 None
                             };
-                            let start = self.stack.len() - (arity_usize - marker.is_some() as usize);
+                            let start =
+                                self.stack.len() - (arity_usize - marker.is_some() as usize);
                             if let Some(result) =
                                 self.try_call_trir(cf, start, Some(code), compiled_fns)
                             {
