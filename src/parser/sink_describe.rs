@@ -116,11 +116,22 @@ pub(super) fn is_operator_expr(expr: &Expr) -> bool {
     matches!(expr, Expr::Binary { .. } | Expr::Unary { .. })
 }
 
-/// The elements of an array constructor `[...]`.
+/// Whether `arg` is the call-site marker the parser stamps onto a call
+/// (`crate::parser::callsite_line_arg`), which the source never wrote.
 // Cost: O(1).
-pub(super) fn bracket_array_elems(expr: &Expr) -> Option<&[Expr]> {
+pub(super) fn is_callsite_line_marker(arg: &Expr) -> bool {
+    matches!(arg, Expr::Binary { left, .. }
+        if matches!(left.as_ref(), Expr::Literal(v)
+            if v.to_string_value() == crate::parser::TEST_CALLSITE_LINE_KEY))
+}
+
+/// Whether `expr` applies a pure operator (one whose value a sink discards,
+/// whatever its operands do: #18973).
+// Cost: O(1).
+pub(super) fn is_pure_operator_expr(expr: &Expr) -> bool {
     match expr {
-        Expr::BracketArray(elems, _) => Some(elems),
-        _ => None,
+        Expr::Binary { op, .. } => pure_op_symbol(op).is_some(),
+        Expr::Unary { op, .. } => pure_prefix_symbol(op).is_some(),
+        _ => false,
     }
 }

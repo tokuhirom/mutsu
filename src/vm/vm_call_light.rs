@@ -678,7 +678,16 @@ impl Interpreter {
                     } else {
                         &*val
                     };
-                    let nominal = if kind == crate::opcode::FastParamType::UInt
+                    let nominal = if self.types.core_scalar_name_subset
+                        && self.core_name_subset_applies(name_sym.as_str())
+                    {
+                        // A subset this unit declared under the core name
+                        // (`subset Int of Any where ...`): its `where`
+                        // decides, not the value's tag (#19031). The smiley
+                        // is still applied below.
+                        let val = val.clone();
+                        self.type_matches_value(name_sym.as_str(), &val)
+                    } else if kind == crate::opcode::FastParamType::UInt
                         || matches!(val.view(), ValueView::Instance { .. })
                     {
                         // The type matcher needs `&mut self`; only a `UInt`
