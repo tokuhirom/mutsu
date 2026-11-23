@@ -23,6 +23,7 @@ use crate::ast::ParamDef;
 use crate::ast_visit::{NameKind, Visit, walk_expr, walk_stmt, walk_stmts};
 use crate::regex_tree::RegexNode;
 
+mod adverb_names;
 mod forward;
 mod suggest;
 mod lowered_decls;
@@ -183,10 +184,15 @@ impl UndeclaredVars<'_> {
             scope.insert(name.to_string());
         }
         scope.insert(declared_var_name(name).to_string());
+        // `my $y:a(1)`: canonicalized by the compiler, after this scan.
+        if let Some(key) = adverb_names::marked_key(declared_var_name(name)) {
+            scope.insert(key);
+        }
     }
 
     fn is_declared(&self, name: &str) -> bool {
         self.scopes.iter().any(|s| s.contains(name))
+            || adverb_names::use_keys(name).any(|key| self.scopes.iter().any(|s| s.contains(&key)))
     }
 
     /// Whether `name` is a file-scope lexical of the running routine's own
