@@ -16,6 +16,7 @@ mod my_decl_assign;
 mod my_decl_dispatch;
 mod my_decl_helpers;
 mod use_decl;
+mod use_experimental;
 
 // Re-export public items that were previously accessible from the flat `decl` module.
 pub(in crate::parser) use constant_subset::inline_subset_term;
