@@ -25,7 +25,7 @@
 #
 # With RELEASE_STALE=1 (the scheduled run), `--all` also breaks a claim its
 # session died holding, by the evidence-based test docs/issue-workflow.md
-# already defines for the ecosystem lock board: older than $STALE_HOURS AND no
+# defines: older than $STALE_HOURS AND no
 # such branch on origin. It posts a real `Releasing:` comment rather than just
 # dropping the label, because the log -- not the label -- is the record.
 #
@@ -57,8 +57,8 @@ RELEASE_STALE="${RELEASE_STALE:-0}"
 # agents append after it ("Releasing: br - fixed in #8114", a Claude Code
 # attribution footer, a paragraph of findings).
 #
-# `Locking:` / `Unlocking:` (the ecosystem lock board, #17702) are deliberately
-# NOT claims: that board locks distributions, not the issue it lives on.
+# `Locking:` / `Unlocking:` (the retired ecosystem lock board's lines) are
+# deliberately NOT claims.
 live_claims() {
   awk -F'\t' '
     {
@@ -175,7 +175,7 @@ sync_issue() { # sync_issue <issue>
   local n="$1" labels state claims raw_live=0 live line branch ts
 
   labels=$(issue_labels "$n" 2>/dev/null) || { echo "  #$n: unreadable, skipped"; return 0; }
-  # The lock board is infrastructure: its comments lock distributions, not it.
+  # A (retired) lock board is infrastructure: its comments locked distributions, not it.
   if printf '%s\n' "$labels" | has_label "ecosystem:lock"; then return 0; fi
 
   state=$(issue_state "$n" 2>/dev/null) || state="open"

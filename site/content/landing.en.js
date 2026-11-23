@@ -17,7 +17,7 @@ export default {
 
   stats: {
     roastLabel: 'Roast spec files passing in full',
-    roastNote: '{pass} of {total} files in the official Raku test suite',
+    roastNote: '{pass} of the {total} spec files Rakudo runs (roast/spectest.data)',
     binaryValue: 'Single binary',
     binaryLabel: 'No runtime to install',
     binaryNote: '<code>mutsu</code> plus the bundled <code>mzef</code> package manager',

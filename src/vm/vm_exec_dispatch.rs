@@ -535,14 +535,17 @@ impl Interpreter {
                         // A package-qualified name reads `our_vars` first.
                         && !crate::qualified::is_qualified(code.const_sym(*name_idx))
                         && self.lexicals.escaping_our_lexical_names.is_empty()
-                        && !self.mainline_lexical_frame_active()
-                        && !self.lexsub_alias_frame_active()
-                        && self.current_package_is_global()
-                        // A package-less module file's routine runs in GLOBAL
-                        // too, and its file-scope lexicals are not in `env`
-                        // (`vm_compunit_lexicals`).
-                        && self.compunit_lexical_bucket(name).is_none()
+                        // The topic is every routine's own (`env::routine_owned`):
+                        // never a mainline capture, a routine-nested sub's alias,
+                        // a package-block or file-scope lexical, so the four stores
+                        // these gates protect cannot hold it, and a module routine's
+                        // `$_` reads take this path too (#18274).
+                        && (name == "_" || self.env_only_free_read_possible(name))
                     {
+                        debug_assert!(
+                            name != "_" || self.topic_outside_env_stores_miss(code),
+                            "a store ahead of env holds the topic"
+                        );
                         match self.env().get_sym(code.const_sym(*name_idx)) {
                             Some(val)
                                 if !val.is_nil()
@@ -8410,7 +8413,7 @@ impl Interpreter {
                 // The target scope declares the name (the compiler emits a Nil
                 // constant otherwise), so a non-dynamic binding here is the
                 // X::Caller::NotDynamic case, not an absent one.
-                if !self.is_var_dynamic(name) {
+                if !self.is_var_dynamic(name) || self.caller_topic_is_not_dynamic(name) {
                     return Err(crate::runtime::utils::caller_not_dynamic_error(name));
                 }
                 let val = self.get_outer_var(code, name, *depth as usize, *slot);

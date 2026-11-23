@@ -429,9 +429,12 @@ impl Interpreter {
             cc,
             owner,
             receiver,
-            gate.can_skip_merge,
+            gate.can_skip_merge || gate.merge_is_name_carry_only,
         );
-        let slot_frame = lean && super::vm_method_slot_frame::slot_frame_body_ok(def, cc, owner);
+        // A slot frame has no overlay to carry anything out of.
+        let slot_frame = lean
+            && gate.can_skip_merge
+            && super::vm_method_slot_frame::slot_frame_body_ok(def, cc, owner);
         // A mixin owner another thread may publish is asked anew per call
         // (`method_body_package` reads `published_mixins`, which no registry
         // write of this interpreter moves).
@@ -575,6 +578,7 @@ impl Interpreter {
                 cc,
                 compiled_fns: fns_ref,
                 body_package: plan.facts.map(|facts| facts.body_package),
+                can_skip_merge: plan.can_skip_merge,
             };
             if plan.slot_frame && self.slot_frame_entry_ok() {
                 self.call_compiled_method_slot(&call, args, target.clone())

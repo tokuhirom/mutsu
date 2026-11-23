@@ -17,8 +17,8 @@ name: Sync the `working` label from the claim log
 # is idempotent.
 #
 # The scheduled run additionally breaks a claim whose session died, by the
-# evidence-based test docs/issue-workflow.md already defines for the ecosystem
-# lock board (older than 24h AND no such branch on origin), and prints the live
+# evidence-based test docs/issue-workflow.md defines (older than 24h AND no
+# such branch on origin), and prints the live
 # claims as a board in the run summary.
 
 on:

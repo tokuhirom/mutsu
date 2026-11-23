@@ -2243,3 +2243,57 @@ nested block shadowing a free variable (the `rposition` case); and
 `OUTER::OUTER::` from a routine declared in a routine. The gate's roast focus
 is `S02-names`; `pseudo-6d.t` and `6.c/pseudo-6c.t` reach the whitelist when
 they pass completely.
+
+### 9.6 Implementation (2026-11-23, #18787)
+
+Landed with these differences from §9.2. Each is narrower than the text above
+or a measured necessity:
+
+- **(a) The latch is process-global and set from source text.**
+  `crate::parser::static_outer_latch` scans every unit's source when it is parsed (and
+  when a bytecode-cache hit loads it unparsed), as `opcode::note_dispatcher_mention`
+  does: it looks for `CALLER`/`CALLERS`/`DYNAMIC` followed by
+  `::OUTER`/`UNIT`/`LEXICAL`/`SETTING`/`::(`, and for those words spelled as
+  a string. The latch is monotonic, and an over-set (a comment) only costs the
+  latched code shape. It is not stored per unit, so a unit compiled after
+  any latched unit is latched too.
+- **(b) The static view is baked when the declaring scope closes**
+  (`Compiler::bake_static_views_closing`), so it holds that scope's later
+  declarations (`CompiledSubDeclPlan::static_view_slots`).
+  `capture_lexsub_activation` binds the whole view, each name at its scope's
+  slot, in place of the `rposition` guess. A cell replaces the env's binding
+  only while that slot is the visible one (`box_static_view_local`).
+  The by-name call from the declaring code does not go through a frame-lexical
+  `&name` slot. A latch-gated check in `exec_call_func_op` (one relaxed load on
+  the by-name slow path) finds the plan and calls the capture through
+  `activation_routine_of` (`vm_static_view_call.rs`). The capture is built
+  per call, not cached per activation.
+- **(c) The unit's lexicals are recorded under their own keys.** A reflective
+  closure created in an `EVAL` mainline gets the eval-unit mark instead of
+  `program_scope_capture` (not behind the latch). Under the latch, every
+  closure created there also records that mainline's own plain lexicals
+  under `MetaNs::EvalUnit` keys, and only `UNIT::` reads them
+  (`Env::unit_lexical`). A first version forced the reflective capture on
+  such closures instead. That put the scope around the `EVAL` into the
+  capture, where the by-name lookups of the routines the closure calls (which
+  still walk their callers, §1.3) found a caller's shadowing lexical: Red's
+  `t/124-compiler-callables` test 59 failed. The recorded values are the
+  locals' cells where they are cells, else their current values (a `TODO`:
+  boxing them in place changed that same Red result).
+- **The caller-frame entry's flushed-slot overlay is a block tier**, not a
+  frame root, so `Env::enclosing_scopes` of the entry starts at the calling
+  frame's own root and link. A frame flattened into the bottom of its chain
+  answers from its record (`Env::flattened_frame_scopes`).
+- **The reader** (`caller_lexical_chain_var`) reads the `caller_env_stack`
+  entry, the same one `CALLER::` reads. `caller_scope(depth)` from #17733 answers
+  which *routines* a caller's package scope holds, a different question, so
+  the reader does not build on it.
+
+**Measured (the acceptance condition).** Red 0.2.16's whole suite (175
+files; Red itself latches through `CALLERS::OUTERS::`), release builds, one
+file at a time, against the merge base. Pass/fail is identical on every file:
+all pass except `t/154` and `t/158`, which time out at 300 s on both.
+Wall time over the 173 passing files is 2495.0 s on the base and 2488.1 s on
+the branch (0.997x). The per-file outliers above 1.15x (`000-meta`,
+`001-tdd`, `054`, `127`) came out within 2.5% of the base when re-run three
+times each.

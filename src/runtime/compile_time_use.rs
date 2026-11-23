@@ -43,6 +43,8 @@ impl CompileTimeLoader for Interpreter {
             return LoadOutcome::NotTaken;
         };
         let (bare, _) = Self::split_dist_selectors(module);
+        // Another thread loading the same module finishes first (ADR-17216).
+        let _claim = self.claim_module_load(bare);
         // A module loaded already (by an earlier `use`) does not load again,
         // but its `sub EXPORT` runs for this `use` too, now, as rakudo runs it
         // once per `use` statement at compile time.

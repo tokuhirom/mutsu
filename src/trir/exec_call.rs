@@ -378,6 +378,23 @@ impl Interpreter {
             self.trir.os.push(Value::str(rendered));
             return Ok(());
         }
+        // A pure native method on an immutable scalar (`$str.Numeric` in
+        // JSON::Fast's `parse-numeric`) takes the lane the VM's `CallMethod`
+        // takes for the same receiver, with the same guards (an augmented
+        // `Str` method, a junction argument, a method with its own dispatch
+        // branch); anything else takes the general dispatch below.
+        if let Some(result) = self.try_env_pure_scalar_native_dispatch(
+            "trirmethod",
+            &target,
+            &name,
+            m.name,
+            &args,
+            None,
+            false,
+        ) {
+            self.trir.os.push(Self::hllize_value(result?));
+            return Ok(());
+        }
         let v = self.call_method_with_values(target, &name, args)?;
         // Raku method call sites HLL-ize their result, as `CallMethod` does
         // (`hllize_method_return`): a raw `VMHash` handed back by a method

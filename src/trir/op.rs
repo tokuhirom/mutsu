@@ -360,6 +360,19 @@ pub(crate) enum TrOp {
         list: u16,
         slot: u16,
     },
+    /// `nqp::ordat(<boxed slot text>, <native slot pos>)`, pushing the
+    /// codepoint: `LoadI(pos); OrdAtLocal(text)`.
+    OrdAtLocalSlot {
+        text: u16,
+        pos: u16,
+    },
+    /// `nqp::ordat(<boxed slot text>, <the `is rw` reference in native slot
+    /// pos_ref>)`: `GetRefI(pos_ref); OrdAtLocal(text)`, the position read of
+    /// a scanner that advances a caller's `int $pos is rw` (`nom-ws`).
+    OrdAtLocalRef {
+        text: u16,
+        pos_ref: u16,
+    },
 
     // ---- inlined callees (ADR-8673 D2, `compile/inline_call.rs`) ----
     /// Enter the inlined body of `chunk.inline_regions[region]`: the guards a

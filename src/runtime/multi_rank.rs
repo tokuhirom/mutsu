@@ -522,6 +522,26 @@ impl MultiRank {
         }
     }
 
+    /// [`RankProfile::declared_wins`] with the invocant as one more declared
+    /// parameter: of two method candidates, the one whose invocant type is
+    /// narrower wins that position. `(Late: Cool)` against an added
+    /// `my method`'s `(Mu: Str)` is a split rakudo calls ambiguous, as is a
+    /// subclass's `(B: Cool)` against its parent's `(A: Str)` (#18868).
+    // Cost: O(r), r = the cost of one `conforms` call.
+    fn declared_wins_with_invocant(
+        &self,
+        other: &MultiRank,
+        conforms: &dyn Fn(Symbol, Symbol) -> bool,
+    ) -> (bool, bool) {
+        let (mut self_wins, mut other_wins) = self.profile.declared_wins(&other.profile, conforms);
+        match self.invocant_order(other, conforms) {
+            Some(Ordering::Less) => self_wins = true,
+            Some(Ordering::Greater) => other_wins = true,
+            _ => {}
+        }
+        (self_wins, other_wins)
+    }
+
     /// How the invocant types of two method candidates order them: `Less`
     /// when `self`'s (a subclass of `other`'s) is narrower, `Greater` when it
     /// is wider, `None` when equal, unrelated or not a method pair.
@@ -902,7 +922,7 @@ fn declared_split_ambiguous(
         && survivors.iter().enumerate().all(|(i, a)| {
             survivors[i + 1..]
                 .iter()
-                .all(|b| a.profile.declared_wins(&b.profile, conforms) == (true, true))
+                .all(|b| a.declared_wins_with_invocant(b, conforms) == (true, true))
         })
 }
 

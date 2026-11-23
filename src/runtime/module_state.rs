@@ -29,6 +29,9 @@ pub(crate) type WorldTable<T> = crate::runtime::world_cell::WorldCell<std::sync:
 /// import state of [`ModuleState`], so it can be shared by every thread.
 #[derive(Default)]
 pub(crate) struct ModuleWorld {
+    /// Which thread is loading which module right now, so two threads asking
+    /// for one module at once load it once (`module_load_claims`).
+    pub(crate) load_claims: Arc<super::module_load_claims::ModuleLoadClaims>,
     /// Per loaded module, the nested packages it publishes under their short
     /// name, `(short, package)` (`package Gender { enum Gender ... }` in
     /// `unit module Enums` publishes `Gender` = `Enums::Gender`, #13940).
@@ -281,6 +284,7 @@ impl ModuleWorld {
     // Cost: O(f), f = tables (two reference-count increments each).
     pub(crate) fn share(&self) -> Self {
         Self {
+            load_claims: Arc::clone(&self.load_claims),
             loaded_modules: self.loaded_modules.share(),
             loaded_unit_pads: self.loaded_unit_pads.share(),
             module_registered_functions: self.module_registered_functions.share(),

@@ -41,6 +41,9 @@ pub(super) fn slot_frame_body_ok(
     owner: Symbol,
 ) -> bool {
     if def.is_rw
+        // The slot frame finalizes without a return spec; a lean method's
+        // definite return (`--> Nil`) keeps the lean frame.
+        || def.return_type.is_some()
         // `reconcile_captured_readonly_ex` has work only for a code that
         // writes a free variable or an `is rw` method; the op list below
         // admits no write at all.

@@ -1,5 +1,9 @@
 Revision history for Template-Mustache
 
+1.2.7  2026-09-16T15:07:52+02:00
+    - Fix test dependency on JSON::Fast
+    - Update copyright year
+
 1.2.6  2026-01-12T14:43:14+01:00
     - Todo deeply nested test: for some reason this appears to be
       dependent on the concatenation of two Junctions where one of

@@ -680,7 +680,11 @@ impl Interpreter {
         method: &str,
     ) -> Result<Value, RuntimeError> {
         let target = self.reify_or_consume_seq_target_inner(target, method, false)?;
-        if matches!(method, "raku" | "gist" | "Str" | "Stringy" | "flat") {
+        // A long `List`'s `.flat` reifies each element as its pull reaches
+        // it (#15962), so it skips this O(n) walk.
+        if matches!(method, "raku" | "gist" | "Str" | "Stringy")
+            || (method == "flat" && !crate::builtins::method_table::flat_defers_long_list(&target))
+        {
             self.reify_nested_map_grep_for_read(&target)?;
         }
         Ok(target)

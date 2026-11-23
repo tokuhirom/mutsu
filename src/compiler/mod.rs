@@ -1177,6 +1177,7 @@ mod package_stash_assign;
 mod package_traits;
 mod proto_decl;
 mod require_stubs;
+mod static_outer;
 mod type_alias_resolve;
 mod type_decl_names;
 mod type_decl_value;
@@ -1306,6 +1307,10 @@ pub(crate) struct Compiler {
     /// for the closures nested in it, as `(local_scopes depth, name)`; see
     /// `block_lexsubs.rs` (ADR-12529 phase 2).
     block_lexsub_decls: Vec<(usize, Symbol)>,
+    /// Sub declaration plans (by decl index) whose static view
+    /// (`CompiledSubDeclPlan::static_view_slots`) is baked when the scope at
+    /// the given depth closes (ADR-12529 amendment A1 (b)).
+    static_view_pending: Vec<(usize, u32)>,
     /// The block-declared routines of the enclosing compilations that a bare
     /// name in this closure body reaches through its binding, not by name
     /// (`block_lexsubs.rs`). Empty outside closure bodies.
@@ -2236,10 +2241,26 @@ pub(super) enum PhaserBlockResult {
 }
 
 impl Compiler {
+    /// A fresh chunk, stamped with the revision it is compiled under.
+    // Cost: O(1).
+    fn new_chunk() -> CompiledCode {
+        let mut code = CompiledCode::new();
+        code.caller_topic_dynamic = Self::caller_topic_dynamic_now();
+        code
+    }
+
+    /// Whether `$_` is dynamic under the revision being compiled (6.c), so
+    /// the chunk may read or assign a caller's `$_` through `CALLER::`
+    /// (#18988).
+    // Cost: O(1).
+    fn caller_topic_dynamic_now() -> bool {
+        compile_inputs::current_language_version_starts_with("6.c")
+    }
+
     pub(crate) fn new() -> Self {
         decl_reset::note_compiler_created();
         Self {
-            code: CompiledCode::new(),
+            code: Self::new_chunk(),
             local_map: HashMap::new(),
             loop_exit_guards: Vec::new(),
             fatal_pragma_active: false,
@@ -2258,6 +2279,7 @@ impl Compiler {
             scope_routine_decls: Vec::new(),
             inherited_scope_routine_decls: Vec::new(),
             block_lexsub_decls: Vec::new(),
+            static_view_pending: Vec::new(),
             enclosing_lexsubs: Vec::new(),
             block_lexical_type_decls: Vec::new(),
             enclosing_lexical_types: Vec::new(),
@@ -2968,6 +2990,7 @@ impl Compiler {
     }
 
     pub(super) fn add_closure_code_baked(&mut self, mut compiled: CompiledCode, esc: bool) -> u32 {
+        self.note_eval_mainline_closure(&mut compiled);
         compiled.enclosing_import_chain = self.lexical_import_chain.iter().rev().copied().collect();
         compiled.enclosing_import_regions =
             self.import_region_chain.iter().rev().copied().collect();
@@ -3761,6 +3784,7 @@ impl Compiler {
     /// slots, this is where a `Some(prev)` entry will restore the outer binding in
     /// `local_map` (see [`Self::declare_local`]).
     fn pop_local_scope(&mut self) {
+        self.bake_static_views_closing(self.local_scopes.len().saturating_sub(1));
         let Some(frame) = self.local_scopes.pop() else {
             return;
         };
@@ -5322,6 +5346,8 @@ impl Compiler {
     /// the second pass.
     pub(crate) fn compile(mut self, stmts: &[Stmt]) -> (CompiledCode, CompiledFns) {
         let _session = compile_session::enter();
+        // An `EVAL`'d unit's own `use v6.x` is in force only from here on.
+        self.code.caller_topic_dynamic = Self::caller_topic_dynamic_now();
         // Subroutines are hoisted and compiled before the mainline executes
         // its declarations. Seed constant type aliases from the source AST so
         // native local storage decisions do not depend on runtime declaration
@@ -5734,6 +5760,7 @@ impl Compiler {
         self.record_unit_hidden_lexicals();
         // A routine of this unit that names lexicals by string (`sub e($c) { EVAL $c }`)
         // reads this unit's lexicals by name.
+        self.bake_static_views_closing(0);
         self.note_routines_naming_lexicals();
         self.code.compute_needs_env_sync();
         (self.code, self.compiled_functions)

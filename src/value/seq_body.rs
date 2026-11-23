@@ -63,6 +63,11 @@ pub(crate) enum MapGrepMode {
     /// at pull time for the same reason `MapRw` is
     /// (`news/2026-09/grep-promotion-is-published-in-place.md`).
     GrepArray(Value),
+    /// `.flat` of a large `List` (#15962): no callback; each source element
+    /// is flattened in turn as a pull reaches it, an `Iterable` instance
+    /// among them read through its own `iterator` then. Deferring that check
+    /// to the pull keeps `.flat` O(1) to create, as rakudo's lazy `flat` is.
+    Flat,
 }
 
 impl MapGrepMode {
@@ -1352,7 +1357,7 @@ impl SeqSource {
                 }
                 match mode {
                     MapGrepMode::MapRw(src) | MapGrepMode::GrepArray(src) => src.gc_trace(visit),
-                    MapGrepMode::Map | MapGrepMode::Grep => {}
+                    MapGrepMode::Map | MapGrepMode::Grep | MapGrepMode::Flat => {}
                 }
             }
             SeqSource::Pure(PureCursor::List(list_gen)) => list_gen.trace_edges(visit),

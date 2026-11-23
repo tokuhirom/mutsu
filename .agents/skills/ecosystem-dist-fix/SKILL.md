@@ -94,27 +94,22 @@ evidence about that commit, not about `main`; re-measure rather than trusting it
 If there is no record at all, that is fine — the corpus sweep is partial (see
 `ecosystem/README.md`). Go to step 2; step 7 measures it for the first time.
 
-## 1b. Take the lock — it may already be somebody's
+## 1b. Claim its issue — it may already be somebody's
 
-Agents run in parallel and a distribution has no issue of its own to carry a
-claim, so the claim goes on the **lock board**,
-[#17702](https://github.com/tokuhirom/mutsu/issues/17702) (the single open issue
-labelled `ecosystem:lock`). This holds however you arrived at the distribution —
-a user naming it does not make it unclaimed.
+Agents run in parallel, so a distribution is claimed through the open `ecosystem`
+issue that tracks it — the one whose body carries an `eco-dist: <Dist::Name>`
+marker line (or an `eco-cluster: <id>` line for a cluster containing it) — with
+the ordinary `Claiming: <branch>` comment of
+[`docs/issue-workflow.md`](../../../docs/issue-workflow.md). This holds however
+you arrived at the distribution — a user naming it does not make it unclaimed.
+If no issue tracks it yet, file one (a short `todo:ticket` with the `ecosystem`
+and `lane:*` labels and the marker line) and claim that. If a live claim with a
+lower comment id holds the issue, take this up with the user rather than racing.
+Release with `Releasing: <branch>` when the run ends — merged, filed, blocked or
+abandoned — plus one line on how it went.
 
-Read its comments, and if no live `Locking:` line holds your distribution, post
-one whose first line is exactly `Locking: <Dist::Name> <your-branch>`. Then read
-the comments again: among live locks for that distribution the **lowest comment
-id** wins, and if you did not win, post `Unlocking: <dist> <your-branch>` and
-take this up with the user rather than racing. Release it when the run ends —
-merged, filed, blocked or abandoned — with
-`Unlocking: <Dist::Name> <your-branch>` plus one line on how it went.
-
-The full protocol, including the evidence rule for breaking a lock whose session
-died, is
-[`ecosystem-dist-queue`](../ecosystem-dist-queue/SKILL.md), which is also
-the skill to use when the distribution is to be taken from the ordered queue
-rather than named.
+[`ecosystem-dist-queue`](../ecosystem-dist-queue/SKILL.md) is the skill to use
+when the distribution is to be taken from the ordered queue rather than named.
 
 ## 2. Check the distribution out
 
@@ -222,10 +217,9 @@ the ledger spells them (`::`, comma-separated):
 eco-dist: String::Utils, Foo::Bar
 ```
 
-That line is what puts the distribution under "Waiting on an issue" on the ecosystem dashboard
-(`scripts/ecosystem-dashboard.py`, [`ecosystem-dist-queue`](../ecosystem-dist-queue/SKILL.md)) and
-what makes the next agent pass it. An issue filed without it is invisible to the queue, so the
-dashboard lists it under "Needs attention" until someone adds the line. When you add your
+That line is how the next agent finds the issue that tracks the distribution
+([`ecosystem-dist-queue`](../ecosystem-dist-queue/SKILL.md) step 2) and claims it there instead of
+starting a second investigation. An issue filed without it is invisible to a marker search. When you add your
 distribution to an issue that already tracks the cause, append it to that issue's marker line
 (edit the body; a comment is not read).
 

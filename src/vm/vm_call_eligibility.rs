@@ -87,12 +87,7 @@ impl Interpreter {
     #[inline]
     pub(super) fn leave_routine_package(&mut self, saved: RoutinePackageSave) {
         if let Some(shadowed) = saved.statics {
-            for (name, previous) in shadowed.into_vec().into_iter().rev() {
-                match previous {
-                    Some(v) => self.env_mut().insert(name, v),
-                    None => self.env_mut().remove(&name),
-                };
-            }
+            self.restore_class_body_statics(shadowed.into_vec().into_iter());
         }
         if let Some(sym) = saved.package
             && sym != self.current_package_sym()
@@ -1007,7 +1002,7 @@ impl Interpreter {
 /// `current_package` (when a switch was possible) and the env bindings that
 /// the declaring class's body statics replaced.
 /// An env name and the binding a class static displaced.
-type ShadowedBinding = (String, Option<Value>);
+type ShadowedBinding = (Symbol, Option<Value>);
 
 #[derive(Default)]
 pub(super) struct RoutinePackageSave {

@@ -13,7 +13,9 @@ use crate::value::{Value, ValueView};
 /// pragma stays the unit's first statement.
 // Cost: O(p), p = the length of the leading blanks and pragma.
 pub(crate) fn leading_version_pragma_end(source: &str) -> usize {
-    let Ok((rest, ())) = super::super::super::helpers::ws_bol(source) else {
+    // A UTF-8 byte-order mark opening the file comes before the pragma.
+    let after_bom = source.strip_prefix('\u{FEFF}').unwrap_or(source);
+    let Ok((rest, ())) = super::super::super::helpers::ws_bol(after_bom) else {
         return 0;
     };
     let Some(after_use) = keyword("use", rest) else {

@@ -2,6 +2,7 @@ pub(crate) mod comment_log;
 pub(crate) mod core_type_fold;
 pub(crate) mod decl_doc;
 mod expr;
+pub(crate) mod static_outer_latch;
 mod type_qualify;
 pub(crate) use type_qualify::{UnitQualify, qualify_program as qualify_type_names};
 // ADR-0033: `crate::whatever_curry::build_closure` (the WhateverCode closure
@@ -700,6 +701,7 @@ pub(crate) fn parse_fragment_unfinalized(
 ) -> Result<(Vec<Stmt>, Option<String>), RuntimeError> {
     // See the matching call in `parse_program`.
     crate::opcode::note_dispatcher_mention(input);
+    crate::parser::static_outer_latch::note_mention(input);
     let saved_warnings = PARSE_WARNINGS.with(|w| std::mem::take(&mut *w.borrow_mut()));
     let saved_markers = VCS_CONFLICT_MARKERS.with(|m| std::mem::take(&mut *m.borrow_mut()));
     let saved_source_state = primary::snapshot_source_state();
@@ -1394,6 +1396,7 @@ pub(crate) fn parse_program_unfinalized(
     // reach the constant-pool check after its first call already skipped
     // the frame). See `opcode::dispatcher_possible`.
     crate::opcode::note_dispatcher_mention(input);
+    crate::parser::static_outer_latch::note_mention(input);
     // Clear any stale parse warnings from previous/backtracked parses
     PARSE_WARNINGS.with(|w| w.borrow_mut().clear());
     VCS_CONFLICT_MARKERS.with(|m| m.borrow_mut().clear());

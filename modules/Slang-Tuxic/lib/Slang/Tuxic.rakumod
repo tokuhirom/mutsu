@@ -11,7 +11,7 @@ my role Tuxic {
         <!{
             my $ident = ~$<identifier>;
             $ident eq 'sub'|'if'|'elsif'|'while'|'until'|'for'
-              || $*R.is-identifier-type([$ident])
+              || $*R.is-identifier-type($ident)
         }>
         <?before <.unspace>|\s*'('> \s* <![:]>
         { $pos := $/.CURSOR.pos }

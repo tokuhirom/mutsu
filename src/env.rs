@@ -22,11 +22,13 @@ use crate::value::ValueMap;
 pub(crate) use crate::env_tier::{CaptureWalk, SymMap, Tier};
 
 mod activation_capture;
+mod eval_unit_capture;
 mod frame_scope;
 mod outer_scope;
 mod rebind;
 mod record_lookup;
 mod routine_owned;
+mod seeded_overlay;
 pub(crate) mod static_link;
 use static_link::same_variable;
 pub(crate) use static_link::{
@@ -779,6 +781,11 @@ pub(crate) struct ClosedImportRegion {
 /// Typical method/function nesting is a handful of tiers, well under this; only
 /// deep recursion ever hits it, paying one O(env) flatten per this many frames.
 const MAX_OVERLAY_DEPTH: u16 = 16;
+
+/// The capacity a frame overlay is given on its first write (see
+/// `Env::cow_mut`): room for a method frame's usual writes without regrowing
+/// (7 is the most eight buckets hold).
+const FRESH_OVERLAY_CAPACITY: usize = 7;
 
 /// The next import layer id (never 0).
 pub(crate) fn next_import_layer_id() -> u32 {
@@ -2970,6 +2977,17 @@ impl Env {
         if self.fallback.is_some() {
             self.capture_merged.take();
         }
+        // A fresh frame overlay shares the process-wide empty map until its
+        // first write. Copying that empty map gave the overlay no capacity, so
+        // a method frame's first few writes (parameters, class-body statics,
+        // role bindings) regrew it three times; it starts with room for them
+        // instead (#18274).
+        if Arc::ptr_eq(&self.inner, empty_overlay_ref()) {
+            self.inner = Arc::new(Tier::new(SymMap::with_capacity_and_hasher(
+                FRESH_OVERLAY_CAPACITY,
+                Default::default(),
+            )));
+        }
         Arc::make_mut(&mut self.inner)
     }
 
@@ -3700,6 +3718,31 @@ mod tests {
 
     fn s(name: &str) -> Symbol {
         Symbol::intern(name)
+    }
+
+    #[test]
+    fn fresh_overlay_gets_capacity_and_leaves_the_shared_empty_map_alone() {
+        let parent = Env::new();
+        let mut a = Env::scoped_child(parent.clone());
+        let b = Env::scoped_child(parent);
+        a.insert_sym(s("overlay_cap_x"), Value::int(1));
+        assert!(a.inner.capacity() >= FRESH_OVERLAY_CAPACITY);
+        for (i, k) in ["oc1", "oc2", "oc3", "oc4", "oc5", "oc6"]
+            .iter()
+            .enumerate()
+        {
+            a.insert_sym(s(k), Value::int(i as i64));
+        }
+        assert_eq!(a.inner.len(), 7);
+        assert!(
+            b.inner.is_empty(),
+            "a sibling overlay must not see the writes"
+        );
+        assert!(
+            empty_overlay_ref().is_empty(),
+            "the shared empty map stays empty"
+        );
+        assert_eq!(a.get_sym(s("oc6")).cloned(), Some(Value::int(5)));
     }
 
     #[test]

@@ -226,6 +226,11 @@ pub(crate) struct DispatchState {
     /// (ADR-17216 slice 3), so a wrap made on any thread is seen by a call on
     /// every other. Read with `wraps.read()`, write with `wraps.write(|w| ..)`.
     pub(crate) wraps: super::world_cell::WorldCell<WrapTables>,
+    /// Package-owned grammar rule declarations, published for every thread
+    /// (`runtime::world_tokens`).
+    pub(crate) world_tokens: std::sync::Arc<super::world_tokens::WorldTokenLog>,
+    /// How many [`Self::world_tokens`] entries this thread has replayed.
+    pub(crate) world_tokens_seen: usize,
     /// Stack of wrap dispatch frames for callsame/callwith inside wrappers.
     pub(crate) wrap_dispatch_stack: Vec<WrapDispatchFrame>,
     /// Monotonic counter stamped onto `wrap_dispatch_stack`/`method_dispatch_stack`/
@@ -361,6 +366,10 @@ impl DispatchState {
             operator_assoc: self.operator_assoc.clone(),
             user_declared_infix_ops: self.user_declared_infix_ops.clone(),
             wraps: self.wraps.share(),
+            world_tokens: std::sync::Arc::clone(&self.world_tokens),
+            // The parent's routine tables are the child's snapshot, so the
+            // child has replayed what the parent had.
+            world_tokens_seen: self.world_tokens_seen,
             // Stub-site knowledge is declaration-shape knowledge, not run
             // state: carry it into the thread so a routine registered on the
             // parent (stub hoisted, then defined) does not re-raise

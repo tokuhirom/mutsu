@@ -228,10 +228,13 @@ impl Interpreter {
             std::sync::Arc::make_mut(&mut self.routines_mut().token_defs)
                 .entry(key)
                 .or_default()
-                .push(def);
+                .push(def.clone());
         } else {
-            std::sync::Arc::make_mut(&mut self.routines_mut().token_defs).insert(key, vec![def]);
+            std::sync::Arc::make_mut(&mut self.routines_mut().token_defs)
+                .insert(key, vec![def.clone()]);
         }
+        // A package's rule is world state: every thread can call it (ADR-17216).
+        self.publish_world_token(package, key, def, multi);
         // Regex parses may fold token bodies in (parse_combined_class); a new /
         // redefined token must invalidate those cached parses.
         crate::runtime::regex_parse::TOKEN_DEFS_GEN

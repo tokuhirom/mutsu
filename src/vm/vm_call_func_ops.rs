@@ -511,6 +511,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
         self.sync_world_wraps();
+        self.sync_world_tokens();
         let arity_usize = arity as usize;
         let spec = &code.named_arg_specs[spec_idx as usize];
         // ADR-0113: a frame-lexical callee must not be served by the
@@ -666,6 +667,7 @@ impl Interpreter {
         } = arg_kinds;
         crate::vm::vm_stats::record_function_dispatch();
         self.sync_world_wraps();
+        self.sync_world_tokens();
         if let Some(done) = self.exec_call_func_preamble(
             code,
             name_idx,
@@ -1003,6 +1005,15 @@ impl Interpreter {
                 CodeVarBinding::ByName,
                 compiled_fns,
             ));
+        }
+        // Under the static-outer latch, a routine this very code declares
+        // below its unit's top level runs as its code object of this
+        // activation, linked to the declaring scope (ADR-12529 A1 (b)).
+        if crate::parser::static_outer_latch::static_outer_observed()
+            && let Some(done) =
+                self.try_static_view_call(code, name_idx, arity, arg_sources_idx, compiled_fns)
+        {
+            return Some(done);
         }
         // An argument-less `callsame` / `nextsame` that nothing shadows goes
         // straight to the builtin (see `vm_call_dispatcher_builtin`). With no

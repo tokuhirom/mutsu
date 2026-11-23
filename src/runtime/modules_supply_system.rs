@@ -15,6 +15,7 @@ pub(crate) use supply_emit_frame::EmitFrame;
 mod supply_promise;
 mod supply_delayed_live;
 mod supply_throttle_live;
+mod supply_throttle_control;
 mod supply_transform;
 mod system;
 mod system_eval_names;

@@ -691,6 +691,7 @@ impl Compiler {
         // so the program scope is this routine's lexical outer.
         sub_compiler.code.outer_is_unit =
             !(self.is_routine || self.lexically_in_routine || self.in_closure_body);
+        sub_compiler.code.declared_in_block = self.lexically_in_block || self.in_closure_body;
         // The import regions of the blocks the declaration sits in: the frame
         // does not hide what those blocks imported
         // (`hide_unit_names_from_frame`).
@@ -700,6 +701,7 @@ impl Compiler {
         // ADR-0113: bind the body's call-only `my sub`s as frame lexicals.
         // Before `compute_needs_env_sync`, which finalizes the chunk.
         sub_compiler.resolve_frame_lexical_routines(body);
+        sub_compiler.bake_static_views_closing(0);
         sub_compiler.note_routines_naming_lexicals();
         sub_compiler.code.compute_needs_env_sync();
         sub_compiler.record_routine_scoped_free();
@@ -2114,6 +2116,7 @@ impl Compiler {
         // within the body, otherwise fall back to the parent compiler's
         // last_source_line.
         sub_compiler.code.source_line = sub_compiler.last_source_line.or(self.last_source_line);
+        sub_compiler.bake_static_views_closing(0);
         sub_compiler.note_routines_naming_lexicals();
         sub_compiler.code.compute_needs_env_sync();
         // A parameter DEFAULT or `where` constraint is evaluated from the

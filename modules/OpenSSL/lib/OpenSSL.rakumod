@@ -25,7 +25,7 @@ class X::OpenSSL::Exception is Exception {
 }
 
 # SSLv2 | SSLv3 | TLSv1 | TLSv1.1 | TLSv1.2 | default
-subset ProtocolVersion of Numeric where * == 2| 3| 1| 1.1| 1.2| -1;
+subset ProtocolVersion of Numeric where * == 2| 3| 1| 1.1| 1.2| 1.3| -1;
 
 method new(Bool :$client = False, ProtocolVersion :$version = -1) {
 
@@ -306,6 +306,87 @@ method get-client-ca-list (:$debug is copy) {
 method check-private-key {
     unless OpenSSL::Ctx::SSL_CTX_check_private_key($!ctx) {
         die "Private key does not match the public certificate";
+    }
+}
+
+method protocol-version(--> ProtocolVersion) {
+    given self.version-code {
+        when 0x0300 { 3   }
+        when 0x0301 { 1   }
+        when 0x0302 { 1.1 }
+        when 0x0303 { 1.2 }
+        when 0x0304 { 1.3 }
+        default     { -1  }
+    }
+}
+
+method version-code(--> Int) {
+    with $!ssl {
+        OpenSSL::SSL::SSL_version($!ssl);
+    }
+}
+
+method version-name(--> Str) {
+    with $!ssl {
+        OpenSSL::SSL::SSL_get_version($!ssl);
+    }
+}
+
+method set-sni-host-name(Str $host --> OpenSSL) {
+    with $!ssl {
+        my $rc = OpenSSL::SSL::SSL_ctrl(
+            $!ssl,
+            OpenSSL::SSL::SSL_CTRL_SET_TLSEXT_HOSTNAME,
+            OpenSSL::SSL::TLSEXT_NAMETYPE_host_name,
+            $host
+        );
+        die X::OpenSSL::Exception.new(
+            message => 'SSL_ctrl failed'
+        ) if $rc == 0;
+
+        self
+    }
+}
+
+method set-alpn-protocols(*@protos --> OpenSSL) {
+    with $!ssl {
+        my $wire = Buf.new;
+
+        for @protos -> $proto {
+            my $enc = $proto.encode('ascii');
+
+            die X::OpenSSL::Exception.new(
+                message => "ALPN protocol must not be empty"
+            ) if $enc.elems == 0;
+
+            die X::OpenSSL::Exception.new(
+                message => "ALPN protocol too long (>255 bytes): $proto"
+            ) if $enc.elems > 255;
+
+            $wire.push: $enc.elems;
+            $wire.push: $enc;
+        }
+
+        my $rc = OpenSSL::SSL::SSL_set_alpn_protos($!ssl, $wire, $wire.elems);
+
+        die X::OpenSSL::Exception.new(
+            message => 'SSL_set_alpn_protos failed'
+        ) if $rc != 0;
+
+        self
+    }
+}
+
+method selected-alpn(--> Str) {
+    with $!ssl {
+        my $proto = CArray[CArray[uint8]].new;
+        $proto[0] = CArray[uint8].new;
+        my uint32 $len = 0;
+
+        OpenSSL::SSL::SSL_get0_alpn_selected($!ssl, $proto, $len);
+
+        return Nil if $len == 0;
+        buf8.new($proto[0][^$len]).decode('ascii')
     }
 }
 

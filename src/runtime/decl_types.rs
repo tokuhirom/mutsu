@@ -163,6 +163,10 @@ pub(crate) struct SubsetDef {
     /// Interned once at registration: a type check enters the package on
     /// every predicate run.
     pub(crate) decl_package_sym: crate::symbol::Symbol,
+    /// The compilation unit the `subset` was declared in. A subset that
+    /// reuses a core type's name (`subset Int ...`) shadows the core type in
+    /// that unit's code only, not in a module's (#19013).
+    pub(crate) decl_unit: crate::symbol::Symbol,
     /// Whether the predicate is a block or one-parameter lambda with no
     /// placeholder of its own, and so runs inline with its value bound
     /// (see `type_matches_value`). A property of the predicate alone, so it

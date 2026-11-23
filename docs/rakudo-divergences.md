@@ -78,6 +78,31 @@ is atomic.
   ([#11210](https://github.com/tokuhirom/mutsu/issues/11210)),
   [docs/gc-post-3a-roadmap.md](gc-post-3a-roadmap.md).
 
+### A5. Two threads requiring each other's module do not hang
+
+```raku
+# lib/CycA.rakumod: unit module CycA; sleep 0.3; require CycB;
+# lib/CycB.rakumod: unit module CycB; sleep 0.3; require CycA;
+use lib 'lib';
+say await start { require CycA; 'a' }, start { require CycB; 'b' };
+```
+
+- raku: hangs (each thread waits for the other's load).
+- mutsu: dies `circular module dependency detected: CycA -> CycB -> CycA`.
+
+A module loads once even when two threads ask for it at once: the second thread
+waits for the first one's load to finish (ADR-17216's per-module load claims).
+A thread whose wait would close a cycle of such waits does not wait. It loads
+as it would alone, which for a program that genuinely needs both modules from
+both sides reaches the same circular-dependency error as a single thread.
+
+- Reason: robustness. A deadlock gives the user nothing to act on. The program
+  is circular, and the error names the cycle.
+- Decision: maintainer decision 2026-11-23.
+- Refs: `src/runtime/module_load_claims.rs`,
+  [#19023](https://github.com/tokuhirom/mutsu/pull/19023),
+  [#17216](https://github.com/tokuhirom/mutsu/issues/17216).
+
 ## B. Roast or the documentation chosen over rakudo
 
 ### B1. A `Str` never holds a surrogate code point

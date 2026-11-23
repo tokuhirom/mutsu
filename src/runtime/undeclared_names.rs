@@ -42,20 +42,36 @@ impl<'ast> Visit<'ast> for DynamicDeclaration {
     }
 }
 
-/// Whether the unit pulls in names the walk cannot see.
+/// Whether a `use` of `module` may import a bareword term.
+// Cost: O(1).
+fn use_imports_terms(module: &str) -> bool {
+    // `Test` exports routines only, which are never barewords terms.
+    !(module_imports_no_names(module) || module == "Test")
+}
+
+/// Whether the unit pulls in names the walk cannot see. A `use` below the top
+/// level imports into its own statement list only, which the walk skips
+/// instead (#13441).
 #[derive(Default)]
 struct UnseenImports {
     found: bool,
+    /// How many statement lists below the unit's own the walk is in.
+    depth: usize,
 }
 
 impl<'ast> Visit<'ast> for UnseenImports {
+    fn visit_stmts(&mut self, body: &'ast [Stmt]) {
+        self.depth += 1;
+        walk_stmts(self, body);
+        self.depth -= 1;
+    }
+
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found {
             return;
         }
         match stmt {
-            // `Test` exports routines only, which are never barewords terms.
-            Stmt::Use { module, .. } if module_imports_no_names(module) || module == "Test" => {}
+            Stmt::Use { module, .. } if !use_imports_terms(module) || self.depth > 0 => {}
             Stmt::Use { .. } | Stmt::Need { .. } | Stmt::Import { .. } => self.found = true,
             Stmt::SubDecl {
                 name_expr: Some(_), ..
@@ -93,7 +109,17 @@ impl Interpreter {
         let types = Self::unit_declared_types(stmts);
         declared.extend(types.types);
         declared.extend(types.packages);
-        let Some((name, line)) = self.first_undeclared_name(stmts, &declared, true) else {
+        // A statement list a `use` imports into is not judged: the import is
+        // lexical to it (#13441).
+        let opaque = |body: &[Stmt]| {
+            body.iter()
+                .any(|stmt| matches!(stmt, Stmt::Use { module, .. } if use_imports_terms(module)))
+        };
+        let first = self
+            .undeclared_names_in(stmts, &declared, true, false, Some(&opaque))
+            .into_iter()
+            .next();
+        let Some((name, line)) = first else {
             return Ok(());
         };
         let suggestions = self.suggest_type_names(&name);

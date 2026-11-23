@@ -1,7 +1,7 @@
 # Battery: JSON (fast path) — `JSON::Fast`
 
 **Slot:** JSON (hand-written scanner) · **Chosen:** `JSON::Fast`
-v0.20.1 (`timo/json_fast`, Artistic-2.0) · **Kind:** Adopted (community module,
+v0.21.0 (`timo/json_fast`, Artistic-2.0) · **Kind:** Adopted (community module,
 vendored as-is, and **run as-is**)
 
 ## What it is
@@ -69,8 +69,9 @@ preserving a native reference, and `Rational[Int,Int]` gaining a numeric surface
 
 Per [BATTERIES.md §3](../../BATTERIES.md#updating-a-vendored-module-must-be-documented-per-library).
 
-1. **Upstream + pin.** <https://github.com/timo/json_fast> — currently tag
-   `0.20.1`, commit `72af212130f190443028e5a6b23827445c95559f`, Artistic-2.0.
+1. **Upstream + pin.** <https://github.com/timo/json_fast> — currently release
+   `0.21.0` (git tag `0.21`), commit `a06a1f4976cd296e22a55375cf96d20f3278c799`,
+   Artistic-2.0.
 2. **The vendor command.** From a clone at the new tag:
 
    ```sh

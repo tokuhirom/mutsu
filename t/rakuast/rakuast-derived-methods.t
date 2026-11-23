@@ -48,11 +48,11 @@ for %scopes.sort(*.key) -> (:$key, :$value) {
 is expr(Q[class A2 {}]).augmented, False, 'a class is not augmented';
 
 # Name.is-anonymous / .is-empty
-is RakuAST::Name.from-identifier('a').is-anonymous, 0, 'an identifier is not anonymous';
+is-deeply RakuAST::Name.from-identifier('a').is-anonymous, False, 'an identifier is not anonymous';
 is RakuAST::Name.new(RakuAST::Name::Part::EmptyEdge, RakuAST::Name::Part::EmptyEdge).is-anonymous,
     True, '`::` is anonymous';
-is RakuAST::Name.from-identifier('a').is-empty, 0, 'an identifier is not empty';
-is RakuAST::Name.new.is-empty, 1, 'a name without parts is empty';
+is-deeply RakuAST::Name.from-identifier('a').is-empty, False, 'an identifier is not empty';
+is-deeply RakuAST::Name.new.is-empty, True, 'a name without parts is empty';
 
 ok RakuAST::Call::Method.^can('dispatch'), '.^can finds a computed method';
 

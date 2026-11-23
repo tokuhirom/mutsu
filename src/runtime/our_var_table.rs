@@ -224,6 +224,36 @@ impl Interpreter {
         table.routines.get(&key).cloned()
     }
 
+    /// The `our`-scoped routines another thread published that this thread's
+    /// own routine table does not hold: for a package stash (`Pkg::<&f>`,
+    /// `OUR::<&f>`), which lists the routines of the thread that builds it
+    /// (ADR-17216 §3.5). `candidates` narrows the read to those keys.
+    // Cost: O(r), r = published routines (or the candidates given).
+    pub(crate) fn published_routines_not_local(
+        &self,
+        candidates: Option<&[Symbol]>,
+    ) -> Vec<(Symbol, Arc<crate::ast::FunctionDef>)> {
+        let table = self.our_table();
+        if table.routines.is_empty() {
+            return Vec::new();
+        }
+        let local = self.routines();
+        let unseen = |key: &Symbol| !local.functions.contains_key(key);
+        match candidates {
+            Some(names) => names
+                .iter()
+                .filter(|name| unseen(name))
+                .filter_map(|name| table.routines.get(name).map(|def| (*name, def.clone())))
+                .collect(),
+            None => table
+                .routines
+                .iter()
+                .filter(|(key, _)| unseen(key))
+                .map(|(key, def)| (*key, def.clone()))
+                .collect(),
+        }
+    }
+
     /// This thread's snapshot of the `our` variable store.
     // Cost: O(1), see `WorldCell::read`.
     #[inline]

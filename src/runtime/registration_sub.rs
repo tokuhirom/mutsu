@@ -2729,14 +2729,17 @@ impl Interpreter {
         param_defs: &[crate::ast::ParamDef],
     ) {
         let key = self.current_package_qualified(name).to_string();
+        let mut published_params = None;
         if param_defs.iter().any(|pd| !pd.named && !pd.slurpy) {
             crate::runtime::regex::regex_dynparams::note_token_def_params(param_defs);
             let params = std::sync::Arc::new(param_defs.to_vec());
+            published_params = Some(params.clone());
             self.routines_mut()
                 .proto_token_params
                 .insert(key.clone(), params);
         }
-        std::sync::Arc::make_mut(&mut self.routines_mut().proto_tokens).insert(key);
+        std::sync::Arc::make_mut(&mut self.routines_mut().proto_tokens).insert(key.clone());
+        self.publish_world_proto_token(&key, published_params);
     }
 
     /// The registry key -- the type identity -- of an enum declared as `name`
