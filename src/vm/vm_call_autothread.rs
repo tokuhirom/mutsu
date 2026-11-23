@@ -57,6 +57,7 @@ impl Interpreter {
                     | "say"
                     | "note"
                     | "dd"
+                    | "__mutsu_dd"
                     | "warn"
                     // Test functions accept Mu parameters
                     | "ok"
