@@ -125,6 +125,12 @@ impl Interpreter {
         // the parameter is pointed at the spill, and the spill is copied back
         // below. That is copy-in/copy-out again — but expressed as a reference,
         // so a callee that passes the parameter on writes the same place.
+        // A TRIR body counts no lines, so under the profiler every door
+        // declines and the body runs as bytecode, whose line hooks count it
+        // (#18080; `tests/profile_counts.rs`). One flag load otherwise.
+        if crate::vm::vm_poll::profiler_armed() {
+            return None;
+        }
         let spills = chunk.params.iter().filter(|p| p.is_rw).count() as u16;
         let frame = self.trir.push_frame(chunk.n_native + spills, chunk.n_obj);
         let Some((rw, rw_len)) = bind(self, frame) else {

@@ -22,6 +22,9 @@ pub(super) struct Binding {
 
 pub(crate) struct TrirCompiler<'a> {
     ops: Vec<TrOp>,
+    /// The line of the statement being compiled (its `Stmt::SetLine`), which
+    /// each call site records (`TrInnerCall::line`). 0 before the first one.
+    pub(super) cur_line: u32,
     constants: Vec<Value>,
     locals: HashMap<String, Binding>,
     outers: Vec<TrOuter>,
@@ -178,6 +181,7 @@ impl<'a> TrirCompiler<'a> {
             obj_written: Vec::new(),
             native_str_slots: HashSet::new(),
             calls: Vec::new(),
+            cur_line: 0,
             routines,
             fns,
             why: None,
@@ -299,7 +303,10 @@ impl<'a> TrirCompiler<'a> {
         let final_idx = value_stmts.last().copied();
         for (i, stmt) in body.iter().enumerate() {
             match stmt {
-                Stmt::SetLine(..) => continue,
+                Stmt::SetLine(line, _) => {
+                    self.cur_line = u32::try_from(*line).unwrap_or(0);
+                    continue;
+                }
                 Stmt::Expr(e) => {
                     if !sink_all && Some(i) == final_idx {
                         last = Some(self.compile_expr_tail(e)?);

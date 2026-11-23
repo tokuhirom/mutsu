@@ -258,6 +258,7 @@ impl TrirCompiler<'_> {
                 args,
                 native_args: c.native_args,
                 result: c.result,
+                line: c.line,
             });
         }
         self.calls.extend(calls);
