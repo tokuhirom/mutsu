@@ -12,7 +12,8 @@
 //! - the callee is a plain `sub` declared once in the whole unit, at its top
 //!   level, or the unit's top-level `multi` candidates (with at most one
 //!   `proto`): no other declaration of the name at any depth, and no `&name`
-//!   anywhere (a rebinding or wrap could replace it). A multi is judged only
+//!   variable or parameter anywhere (it would shadow the routine; a plain
+//!   `&name` reference or `.wrap` does not stop rakudo refuting the call). A multi is judged only
 //!   when nothing else can add candidates: its name is no core or `Test`
 //!   routine, and the unit imports no module. It is refuted when every
 //!   candidate is, by the dispatcher's rules: a default, a `:D` smiley and an
@@ -62,7 +63,10 @@ struct Survey<'ast> {
     /// How often each name is declared, at any depth (a `sub`, a method, a
     /// package or type, a token).
     decls: HashMap<String, usize>,
-    /// Names that appear as `&name` or as a declared `&name` variable.
+    /// Names declared as a `&name` variable or parameter, which shadows a
+    /// routine of the name where it is in scope. A plain `&name` reference
+    /// (taken, passed, `.wrap`ped) does not: rakudo refutes the call all the
+    /// same.
     code_vars: HashSet<String>,
     /// Whether the unit imports names from a module (`use`, `need`,
     /// `import`), whose `multi` candidates it cannot see. `Test` exports only
@@ -129,9 +133,6 @@ impl<'ast> Visit<'ast> for Survey<'ast> {
                     && !super::undeclared_routines::module_imports_no_names(name) =>
             {
                 self.imports = true;
-            }
-            NameKind::CodeVar => {
-                self.code_vars.insert(name.trim_start_matches('&').to_string());
             }
             NameKind::VarDecl | NameKind::Param | NameKind::BlockParam => {
                 if let Some(code) = name.strip_prefix('&') {

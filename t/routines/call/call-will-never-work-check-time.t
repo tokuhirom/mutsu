@@ -4,7 +4,7 @@ use Test;
 # compile error: nothing in the unit runs, and the error points at the call.
 # Expected texts are rakudo 2026.11's.
 
-plan 26;
+plan 28;
 
 sub run-code(Str $code) {
     my $p = run $*EXECUTABLE, '-e', $code, :out, :err;
@@ -84,6 +84,10 @@ refuted q[say 1; sub f(Int $x) {}; my Str $s = "a"; f($s)],
     "===SORRY!=== Error while compiling -e\nCalling f(Str) will never work with declared signature (Int \$x)\nat -e:1\n------> say 1; sub f(Int \$x) \{}; my Str \$s = \"a\"; <HERE>f(\$s)",
     'a variable declared with an unrelated type';
 
+refuted q[say 1; sub f(Int $x) {}; my $r = &f; f("a")],
+    "===SORRY!=== Error while compiling -e\nCalling f(Str) will never work with declared signature (Int \$x)\nat -e:1\n------> say 1; sub f(Int \$x) \{}; my \$r = &f; <HERE>f(\"a\")",
+    'a routine also referred to as &f';
+
 # Left to the run-time binder, as in rakudo: the unit runs first.
 for q[sub f(Int:D $x) {}; f("a")],
     q[sub f(Int $x = 5) {}; f("a")],
@@ -96,6 +100,7 @@ for q[sub f(Int:D $x) {}; f("a")],
     q[sub f(Int $x) {}; f(Cool)],
     q[sub f(Int $x, Str $y) {}; f(Cool, 1)],
     q[sub f(Int $x) {}; my Str $s; { my $s = 1; f($s) }],
+    q[sub f(Int $x) {}; { my &f = -> $x { }; f("a") }],
     q[multi min(Int $a) { "u" }; my $m = min(3, 4)]
     -> $tail {
     my ($out, $err, $exit) = run-code("say 1; $tail");
