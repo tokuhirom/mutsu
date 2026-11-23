@@ -2,8 +2,8 @@
 //! reaches it, as on rakudo (ADR-17558 slice 5), when the loader takes it: no
 //! effect the unit's BEGIN-time prologue runs precedes it, and running it ahead
 //! of the unit's frame is unobservable (the loader decides that). It then
-//! leaves nothing for the prologue, and a later `use` still loads at parse
-//! time. Any other `BEGIN` keeps its prologue position, and a `use` after it
+//! leaves the prologue nothing but the values it left in the unit's variables
+//! (§7.17), and a later `use` still loads at parse time. Any other `BEGIN` keeps its prologue position, and a `use` after it
 //! loads in the prologue too, so no module runs ahead of it (§7.6).
 
 use crate::ast::{PhaserKind, Stmt};
@@ -21,6 +21,70 @@ thread_local! {
     /// a routine one of them imports runs that import first (§7.16).
     pub(super) static UNIT_PARSE_TIME_USES: std::cell::RefCell<Vec<Stmt>> =
         const { std::cell::RefCell::new(Vec::new()) };
+    /// The unit's plain top-level `my` variables declared before the parse
+    /// position (by the compiler's name), each with the value a parse-time
+    /// `BEGIN` left in it (§7.17).
+    pub(super) static UNIT_VARS: std::cell::RefCell<UnitVars> =
+        const { std::cell::RefCell::new(Vec::new()) };
+    /// The statement the parser returns next is the replay a parse-time
+    /// `BEGIN` left for the prologue, which is no prologue effect of its own.
+    static REPLAY_RETURNED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// See [`UNIT_VARS`].
+pub(super) type UnitVars = Vec<(String, Option<crate::value::Value>)>;
+
+/// Note `stmt`, a finished statement of the unit's top level, if it declares
+/// a plain `my` variable a parse-time `BEGIN` may reach: a scalar, array or
+/// hash with no type, trait, shape, `where` or binding (its initializer runs
+/// at run time, so a `BEGIN` sees the variable without it, as on rakudo).
+// Cost: O(1).
+fn note_unit_var(stmt: &Stmt) {
+    let Stmt::VarDecl {
+        name,
+        anonymous: false,
+        type_constraint: None,
+        is_state: false,
+        is_our: false,
+        is_dynamic: false,
+        custom_traits,
+        constant: None,
+        bind: None,
+        marks,
+        where_constraint: None,
+        ..
+    } = stmt
+    else {
+        return;
+    };
+    let plain_name = match name.as_bytes() {
+        [b'@' | b'%', c, ..] | [c, ..] => c.is_ascii_alphabetic() || *c == b'_',
+        [] => false,
+    };
+    let plain_marks = !(marks.shaped
+        || marks.implicit_value_type
+        || marks.type_from_trait
+        || marks.type_from_of
+        || marks.name_colonpairs.is_some()
+        || marks.dynamic_argument.is_some()
+        || marks.pointy_copy
+        || marks.pointy_native_param
+        || marks.pointy_param
+        || marks.signature_element
+        || marks.sigilless_decl
+        || marks.begin_static
+        || marks.begin_static_definite
+        || marks.static_bind_half
+        || marks.bound);
+    if !plain_name || !custom_traits.is_empty() || !plain_marks {
+        return;
+    }
+    UNIT_VARS.with(|vars| {
+        let mut vars = vars.borrow_mut();
+        // A redeclaration is a new variable.
+        vars.retain(|(var, _)| var != name);
+        vars.push((name.clone(), None));
+    });
 }
 
 /// Note `use_stmt`, a `use` the loader loaded at parse time and that imports
@@ -37,8 +101,10 @@ pub(in crate::parser) fn note_parse_time_use(use_stmt: &Stmt) {
 
 /// What became of a unit-level `BEGIN` the parser finished.
 pub(in crate::parser) enum UnitBegin {
-    /// It ran now; the parse keeps nothing in its place.
-    Ran,
+    /// It ran now; the parse keeps in its place only these statements, which
+    /// the prologue runs at its position: they write the values it left into
+    /// the unit's variables (§7.17).
+    Ran(Vec<Stmt>),
     /// It died: the unit's compile fails at the `BEGIN` with this message
     /// (the loader keeps the error for the parse's caller).
     Failed(String),
@@ -72,8 +138,34 @@ pub(in crate::parser) fn run_unit_begin(body: &[Stmt], bare: bool) -> UnitBegin 
     };
     crate::parser::stmt::trace::number_statements_so_far(&mut begin);
     let uses = UNIT_PARSE_TIME_USES.with(|uses| uses.borrow().clone());
-    match crate::compile_time_loader::run_begin(&begin, &uses) {
-        crate::compile_time_loader::BeginOutcome::Ran => UnitBegin::Ran,
+    let vars = UNIT_VARS.with(|vars| vars.borrow().clone());
+    let unit = crate::compile_time_loader::UnitAtParse {
+        uses: &uses,
+        vars: &vars,
+    };
+    match crate::compile_time_loader::run_begin(&begin, &unit) {
+        crate::compile_time_loader::BeginOutcome::Ran(left) => {
+            let replay: Vec<Stmt> = left
+                .iter()
+                .map(|(name, value)| Stmt::Assign {
+                    name: name.clone(),
+                    expr: crate::ast::Expr::Literal(value.clone()),
+                    op: crate::ast::AssignOp::Assign,
+                    target_is_sigilless: false,
+                })
+                .collect();
+            UNIT_VARS.with(|vars| {
+                for (var, value) in vars.borrow_mut().iter_mut() {
+                    if let Some((_, left)) = left.iter().find(|(name, _)| name == var) {
+                        *value = Some(left.clone());
+                    }
+                }
+            });
+            if !replay.is_empty() {
+                REPLAY_RETURNED.with(|flag| flag.set(true));
+            }
+            UnitBegin::Ran(replay)
+        }
         crate::compile_time_loader::BeginOutcome::Failed(error) => {
             let message = error.message.to_string();
             crate::compile_time_loader::note_failure(error);
@@ -90,6 +182,20 @@ pub(in crate::parser) fn run_unit_begin(body: &[Stmt], bare: bool) -> UnitBegin 
 /// level (see [`UNIT_PROLOGUE_EFFECT_SEEN`]).
 // Cost: O(n), n = size of `stmt`, until the first effect; O(1) after it.
 pub(in crate::parser) fn note_unit_prologue_effects_of(stmt: &Stmt) {
+    note_unit_var(stmt);
+    // The replay of a parse-time `BEGIN` (a `BEGIN` of plain assignments)
+    // is not one.
+    if REPLAY_RETURNED.with(|flag| flag.replace(false))
+        && matches!(
+            stmt,
+            Stmt::Phaser {
+                kind: PhaserKind::Begin,
+                ..
+            }
+        )
+    {
+        return;
+    }
     if !UNIT_PROLOGUE_EFFECT_SEEN.with(std::cell::Cell::get)
         && super::prologue_effects::has_prologue_effect(stmt)
     {
@@ -119,12 +225,16 @@ pub(in crate::parser) fn restore_unit_effects_seen((begin, prologue): (bool, boo
 /// to save around a nested parse that resets them
 /// ([`restore_parse_time_uses`]).
 // Cost: O(1).
-pub(in crate::parser) fn take_parse_time_uses() -> Vec<Stmt> {
-    UNIT_PARSE_TIME_USES.with(|uses| std::mem::take(&mut *uses.borrow_mut()))
+pub(in crate::parser) fn take_parse_time_uses() -> (Vec<Stmt>, UnitVars) {
+    (
+        UNIT_PARSE_TIME_USES.with(|uses| std::mem::take(&mut *uses.borrow_mut())),
+        UNIT_VARS.with(|vars| std::mem::take(&mut *vars.borrow_mut())),
+    )
 }
 
 /// Put back what [`take_parse_time_uses`] returned.
 // Cost: O(1).
-pub(in crate::parser) fn restore_parse_time_uses(saved: Vec<Stmt>) {
-    UNIT_PARSE_TIME_USES.with(|uses| *uses.borrow_mut() = saved);
+pub(in crate::parser) fn restore_parse_time_uses((uses, vars): (Vec<Stmt>, UnitVars)) {
+    UNIT_PARSE_TIME_USES.with(|saved| *saved.borrow_mut() = uses);
+    UNIT_VARS.with(|saved| *saved.borrow_mut() = vars);
 }

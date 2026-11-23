@@ -584,6 +584,7 @@ pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state
     unit.take_cell(&UNIT_BEGIN_SEEN, false);
     unit.take_cell(&begin_at_parse::UNIT_PROLOGUE_EFFECT_SEEN, false);
     unit.take(&begin_at_parse::UNIT_PARSE_TIME_USES, Vec::new());
+    unit.take(&begin_at_parse::UNIT_VARS, Vec::new());
     registry::suspend_unit_state(unit);
     l10n::suspend_unit_state(unit);
     slang_lang::suspend_unit_state(unit);

@@ -81,7 +81,7 @@ mod walk;
 
 use super::package_phasers::Enclosing;
 use crate::ast::{Expr, PhaserKind, Stmt};
-pub(crate) use closed::begin_body_core_names;
+pub(crate) use closed::{UnitReach, begin_body_core_names};
 use cell_ast::{
     decl_from_cell, read_var, renamed_static_decl, sigil_of, static_scalar, untyped_cell_decl,
 };

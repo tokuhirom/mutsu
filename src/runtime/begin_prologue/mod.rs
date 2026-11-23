@@ -36,7 +36,7 @@
 mod destructure;
 mod expr_type_decls;
 mod nested;
-pub(crate) use nested::begin_body_core_names;
+pub(crate) use nested::{UnitReach, begin_body_core_names};
 mod nested_exports;
 mod package_body;
 mod package_phasers;
