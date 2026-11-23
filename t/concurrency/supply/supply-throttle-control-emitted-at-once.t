@@ -27,5 +27,6 @@ $control.emit("limit: 2");
 await Promise.anyof($done, Promise.in(20));
 await @busy;
 ok $done, 'the throttle finished after its directive';
-is @seen, (10, 20, 30, 40), 'every job ran, in order';
+# Two jobs run at once, so they finish in either order.
+is @seen.sort, (10, 20, 30, 40), 'every job ran';
 is @statuses.elems, 1, 'one final status';
