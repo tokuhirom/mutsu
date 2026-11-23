@@ -7,8 +7,10 @@
 //! - inside a verbatim block (`code`, `input`, `output`, `comment`) an
 //!   indented `=end`/`=begin` is text, so the block runs to the `=end` at its
 //!   own indentation;
-//! - inside any other block, a same-type `=begin` at the block's indentation
-//!   nests, and a same-type `=end` at another indentation is the RakuDoc syntax
+//! - inside any other block, a same-type `=begin` nests at its own
+//!   indentation (an indented `=begin pod` / `=end pod` pair inside a
+//!   `=begin pod`, as Pod::Load's SYNOPSIS has), and a same-type `=end` at
+//!   another indentation than the innermost open block's is the RakuDoc syntax
 //!   error rakudo raises (`X::Syntax::InfixInTermPosition`).
 
 use super::helpers::{parse_pod_directive_line, validate_pod_table_not_empty};
@@ -27,7 +29,12 @@ pub(super) fn skip_body<'a>(body: &'a str, target: &str, margin: &str) -> PResul
     let verbatim = VERBATIM.contains(&target);
     let is_table = target == "table";
     let mut remaining = body;
-    let mut depth = 1usize;
+    // The indentation of every open same-type block, the outermost first. A
+    // nested `=begin target` opens a block at its own indentation (Pod::Load's
+    // SYNOPSIS shows an indented `=begin pod` / `=end pod` pair inside its
+    // `=begin pod`), and an `=end target` closes the innermost one only at
+    // that block's indentation.
+    let mut open: Vec<&str> = vec![margin];
     let mut content_lines: Vec<&str> = Vec::new();
     while !remaining.is_empty() {
         let line_end = remaining.find('\n').unwrap_or(remaining.len());
@@ -37,11 +44,11 @@ pub(super) fn skip_body<'a>(body: &'a str, target: &str, margin: &str) -> PResul
             && directive_target == target
         {
             let indent = &line[..line.len() - line.trim_start().len()];
-            let at_margin = indent == margin;
+            let innermost = open.last().copied().unwrap_or(margin);
             match directive {
-                "end" if at_margin => {
-                    depth -= 1;
-                    if depth == 0 {
+                "end" if indent == innermost => {
+                    open.pop();
+                    if open.is_empty() {
                         if is_table {
                             // Only an empty table is checked here: cell
                             // content may hold arbitrary whitespace.
@@ -51,11 +58,11 @@ pub(super) fn skip_body<'a>(body: &'a str, target: &str, margin: &str) -> PResul
                     }
                 }
                 "end" if !verbatim => return Err(misplaced_end_error(remaining, target)),
-                "begin" if at_margin && !verbatim => depth += 1,
+                "begin" if !verbatim => open.push(indent),
                 _ => {}
             }
         }
-        if is_table && depth == 1 {
+        if is_table && open.len() == 1 {
             content_lines.push(line);
         }
         remaining = next;
