@@ -4585,6 +4585,10 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
     if let Some(peeled) = super::bracketed_infix::peeled(node) {
         return lower_expr(names, &peeled);
     }
+    // `1 [&plus] 2`: the call of the routine (#18469).
+    if let Some(call) = super::function_infix::lower(names, node) {
+        return call;
+    }
     // A leaf carries the parser's own tree (`passthrough`); a deferred term
     // wraps one, so it is read first.
     // `⚛$x`, `$x ⚛= 5`, `$x⚛++`, ...: plain operator nodes, the parser's calls.

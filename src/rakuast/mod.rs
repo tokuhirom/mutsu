@@ -179,6 +179,7 @@ mod decl_postfix_origins;
 mod dotty_infix_view;
 mod finalize;
 pub(crate) mod fresh_copy;
+mod function_infix;
 mod heredoc_body_origins;
 mod hyper_infix_origins;
 mod hyper_subscript_origins;
