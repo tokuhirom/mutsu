@@ -21,7 +21,7 @@ impl Interpreter {
                 cn_resolved.to_string(),
                 ClassDef {
                     parents: vec!["IO::Path".to_string()],
-                    attributes: Vec::new(),
+                    attributes: Default::default(),
                     native_methods: std::collections::HashSet::new(),
                     mro: [].into(),
                     attribute_types: HashMap::new(),
