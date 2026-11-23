@@ -128,15 +128,6 @@ impl Interpreter {
     pub(crate) fn build_backtrace_value_with_leading(&self, leading: &[&str]) -> Value {
         self.capture_backtrace().render_value(leading)
     }
-
-    /// The `Backtrace` rakudo's `Failure.new` records: the stack without the
-    /// frame that called it (a top-level `Failure.new` has none), #18987.
-    // Cost: O(s), s = routine-stack depth.
-    pub(crate) fn build_backtrace_value_of_caller(&self) -> Value {
-        let attrs = self.capture_backtrace().render_attrs_skipping(&[], 1);
-        let attrs = attrs.into_iter().map(|(k, v)| (k.to_string(), v)).collect();
-        Value::make_instance(crate::symbol::Symbol::intern("Backtrace"), attrs)
-    }
 }
 
 /// A synthetic setting-routine `Backtrace::Frame` (structured-only).
@@ -267,7 +258,11 @@ impl BacktraceCapture {
     }
 
     // Cost: O(s), s = the captured stack's depth; `skip` drops innermost frames.
-    fn render_attrs_skipping(&self, leading: &[&str], skip: usize) -> Vec<(&'static str, Value)> {
+    pub(super) fn render_attrs_skipping(
+        &self,
+        leading: &[&str],
+        skip: usize,
+    ) -> Vec<(&'static str, Value)> {
         use crate::symbol::Symbol;
         use std::collections::HashMap;
 
