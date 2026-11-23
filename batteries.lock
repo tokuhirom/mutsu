@@ -39,8 +39,8 @@ Template::Mustache	modules/Template-Mustache/lib	https://github.com/raku-communi
 HTTP::UserAgent	modules/HTTP-UserAgent/lib	https://github.com/raku-community-modules/HTTP-UserAgent.git	1d6a31a0656a422524c266831f3d27bd62a3e3d7	t/*.rakutest	{clone}/t/lib
 YAMLish	modules/YAMLish/lib	https://github.com/Leont/yamlish.git	2a1d04ab7098e9ea0491ff8d1907fd868f938e62	t/*.rakutest	modules/MIME-Base64/lib
 NativeLibs	modules/NativeLibs/lib	https://github.com/salortiz/NativeLibs.git	f3e78510702af0eeb49b4418dc59008ff4f8cd1b	t/*.t	-
-NativeHelpers::Blob	modules/NativeHelpers-Blob/lib	https://github.com/salortiz/NativeHelpers-Blob.git	54ac6ddf7f557018a54974692a0a97a2b0aca11b	t/*.t	-
-DBIish	modules/DBIish/lib	https://github.com/raku-community-modules/DBIish.git	34f77e7f1581a67d544f88aa2f10fa90cb3df1b4	t/*.rakutest	modules/NativeLibs/lib,modules/NativeHelpers-Blob/lib
+NativeHelpers::Blob	modules/NativeHelpers-Blob/lib	https://github.com/raku-community-modules/NativeHelpers-Blob.git	cec918868916893ee0866d49c0f86e601465da3d	t/*.rakutest	-
+DBIish	modules/DBIish/lib	https://github.com/raku-community-modules/DBIish.git	1af110d88e6fa0929700dd74273cd5e4db25a3a9	t/*.rakutest	modules/NativeLibs/lib,modules/NativeHelpers-Blob/lib
 if	modules/if/lib	https://github.com/raku-community-modules/if.git	d97707f3e539bf5272c8f845ede19d7fefb3e95c	t/*.rakutest	-
 Crypt::Random	modules/Crypt-Random/lib	https://github.com/skinkade/crypt-random.git	c1bf9393ab736ac5e5de2d0c3f56078c178cc071	t/*.t	-
 IO::Path::ChildSecure	modules/IO-Path-ChildSecure/lib	https://github.com/raku-community-modules/IO-Path-ChildSecure.git	9f01c370ba0a15a6841113437e14c9f3bf39b015	t/*.rakutest	-
