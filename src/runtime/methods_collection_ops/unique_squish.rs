@@ -214,9 +214,10 @@ impl Interpreter {
     }
 
     /// Cost: O(e) average plus one `:as` call per element, e = elements of the
-    /// invocant, when every key is of a bucketed kind (see `IdentityIndex`); O(e * u) key
-    /// comparisons when keys are of an unbucketed kind (u = distinct keys; see
-    /// `IdentityIndex`). `:with` is O(e * u) comparator calls, as in Rakudo.
+    /// invocant, plus O(e * j) key comparisons for the j keys of a kind
+    /// `IdentityIndex` cannot bucket (a Junction, a by-name Routine, a
+    /// Capture, ...). `:with` is O(e * u) comparator calls (u = distinct keys),
+    /// as in Rakudo.
     /// A lazy invocant is forced whole. Rakudo: O(e) without `:with` -- see #9161.
     pub(crate) fn dispatch_unique(
         &mut self,
@@ -252,9 +253,9 @@ impl Interpreter {
         Ok(Value::seq(unique_items))
     }
 
-    /// Cost: same as `Interpreter::dispatch_unique`: O(e) average for
-    /// bucketed keys, O(e * u) for an unbucketed kind, O(e * u)
-    /// comparator calls under `:with`. Rakudo: O(e) without `:with` -- see #9161.
+    /// Cost: same as `Interpreter::dispatch_unique`: O(e) average, plus
+    /// O(e * j) for j keys of an unbucketed kind, O(e * u) comparator calls
+    /// under `:with`. Rakudo: O(e) without `:with` -- see #9161.
     pub(crate) fn dispatch_repeated(
         &mut self,
         target: Value,
