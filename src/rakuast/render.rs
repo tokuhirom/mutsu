@@ -114,8 +114,8 @@ fn render_node_body(node: &RakuAstNode, indent: usize) -> String {
             | RakuAstClass::RegexBackReferencePositional
     ) && !(node.class == RakuAstClass::DocParagraph && !fields.is_empty())
         && fields
-        .iter()
-        .all(|f| f.name.is_none() && is_inline_field(f))
+            .iter()
+            .all(|f| f.name.is_none() && is_inline_field(f))
     {
         let inner = fields
             .iter()
