@@ -691,6 +691,7 @@ impl Compiler {
         // so the program scope is this routine's lexical outer.
         sub_compiler.code.outer_is_unit =
             !(self.is_routine || self.lexically_in_routine || self.in_closure_body);
+        sub_compiler.code.declared_in_block = self.lexically_in_block || self.in_closure_body;
         // The import regions of the blocks the declaration sits in: the frame
         // does not hide what those blocks imported
         // (`hide_unit_names_from_frame`).
