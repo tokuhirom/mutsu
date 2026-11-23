@@ -683,8 +683,7 @@ impl Interpreter {
         // A long `List`'s `.flat` reifies each element as its pull reaches
         // it (#15962), so it skips this O(n) walk.
         if matches!(method, "raku" | "gist" | "Str" | "Stringy")
-            || (method == "flat"
-                && !crate::builtins::method_table::flat_defers_long_list(&target))
+            || (method == "flat" && !crate::builtins::method_table::flat_defers_long_list(&target))
         {
             self.reify_nested_map_grep_for_read(&target)?;
         }

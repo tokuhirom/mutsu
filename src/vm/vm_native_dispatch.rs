@@ -200,7 +200,10 @@ impl Interpreter {
             && args.is_empty()
             && !matches!(
                 target.view(),
-                ValueView::Array(_, crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList)
+                ValueView::Array(
+                    _,
+                    crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList
+                )
             )
             && Self::flat_may_hold_iterable_instance(target)
             && !match self.user_shadows_builtin(target, method_sym, args, false) {
