@@ -22,7 +22,10 @@ impl Compiler {
                 .iter()
                 .any(|arg| Self::is_named_arg_expr(arg) || Self::is_slip_interpolation_arg(arg))
             || !matches!(self.amp_binding_state(name.as_str()), AmpBinding::None)
-            || self.scope_routine_decls.iter().any(|&(_, decl)| decl == *name)
+            || self
+                .scope_routine_decls
+                .iter()
+                .any(|&(_, decl)| decl == *name)
         {
             return false;
         }
