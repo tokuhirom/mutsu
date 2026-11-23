@@ -2188,10 +2188,9 @@ impl Interpreter {
                             self.stack.push(val);
                         }
                         Err(e)
-                            if e.is_method_not_found_for_receiver(
-                                method,
-                                optional_receiver.as_ref().unwrap(),
-                            ) =>
+                            if optional_receiver.as_ref().is_some_and(|receiver| {
+                                e.is_method_not_found_for_receiver(method, receiver)
+                            }) =>
                         {
                             crate::vm::vm_stats::record_dispatch_entry_outcome(
                                 "callmethodmut",
