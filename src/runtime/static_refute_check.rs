@@ -337,13 +337,11 @@ impl Interpreter {
             .copied()
             .filter(|p| !takes_many(p))
             .collect();
-        let required = fixed
-            .iter()
-            .filter(|p| !p.optional_marker && p.default.is_none())
-            .count();
-        if args.len() < required || (!slurpy && args.len() > fixed.len()) {
-            return true;
-        }
+        // A type object that is a supertype of its parameter's type (`f(Cool)`
+        // for `Int $x`, `f(Mu)`) may still name a value that binds: rakudo then
+        // leaves the whole call to the binder (#10944), arity included and
+        // whatever the other arguments are.
+        let mut mismatched = false;
         for (param, arg) in fixed.iter().zip(args) {
             let Some(ty) = judged_type(param, user_types, rules) else {
                 continue;
@@ -351,18 +349,19 @@ impl Interpreter {
             if self.type_matches_value(ty, arg) {
                 continue;
             }
-            // A type object that is a supertype of the parameter's type
-            // (`f(Cool)` for `Int $x`, `f(Mu)`) may still name a value that
-            // binds, so rakudo leaves it to the binder (#10944).
             if let ValueView::Package(name) = arg.view() {
                 let param_type = Value::package(crate::symbol::Symbol::intern(ty));
                 if self.type_matches_value(&name.resolve(), &param_type) {
-                    continue;
+                    return false;
                 }
             }
-            return true;
+            mismatched = true;
         }
-        false
+        let required = fixed
+            .iter()
+            .filter(|p| !p.optional_marker && p.default.is_none())
+            .count();
+        mismatched || args.len() < required || (!slurpy && args.len() > fixed.len())
     }
 }
 
