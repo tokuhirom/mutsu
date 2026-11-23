@@ -1221,6 +1221,20 @@ impl Interpreter {
             && crate::runtime::types::value_is_defined(&target)
             && let Some(err) = self.scalar_subscript_protocol_error(&target, is_positional)
         {
+            // rakudo's `Any.ASSIGN-POS` stores through `AT-POS`, and a defined
+            // scalar's `AT-POS(0)` is its own container: `$x[0] = v` assigns
+            // the variable, as `$x = v` does (type check included), and any
+            // other index is out of range `0..0` (#18952).
+            if is_positional && let ValueView::Int(i) = idx.view() {
+                if i != 0 {
+                    return Err(RuntimeError::out_of_range("Index", Value::int(i), "0..0"));
+                }
+                self.stack.push(val.into_deref());
+                return match target_slot {
+                    Some(slot) => self.exec_assign_expr_local_op_inner(code, slot),
+                    None => self.exec_assign_expr_op(code, name_idx, false),
+                };
+            }
             return Err(err);
         }
         // An element ASSIGNMENT stores a COPY of the value; only the `:=` bind
