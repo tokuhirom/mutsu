@@ -780,6 +780,11 @@ pub(crate) struct ClosedImportRegion {
 /// deep recursion ever hits it, paying one O(env) flatten per this many frames.
 const MAX_OVERLAY_DEPTH: u16 = 16;
 
+/// The capacity a frame overlay is given on its first write (see
+/// `Env::cow_mut`): room for a method frame's usual writes without regrowing
+/// (7 is the most eight buckets hold).
+const FRESH_OVERLAY_CAPACITY: usize = 7;
+
 /// The next import layer id (never 0).
 pub(crate) fn next_import_layer_id() -> u32 {
     static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
@@ -2969,6 +2974,17 @@ impl Env {
         }
         if self.fallback.is_some() {
             self.capture_merged.take();
+        }
+        // A fresh frame overlay shares the process-wide empty map until its
+        // first write. Copying that empty map gave the overlay no capacity, so
+        // a method frame's first few writes (parameters, class-body statics,
+        // role bindings) regrew it three times; it starts with room for them
+        // instead (#18274).
+        if Arc::ptr_eq(&self.inner, empty_overlay_ref()) {
+            self.inner = Arc::new(Tier::new(SymMap::with_capacity_and_hasher(
+                FRESH_OVERLAY_CAPACITY,
+                Default::default(),
+            )));
         }
         Arc::make_mut(&mut self.inner)
     }
