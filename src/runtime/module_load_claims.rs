@@ -52,7 +52,7 @@ impl ModuleLoadClaims {
     // threads, and then blocks until the holder's load finishes.
     pub(crate) fn claim(self: &Arc<Self>, module: &str) -> ModuleLoadClaim {
         let me = std::thread::current().id();
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         loop {
             let owner = match state.holders.get_mut(module) {
                 None => {
@@ -122,7 +122,7 @@ impl Drop for ModuleLoadClaim {
         let Some(module) = self.module.take() else {
             return;
         };
-        let mut state = self.claims.state.lock().unwrap();
+        let mut state = self.claims.state.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some((_, depth)) = state.holders.get_mut(&module) {
             *depth -= 1;
             if *depth == 0 {
