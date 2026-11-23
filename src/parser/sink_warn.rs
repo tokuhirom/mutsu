@@ -13,11 +13,9 @@
 //! declarations, `say`/`print`, regex matches, ...) is never flagged.
 
 use crate::ast::parsed::{ModifierKind, ParsedStmt};
-use crate::ast::{DoBlockOrigin, Expr, Stmt};
+use crate::ast::{DoBlockOrigin, Expr, SrcSpan, Stmt};
 use crate::ast_visit::{Visit, walk_expr, walk_stmt as walk_ast_stmt};
-use crate::token_kind::TokenKind;
-use crate::value::Value;
-use crate::value::ValueView;
+use super::sink_describe::describe_useless;
 
 /// A source `do` block evaluates every statement but its last in sink context,
 /// regardless of whether the block's result is used. Scan all expression
@@ -110,10 +108,23 @@ fn walk_stmts(stmts: &[Stmt], nil_hint: bool, line: &std::cell::Cell<i64>) {
     }
 }
 
+thread_local! {
+    /// The span of the statement the last `SetLine` marker placed, until the
+    /// statement after it is walked: a sunk expression that IS that statement
+    /// is named by its source text, as rakudo names it.
+    static STATEMENT_SPAN: std::cell::Cell<SrcSpan> = const { std::cell::Cell::new(SrcSpan::NONE) };
+}
+
 pub(super) fn walk_stmt(stmt: &Stmt, nil_hint: bool, line: &std::cell::Cell<i64>) {
+    if let Stmt::SetLine(n, span) = stmt {
+        line.set(*n);
+        STATEMENT_SPAN.with(|s| s.set(*span));
+        return;
+    }
+    let span = STATEMENT_SPAN.with(|s| s.replace(SrcSpan::NONE));
     match stmt {
-        Stmt::SetLine(n, _) => line.set(*n),
-        Stmt::Expr(e) => warn_expr_sink(e, nil_hint, line.get()),
+        Stmt::SetLine(..) => {}
+        Stmt::Expr(e) => warn_statement_expr(e, nil_hint, line.get(), span),
         // Bare blocks stay in sink context.
         Stmt::Block(body) => walk_stmts(body, false, line),
         // Loop / topicalizer bodies are sunk. The "(use Nil instead...)" hint is
@@ -320,198 +331,50 @@ pub(super) fn warn_expr_sink(expr: &Expr, nil_hint: bool, line: i64) {
     }
 }
 
+/// [`warn_expr_sink`] for an expression that is a whole statement, `span`
+/// being the statement's: an operator expression is named by its source text
+/// (`Useless use of 1  +   2`), as rakudo names it, and the worry points at it.
+// Cost: O(n), n = the size of the expression (plus the statement's text).
+fn warn_statement_expr(expr: &Expr, nil_hint: bool, line: i64, span: SrcSpan) {
+    // A list, a parenthesized expression and a `do` block distribute or
+    // suppress the sink; only a single term or operator is reported here.
+    if matches!(
+        expr,
+        Expr::ArrayLiteral(_) | Expr::Grouped(_) | Expr::Spelled(_) | Expr::DoBlock { .. }
+    ) {
+        warn_expr_sink(expr, nil_hint, line);
+        return;
+    }
+    let Some(desc) = describe_useless(expr) else {
+        return;
+    };
+    let desc = if matches!(expr, Expr::Binary { .. } | Expr::Unary { .. }) {
+        super::primary::span_text::span_text(span).unwrap_or(desc)
+    } else {
+        desc
+    };
+    emit_at(desc, nil_hint, line, Some(span.from));
+}
+
 fn emit(desc: String, nil_hint: bool, line: i64) {
+    emit_at(desc, nil_hint, line, None);
+}
+
+/// Report "Useless use of `desc` in sink context" as one of rakudo's
+/// "Potential difficulties", pointing at unit offset `at` when it is known.
+// Cost: O(l), l = the length of the pointed-at line.
+fn emit_at(desc: String, nil_hint: bool, line: i64, at: Option<u32>) {
     let suffix = if nil_hint {
         " (use Nil instead to suppress this warning)"
     } else {
         ""
     };
-    super::add_parse_warning(
+    // A multi-line expression keeps its line breaks, indented like the rest
+    // of the worry.
+    let desc = desc.replace('\n', "\n    ");
+    super::add_parse_worry(
         format!("Useless use of {} in sink context{}", desc, suffix),
         line,
+        at.and_then(super::primary::span_text::here_pointer),
     );
-}
-
-/// Returns the description (the "X" in "Useless use of X in sink context") if
-/// `expr` is a pure, side-effect-free value/expression, otherwise `None`.
-fn describe_useless(expr: &Expr) -> Option<String> {
-    match expr {
-        Expr::Grouped(inner) => describe_useless(inner),
-        Expr::Spelled(spelled) => describe_useless(&spelled.expr),
-        Expr::PositionalPair(inner) => describe_useless(inner),
-        Expr::Literal(v) => describe_literal(v),
-        // A source-preserving numeric literal: describe by the inner value's
-        // category but render the number using the original source text so the
-        // warning keeps the radix / scientific / Unicode form the user wrote.
-        Expr::LiteralSrc(v, src) => describe_literal_with_src(v, src),
-        // A `Var` node whose name already carries a sigil (`@a`, `%h`) is a
-        // synthetic artifact of `:=` bind desugaring — the trailing result
-        // expression a container bind leaves in its SyntheticBlock — not a
-        // user-written bare scalar. A real bare `@a` parses to `ArrayVar("a")`,
-        // so this never suppresses a genuine sink warning; it only stops the
-        // spurious "Useless use of $@a in sink context" on `my @a := @b`.
-        // A bare anonymous `$` (the unnamed state scalar) parses to a synthetic
-        // `__ANON_STATE#<id>__` name. Raku reports it as "unnamed $ variable",
-        // not by its internal name.
-        Expr::Var(n) if n.starts_with("__ANON_STATE#") => Some("unnamed $ variable".to_string()),
-        // The reserved `$self` lexical key already carries its sigil (ADR-0061),
-        // so it must be reported before the generic sigiled-name skip below.
-        Expr::Var(n) if n == crate::env::LEX_SELF => Some(crate::env::LEX_SELF.to_string()),
-        Expr::Var(n) if n.starts_with(['$', '@', '%', '&']) => None,
-        // `$.name` / `@.name` / `%.name` is a method call on `self`
-        // (`gather { $.take-subs }` in Test::Describe), never a useless value.
-        Expr::Var(n) | Expr::ArrayVar(n) | Expr::HashVar(n) if n.starts_with('.') => None,
-        Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => expr.sigiled_var_name(),
-        Expr::ArrayLiteral(elems) if elems.is_empty() => Some("()".to_string()),
-        Expr::BareWord(s) if is_type_name(s) => Some(format!("constant value {}", s)),
-        Expr::Binary {
-            left, op, right, ..
-        } => {
-            let sym = pure_op_symbol(op)?;
-            // Only flag when both operands are themselves useless (no side
-            // effects), e.g. `1 + 2` but not `$x + foo()`.
-            describe_useless(left)?;
-            describe_useless(right)?;
-            let rendered = render_source(expr)?;
-            Some(format!("\"{}\" in expression \"{}\"", sym, rendered))
-        }
-        Expr::Unary {
-            op, expr: inner, ..
-        } => {
-            let sym = pure_prefix_symbol(op)?;
-            // Only flag when the operand itself is useless (no side effects),
-            // e.g. `-5` / `?5` / `-$x` but not `-foo()`.
-            describe_useless(inner)?;
-            let rendered = render_source(expr)?;
-            Some(format!("\"{}\" in expression \"{}\"", sym, rendered))
-        }
-        _ => None,
-    }
-}
-
-fn describe_literal(v: &Value) -> Option<String> {
-    match v.view() {
-        ValueView::Int(n) => Some(format!("constant integer {}", n)),
-        ValueView::BigInt(n) => Some(format!("constant integer {}", *n)),
-        ValueView::Num(_) => Some(format!(
-            "constant floating-point number {}",
-            v.to_string_value()
-        )),
-        ValueView::Rat(..) | ValueView::FatRat(..) | ValueView::BigRat(..) => {
-            Some(format!("constant rational {}", v.to_string_value()))
-        }
-        ValueView::Str(s) => Some(format!("constant string \"{}\"", *s)),
-        ValueView::Complex(..) => Some(format!("constant value {}", v.to_string_value())),
-        ValueView::Package(_) => Some(format!("constant value {}", v.to_string_value())),
-        ValueView::Mixin(inner, _) => {
-            // `<123.456>` etc. parse to a Mixin carrying a Str representation;
-            // describe by the inner value's category but the stringified whole.
-            describe_literal(inner).map(|_| format!("constant value {}", v.to_string_value()))
-        }
-        _ => None,
-    }
-}
-
-/// Like [`describe_literal`], but substitutes the literal's original source text
-/// for the canonical number rendering, keeping the user's radix / scientific /
-/// Unicode format in the warning.
-fn describe_literal_with_src(v: &Value, src: &str) -> Option<String> {
-    match v.view() {
-        ValueView::Int(_) | ValueView::BigInt(_) => Some(format!("constant integer {}", src)),
-        ValueView::Num(_) => Some(format!("constant floating-point number {}", src)),
-        // A source-preserving colonpair (`:foo(42)`): echo the original syntax
-        // quoted, matching Raku's `Useless use of ":foo(42)" in sink context`.
-        ValueView::Pair(..) | ValueView::ValuePair(..) => Some(format!("\"{}\"", src)),
-        _ => describe_literal(v),
-    }
-}
-
-/// Approximate the source text of a useless expression for the "in expression"
-/// part of an operator warning.
-fn render_source(expr: &Expr) -> Option<String> {
-    match expr {
-        Expr::Grouped(inner) | Expr::PositionalPair(inner) => render_source(inner),
-        Expr::Literal(lit) => match lit.view() {
-            ValueView::Str(s) => Some((**s).clone()),
-            _ => Some(lit.to_string_value()),
-        },
-        Expr::LiteralSrc(_, src) => Some(src.to_string()),
-        Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => expr.sigiled_var_name(),
-        Expr::BareWord(s) => Some(s.clone()),
-        Expr::Unary {
-            op, expr: inner, ..
-        } => {
-            let sym = pure_prefix_symbol(op)?;
-            Some(format!("{}{}", sym, render_source(inner)?))
-        }
-        Expr::Binary {
-            left, op, right, ..
-        } => {
-            let sym = pure_op_symbol(op)?;
-            let l = render_source(left)?;
-            let r = render_source(right)?;
-            if *op == TokenKind::FatArrow {
-                Some(format!("{} {} {}", l, sym, r))
-            } else {
-                Some(format!("{}{}{}", l, sym, r))
-            }
-        }
-        _ => None,
-    }
-}
-
-/// Pure infix operators that produce a value with no side effect. Operators not
-/// listed here are treated as potentially effectful and never flagged.
-fn pure_op_symbol(op: &TokenKind) -> Option<&'static str> {
-    Some(match op {
-        TokenKind::Plus => "+",
-        TokenKind::Minus => "-",
-        TokenKind::Star => "*",
-        TokenKind::StarStar => "**",
-        TokenKind::Slash => "/",
-        TokenKind::Percent => "%",
-        TokenKind::Tilde => "~",
-        TokenKind::EqEq => "==",
-        TokenKind::BangEq => "!=",
-        TokenKind::Lt => "<",
-        TokenKind::Lte => "<=",
-        TokenKind::Gt => ">",
-        TokenKind::Gte => ">=",
-        TokenKind::LtEqGt => "<=>",
-        TokenKind::FatArrow => "=>",
-        _ => return None,
-    })
-}
-
-/// Pure prefix operators that produce a value with no side effect. Operators
-/// not listed here are treated as potentially effectful and never flagged.
-fn pure_prefix_symbol(op: &TokenKind) -> Option<&'static str> {
-    Some(match op {
-        TokenKind::Plus => "+",
-        TokenKind::Minus => "-",
-        TokenKind::Tilde => "~",
-        TokenKind::Bang => "!",
-        TokenKind::Question => "?",
-        _ => return None,
-    })
-}
-
-/// Core type-object names that appear as bare words and are useless in sink
-/// context (e.g. `Mu`, `Any`, `Cool`).
-fn is_type_name(s: &str) -> bool {
-    matches!(
-        s,
-        "Mu" | "Any"
-            | "Cool"
-            | "Junction"
-            | "Int"
-            | "Num"
-            | "Rat"
-            | "Complex"
-            | "Str"
-            | "Bool"
-            | "Nil"
-            | "Real"
-            | "Numeric"
-    )
 }
