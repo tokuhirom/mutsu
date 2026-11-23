@@ -176,6 +176,18 @@ pub(crate) fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Opt
             }
         }
         "X::StubCode" => Some("Stub code executed".to_string()),
+        // rakudo: `($.payload ~ " (use the MONKEY-SEE-NO-EVAL pragma ...).")
+        // .naive-word-wrapper`; the payload names what was refused.
+        "X::SecurityPolicy::Eval" => {
+            let payload = attr_str_or(attrs, "payload", "EVAL is a very dangerous function!!!");
+            Some(crate::word_wrap::naive_word_wrap(
+                &format!(
+                    "{payload} (use the MONKEY-SEE-NO-EVAL pragma to override this error but only \
+                     if you're VERY sure your data contains no injection attacks)."
+                ),
+                72,
+            ))
+        }
         "X::Bind" => {
             let target = attr_str(attrs, "target");
             if target.is_empty() {
