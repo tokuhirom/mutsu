@@ -71,11 +71,6 @@ pub(super) fn built_import_field(target: &Value, field: &str) -> Option<Value> {
     }
 }
 
-// Cost: O(f).
-fn import_lexical_name(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
-    Ok(built_import_field(target, "lexical-name").unwrap_or(Value::NIL))
-}
-
 /// `$*CU.merge-generated-lexical-declaration($import, :resolver, :force)`:
 /// a module installing a declaration into the unit being compiled at BEGIN
 /// time (CompUnit::Util's `set-unit`, #15371).
@@ -102,11 +97,6 @@ fn find_generated_lexical(_target: &Value, _args: &[Value]) -> Result<Value, Run
     Ok(Value::NIL)
 }
 
-// Cost: O(f).
-fn implicit_constant_name(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
-    Ok(named_field(target, "name").unwrap_or(Value::NIL))
-}
-
 /// `Implicit::Constant.value` (and its `compile-time-value`): the value it
 /// was built with, or, for the family the resolver derives for a scope's
 /// `multi` candidates of an outer routine name, that family (#17826).
@@ -129,24 +119,7 @@ pub(super) fn implicit_constant_value(
     Some(Ok(Value::NIL))
 }
 
-// Cost: O(f).
-fn implicit_constant_scope(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
-    Ok(named_field(target, "scope").unwrap_or_else(|| Value::str_from("my")))
-}
 
-const fn implicit_constant_row(
-    name: &'static str,
-    f: fn(&Value, &[Value]) -> Result<Value, RuntimeError>,
-) -> MethodRow {
-    MethodRow {
-        owner: "RakuAST::VarDeclaration::Implicit::Constant",
-        name,
-        arity: 0,
-        handler: Handler::Pure(f),
-        flags: RowFlags::OWNER_ONLY,
-        named: &[],
-    }
-}
 
 const fn unit_row(
     name: &'static str,
@@ -161,6 +134,13 @@ const fn unit_row(
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     }
+}
+
+/// `Implicit.scope`: the scope it was built with, else `my`, which rakudo
+/// 2026.11 answers for every implicit declaration (#19059).
+// Cost: O(f).
+fn implicit_scope(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+    Ok(named_field(target, "scope").unwrap_or_else(|| Value::str_from("my")))
 }
 
 pub(super) static ROWS: &[MethodRow] = &[
@@ -199,13 +179,12 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
-    // Rakudo 2026.11 declares `lexical-name` on `Declaration::External`,
-    // `Import`'s ancestor (#19059).
+    // Rakudo 2026.11 declares `scope` on `VarDeclaration::Implicit`.
     MethodRow {
-        owner: "RakuAST::Declaration::External",
-        name: "lexical-name",
+        owner: "RakuAST::VarDeclaration::Implicit",
+        name: "scope",
         arity: 0,
-        handler: Handler::Pure(import_lexical_name),
+        handler: Handler::Pure(implicit_scope),
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
