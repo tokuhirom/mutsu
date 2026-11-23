@@ -370,9 +370,9 @@ fn identity_needs_user_dispatch(value: &Value, depth: u8) -> bool {
 }
 
 /// Keep the first value of each identity class.
-// Cost: O(e) average for bucketed values, O(e * u) otherwise; e = elements,
-// u = distinct values of kinds that require equality scans. Rakudo: O(e) --
-// see #9161.
+// Cost: O(e) average, plus O(e * j) for the j elements of a kind
+// `IdentityIndex` cannot bucket (a Junction, a by-name Routine, a Capture,
+// ...); e = elements. Rakudo: O(e) -- see #9161.
 fn unique_seq<'a>(items: impl Iterator<Item = &'a Value>) -> Value {
     let mut seen = crate::runtime::IdentityIndex::new();
     let mut result = Vec::new();
@@ -386,9 +386,9 @@ fn unique_seq<'a>(items: impl Iterator<Item = &'a Value>) -> Value {
 }
 
 /// Keep each value after its first occurrence.
-// Cost: O(e) average for bucketed values, O(e * u) otherwise; e = elements,
-// u = distinct values of kinds that require equality scans. Rakudo: O(e) --
-// see #9161.
+// Cost: O(e) average, plus O(e * j) for the j elements of a kind
+// `IdentityIndex` cannot bucket (a Junction, a by-name Routine, a Capture,
+// ...); e = elements. Rakudo: O(e) -- see #9161.
 fn repeated_seq<'a>(items: impl Iterator<Item = &'a Value>) -> Value {
     let mut seen = crate::runtime::IdentityIndex::new();
     let mut result = Vec::new();
@@ -404,9 +404,9 @@ fn repeated_seq<'a>(items: impl Iterator<Item = &'a Value>) -> Value {
 
 /// The same zero-argument handler is used by rows and by the cascade for
 /// receiver kinds without a table shape (including Seq and Slip).
-// Cost: O(e) average for bucketed values, O(e * u) otherwise; e = elements,
-// u = distinct values of kinds that require equality scans. Rakudo: O(e) --
-// see #9161.
+// Cost: O(e) average, plus O(e * j) for the j elements of a kind
+// `IdentityIndex` cannot bucket (a Junction, a by-name Routine, a Capture,
+// ...); e = elements. Rakudo: O(e) -- see #9161.
 pub(crate) fn unique(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     match target.view() {
         ValueView::Array(items, _) => {
@@ -477,9 +477,9 @@ pub(crate) fn unique(target: &Value, _args: &[Value]) -> Option<Result<Value, Ru
 
 /// The same zero-argument handler is used by rows and by the cascade for
 /// receiver kinds without a table shape (including Seq and Slip).
-// Cost: O(e) average for bucketed values, O(e * u) otherwise; e = elements,
-// u = distinct values of kinds that require equality scans. Rakudo: O(e) --
-// see #9161.
+// Cost: O(e) average, plus O(e * j) for the j elements of a kind
+// `IdentityIndex` cannot bucket (a Junction, a by-name Routine, a Capture,
+// ...); e = elements. Rakudo: O(e) -- see #9161.
 pub(crate) fn repeated(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     match target.view() {
         ValueView::Array(items, _) => {

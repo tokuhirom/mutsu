@@ -17,18 +17,25 @@
 //!
 //! > two values that compare identical must never land in *different* buckets.
 //!
-//! Bucketed kinds: Int/BigInt, Str, Bool, Num, Rat, FatRat, Complex, Pair, Array,
-//! Hash, Date/DateTime and plain objects (by id, or by the `WHICH` a class
-//! overrides it with). Unbucketed kinds (Seq, Slip, Enum, Set/Bag/Mix, routines,
-//! Version, ObjAt, ...) keep the scan.
+//! Bucketed kinds: Int/BigInt, Str, Bool, Num, Rat, FatRat, big Rats,
+//! Complex, Pair, Array, Hash, Seq, Slip, LazyList, Enum, Set/Bag/Mix,
+//! Version, Subs, regexes, type objects, Nil, Whatever, integer Ranges, mixins
+//! (allomorphs) over a bucketed base, RakuAST nodes, Date/DateTime, ObjAt,
+//! metaobjects and plain objects (by id, or by the `WHICH` a class overrides
+//! it with). A container is bucketed as the value it holds.
 //!
-//! That is why a kind with a cross-kind identity arm gets no bucket at all.
-//! `Package("int")` is `values_identical` to `Int(0)`, and a `Mixin` carrying
-//! only the read-only topic marker is transparent to its inner value, so both
-//! stay unbucketed — and every unbucketed key is scanned by *every* candidate,
-//! whether that candidate is bucketed or not. `Int` and `BigInt` do have a
-//! cross-kind arm (they compare numerically), so they share one bucket space
-//! rather than being excluded.
+//! A kind with a cross-kind identity arm either shares the other kind's bucket
+//! or gets none. `Int` and `BigInt` compare numerically, so they share one
+//! bucket space. `Package("int")` is `values_identical` to `Int(0)` and
+//! `Package("Nil")` to `Nil`, so each takes that value's bucket. The rest stay
+//! unbucketed, and every unbucketed value is scanned by *every* candidate,
+//! bucketed or not:
+//! - a Junction, whose `eqv` threads, so it can be `===` to any kind;
+//! - a mixed type object, which is also its composed class's type object;
+//! - a by-name `Routine` handle, which a runtime hook compares;
+//! - a `.cache` List view of a Seq, which is `eqv` to a List;
+//! - Capture, Proxy, HyperSeq/RaceSeq, Promise/Channel, Buf and parameterized
+//!   roles, which have no bucket yet.
 
 use crate::value::identity::values_identical;
 use crate::value::types::is_stash_class_name;
@@ -136,13 +143,15 @@ fn identity_bucket(value: &Value) -> Option<u64> {
         // Containers are `===` only when they are the same node. A `Seq` that
         // reads as a List (`.cache`) can still be `eqv` to an Array, but a
         // `Seq` has no bucket here and so is scanned against every candidate.
+        // By `.WHICH` id, which a read snapshot of the node shares with it
+        // (`values_identical` accepts either the same node or the same id).
         ValueView::Array(items, _) => {
             11u8.hash(&mut hasher);
-            (crate::gc::Gc::as_ptr(&items) as usize).hash(&mut hasher);
+            items.which_id.get().hash(&mut hasher);
         }
         ValueView::Hash(items) => {
             12u8.hash(&mut hasher);
-            (crate::gc::Gc::as_ptr(&items) as usize).hash(&mut hasher);
+            items.which_id.get().hash(&mut hasher);
         }
         ValueView::Instance { class_name, id, .. } => {
             // The classes `values_identical` decides by content or through
@@ -150,17 +159,32 @@ fn identity_bucket(value: &Value) -> Option<u64> {
             let name = class_name.as_str();
             if is_stash_class_name(name)
                 || crate::value::supply_class::is_supply_class(class_name)
-                || matches!(name, "IO::Special" | "ObjAt" | "ValueObjAt" | "IO::Handle")
-                || (name.starts_with("Perl6::Metamodel::") && name.ends_with("HOW"))
+                || matches!(name, "IO::Special" | "IO::Handle")
             {
                 return None;
             }
-            if let ValueView::Instance { attributes, .. } = value.view()
-                && attributes.contains_key("__mutsu_version_value")
+            let memo = value.user_which_memo();
+            if memo.is_none()
+                && let ValueView::Instance { attributes, .. } = value.view()
             {
-                return None;
+                // An ObjAt is `===` by its identity text, a metaobject by the
+                // type it introspects, a Version subclass by its value.
+                if matches!(name, "ObjAt" | "ValueObjAt") {
+                    (29u8, name, attributes.as_map().objat_which()).hash(&mut hasher);
+                    return Some(hasher.finish());
+                }
+                if name.starts_with("Perl6::Metamodel::") && name.ends_with("HOW") {
+                    let introspected = attributes.as_map().get("name").map(|v| v.to_string_value());
+                    (30u8, name, introspected).hash(&mut hasher);
+                    return Some(hasher.finish());
+                }
+                if attributes.contains_key("__mutsu_version_value") {
+                    (31u8, name).hash(&mut hasher);
+                    crate::value::which_key::value_which_key(value).hash(&mut hasher);
+                    return Some(hasher.finish());
+                }
             }
-            match value.user_which_memo() {
+            match memo {
                 // A class that overrides `WHICH` is decided by that answer:
                 // two objects with the same one are `===`.
                 Some(which) => {
@@ -179,9 +203,130 @@ fn identity_bucket(value: &Value) -> Option<u64> {
                 }
             }
         }
+        // `===` looks through a container to the value it holds.
+        ValueView::Scalar(_) | ValueView::ContainerRef(_) => {
+            return identity_bucket(&value.descalarize().deref_container());
+        }
+        // A `Seq` is `===` only to itself. A `.cache` List view of one is
+        // `eqv` to a List, so it keeps the scan.
+        ValueView::Seq(body)
+            if !matches!(
+                body.view(),
+                crate::value::SeqView::List | crate::value::SeqView::ItemList
+            ) =>
+        {
+            14u8.hash(&mut hasher);
+            body.identity().hash(&mut hasher);
+        }
+        // Every empty Slip is the one `Empty`; any other is `===` only to itself.
+        ValueView::Slip(items) => {
+            15u8.hash(&mut hasher);
+            if !items.is_empty() {
+                (std::sync::Arc::as_ptr(&items) as usize).hash(&mut hasher);
+            }
+        }
+        ValueView::LazyList(list) => {
+            16u8.hash(&mut hasher);
+            (crate::gc::Gc::as_ptr(&list) as usize).hash(&mut hasher);
+        }
+        // Two enum values are `===` when type and key agree.
+        ValueView::Enum { enum_type, key, .. } => {
+            17u8.hash(&mut hasher);
+            enum_type.hash(&mut hasher);
+            key.hash(&mut hasher);
+        }
+        // `eqv` compares a QuantHash's mutability and its element keys: the
+        // keys hash in an order-independent sum, so equal ones share a bucket.
+        ValueView::Set(data, mutable) => {
+            18u8.hash(&mut hasher);
+            mutable.hash(&mut hasher);
+            key_set_hash(data.elements.iter()).hash(&mut hasher);
+        }
+        ValueView::Bag(data, mutable) => {
+            19u8.hash(&mut hasher);
+            mutable.hash(&mut hasher);
+            key_set_hash(data.counts.keys()).hash(&mut hasher);
+        }
+        ValueView::Mix(data, mutable) => {
+            20u8.hash(&mut hasher);
+            mutable.hash(&mut hasher);
+            key_set_hash(data.weights.keys()).hash(&mut hasher);
+        }
+        // A Version is `===` by its canonical spelling.
+        ValueView::Version { .. } => {
+            21u8.hash(&mut hasher);
+            value.to_string_value().hash(&mut hasher);
+        }
+        // A named routine is `===` to another handle with its package and
+        // name; an anonymous one only to itself. (A by-name `Routine` handle
+        // keeps the scan, so the `&CORE::` arm still meets it.)
+        ValueView::Sub(sub) => {
+            22u8.hash(&mut hasher);
+            if sub.name.resolve().is_empty() {
+                (crate::gc::Gc::as_ptr(&sub) as usize).hash(&mut hasher);
+            } else {
+                sub.package.hash(&mut hasher);
+                sub.name.hash(&mut hasher);
+            }
+        }
+        // A type object is `===` by its canonical name; `int` is also
+        // `=== 0` and `Nil` the `Nil` value, so those take their buckets.
+        ValueView::Package(name) => {
+            let name = name.resolve();
+            if name == "int" {
+                return identity_bucket(&Value::int(0));
+            }
+            if name == "Nil" {
+                return identity_bucket(&Value::NIL);
+            }
+            23u8.hash(&mut hasher);
+            canonical_meta_name(&name).hash(&mut hasher);
+        }
+        // A mixin (an allomorph `<1>`, `$x but R`) is `===` only to another
+        // mixin with a `===` base and the same composition. A mixed type
+        // object is also the composed class's type object, so it keeps the scan.
+        ValueView::Mixin(inner, mixins) if !matches!(inner.view(), ValueView::Package(_)) => {
+            let inner_bucket = identity_bucket(&inner)?;
+            32u8.hash(&mut hasher);
+            inner_bucket.hash(&mut hasher);
+            crate::value::types::mixin_identity_key(&mixins).hash(&mut hasher);
+        }
+        ValueView::Nil => 24u8.hash(&mut hasher),
+        ValueView::Whatever => 34u8.hash(&mut hasher),
+        ValueView::HyperWhatever => 35u8.hash(&mut hasher),
+        // A big Rat or FatRat: `eqv` compares the FatRat flag and the value.
+        ValueView::BigRat(n, d) => (33u8, value.is_bigfatrat(), n, d).hash(&mut hasher),
+        // Code and model objects that are `===` only to the same object.
+        ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => {
+            (36u8, value.regex_identity()).hash(&mut hasher)
+        }
+        ValueView::RakuAst(node) => {
+            (37u8, node as *const crate::rakuast::RakuAstNode as usize).hash(&mut hasher)
+        }
+        ValueView::CustomType(data) => (38u8, data.id).hash(&mut hasher),
+        ValueView::Range(a, b) => (25u8, a, b).hash(&mut hasher),
+        ValueView::RangeExcl(a, b) => (26u8, a, b).hash(&mut hasher),
+        ValueView::RangeExclStart(a, b) => (27u8, a, b).hash(&mut hasher),
+        ValueView::RangeExclBoth(a, b) => (28u8, a, b).hash(&mut hasher),
         _ => return None,
     }
     Some(hasher.finish())
+}
+
+/// An order-independent hash of a QuantHash's element keys.
+// Cost: O(k), k = keys.
+fn key_set_hash<'a>(keys: impl Iterator<Item = &'a String>) -> u64 {
+    keys.fold(0u64, |sum, key| sum.wrapping_add(str_bucket(key)))
+}
+
+/// The public `Metamodel::*HOW` spelling of an internal
+/// `Perl6::Metamodel::*HOW` name: `values_identical` treats both as one type.
+// Cost: O(|name|).
+fn canonical_meta_name(name: &str) -> &str {
+    match name.strip_prefix("Perl6::") {
+        Some(rest) if rest.starts_with("Metamodel::") && rest.ends_with("HOW") => rest,
+        _ => name,
+    }
 }
 
 /// The values `unique` / `repeated` have already seen, with a hash index over
