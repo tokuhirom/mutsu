@@ -195,11 +195,14 @@ impl Interpreter {
     pub(super) fn push_target(
         &self,
         decl: crate::vm::vm_slot_type_constraint::StoreDecl<'_>,
-        target_name: &str,
+        target_sym: Symbol,
     ) -> Option<&Value> {
         match decl {
             Some((code, idx)) if code.is_private_aggregate_attr_slot(idx) => self.locals.get(idx),
-            _ => self.env().get(target_name),
+            // The op's constant-pool name, memoized per chunk: a push asks
+            // for its target several times and used to re-intern the name
+            // on each (#18274).
+            _ => self.env().get_sym(target_sym),
         }
     }
 
