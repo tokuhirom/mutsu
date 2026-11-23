@@ -200,8 +200,17 @@ pub(super) fn view_node(
     tail: &Expr,
 ) -> Result<RakuAstNode, RuntimeError> {
     (|| {
-        let converted = view_expr(names, tail)?;
         if let Some((sigil, name)) = declared_variable(head) {
+            // The head is converted first, as it is written first: a term of
+            // the tail copied during its conversion then finds the head's
+            // terms already placed, not free to take (#18578).
+            let operand = if let Some(expr) = compound_assignment_expr(head) {
+                view_expr(names, expr)?
+            } else {
+                let statement = view_stmt(names, head)?.ok_or_else(unsupported_statement)?;
+                super::view::expression_of(&statement).ok_or_else(unsupported_statement)?
+            };
+            let converted = view_expr(names, tail)?;
             let (bottom, depth) = leftmost(&converted, true);
             // The tail must start with a re-read of the variable the head declares.
             let reread = if name == "__ANON_STATE#" {
@@ -212,12 +221,6 @@ pub(super) fn view_node(
             if depth == 0 || *bottom != reread {
                 return Err(unsupported_statement());
             }
-            let operand = if let Some(expr) = compound_assignment_expr(head) {
-                view_expr(names, expr)?
-            } else {
-                let statement = view_stmt(names, head)?.ok_or_else(unsupported_statement)?;
-                super::view::expression_of(&statement).ok_or_else(unsupported_statement)?
-            };
             let mut node = replace_leftmost(&converted, &operand);
             if !is_bare_declaration(&operand) {
                 spell_loose_xor(&mut node);
@@ -225,6 +228,7 @@ pub(super) fn view_node(
             return Ok(node);
         }
 
+        let converted = view_expr(names, tail)?;
         let decl =
             crate::ast::decl_tail::signature_declaration(head).ok_or_else(unsupported_statement)?;
         let declaration = super::signature_decl::view_node(names, decl)?;
