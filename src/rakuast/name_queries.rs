@@ -156,7 +156,8 @@ fn origin_text(node: &RakuAstNode) -> Option<String> {
         return None;
     };
     let map = attributes.as_map();
-    let (ValueView::Int(from), ValueView::Int(to)) = (map.get("from")?.view(), map.get("to")?.view())
+    let (ValueView::Int(from), ValueView::Int(to)) =
+        (map.get("from")?.view(), map.get("to")?.view())
     else {
         return None;
     };
