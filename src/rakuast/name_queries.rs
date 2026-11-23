@@ -233,6 +233,41 @@ fn with_colonpairs(parts: Vec<Value>, pairs: Vec<Value>) -> Value {
     Value::rakuast(Box::new(name))
 }
 
+/// `name` / `is-empty` / `is-pseudo-package` of a `Name::Part::*` node (#18977):
+/// a simple part's identifier, an edge's empty string, an expression part's
+/// compile-time value. `None` for any other node or method.
+// Cost: O(f), f = fields of the part.
+pub(crate) fn part_call(node: &RakuAstNode, method: &str) -> Option<Value> {
+    match (node.class, method) {
+        (RakuAstClass::NamePartSimple, "is-empty") => Some(Value::truth(
+            node_accessor(node, "name")
+                .and_then(|v| v.as_str().map(str::is_empty))
+                .unwrap_or(true),
+        )),
+        (RakuAstClass::NamePartSimple, "is-pseudo-package") => Some(Value::truth(
+            node_accessor(node, "name")
+                .and_then(|v| v.as_str().map(|n| PSEUDO_PACKAGES.contains(&n)))
+                .unwrap_or(false),
+        )),
+        (RakuAstClass::NamePartEmptyEdge | RakuAstClass::NamePartEmpty, "name") => {
+            Some(Value::str(String::new()))
+        }
+        (RakuAstClass::NamePartEmptyEdge | RakuAstClass::NamePartEmpty, "is-empty") => {
+            Some(Value::truth(true))
+        }
+        (RakuAstClass::NamePartEmptyEdge | RakuAstClass::NamePartEmpty, "is-pseudo-package") => {
+            Some(Value::truth(false))
+        }
+        (RakuAstClass::NamePartExpression, "is-empty") => Some(Value::truth(false)),
+        // The value of the literal the part holds (`::("foo")` is `foo`).
+        (RakuAstClass::NamePartExpression, "name") => {
+            let expr = super::infix_origins::child_at(node, 0)?;
+            Some(node_accessor(expr, "value").unwrap_or(Value::NIL))
+        }
+        _ => None,
+    }
+}
+
 // Cost: O(p), p = parts.
 fn name_value(parts: Vec<Value>) -> Value {
     Value::rakuast(Box::new(super::name_parts::name_from_parts(parts)))
