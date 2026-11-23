@@ -75,8 +75,7 @@ pub(super) fn contextualizer(names: &NameScope, node: &mut RakuAstNode) {
         }
         with_child_at(sequence, 0, |statement| {
             with_child(statement, "expression", |expression| {
-                let listed =
-                    super::trailing_comma_list::wrap(expression, &text[2..text.len() - 1]);
+                let listed = super::trailing_comma_list::wrap(expression, &text[2..text.len() - 1]);
                 if expression.origin.0.is_none() {
                     place_contents(names, expression, &text, from, 2);
                 }
