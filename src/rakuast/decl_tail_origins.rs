@@ -36,13 +36,7 @@ pub(super) fn leading_head(names: &NameScope, node: &mut RakuAstNode) {
     };
     match node.class {
         RakuAstClass::ApplyInfix => with_child(node, "left", place),
-        RakuAstClass::ApplyListInfix => {
-            if node.fields.iter().any(|f| {
-                f.name == Some("operands") && matches!(f.value, RakuAstFieldValue::List(_))
-            }) {
-                with_operand0(node, place);
-            }
-        }
+        RakuAstClass::ApplyListInfix => with_operand0(node, place),
         _ => {}
     }
 }
