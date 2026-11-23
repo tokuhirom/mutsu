@@ -163,6 +163,21 @@ impl ArrayData {
 }
 
 impl ArrayData {
+    /// Grow to `new_len` with holes holding `marker`: the null slots an
+    /// `nqp::setelems` or an `nqp::bindpos` past the end leaves in a VM
+    /// array's object storage (#17662). `nqp::atpos` answers null for them,
+    /// a `List` view's `[i]` reads `Nil` and its iteration reads the `Mu`
+    /// marker, as on rakudo. A shorter `new_len` truncates.
+    // Cost: O(|new_len - e|), e = elements; O(e) once when the array first
+    // records holes.
+    pub(crate) fn grow_with_holes(&mut self, new_len: usize, marker: Value) {
+        let len = self.len();
+        if new_len > len {
+            self.initialized.get_or_insert_with(|| (0..len).collect());
+        }
+        self.resize(new_len, marker);
+    }
+
     /// `@a[$i] = $v`'s store into the array node, the one body the `[]=`
     /// opcode's fast lane and the `ASSIGN-POS` method share (ADR-0118):
     /// write `value` at `i`, growing the array with `Any` hole markers when

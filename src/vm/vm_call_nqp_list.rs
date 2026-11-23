@@ -137,7 +137,9 @@ impl Interpreter {
                     // `Interpreter::nqp_with_elems_mut`): a pure element push
                     // that never re-enters the interpreter.
                     let data = unsafe { crate::value::gc_contents_mut(items) };
-                    data.items_mut().push(value.clone());
+                    // `ArrayData::push` records the new slot as present when
+                    // the buffer tracks holes (#17662).
+                    data.push(value.clone());
                 });
                 match pushed {
                     Some(()) => Ok(value),
