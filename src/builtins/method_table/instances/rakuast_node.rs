@@ -1034,7 +1034,11 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
         RakuAstClass::ParameterTargetVar => Some(vec![
             node_value("declaration")
                 .or_else(|| crate::rakuast::annotated_target_declaration(node))
-                .or_else(|| crate::rakuast::named_target_declaration(node))
+                .or_else(|| {
+                    (target_declaration(node) == RakuAstClass::VarDeclarationSimple)
+                        .then(|| crate::rakuast::named_target_declaration(node))
+                        .flatten()
+                })
                 .unwrap_or_else(|| rakuast(target_declaration(node), Vec::new(), &node.origin)),
         ]),
         // Rakudo visits a quoted regex's adverbs before its body.
