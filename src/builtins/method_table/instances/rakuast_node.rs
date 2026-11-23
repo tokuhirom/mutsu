@@ -159,15 +159,6 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
-    // An imported routine (`use Test; plan`) and a unit-declared package.
-    MethodRow {
-        owner: "RakuAST::Declaration::Import",
-        name: "compile-time-value",
-        arity: 0,
-        handler: Handler::Interp(external_value),
-        flags: RowFlags::OWNER_ONLY,
-        named: &[],
-    },
     MethodRow {
         owner: "RakuAST::Declaration::LexicalPackage",
         name: "compile-time-value",
