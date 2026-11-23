@@ -115,12 +115,3 @@ pub(super) fn distributes_sink(expr: &Expr) -> bool {
 pub(super) fn is_operator_expr(expr: &Expr) -> bool {
     matches!(expr, Expr::Binary { .. } | Expr::Unary { .. })
 }
-
-/// The elements of an array constructor `[...]`.
-// Cost: O(1).
-pub(super) fn bracket_array_elems(expr: &Expr) -> Option<&[Expr]> {
-    match expr {
-        Expr::BracketArray(elems, _) => Some(elems),
-        _ => None,
-    }
-}

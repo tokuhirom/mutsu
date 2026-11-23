@@ -13,7 +13,7 @@
 //! declarations, `say`/`print`, regex matches, ...) is never flagged.
 
 use super::sink_describe::{
-    bracket_array_elems, describe_literal, describe_literal_with_src, distributes_sink,
+    describe_literal, describe_literal_with_src, distributes_sink,
     is_operator_expr, is_type_name, pure_op_symbol, pure_prefix_symbol,
 };
 use crate::ast::parsed::{ModifierKind, ParsedStmt};
@@ -346,7 +346,18 @@ fn warn_statement_expr(expr: &Expr, nil_hint: bool, line: i64, span: SrcSpan) {
         warn_expr_sink(expr, nil_hint, line);
         return;
     }
-    let Some(desc) = describe_useless(expr) else {
+    // A pure operator whose operand the fallback rendering cannot spell
+    // (`f() + 1`) is still named by the statement's own text (#18973).
+    let pure_operator = match expr {
+        Expr::Binary { op, .. } => pure_op_symbol(op).is_some(),
+        Expr::Unary { op, .. } => pure_prefix_symbol(op).is_some(),
+        _ => false,
+    };
+    let Some(desc) = describe_useless(expr).or_else(|| {
+        pure_operator
+            .then(|| super::primary::span_text::span_text(span))
+            .flatten()
+    }) else {
         return;
     };
     let desc = if is_operator_expr(expr) {
@@ -412,35 +423,18 @@ fn describe_useless(expr: &Expr) -> Option<String> {
         Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => expr.sigiled_var_name(),
         Expr::ArrayLiteral(elems) if elems.is_empty() => Some("()".to_string()),
         Expr::BareWord(s) if is_type_name(s) => Some(s.clone()),
-        Expr::Binary {
-            left, op, right, ..
-        } => {
+        Expr::Binary { op, .. } => {
             pure_op_symbol(op)?;
-            // Only flag when both operands are themselves useless (no side
-            // effects), e.g. `1 + 2` but not `$x + foo()`. Rakudo names the
+            // The operator's value is useless whatever its operands do:
+            // rakudo reports `f() + 1` too (#18973). Rakudo names the
             // expression by its spelling, which `render_source` approximates
-            // (the whole-statement case reads the source itself).
-            // An array constructor of useless values is a useless operand too
-            // (`[] + 1`), though a bare `[]` statement is not reported.
-            for operand in [left, right] {
-                let elems = bracket_array_elems(operand);
-                let pure = match elems {
-                    Some(elems) => elems.iter().all(|e| describe_useless(e).is_some()),
-                    None => describe_useless(operand).is_some(),
-                };
-                if !pure {
-                    return None;
-                }
-            }
+            // (the whole-statement case reads the source itself); an operand
+            // it cannot render leaves an element of a list unreported.
             render_source(expr)
         }
-        Expr::Unary {
-            op, expr: inner, ..
-        } => {
+        Expr::Unary { op, .. } => {
             pure_prefix_symbol(op)?;
-            // Only flag when the operand itself is useless (no side effects),
-            // e.g. `-5` / `?5` / `-$x` but not `-foo()`.
-            describe_useless(inner)?;
+            // As for an infix: `-f()` is reported too (#18973).
             render_source(expr)
         }
         _ => None,
