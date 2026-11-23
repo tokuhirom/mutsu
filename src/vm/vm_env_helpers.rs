@@ -476,6 +476,12 @@ impl Interpreter {
             return None;
         }
         let name_str = name.as_str();
+        // A term key (`\Bool`, asked by `term_binding_sym` for every bareword
+        // type name on the type-check memo's hit path) is never a process
+        // dynamic, an `@`/`%` lane, an `our` mirror, an unmerged package
+        // variable or a twigil alias, so of the `get_env_with_main_alias_sym`
+        // cascade only its direct env probe can answer for one (#18274).
+        let term_candidate = name_str.starts_with(crate::term_names::TERM_PREFIX);
         // Each step's `<sigil><pkg>::<rest>` key and the walk itself are
         // memoized per symbol: no `format!` and no `"::"` search per read.
         for pkg in crate::qualified::package_ancestors(cur_sym) {
@@ -487,7 +493,19 @@ impl Interpreter {
             if let Some(v) = self.get_our_var_sym(candidate) {
                 return Some(v);
             }
-            if let Some(v) = self.get_env_with_main_alias_sym(candidate.as_str(), candidate) {
+            let env_hit = if term_candidate {
+                let narrow = self.env().get_sym(candidate).cloned();
+                debug_assert_eq!(
+                    narrow.is_some(),
+                    self.get_env_with_main_alias_sym(candidate.as_str(), candidate)
+                        .is_some(),
+                    "a term-key candidate {candidate:?} found only by the alias cascade"
+                );
+                narrow
+            } else {
+                self.get_env_with_main_alias_sym(candidate.as_str(), candidate)
+            };
+            if let Some(v) = env_hit {
                 return Some(v);
             }
             if let Some(v) = self
