@@ -942,14 +942,17 @@ impl Interpreter {
         true
     }
 
+    // Cost: O(g), g = chars of the refused value's gist.
     pub(super) fn builtin_assignment_ro(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         // When the read-only left-hand side value is supplied (e.g. assigning to
         // a literal `120 = 3`), report its type and representation to match
         // rakudo: "Cannot modify an immutable Int (120)".
+        // The refused value is kept in `.value`, as rakudo's is. An unhandled
+        // Failure in its place (`5[1] = 3` reads past the end, #18960) is the
+        // error the store raises instead.
         if let Some(lhs) = args.first() {
-            let typename = crate::runtime::utils::value_type_name(lhs);
-            let repr = lhs.to_string_value();
-            return Err(RuntimeError::assignment_ro_typename(typename, &repr));
+            Self::unhandled_failure_error(lhs)?;
+            return Err(RuntimeError::assignment_ro_value(lhs.clone()));
         }
         Err(RuntimeError::assignment_ro(None))
     }
