@@ -31,7 +31,7 @@ fn only(node: &RakuAstNode, class: RakuAstClass, method: &str) -> Result<(), Run
 // Cost: O(1).
 pub(crate) fn from_string(args: &[Value]) -> Result<Value, RuntimeError> {
     match args {
-        [text] if let Some(text) = text.as_str() => Ok(paragraph_from_text(text)),
+        [text] if let Some(text) = text.as_str() => paragraph_from_text(text),
         [other] => Err(RuntimeError::new(format!(
             "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter \
              '$text'; expected Str but got {}",
@@ -45,15 +45,20 @@ pub(crate) fn from_string(args: &[Value]) -> Result<Value, RuntimeError> {
 }
 
 /// The `Doc::Paragraph` of `text` with its formatting codes, or the text
-/// itself when it holds none (rakudo's `Paragraph.from-string`).
+/// itself when it holds none (rakudo's `Paragraph.from-string`). A code
+/// whose closer never comes dies as on rakudo (#19040).
 // Cost: O(n), n = length of the text.
-pub(crate) fn paragraph_from_text(text: &str) -> Value {
+pub(crate) fn paragraph_from_text(text: &str) -> Result<Value, RuntimeError> {
     match super::pod_blocks::cell_paragraph(text) {
-        Some(Some(node)) => Value::rakuast(Box::new(node)),
-        // TODO: text the pod reader does not take (an unterminated code)
-        // stays the plain text; rakudo dies with "RakuDoc markup code B
-        // missing endtag '>'".
-        _ => Value::str(text.to_string()),
+        Ok(Some(node)) => Ok(Value::rakuast(Box::new(node))),
+        Ok(None) => Ok(Value::str(text.to_string())),
+        Err(why) => match why.unterminated_message() {
+            Some(message) => Err(RuntimeError::new(message)),
+            // TODO: an ambiguous code the reader does not take (a code
+            // letter right after a word character, `aB<b>`) stays the plain
+            // text; rakudo reads it as a code (#19068).
+            None => Ok(Value::str(text.to_string())),
+        },
     }
 }
 
