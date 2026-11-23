@@ -1010,6 +1010,7 @@ impl Interpreter {
                 spans: Default::default(),
                 trait_meta: Default::default(),
                 type_capture: None,
+                type_capture_smiley: None,
                 name: String::new(),
                 default: None,
                 multi_invocant: false,

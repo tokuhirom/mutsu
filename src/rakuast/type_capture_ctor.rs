@@ -69,3 +69,28 @@ pub(super) fn construct(
         fields,
     }))))
 }
+
+/// The smiley on a `Parameter`'s one type capture (`::T:D $x` -> `'D'`), for
+/// lowering it back into a parameter: the binder reads `:D`/`:U` as an
+/// `Any:D`/`Any:U` type (#19020).
+// Cost: O(f), f = the parameter's fields.
+pub(super) fn parameter_capture_smiley(parameter: &RakuAstNode) -> Option<char> {
+    let field = parameter
+        .fields
+        .iter()
+        .find(|f| f.name == Some("type-captures"))?;
+    let RakuAstFieldValue::List(items) = &field.value else {
+        return None;
+    };
+    let [capture] = items.as_slice() else {
+        return None;
+    };
+    let ValueView::RakuAst(capture) = capture.view() else {
+        return None;
+    };
+    let smiley = capture.fields.iter().find(|f| f.name == Some("smiley"))?;
+    let RakuAstFieldValue::Node(value) = &smiley.value else {
+        return None;
+    };
+    value.as_str().and_then(|s| s.chars().next())
+}
