@@ -14,6 +14,6 @@ table answers that class's accessor lookups from the class itself, so
 dispatch sees the same declarations as before. Startup also lost a few
 hundred scratch allocations from registering the `X::` classes.
 
-`say "hello"` (`benchmarks/bench-startup.raku`) went from 15.72M to about
-8.0M instructions and from 19.5k to 10.6k allocations (callgrind/DHAT,
+`say "hello"` (`benchmarks/bench-startup.raku`) went from 15.72M to 7.91M
+instructions and from 19.5k to 10.6k allocations (callgrind/DHAT,
 profiling build).
