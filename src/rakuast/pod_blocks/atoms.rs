@@ -7,8 +7,10 @@ use crate::value::Value;
 /// A formatting code of a paragraph: `B<bold>`.
 pub(super) struct Markup {
     letter: char,
-    opener: &'static str,
-    closer: &'static str,
+    /// A run of `<` (`<`, `<<`, `<<<`, ...) or a `«`.
+    opener: String,
+    /// The matching run of `>`, or `»`.
+    closer: String,
     atoms: Vec<Atom>,
     /// The text after the first `|` of a code that takes metadata (`L`, `X`, ...).
     meta: Option<String>,
@@ -25,26 +27,23 @@ pub(super) enum Atom {
 }
 
 /// Why the reader declined a paragraph's text.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(in crate::rakuast) enum Declined {
     /// A code whose closer never comes: its letter and closer, the innermost
     /// such code (rakudo's "RakuDoc markup code B missing endtag '>'").
     /// `None` only while the code being read has not yet named itself.
-    Unterminated(Option<(char, &'static str)>),
-    /// Text the plain reader does not take: an empty code, metadata or an
-    /// `E<...>` holding angle brackets.
-    Other,
+    Unterminated(Option<(char, String)>),
 }
 
 impl Declined {
-    /// The error rakudo raises for an unterminated code, `None` otherwise.
+    /// The error rakudo raises for it.
     // Cost: O(1).
-    pub(in crate::rakuast) fn unterminated_message(self) -> Option<String> {
+    pub(in crate::rakuast) fn message(&self) -> String {
         match self {
-            Declined::Unterminated(Some((letter, closer))) => Some(format!(
-                "RakuDoc markup code {letter} missing endtag '{closer}'."
-            )),
-            _ => None,
+            Declined::Unterminated(Some((letter, closer))) => {
+                format!("RakuDoc markup code {letter} missing endtag '{closer}'.")
+            }
+            Declined::Unterminated(None) => "RakuDoc markup code missing its endtag.".to_string(),
         }
     }
 }
@@ -69,8 +68,7 @@ fn find_closer_nested(tail: &str, closer: &str) -> Option<usize> {
 
 /// The atoms of `text` up to `closer` (or its end), the metadata after a `|`
 /// when `meta_ok`, and the length consumed with the closer. [`Declined`] for
-/// text the plain reader does not take: an unterminated code, or one of the
-/// shapes [`Declined::Other`] lists.
+/// text the reader does not take: an unterminated code.
 // Cost: O(n), n = length of the text.
 pub(super) fn parse_atoms(
     text: &str,
@@ -104,89 +102,47 @@ pub(super) fn parse_atoms(
         {
             let tail = &rest[1..];
             let end = find_closer_nested(tail, closer).ok_or(Declined::Unterminated(None))?;
-            let text = &tail[..end];
-            if text.chars().any(|c| matches!(c, '<' | '>' | '«' | '»')) {
-                return Err(Declined::Other);
-            }
-            meta = Some(text.to_string());
+            // Balanced brackets are the metadata's text (`L<x|y<z>>`).
+            meta = Some(tail[..end].to_string());
             at += 1 + end + closer.len();
             break;
         }
         if ch.is_ascii_uppercase() {
             let after = &rest[1..];
-            let opener = ["<<<", "<<", "<", "«"]
-                .into_iter()
-                .find(|o| after.starts_with(o));
-            if let Some(opener) = opener {
+            // The opener is a `«` or a run of `<`, closed by `»` or the same
+            // number of `>` (`B<<<x>>>`, `B<<<<x>>>>`), as in rakudo's reader.
+            let opener: Option<(String, String)> = if after.starts_with('«') {
+                Some(("«".to_string(), "»".to_string()))
+            } else {
+                let run = after.bytes().take_while(|&b| b == b'<').count();
+                (run > 0).then(|| ("<".repeat(run), ">".repeat(run)))
+            };
+            if let Some((opener, closer)) = opener {
                 // A code letter right after a word character still starts a
                 // code, as in rakudo's reader: `aB<b>` is `a` then `B<b>`
                 // (#19068).
-                let closer = match opener {
-                    "<<<" => ">>>",
-                    "<<" => ">>",
-                    "<" => ">",
-                    _ => "»",
-                };
                 if !buf.is_empty() {
                     atoms.push(Atom::Text(std::mem::take(&mut buf)));
                 }
-                if opener == "<<<" {
-                    // A triple-delimited code holds its content as one raw
-                    // string: no nested codes and no metadata are read in it.
-                    let body = &after[3..];
-                    let end = body
-                        .find(">>>")
-                        .ok_or(Declined::Unterminated(Some((ch, ">>>"))))?;
-                    let content = &body[..end];
-                    if body.starts_with('<')
-                        || content.is_empty()
-                        || ch == 'E'
-                        || content.contains(['|', '«', '»'])
-                    {
-                        return Err(Declined::Other);
-                    }
-                    atoms.push(Atom::Markup(Markup {
-                        letter: ch,
-                        opener: "<<<",
-                        closer: ">>>",
-                        atoms: vec![Atom::Text(content.to_string())],
-                        meta: None,
-                        entities: None,
-                    }));
-                    at += 1 + 3 + end + 3;
-                    continue;
-                }
+                let body = &after[opener.len()..];
                 if ch == 'E' {
-                    let body = &after[opener.len()..];
-                    let end = body
-                        .find(closer)
-                        .ok_or(Declined::Unterminated(Some((ch, closer))))?;
+                    let end = find_closer_nested(body, &closer)
+                        .ok_or_else(|| Declined::Unterminated(Some((ch, closer.clone()))))?;
                     let content = &body[..end];
-                    if content.chars().any(|c| matches!(c, '<' | '>' | '«' | '»')) {
-                        return Err(Declined::Other);
-                    }
+                    // Text holding brackets names no entity: it stays the
+                    // code's text (`E<lt<x>>`), as in rakudo's reader.
                     let (shown, list) = match content.split_once('|') {
                         Some((shown, list)) => {
                             (shown, crate::rakuast::pod_entities::pairs_after_bar(list))
                         }
+                        None if content.contains(['<', '>', '«', '»']) => (content, Vec::new()),
                         None => ("", crate::rakuast::pod_entities::pairs(content)),
                     };
+                    at += 1 + opener.len() + end + closer.len();
                     atoms.push(Atom::Markup(Markup {
                         letter: 'E',
-                        opener: if opener == "<<" {
-                            "<<"
-                        } else if opener == "<" {
-                            "<"
-                        } else {
-                            "«"
-                        },
-                        closer: if closer == ">>" {
-                            ">>"
-                        } else if closer == ">" {
-                            ">"
-                        } else {
-                            "»"
-                        },
+                        opener,
+                        closer,
                         atoms: if shown.is_empty() {
                             Vec::new()
                         } else {
@@ -195,43 +151,29 @@ pub(super) fn parse_atoms(
                         meta: None,
                         entities: Some(list),
                     }));
-                    at += 1 + opener.len() + end + closer.len();
                     continue;
                 }
-                let (inner, used, inner_meta) = parse_atoms(
-                    &after[opener.len()..],
-                    Some(closer),
-                    META_LETTERS.contains(ch),
-                )
-                .map_err(|why| match why {
-                    // The code being read names itself; a deeper one already did.
-                    Declined::Unterminated(None) => Declined::Unterminated(Some((ch, closer))),
-                    other => other,
-                })?;
-                if inner.is_empty() && inner_meta.is_none() {
-                    return Err(Declined::Other);
-                }
+                // An empty code (`B<>`) is a `Markup` with no atoms (#19091).
+                let (inner, used, inner_meta) =
+                    parse_atoms(body, Some(&closer), META_LETTERS.contains(ch)).map_err(|why| {
+                        match why {
+                            // The code being read names itself; a deeper one
+                            // already did.
+                            Declined::Unterminated(None) => {
+                                Declined::Unterminated(Some((ch, closer.clone())))
+                            }
+                            other => other,
+                        }
+                    })?;
+                at += 1 + opener.len() + used;
                 atoms.push(Atom::Markup(Markup {
                     letter: ch,
-                    opener: if opener == "<<" {
-                        "<<"
-                    } else if opener == "<" {
-                        "<"
-                    } else {
-                        "«"
-                    },
-                    closer: if closer == ">>" {
-                        ">>"
-                    } else if closer == ">" {
-                        ">"
-                    } else {
-                        "»"
-                    },
+                    opener,
+                    closer,
                     atoms: inner,
                     meta: inner_meta,
                     entities: None,
                 }));
-                at += 1 + opener.len() + used;
                 continue;
             }
         }
@@ -240,7 +182,8 @@ pub(super) fn parse_atoms(
         if closer.is_some() && matches!(ch, '<' | '«') {
             nest += 1;
         } else if closer.is_some() && matches!(ch, '>' | '»') {
-            nest = nest.checked_sub(1).ok_or(Declined::Other)?;
+            // A `>` that does not close the code (`B<<< x > y >>>`) is text.
+            nest = nest.saturating_sub(1);
         }
         buf.push(ch);
         at += ch.len_utf8();
