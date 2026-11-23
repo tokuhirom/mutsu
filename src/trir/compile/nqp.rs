@@ -254,7 +254,7 @@ impl TrirCompiler<'_> {
         // A TRIR operand is the bare value, so only a value operand that is
         // never a container keeps the routine here.
         if matches!(op, "push" | "unshift" | "bindkey" | "bindpos")
-            && args.last().is_some_and(|a| !self.never_a_container(a))
+            && args.last().is_some_and(|a| !self.stores_as_a_value(a))
         {
             let o = op.to_string();
             self.note_decline(|| format!("nqp::{o} binds its value operand's container"));
@@ -398,6 +398,17 @@ impl TrirCompiler<'_> {
             Expr::Var(_) | Expr::Index { .. } => false,
             Expr::BareWord(n) => self.binding_of(n).is_none(),
             _ => true,
+        }
+    }
+
+    /// Whether a value operand of `nqp::push` and kin stores a value rather
+    /// than a container: [`Self::never_a_container`], or a native variable
+    /// (`my int $i`, held in a native slot), which has no container either.
+    // Cost: O(1).
+    fn stores_as_a_value(&self, e: &Expr) -> bool {
+        match e.peel_parens() {
+            Expr::Var(n) => self.binding_of(n).is_some_and(|b| b.kind != TrKind::Obj),
+            other => self.never_a_container(other),
         }
     }
 
