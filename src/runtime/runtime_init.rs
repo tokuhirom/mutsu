@@ -2578,49 +2578,18 @@ impl Interpreter {
         }
         // Every built-in exception class declares the attributes rakudo's does
         // (`builtin_exception_attrs`), so `.^attributes`, the accessors and
-        // construction see them (#18654). The few private `is built` ones
-        // (`X::TypeCheck`'s `$!got`/`$!expected`, `X::Coerce::Role`'s
-        // `$!exception`, ...) each have an explicit reader method in rakudo,
-        // so they are declared with their accessor. An attribute a built-in
-        // method row already reads (`X::AdHoc.payload`, which falls back to
-        // the message an internal error carries) is built from its named
-        // argument but gets no generated accessor, so the row answers.
-        for (name, rows) in super::builtin_exception_attrs::all() {
-            let Some(cls) = classes.get_mut(name) else {
-                continue;
-            };
-            for row in rows {
-                if cls.attributes.iter().any(|a| a.name == row.name) {
-                    continue;
-                }
-                let build = row.build_default();
-                let row_reads_it =
-                    crate::builtins::method_table::owner_has_row(name, row.name);
-                if row_reads_it {
-                    cls.attribute_built
-                        .insert(row.name.to_string(), crate::ast::BuiltTrait::Yes);
-                }
-                cls.attributes.push(ClassAttributeDef {
-                    name: row.name.to_string(),
-                    is_public: !row_reads_it,
-                    default: build
-                        .clone()
-                        .or_else(|| row.unset_seed())
-                        .map(crate::opcode::DeclTraitArg::Literal),
-                    captured_env: None,
-                    captured_unit: None,
-                    declaring_package: None,
-                    is_rw: false,
-                    is_required: None,
-                    sigil: row.sigil(),
-                    type_constraint: None,
-                    where_constraint: None,
-                    declared_shape: None,
-                    source_line: None,
-                    source_file: None,
-                    default_is_seed: build.is_none(),
-                    default_is_trait: false,
-                });
+        // construction see them (#18654). They are declared on the class's
+        // first attribute access, not here: declaring all of them doubled the
+        // startup of every program (#18956).
+        for (name, cls) in classes.iter_mut() {
+            if super::builtin_exception_attrs::may_declare(name) {
+                let class = cls
+                    .mro
+                    .first()
+                    .copied()
+                    .filter(|own| own.as_str() == name)
+                    .unwrap_or_else(|| Symbol::intern(name));
+                cls.attributes.defer_builtin_exception(class);
             }
         }
 

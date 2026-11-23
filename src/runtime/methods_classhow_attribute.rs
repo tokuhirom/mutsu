@@ -291,7 +291,13 @@ impl Interpreter {
             .registry()
             .classes
             .get(owner)
-            .and_then(|cd| cd.attribute_built.get(attr_name).copied())
+            .and_then(|cd| {
+                cd.attribute_built.get(attr_name).copied().or_else(|| {
+                    cd.attributes
+                        .builtin_is_built(attr_name)
+                        .then_some(crate::ast::BuiltTrait::Yes)
+                })
+            })
             .map_or(is_public, crate::ast::BuiltTrait::is_built);
         meta.insert("is_built".to_string(), Value::truth(is_built));
         // `is required` introspection: `.required` returns the type object `Mu`
