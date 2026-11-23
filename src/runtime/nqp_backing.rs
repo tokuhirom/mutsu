@@ -167,6 +167,16 @@ pub(crate) fn push_elem(op: &str, target: &Value, val: Value) -> Result<Value, R
     {
         return Ok(val);
     }
+    // An object store appends through `ArrayData`, which records the new
+    // slot as present when the store tracks holes (#17662).
+    if with_nqp_backing_array(target, |array| {
+        with_list_data_mut(array, |data| data.push(val.clone()))
+    })
+    .flatten()
+    .is_some()
+    {
+        return Ok(val);
+    }
     Interpreter::nqp_with_elems_mut(op, target, |elems| elems.push(val.clone()))?;
     Ok(val)
 }
@@ -181,30 +191,31 @@ pub(crate) fn push_elem(op: &str, target: &Value, val: Value) -> Result<Value, R
 /// the general op and the `IterationBuffer` lane both call it.
 // Cost: O(|n - e|) amortized, e = the current element count.
 pub(crate) fn setelems_items(target: &Value, items: &crate::value::GcRef<'_, ArrayData>, n: usize) {
-    let fill = typed_list_fill(items.nqp_elem).unwrap_or_else(|| {
-        let native = items.has_native_backing()
-            || items
-                .declared_type
-                .as_deref()
-                .is_some_and(|t| t.starts_with("array["));
-        if native {
-            Value::int(0)
-        } else if matches!(
-            target.view(),
-            ValueView::Instance { class_name, .. } if class_name == "IterationBuffer"
-        ) {
-            // A grown `IterationBuffer` slot is a null object, which reads
-            // back as `Mu`.
-            Value::package(crate::symbol::Symbol::intern("Mu"))
-        } else {
-            Value::NIL
-        }
-    });
+    let typed = typed_list_fill(items.nqp_elem);
+    let native = items.has_native_backing()
+        || items
+            .declared_type
+            .as_deref()
+            .is_some_and(|t| t.starts_with("array["));
     // SAFETY: audited aliased in-place container write (see
     // value::aliased_mut); a resize never re-enters the interpreter, so no
     // borrow into the node is live across it.
     let data = unsafe { crate::value::gc_contents_mut(items) };
-    data.items_mut().resize(n, fill);
+    match typed {
+        Some(fill) => data.items_mut().resize(n, fill),
+        None if native => data.items_mut().resize(n, Value::int(0)),
+        None if matches!(
+            target.view(),
+            ValueView::Instance { class_name, .. } if class_name == "IterationBuffer"
+        ) =>
+        {
+            // A grown `IterationBuffer` slot is a null object: a hole
+            // holding the `Mu` marker, which `nqp::atpos` answers as null
+            // and a `List` view iterates as `Mu` (#17662).
+            data.grow_with_holes(n, Value::package(crate::symbol::wk::mu()));
+        }
+        None => data.items_mut().resize(n, Value::NIL),
+    }
 }
 
 /// MoarVM's VMArray index rule, the one every positional `nqp::` op uses: a
@@ -331,7 +342,8 @@ pub(crate) fn bind_elem(
     {
         return Ok(val);
     }
-    let fill = typed_list_fill(nqp_elem_kind(target)).unwrap_or(fill);
+    let typed_fill = typed_list_fill(nqp_elem_kind(target));
+    let fill = typed_fill.clone().unwrap_or(fill);
     // A native integer array (`my uint8 @u`) stores at its element width, as
     // an assignment to the element does: `nqp::bindpos_u(@u, 2, 513)` keeps 1.
     let val = match (target.view(), val.as_int()) {
@@ -343,6 +355,30 @@ pub(crate) fn bind_elem(
         _ => val,
     };
     let stored = val.clone();
+    // An object store binds through `ArrayData`, so the slots a bind past the
+    // end grows are holes (nulls) rather than stored values (#17662).
+    if typed_fill.is_none() && crate::runtime::nqp_ops_list::is_iteration_buffer(target) {
+        let mut stored = Some(stored.clone());
+        let bound = with_nqp_backing_array(target, |array| {
+            with_list_data_mut(array, |data| {
+                if data.has_native_backing() {
+                    return false;
+                }
+                if data.len() <= i {
+                    data.grow_with_holes(i + 1, Value::package(crate::symbol::wk::mu()));
+                }
+                data.mark_initialized(i);
+                if let Some(v) = stored.take() {
+                    data.live_mut()[i] = v;
+                }
+                true
+            })
+        })
+        .flatten();
+        if bound == Some(true) {
+            return Ok(val);
+        }
+    }
     Interpreter::nqp_with_elems_mut(op, target, |elems| {
         if elems.len() <= i {
             elems.resize(i + 1, fill);

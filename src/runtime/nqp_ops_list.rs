@@ -98,7 +98,20 @@ impl Interpreter {
                 // re-enters the interpreter, so no other borrow into the node
                 // is live across it.
                 let data = unsafe { crate::value::gc_contents_mut(&items) };
-                f.take().map(|f| f(data.items_mut()))
+                // The raw `Vec` editor does not keep a hole record (#17662):
+                // record what a tail edit changed, so an appended slot reads
+                // as present and a dropped one is forgotten.
+                let before = data.len();
+                let out = f.take().map(|f| f(data.items_mut()));
+                let after = data.len();
+                if let Some(initialized) = data.initialized.as_mut() {
+                    if after > before {
+                        initialized.extend(before..after);
+                    } else if after < before {
+                        initialized.retain(|&i| i < after);
+                    }
+                }
+                out
             }
             _ => None,
         })
@@ -146,7 +159,9 @@ impl Interpreter {
                 // `nqp_with_elems_mut`) — a pure element removal that never
                 // re-enters the interpreter.
                 let data = unsafe { crate::value::gc_contents_mut(&items) };
-                Some(data.shift_front())
+                // A hole shifts out as the null it is (#17662).
+                let hole = data.initialized.is_some() && !data.is_empty() && data.hole_at(0);
+                Some(data.shift_front().map(|v| if hole { Value::NIL } else { v }))
             }
             _ => None,
         })
@@ -264,7 +279,10 @@ impl Interpreter {
         idx: usize,
         view: bool,
     ) -> Option<Value> {
-        if view && idx < items.len() && items.hole_at(idx) {
+        // A hole is a null: a never-assigned slot of an Array's `$!reified`
+        // view (`view`), or a slot `nqp::setelems` / a bind past the end grew
+        // in a VM array's object storage (#17662).
+        if (view || items.initialized.is_some()) && idx < items.len() && items.hole_at(idx) {
             return Some(Value::NIL);
         }
         items.get(idx).cloned()
