@@ -27,11 +27,11 @@
       "cmp": "no_baseline",
       "path": "t/ask-prompt-alias.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/39BCC3BF80279BF8060AC010B42456C898A73FA6C2355F20168B6B443954C2B9: Read-only file system",
+        "first_failure": "Failed to open file /tmp/3764085F78AFA1A9D63920078D756C23D89DD5E02FEB901A52F65347089FFCFE: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 18,
-        "secs": 9.96,
+        "secs": 9.94,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -43,10 +43,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-22",
+    "date": "2026-11-23",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "43567926",
+    "mutsu_commit": "e52d3f1c",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
