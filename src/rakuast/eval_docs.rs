@@ -178,7 +178,10 @@ impl Collector {
                     .and_then(|t| str_field(t, "name"));
                 if let (Some(sigiled), Some(doc)) = (sigiled, doc) {
                     let key = match self.routines.last() {
-                        Some(owner) => format!("{owner}::{sigiled}"),
+                        Some(owner) => {
+                            crate::qualified::qualified_text(owner.as_str(), sigiled.as_str())
+                                .to_string()
+                        }
                         None => sigiled.clone(),
                     };
                     self.out.push(DocComment {

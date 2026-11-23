@@ -1,18 +1,6 @@
-# 1169 more t/ files pass as `EVAL(slurp($file).AST)`
+# The EVAL($ast) ratchet pins 564 more files
 
-A re-measurement of the `t/` files not on `ci/rakuast-ast-eval-passing.txt`
-found 1163 that already pass when run through the RakuAST round trip. Each was
-checked twice before joining the list. Six more pass after fixes to the
-lowering of a tree that `EVAL` runs:
-
-- `take(1, 2)`, `take-rw(1, 2)` and `fail("a", "b")` keep every argument
-  (they kept only the first).
-- `temp &f.wrap(...)`, `temp` over a call on no container, raises
-  `X::Localizer::NoContainer` instead of refusing the tree.
-- The declarator docs of an `enum`, a `subset`, an anonymous sub and a
-  parameter (`sub f($a, #= doc`) reach `.WHY` and `$=pod`, filed under the
-  parser's keys.
-
-Of the 71 files that still fail, 40 fail the same way on rakudo (most of them
-`use v6.e.PREVIEW`, which rakudo refuses inside an `EVAL`), so they can never
-join the list (#16356).
+After the EVAL fixes of #15873, #15885 and #15886, `scripts/rakuast-frontend.sh eval-update` found 564 more `t/` files that pass
+when run as `EVAL(slurp($file).AST)`, measured with a release build and a cold precompile cache (as CI runs it). The pinned list
+`ci/rakuast-ast-eval-passing.txt` grows to 8906 files, so CI now fails if any of them stops passing through the write
+direction of the RakuAST layer.
