@@ -153,7 +153,7 @@ our class X::JSON::AdditionalContent is Exception is export {
     }
 }
 
-module JSON::Fast:ver<0.20.1> {
+module JSON::Fast:ver<0.21.0> {
 
     multi sub to-surrogate-pair(Int $ord) {
         my int $base   = $ord - 0x10000;
@@ -430,17 +430,17 @@ module JSON::Fast:ver<0.20.1> {
     my sub nom-ws(str $text, int $pos is rw --> Nil) {
         nqp::while(
           nqp::atpos_i($ws, nqp::ordat($text, $pos)),
-          ++$pos
+          ($pos = nqp::add_i($pos,1))
         );
         nqp::if(
           nqp::iseq_i(nqp::ordat($text,$pos),47),  # /
-          nom-comment($text,++$pos)
+          nom-comment($text,$pos = nqp::add_i($pos,1))
         );
     }
 
     my sub nom-comment(str $text, int $pos is rw --> Nil) {
         unless $*ALLOW-JSONC {
-            --$pos;  # un-eat the /
+            $pos = nqp::sub_i($pos,1);  # un-eat the /
             return;
         }
 
@@ -451,19 +451,23 @@ module JSON::Fast:ver<0.20.1> {
           nqp::iseq_i(($ord = nqp::ordat($text,$pos)),47),          # /
           nqp::stmts(
             nqp::while(  # eating a // style comment
-              nqp::isne_i(($ord = nqp::ordat($text,++$pos)),10)     # not \n
-                && nqp::isne_i($ord,-1),                            # not eos
+              nqp::isne_i(                                          # not \n
+                ($ord = nqp::ordat($text,$pos = nqp::add_i($pos,1))),
+                10
+              ) && nqp::isne_i($ord,-1),                            # not eos
               nqp::null
             ),
-            nom-ws($text, $ord == -1 ?? $pos !! ++$pos)
+            nom-ws($text, $ord == -1 ?? $pos !! $pos = nqp::add_i($pos,1))
           ),
           nqp::if(
             nqp::iseq_i($ord,42),                                   # *
             nqp::stmts(
-              ++$pos,
+              $pos = nqp::add_i($pos,1),
               nqp::until(  # eating a /*  */ style comment
-                nqp::iseq_i(($ord = nqp::ordat($text,++$pos)),-1)   # eos
-                  || (nqp::iseq_i($ord,47)                          # /
+                nqp::iseq_i(                                        # eos
+                  ($ord = nqp::ordat($text,$pos = nqp::add_i($pos,1))),
+                  -1
+                ) || (nqp::iseq_i($ord,47)                          # /
                         && nqp::iseq_i(
                              nqp::ordat($text,nqp::sub_i($pos,1)),
                              42                                     # *
@@ -473,7 +477,7 @@ module JSON::Fast:ver<0.20.1> {
               nqp::if(
                 nqp::iseq_i($ord,-1),
                 die-end-in-comment($text,$pos,$startpos),
-                nom-ws($text, ++$pos)
+                nom-ws($text, $pos = nqp::add_i($pos,1))
               )
             ),
             nqp::if(
