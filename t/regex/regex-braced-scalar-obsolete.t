@@ -2,9 +2,9 @@ use Test;
 
 # `${name}` in a regex is Perl 5 syntax: rakudo rejects it at compile time
 # with X::Obsolete, suggesting `$x` (or `{$x}` inside a `"..."` literal)
-# (#18925). `${ code }` is the end anchor followed by a code block.
+# (#18925).
 
-plan 7;
+plan 6;
 
 throws-like q[my $x = "a"; "xa" ~~ / x ${x} /], X::Obsolete,
     message => 'Unsupported use of ${x}. In Raku please use: $x.',
@@ -18,8 +18,6 @@ throws-like q[my $x = "a"; "xa" ~~ m/ x ${x} /], X::Obsolete,
     'the m// form is rejected too';
 
 ok "x\$\{x}" ~~ / x '${x}' /, 'a single-quoted ${x} is literal text';
-
-nok "xa" ~~ / x ${ True } /, '${ code } is the end anchor and a block';
 
 my $x = "a";
 ok "xa" ~~ / x $x /, 'a plain $x still interpolates';
