@@ -199,16 +199,16 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
+    // Rakudo 2026.11 declares `lexical-name` on `Declaration::External`,
+    // `Import`'s ancestor (#19059).
     MethodRow {
-        owner: "RakuAST::Declaration::Import",
+        owner: "RakuAST::Declaration::External",
         name: "lexical-name",
         arity: 0,
         handler: Handler::Pure(import_lexical_name),
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
-    implicit_constant_row("name", implicit_constant_name),
-    implicit_constant_row("scope", implicit_constant_scope),
     MethodRow {
         owner: "RakuAST::VarDeclaration::Implicit::Constant",
         name: "value",
