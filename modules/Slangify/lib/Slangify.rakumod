@@ -1,6 +1,6 @@
 # Interface to activate slangs at compile time inside slang modules
 
-sub EXPORT(
+sub EXPORT(  # UNCOVERABLE
   Mu $grammar  is copy,
   Mu $actions? is copy,
   Mu $legacy-grammar?,
@@ -36,7 +36,7 @@ sub EXPORT(
     }
 
     # Export the EXPORT sub that does the slanging
-    Map.new: (
+    Map.new: (  # UNCOVERABLE
       '&EXPORT'              => &EXPORT,
       '&prefix:<~>'          => &prefix:<~>,
       '&postcircumfix:<{ }>' => &postcircumfix:<{ }>  # UNCOVERABLE
