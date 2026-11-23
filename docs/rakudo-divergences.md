@@ -99,7 +99,8 @@ both sides reaches the same circular-dependency error as a single thread.
 - Reason: robustness. A deadlock gives the user nothing to act on. The program
   is circular, and the error names the cycle.
 - Decision: maintainer decision 2026-11-23.
-- Refs: `src/runtime/module_load_claims.rs`, #19023,
+- Refs: `src/runtime/module_load_claims.rs`,
+  [#19023](https://github.com/tokuhirom/mutsu/pull/19023),
   [#17216](https://github.com/tokuhirom/mutsu/issues/17216).
 
 ## B. Roast or the documentation chosen over rakudo
