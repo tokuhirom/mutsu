@@ -95,7 +95,8 @@ fn render_node_body(node: &RakuAstNode, indent: usize) -> String {
     let fields = rendered_fields(node);
     // Rakudo renders a char-class `Character`, a `Var::Dynamic`, a
     // `Var::Attribute`, a placeholder and a regex back-reference on their own
-    // lines all the same.
+    // lines all the same, and a `Doc::Paragraph`'s atoms whenever it has any
+    // (#19039).
     if !matches!(
         node.class,
         RakuAstClass::RegexCharClassEnumerationElementCharacter
@@ -111,7 +112,8 @@ fn render_node_body(node: &RakuAstNode, indent: usize) -> String {
             | RakuAstClass::VarDeclarationPlaceholderSlurpyHash
             | RakuAstClass::RegexBackReferenceNamed
             | RakuAstClass::RegexBackReferencePositional
-    ) && fields
+    ) && !(node.class == RakuAstClass::DocParagraph && !fields.is_empty())
+        && fields
         .iter()
         .all(|f| f.name.is_none() && is_inline_field(f))
     {
