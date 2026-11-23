@@ -312,6 +312,10 @@ pub(crate) struct TypeState {
     /// in the stored map and are not collected — so the accessor fallback still
     /// reads them.
     pub(crate) user_declared_classes: std::sync::Arc<std::collections::HashSet<String>>,
+    /// Whether the program declared a subset under a name the core scalar
+    /// type check answers by itself (`subset Int of Any where ...`): that
+    /// check then must not short-cut past the subset's `where` (#19013).
+    pub(crate) core_scalar_name_subset: bool,
 }
 
 impl TypeState {
@@ -319,6 +323,7 @@ impl TypeState {
         Self {
             open_role_group: None,
             user_declared_classes: Default::default(),
+            core_scalar_name_subset: false,
             method_class_stack: Vec::new(),
             constructing_class: None,
             last_registered_class_key: None,
@@ -380,6 +385,7 @@ impl TypeState {
     /// construction state fresh.
     pub(crate) fn fork_for_thread(&self) -> Self {
         Self {
+            core_scalar_name_subset: self.core_scalar_name_subset,
             open_role_group: None,
             method_class_stack: Vec::new(),
             constructing_class: None,
