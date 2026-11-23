@@ -81,7 +81,7 @@
     },
     {
       "name": "DBIish",
-      "version": "0.6.8",
+      "version": "0.6.9",
       "description": "Database connectivity for Raku",
       "license": "BSD-2-Clause",
       "authors": [],
@@ -123,7 +123,7 @@
       "depends": {
         "runtime": {
           "requires": [
-            "NativeHelpers::Blob",
+            "NativeHelpers::Blob:ver<0.1.13+>:auth<zef:raku-community-modules>",
             "NativeLibs:auth<github:salortiz>:ver<0.0.9+>"
           ]
         },
@@ -431,13 +431,14 @@
     },
     {
       "name": "NativeHelpers::Blob",
-      "version": "0.1.9",
+      "version": "0.1.13",
       "description": "NativeCall utilities for work with Blob and CArray",
       "license": "Artistic-2.0",
       "authors": [
-        "Salvador Ortiz <sortiz@cpan.com>"
+        "Salvador Ortiz",
+        "Raku Community"
       ],
-      "auth": "github:salortiz",
+      "auth": "zef:raku-community-modules",
       "provides": [
         "MoarVM::Guts::REPRs",
         "NativeHelpers::Blob",
@@ -445,10 +446,10 @@
         "NativeHelpers::Pointer"
       ],
       "depends": [],
-      "upstream": "git://github.com/salortiz/NativeHelpers-Blob",
+      "upstream": "https://github.com/raku-community-modules/NativeHelpers-Blob",
       "slot": "Database (SQLite)",
       "record": "docs/batteries/database.md",
-      "readme": "# NativeHelpers::Blob\n\n## Introduction\n\nRight now the support for `Blob`/`Buf` in Perl 6's NativeCall is incomplete.\nYou can use these as arguments for native functions, but not as attributes for\n`CStruct` or `CUnion`, for example.\n\nIn a `CStruct` class, you can use a `Pointer` or a `CArray`, but those don't have the\nflexibility of a `Blob` or `Buf`, moving data between them is slow, and with\nbig buffers the memory required increases dramatically.\n\nAt some point, these problems will be addressed in core, but in the meantime...\n\n## Usage\n\n    use NativeHelpers::Blob;\n\n## Exported functions\n\n### multi sub pointer-to(Blob:D, :$typed -> Pointer)\n\nReturns a `Pointer` to the contents of the `Blob`.\n\nThe type of the returned `Pointer` will be the same of the `Blob` if `:typed` was used\nor `void` if not.\n\nShould be noted that the memory is owned by Rakudo, so you must not attempt\nto free it.\n\n### multi sub pointer-to(array:D, :$typed -> Pointer)\n\nReturns a `Pointer` to the contents of the native `array`.\n\nThe type of the returned `Pointer` will be the same of the `array` if `:typed` was used\nor `void` if not.\n\nShould be noted that the memory is owned by Rakudo, so you must not attempt\nto free it.\n\n### multi sub pointer-to(CArray:D, :$typed -> Pointer)\n\nReturns a `Pointer` to the contents of the native `CArray`.\n\nThe type of the returned `Pointer` will be the same of the `CAarray` if `:typed` was used\nor `void` if not.\n\nShould be noted that the memory is owned by Rakudo, so you must not attempt\nto free it.\n\n### sub carray-from-blob(Blob:D, :$managed)\n\nReturns a `CArray` constructed from de contents of the `Blob`.\n\nIf `:managed` was given, the returned `CArray` contains a copy of the original\ncontent of the `Blob` and will be managed, otherwise the `CArray` holds a\nreference to the `Blob` content.\n\n\n### sub blob-allocate(Blob:U \\blob, $elems)\n\nRakudo 2016.03+ provides `Blob.allocate` to create a Blob/Buf with a pre-allocated\ninitial size.\n\nFor older ones you can use this subroutine for the same effect. It create a `blob`\nwith `$elems` zeroed elements.\n\n### sub blob-from-pointer(Pointer:D, Int :$elems!, Blob:U :$type = Buf)\n\nReturns a `Blob` of type `:type` constructed from the memory pointed by the\ngiven `Pointer` and the following `:elems` elements.\n\nThe type of the `Pointer` should be compatible with the type of the `Blob`,\n\nPlease note that the amount of memory copied depends of `$elems` **and** `:type`´s\nnative size.\n\n### sub blob-from-carray(CArray:D, Int :$size)\n\nReturns a `Blob` constructed from the contents of the `CArray`.\n\nWhen the `CArray` is unmanaged, for example as returned by a native call function, you\nshould include de `:size` argument.\n\nThe type of the `Blob` is determined by the type of the `CArray`.\n\n## WARNING\nThis module depends on internal details of the REPRs of the involved types in MoarVM,\nso it can stop working without notice.\n\nIn the same way as when handling pointers in C, you should known what are you doing.\n\nThis is an early release to allow the interested people the testing and\ndiscussion of the module: there is some missing features and you should\nbe aware that the API isn't in stone yet.\n\n## COPYRIGHT\n\nCopyright © 2016 by Salvador Ortiz\n"
+      "readme": "[![Actions Status](https://github.com/raku-community-modules/NativeHelpers-Blob/actions/workflows/linux.yml/badge.svg)](https://github.com/raku-community-modules/NativeHelpers-Blob/actions) [![Actions Status](https://github.com/raku-community-modules/NativeHelpers-Blob/actions/workflows/macos.yml/badge.svg)](https://github.com/raku-community-modules/NativeHelpers-Blob/actions)\n\nNAME\n====\n\nNativeHelpers::Blob - NativeCall utilities for work with Blob and CArray\n\nSYNOPSIS\n========\n\n```raku\nuse NativeHelpers::Blob;\n```\n\nDESCRIPTION\n===========\n\nThe `NativeHelpers::Blob` distribution provides a number of subroutines that help in converting native data-structures to Raku objects, and vice-versa.\n\nRight now the support for `Blob` / `Buf` in Raku's `NativeCall` is incomplete. You can use these as arguments for native functions, but not as attributes for `CStruct` or `CUnion`, for example.\n\nIn a `CStruct` class, you can use a `Pointer` or a `CArray`, but those don't have the flexibility of a `Blob` or `Buf`, moving data between them is slow, and with big buffers the memory required increases dramatically.\n\nAt some point, these problems will be addressed in core, but in the meantime...\n\nEXPORTED SUBROUTINES\n====================\n\npointer-to(positional, :$typed --> Pointer)\n-------------------------------------------\n\nReturns a `Pointer` to the contents of the given `Blob` or (native) `Array`.\n\nThe type of the returned `Pointer` will be the same of the `Blob` if the named argument `:typed` was specified with a true value, or `void` if not.\n\nShould be noted that the memory is owned by Rakudo, so you must **not** attempt to free it.\n\ncarray-from-blob(Blob:D, :$managed --> CArray)\n----------------------------------------------\n\nReturns a `CArray` constructed from de contents of the given `Blob`.\n\nIf the named argument `:managed` was specified with a true value, the returned `CArray` contains a copy of the original content of the `Blob` and will be managed, otherwise the `CArray` holds a reference to the `Blob` content.\n\nblob-from-pointer(Pointer:D, :$elems!, Blob:U :$type = Buf --> Blob)\n--------------------------------------------------------------------\n\nReturns a `Blob` of the type indicated with the named argument `:type` (defaults to `Buf`) constructed from the memory pointed by the given `Pointer` and the required named argument `:elems` to indicate the number of elements.\n\nThe type of the `Pointer` should be compatible with the type of the `Blob`.\n\nPlease note that the amount of memory copied depends of `$elems` **and** `:type`´s native size.\n\nblob-from-carray(CArray:D, :$size --> Blob)\n-------------------------------------------\n\nReturns a `Blob` constructed from the contents of the `CArray`.\n\nWhen the `CArray` is unmanaged, for example as returned by a native call function, you should include de `:size` argument.\n\nThe type of the `Blob` is determined by the type of the `CArray`.\n\nWARNING\n=======\n\nThis module depends on internal details of the REPRs of the involved types in MoarVM, so it can stop working without notice.\n\nIn the same way as when handling pointers in C, you should known what are you doing.\n\nAUTHORS\n=======\n\n  * Salvador Ortiz\n\n  * Raku Community\n\nCOPYRIGHT AND LICENSE\n=====================\n\nCopyright 2016 - 2019 by Salvador Ortiz\n\nCopyright 2026 Raku Community\n\nThis library is free software; you can redistribute it and/or modify it under the Artistic License 2.0.\n\n"
     },
     {
       "name": "NativeLibs",

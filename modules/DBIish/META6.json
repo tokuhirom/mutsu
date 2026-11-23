@@ -8,7 +8,7 @@
   "depends": {
     "runtime": {
       "requires": [
-        "NativeHelpers::Blob",
+        "NativeHelpers::Blob:ver<0.1.13+>:auth<zef:raku-community-modules>",
         "NativeLibs:auth<github:salortiz>:ver<0.0.9+>"
       ]
     },
@@ -79,5 +79,5 @@
   ],
   "test-depends": [
   ],
-  "version": "0.6.8"
+  "version": "0.6.9"
 }
