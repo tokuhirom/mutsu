@@ -1089,6 +1089,25 @@ mod readonly_set_cache_tests {
         assert!(set.is_empty());
     }
 
+    /// The topic `_` is held beside the map, not in it, and every accessor
+    /// still reports it (#18267).
+    #[test]
+    fn the_topic_is_answered_without_the_map() {
+        let topic = crate::symbol::wk::topic();
+        let mut set = ReadonlySet::default();
+        assert!(set.is_empty());
+        assert_eq!(set.insert(topic, ReadonlyKind::Alias), None);
+        assert!(!set.is_empty());
+        assert!(set.topic_marked());
+        assert!(set.contains_key(&topic));
+        assert!(set.marked_with(topic, ReadonlyKind::Alias));
+        assert_eq!(set.get(&topic), Some(&ReadonlyKind::Alias));
+        assert_eq!(set.iter().collect::<Vec<_>>(), vec![(topic, ReadonlyKind::Alias)]);
+        assert_eq!(set.remove(&topic), Some(ReadonlyKind::Alias));
+        assert!(!set.topic_marked());
+        assert!(set.is_empty());
+    }
+
     /// Re-marking with a different kind must be visible through the cache.
     #[test]
     fn a_rekinded_entry_reports_the_new_kind() {
