@@ -191,6 +191,21 @@ impl NanBox {
         }
     }
 
+    /// The codepoint store's holder if this is a `Uni`. A tag test and a
+    /// payload peek, where `view()` decodes through the out-of-line
+    /// `view_kind` match.
+    // Cost: O(1).
+    #[inline]
+    pub(in crate::value) fn as_uni(&self) -> Option<&UniData> {
+        let bits = self.0.get();
+        match classify(bits) {
+            // SAFETY: Uni words carry an Arc<UniData>, live for the &self
+            // borrow (the same mapping `view_kind` uses).
+            Classified::Kind(Kind::Uni) => Some(unsafe { peek_arc::<UniData>(bits) }),
+            _ => None,
+        }
+    }
+
     /// Whether this word is `Nil`.
     #[inline]
     pub(in crate::value) fn is_nil(&self) -> bool {
