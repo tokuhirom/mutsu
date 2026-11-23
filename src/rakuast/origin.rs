@@ -340,7 +340,10 @@ pub(super) fn quoted_text(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     let inside = super::unit_source::with_text(span, |written| {
         if words {
             // A word quote keeps the raw text between its brackets.
-            let (open, close) = word_brackets(written)?;
+            let (open, close) = word_brackets(written).or_else(|| {
+                let (open, end) = super::string_origins::body(written)?;
+                Some((open, written.len() - end))
+            })?;
             let inner = written.get(open..written.len().checked_sub(close)?)?;
             return (super::infix_origins::leaf_text(text)? == inner).then(|| {
                 crate::ast::SrcSpan::new(
