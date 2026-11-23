@@ -4532,11 +4532,8 @@ impl Interpreter {
                     // TODO: type-check the value against the array's element
                     // type here, as `@a[0] = v` does, instead of refusing.
                     if arr.value_type.is_none()
-                        && let Some(at) = Self::scalar_slot_position(
-                            &arr[inner_i],
-                            outer_positional,
-                            &outer_key,
-                        )
+                        && let Some(at) =
+                            Self::scalar_slot_position(&arr[inner_i], outer_positional, &outer_key)
                     {
                         at?;
                         arr[inner_i] = val.clone();
@@ -5010,7 +5007,11 @@ impl Interpreter {
         }
         match key.parse::<i64>().ok()? {
             0 => Some(Ok(())),
-            i => Some(Err(RuntimeError::out_of_range("Index", Value::int(i), "0..0"))),
+            i => Some(Err(RuntimeError::out_of_range(
+                "Index",
+                Value::int(i),
+                "0..0",
+            ))),
         }
     }
 
