@@ -79,6 +79,15 @@ impl Interpreter {
         cell: &crate::value::RoutineCell,
         candidate_idx: usize,
     ) -> Result<(), RuntimeError> {
+        // Every method declaration passes here, so this is also where a
+        // method gets the sub's compile-time refusal of `return $x` under a
+        // definite return value (`--> Nil`, `--> 42`), #18990.
+        if let Some(spec) = return_type
+            && self.is_definite_return_spec(spec)
+            && Self::body_contains_non_nil_return(body)
+        {
+            return Err(Self::malformed_return_value_compile_error(spec));
+        }
         if !traits.iter().any(|(t, _)| !is_parser_marker(t)) {
             return Ok(());
         }
