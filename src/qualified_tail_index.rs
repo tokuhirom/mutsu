@@ -263,13 +263,14 @@ pub(crate) fn names_ending_in(bare: &str) -> Vec<Symbol> {
     caught_up_lookup(&TAIL_INDEX, bare, record_members)
 }
 
-/// How many symbols [`names_ending_in`]'s next read would have to fold in
-/// first. The first read of a process folds every symbol interned so far,
-/// which a caller with a cheaper answer at hand can avoid paying (#12026).
+/// Whether [`names_ending_in`] has never been read in this process, so its
+/// first read would fold in every symbol interned so far. Later reads fold
+/// only what was interned since (amortized O(1) per symbol), so only the
+/// first one is worth avoiding for a caller with a cheaper answer at hand
+/// (#12026).
 // Cost: O(1).
-pub(crate) fn tail_index_backlog() -> usize {
-    let scanned = TAIL_INDEX.read().map_or(0, |idx| idx.scanned);
-    crate::symbol::interned_count().saturating_sub(scanned)
+pub(crate) fn tail_index_cold() -> bool {
+    TAIL_INDEX.read().map_or(true, |idx| idx.scanned == 0)
 }
 
 /// Whether [`names_ending_in`] can list every qualified name ending in `bare`:

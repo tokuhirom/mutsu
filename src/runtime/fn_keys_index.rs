@@ -316,10 +316,12 @@ impl Interpreter {
             return None;
         }
         let registry = self.routines();
-        // Folding a backlog larger than the registry into the tail index
-        // costs more than the one registry pass the caller falls back to
-        // (the first read of a process folds every symbol interned so far).
-        if crate::qualified_tail_index::tail_index_backlog() > registry.functions.len() {
+        // The tail index's first read folds in every symbol interned so far,
+        // which costs more than the one registry pass the caller falls back
+        // to; a module load is usually that first reader (#12026).
+        if crate::qualified_tail_index::tail_index_cold()
+            && crate::symbol::interned_count() > registry.functions.len()
+        {
             return None;
         }
         let mut keys: Vec<Symbol> = crate::qualified_tail_index::names_ending_in(base)
