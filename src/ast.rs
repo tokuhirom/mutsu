@@ -1465,6 +1465,25 @@ pub(crate) struct SubstThunk {
     /// operator's name); `None` for a plain `=`. What the RakuAST boundary
     /// shows as `MetaInfix::Assign(Infix(OP))`.
     pub(crate) infix: Option<Box<str>>,
+    /// Whether the plain `=` is an item assignment, decided from the
+    /// enclosing expression's `$*LEFTSIGIL` (`crate::ast::left_sigil`): what
+    /// the RakuAST boundary shows as `Assignment.new(:item)`. Execution does
+    /// not read it.
+    #[serde(default)]
+    pub(crate) item: bool,
+}
+
+impl SubstThunk {
+    /// The thunk of a parsed `s[pat] = EXPR`; the enclosing expression's
+    /// parse decides `item` ([`left_sigil::mark_substitutions`]).
+    // Cost: O(1).
+    pub(crate) fn assign(expr: Expr) -> Self {
+        Self {
+            expr,
+            infix: None,
+            item: false,
+        }
+    }
 }
 
 /// Where a substitution starts: the `:c(N)` / `:continue(N)` or `:p(N)` /

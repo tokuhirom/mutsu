@@ -199,6 +199,24 @@ pub(super) fn pick_n(target: &Value, arg: &Value) -> Option<Result<Value, Runtim
     {
         return Some(Err(RuntimeError::new("Cannot convert NaN to Int")));
     }
+    // A List's `pick` coerces its count to `UInt`: a negative one dies
+    // (Range, Set and Bag answer an empty pick instead, above).
+    let truncated = match arg.view() {
+        ValueView::Num(f) if f.is_finite() => Some(f.trunc() as i64),
+        ValueView::Rat(n, d) if d != 0 => Some(n / d),
+        ValueView::Int(n) => Some(n),
+        ValueView::Str(s) => s.trim().parse::<i64>().ok(),
+        _ => None,
+    };
+    if let Some(n) = truncated
+        && n < 0
+    {
+        return Some(Err(RuntimeError::out_of_range_named(
+            "Coercion to UInt",
+            Value::int(n),
+            "0..^Inf",
+        )));
+    }
     let mut items = runtime::value_to_list_for_receiver(target);
     Some(Ok(match arg.view() {
         ValueView::Whatever => {

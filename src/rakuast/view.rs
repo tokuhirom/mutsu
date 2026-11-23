@@ -2528,6 +2528,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                     &spelled.expr,
                 )
             }
+            Spelling::FunctionInfix => super::function_infix::view_spelled(names, &spelled.expr),
             Spelling::NegatedSetInfix(written) => {
                 let Some((left, _, right)) = negated_set_operands(&spelled.expr) else {
                     return Err(unsupported("negated set spelling without its relation"));
@@ -5678,15 +5679,16 @@ pub(super) fn word_quote_with(quotewords: bool, val: bool, word: &str) -> RakuAs
         fields: vec![
             RakuAstField {
                 name: Some("processors"),
-                value: RakuAstFieldValue::List(processors),
+                value: RakuAstFieldValue::List(processors.clone()),
             },
             RakuAstField {
                 name: Some("segments"),
-                value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(RakuAstNode {
-                    origin: Default::default(),
-                    class: RakuAstClass::StrLiteral,
-                    fields: vec![leaf_field(None, Value::str(word.to_string()))],
-                }))]),
+                // A balanced inner `<...>` is a nested quote (#18457).
+                value: RakuAstFieldValue::List(super::nested_words::segments(
+                    quotewords,
+                    word,
+                    &processors,
+                )),
             },
         ],
     }

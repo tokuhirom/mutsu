@@ -56,6 +56,7 @@ Re-check ADR status lines rather than relying on an old issue's description of t
 | [docs/t-directory-layout.md](docs/t-directory-layout.md) | Which `t/` category a new test goes in |
 | [docs/complexity-annotations.md](docs/complexity-annotations.md) | The `// Cost:` comment format |
 | [docs/security.md](docs/security.md) | Threat model: what mutsu trusts, the invariants at each trust boundary, audit tooling |
+| [docs/rakudo-divergences.md](docs/rakudo-divergences.md) | Every place mutsu deliberately differs from rakudo, with repro, reason and decision link |
 | [docs/adr/](docs/adr/) | Architecture decisions (`README.md` has the conventions) |
 
 ## Hard rules
@@ -186,6 +187,13 @@ work, so free space with the `reclaim-disk` skill and continue.
 - `raku` is the reference oracle: `raku -e '<code>'` whenever expected behavior is unclear, and run
   a roast file under `raku` before comparing mutsu's output. `docs/raku-doc-guide.md` indexes the
   vendored docs; `old-design-docs/` holds the original synopses.
+- **A deliberate divergence from rakudo is recorded in
+  [docs/rakudo-divergences.md](docs/rakudo-divergences.md) in the same PR** (user decision,
+  2026-11-22). This covers a change that keeps or introduces behaviour differing from rakudo on
+  purpose: a rakudo artefact or bug not copied, roast or raku-doc followed over rakudo, a safety
+  reason. The entry gives a minimal repro with both outputs, the reason and the decision's link.
+  Remove the entry when mutsu changes to match rakudo. Whether to diverge is still the user's
+  decision, never the agent's.
 
 ### Before publishing a PR — `scripts/dev gate`
 

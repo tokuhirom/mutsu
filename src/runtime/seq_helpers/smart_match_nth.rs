@@ -9,12 +9,66 @@
 use super::super::*;
 use crate::value::ValueView;
 
+/// Where a multi-match `m//` (`:g`, `:ov`, `:ex`, `:nth`, `:x`) starts its
+/// scan: the `:c` / `:pos` offset (a char index), and whether `:pos` anchors
+/// the first match there (#18886).
+#[derive(Clone, Copy, Default)]
+pub(super) struct ScanStart {
+    pub(super) from: usize,
+    pub(super) anchored: bool,
+}
+
+impl ScanStart {
+    /// `matches` (ascending by start) with `:pos`'s rule applied: nothing when
+    /// the first is not at the anchor.
+    // Cost: O(1).
+    pub(super) fn apply(self, mut matches: Vec<RegexCaptures>) -> Vec<RegexCaptures> {
+        if self.anchored && matches.first().is_some_and(|first| first.from != self.from) {
+            matches.clear();
+        }
+        matches
+    }
+}
+
 impl Interpreter {
-    /// The non-overlapping matches of `pattern` in `text`, leftmost first.
+    /// The scan start of a multi-match `m//` written with `adverbs`: `:c(N)`,
+    /// else `:pos(N)` (anchored); a bare `:c` / `:pos` resumes at `$/.to`.
+    // Cost: O(n) for the grapheme-to-codepoint offset, n = chars of `text`.
+    pub(super) fn multi_match_scan_start(
+        &self,
+        adverbs: &crate::value::RegexAdverbs,
+        text: &str,
+    ) -> ScanStart {
+        let at = |interp: &Self, n: Option<usize>| match n {
+            Some(n) => crate::value::match_helpers::grapheme_to_cp_index(text, n),
+            None => interp.get_match_to_position(),
+        };
+        if adverbs.continue_ {
+            ScanStart {
+                from: at(self, adverbs.continue_value),
+                anchored: false,
+            }
+        } else if adverbs.pos {
+            ScanStart {
+                from: at(self, adverbs.pos_value),
+                anchored: true,
+            }
+        } else {
+            ScanStart::default()
+        }
+    }
+
+    /// The non-overlapping matches of `pattern` in `text` from `start`,
+    /// leftmost first.
     // Cost: O(n) plus per-match engine work, n = chars of `text`.
-    fn smart_match_nth_candidates(&mut self, pattern: &str, text: &str) -> Vec<RegexCaptures> {
-        let all = self.regex_match_non_overlapping(pattern, text);
-        self.select_non_overlapping_matches(all)
+    fn smart_match_nth_candidates(
+        &mut self,
+        pattern: &str,
+        text: &str,
+        start: ScanStart,
+    ) -> Vec<RegexCaptures> {
+        let all = self.regex_match_non_overlapping_from(pattern, text, start.from);
+        start.apply(self.select_non_overlapping_matches(all))
     }
 
     /// `topic ~~ m:nth(NTH)/pattern/`: select the matches `nth` names, set
@@ -25,8 +79,14 @@ impl Interpreter {
     /// the pending regex error the match raises.
     // Cost: O(n + r) plus per-match engine work and one call of a Callable
     // `:nth`, n = chars of the topic, r = matches.
-    pub(super) fn smart_match_nth(&mut self, pattern: &str, nth: &Value, text: &str) -> bool {
-        let candidates = self.smart_match_nth_candidates(pattern, text);
+    pub(super) fn smart_match_nth(
+        &mut self,
+        pattern: &str,
+        nth: &Value,
+        text: &str,
+        start: ScanStart,
+    ) -> bool {
+        let candidates = self.smart_match_nth_candidates(pattern, text, start);
         let total = candidates.len();
         if let ValueView::Junction { kind, values } = nth.view() {
             let mut picked = Vec::with_capacity(values.len());
@@ -101,8 +161,14 @@ impl Interpreter {
     /// matches nothing.
     // Cost: O(n + r) plus per-match engine work, n = chars of the topic,
     // r = matches.
-    pub(super) fn smart_match_x(&mut self, pattern: &str, x: &Value, text: &str) -> bool {
-        let candidates = self.smart_match_nth_candidates(pattern, text);
+    pub(super) fn smart_match_x(
+        &mut self,
+        pattern: &str,
+        x: &Value,
+        text: &str,
+        start: ScanStart,
+    ) -> bool {
+        let candidates = self.smart_match_nth_candidates(pattern, text, start);
         let Some((lo, hi)) = Self::match_x_bounds(x) else {
             self.clear_multi_match_state();
             return false;

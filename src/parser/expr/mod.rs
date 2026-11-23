@@ -179,7 +179,12 @@ pub(super) fn expression(input: &str) -> PResult<'_, Expr> {
         }
         Ok((rest, expr))
     })()
-    .and_then(|(rest, expr)| absorb_colonpair_adverbs(input, rest, expr));
+    .and_then(|(rest, expr)| absorb_colonpair_adverbs(input, rest, expr))
+    .map(|(rest, mut expr)| {
+        // An `s[...] = …` term of this expression reads its sigil.
+        crate::ast::left_sigil::mark_substitutions(input, &mut expr);
+        (rest, expr)
+    });
     if memoize {
         EXPR_MEMO.store(input, &result);
     }
@@ -363,7 +368,10 @@ fn expression_no_word_logical_feeds(input: &str, allow_feed: bool) -> PResult<'_
             other => curry_sourced(other, input, rest),
         };
     }
-    absorb_colonpair_adverbs(input, rest, expr)
+    let (rest, mut expr) = absorb_colonpair_adverbs(input, rest, expr)?;
+    // An `s[...] = …` term of this expression reads its sigil.
+    crate::ast::left_sigil::mark_substitutions(input, &mut expr);
+    Ok((rest, expr))
 }
 
 pub(in crate::parser) fn expression_no_sequence(input: &str) -> PResult<'_, Expr> {

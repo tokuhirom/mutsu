@@ -174,16 +174,10 @@ impl Interpreter {
         Some(caps)
     }
 
-    pub(in crate::runtime) fn regex_match_all_with_captures(
-        &mut self,
-        pattern: &str,
-        text: &str,
-    ) -> Vec<RegexCaptures> {
-        self.regex_match_captures_impl(pattern, text, false, false, 0)
-    }
-
-    /// [`Self::regex_match_all_with_captures`] for matches starting at or after
-    /// the char position `from` (`.match(…, :c(from), :ov)`).
+    /// Every match of `pattern` in `text` that starts at or after the char
+    /// position `from` -- every end at every start, as `:overlap` /
+    /// `:exhaustive` need (`m:c(from):ov//`, `.match(…, :c(from), :ex)`).
+    // Cost: as `regex_match_captures_impl`.
     pub(in crate::runtime) fn regex_match_all_with_captures_from(
         &mut self,
         pattern: &str,
@@ -193,10 +187,12 @@ impl Interpreter {
         self.regex_match_captures_impl(pattern, text, false, false, from)
     }
 
-    /// Like [`Self::regex_match_all_with_captures`], but at each start position
-    /// keeps ONLY the highest-DFS-priority (canonical greedy/frugal) match end —
-    /// the one the single-match engine would pick — instead of every possible
-    /// end, and skips a start a previously accepted match already covers.
+    /// The non-overlapping matches of `pattern` in `text`, scanning from the
+    /// char position `from` (`m:g//`, `.match(…, :c(from), :g)`). At each start
+    /// it keeps ONLY the highest-DFS-priority (canonical greedy/frugal) match
+    /// end -- the one the single-match engine would pick -- instead of every
+    /// possible end, and skips a start a previously accepted match (or the
+    /// offset `from`) already covers.
     ///
     /// Both halves matter for the plain `:g` path. Collecting every end and then
     /// keeping the longest per start (as `select_non_overlapping_matches` does)
@@ -205,25 +201,12 @@ impl Interpreter {
     /// And running the pattern at a position that is discarded afterwards still
     /// runs a `{ ... }` block inside it, so
     /// `"aa bb" ~~ m:g/( \w* { $c++ } )/` left `$c` at 12 where raku leaves it
-    /// at 4 — raku finds one match, commits to it and resumes the scan after it.
+    /// at 4 -- raku finds one match, commits to it and resumes the scan after it.
     ///
     /// A zero-width match does not advance the barrier, so a `\w*` matching
-    /// empty right after a previous match is still reported — exactly the
+    /// empty right after a previous match is still reported -- exactly the
     /// `from >= last_end` test the post-filter applied.
-    ///
-    /// The `:overlap` / `:exhaustive` paths genuinely need every end at every
-    /// start and keep using [`Self::regex_match_all_with_captures`].
-    pub(in crate::runtime) fn regex_match_non_overlapping(
-        &mut self,
-        pattern: &str,
-        text: &str,
-    ) -> Vec<RegexCaptures> {
-        self.regex_match_captures_impl(pattern, text, true, true, 0)
-    }
-
-    /// [`Self::regex_match_non_overlapping`] scanning from the char position
-    /// `from` (`.match(…, :c(from), :g)`): a match that would cover `from`
-    /// from an earlier start is never tried.
+    // Cost: as `regex_match_captures_impl`.
     pub(in crate::runtime) fn regex_match_non_overlapping_from(
         &mut self,
         pattern: &str,
