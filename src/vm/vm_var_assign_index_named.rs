@@ -5023,7 +5023,11 @@ impl Interpreter {
         val: Value,
     ) -> Result<(), RuntimeError> {
         if index != 0 {
-            return Err(RuntimeError::out_of_range("Index", Value::int(index), "0..0"));
+            return Err(RuntimeError::out_of_range(
+                "Index",
+                Value::int(index),
+                "0..0",
+            ));
         }
         self.stack.push(val.into_deref());
         match target_slot {
