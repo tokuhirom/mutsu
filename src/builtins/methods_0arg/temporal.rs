@@ -313,13 +313,7 @@ fn temporal_invalid_format_error(invalid_str: &str, target: &str, format: &str) 
 
 /// Parse an ISO 8601 date string (YYYY-MM-DD, -YYYY-MM-DD, +YYYY-MM-DD).
 pub fn parse_date_string(s: &str) -> Result<(i64, i64, i64), RuntimeError> {
-    let make_err = || {
-        temporal_invalid_format_error(
-            s,
-            "Date",
-            "yyyy-mm-dd",
-        )
-    };
+    let make_err = || temporal_invalid_format_error(s, "Date", "yyyy-mm-dd");
 
     // Handle leading sign
     let (negative, rest) = if let Some(stripped) = s.strip_prefix('-') {
