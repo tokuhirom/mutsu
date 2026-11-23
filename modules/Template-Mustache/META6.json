@@ -10,7 +10,7 @@
   "depends": {
     "test": {
       "requires": [
-        "JSON::Fast:ver<0.19+>:auth<cpan:TIMOTIMO>"
+        "JSON::Fast:ver<0.21+>:auth<zef:timo>"
       ]
     }
   },
@@ -38,5 +38,5 @@
   ],
   "test-depends": [
   ],
-  "version": "1.2.6"
+  "version": "1.2.7"
 }
