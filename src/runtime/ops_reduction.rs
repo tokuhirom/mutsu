@@ -435,6 +435,21 @@ impl Interpreter {
                 right,
                 crate::builtins::BitOp::Xor,
             )),
+            "?&" => Ok(crate::builtins::bool_bitop(
+                left,
+                right,
+                crate::builtins::BitOp::And,
+            )),
+            "?|" => Ok(crate::builtins::bool_bitop(
+                left,
+                right,
+                crate::builtins::BitOp::Or,
+            )),
+            "?^" => Ok(crate::builtins::bool_bitop(
+                left,
+                right,
+                crate::builtins::BitOp::Xor,
+            )),
             "==" => {
                 if let (Some(a), Some(b)) = (
                     super::to_big_rat_parts(left),

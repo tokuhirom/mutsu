@@ -144,7 +144,7 @@ fn colonpair_source(names: &NameScope, pair: &RakuAstNode) -> Option<String> {
 
 /// The bracketed source of a colonpair's value, in a spelling the parser's
 /// name rule canonicalizes the way it does the original: a word quote keeps
-/// its brackets, a list of strings is a `[…]` of quoted items, anything else
+/// its brackets, a list of strings and integers is a `[…]` of its items, anything else
 /// is its expression in `(…)`.
 // Cost: O(n), n = size of the value.
 fn value_source(names: &NameScope, value: &RakuAstNode) -> Option<String> {
@@ -165,8 +165,14 @@ fn value_source(names: &NameScope, value: &RakuAstNode) -> Option<String> {
             let items = items
                 .iter()
                 .map(|item| match item {
-                    Expr::Literal(v) => v.as_str().and_then(quoted),
-                    _ => None,
+                    // `:a[1,2]`: rakudo canonicalizes the value by what it
+                    // is, so an integer spells as its digits (#18612).
+                    Expr::Literal(v) => match v.view() {
+                        crate::value::ValueView::Int(i) => Some(i.to_string()),
+                        _ => v.as_str().and_then(quoted),
+                    },
+                    // `:a[-3, 20]`: any other item as its source.
+                    other => crate::regex_tree::expression_source(other),
                 })
                 .collect::<Option<Vec<_>>>()?;
             Some(format!("[{}]", items.join(", ")))

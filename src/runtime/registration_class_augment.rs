@@ -954,9 +954,18 @@ impl Interpreter {
         } else {
             pun_name
         };
+        if self.registry().classes.contains_key(&pun_name)
+            && !super::pun_compose::composed_elsewhere(&pun_name)
+        {
+            return Ok(Some(pun_name));
+        }
+        // One thread at a time composes a pun; the one that finds it being
+        // composed waits here, and then finds it complete (#18858).
+        let mut compose = super::pun_compose::PunComposeGuard::acquire()?;
         if self.registry().classes.contains_key(&pun_name) {
             return Ok(Some(pun_name));
         }
+        compose.mark(&pun_name);
         // Only pun what actually resolves to a role candidate; anything else
         // (an unknown name, a parametric *class*) keeps its existing handling.
         //

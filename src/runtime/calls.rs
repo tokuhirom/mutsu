@@ -170,6 +170,10 @@ impl Interpreter {
                 } else if !pd.named && pd.optional_marker {
                     part.push('?');
                 }
+                // rakudo shows a `where` constraint as a placeholder block.
+                if pd.where_constraint.is_some() {
+                    part.push_str(" where { ... }");
+                }
                 if let Some(crate::ast::Expr::Literal(value)) = &pd.default {
                     part.push_str(" = ");
                     part.push_str(&crate::builtins::methods_0arg::raku_repr::raku_value(value));

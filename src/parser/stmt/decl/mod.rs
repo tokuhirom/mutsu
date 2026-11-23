@@ -28,6 +28,7 @@ pub(in crate::parser::stmt) use handles::parse_handle_specs;
 pub(in crate::parser::stmt) use has_decl::has_decl;
 pub(in crate::parser::stmt) use helpers::parse_array_shape_suffix;
 pub(in crate::parser::stmt) use my_decl::{my_decl, my_decl_expr};
+pub(crate) use use_decl::leading_version_pragma_end;
 pub(in crate::parser::stmt) use use_decl::{import_stmt, need_stmt, no_stmt, use_stmt};
 
 use super::super::expr::expression;

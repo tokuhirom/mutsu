@@ -298,18 +298,16 @@ pub(crate) fn date(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
 /// midnight UTC.
 // Cost: O(n), n = chars of the invocant.
 pub(crate) fn date_time(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    use crate::builtins::methods_0arg::temporal::{
-        make_datetime, parse_date_string, parse_datetime_string,
-    };
+    use crate::builtins::methods_0arg::temporal::{make_datetime, parse_datetime_string};
     let ValueView::Str(s) = target.view() else {
         return None;
     };
-    Some(if s.contains(['T', 't']) {
+    // A date-only string is a DateTime at midnight UTC; one that is not a
+    // timestamp at all is refused as a DateTime string, not a Date one.
+    Some(
         parse_datetime_string(&s)
-            .map(|(y, mo, d, h, mi, se, tz)| make_datetime(y, mo, d, h, mi, se, tz))
-    } else {
-        parse_date_string(&s).map(|(y, m, d)| make_datetime(y, m, d, 0, 0, 0.0, 0))
-    })
+            .map(|(y, mo, d, h, mi, se, tz)| make_datetime(y, mo, d, h, mi, se, tz)),
+    )
 }
 
 /// `Str.naive-word-wrapper(:$max, :$indent)`.

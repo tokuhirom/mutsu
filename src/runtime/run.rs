@@ -608,7 +608,26 @@ impl Interpreter {
         crate::parser::clear_parser_lib_paths();
         // Emit any parse warnings (e.g. duplicate traits)
         self.emit_parse_warnings(crate::parser::take_parse_warnings());
-        let (mut stmts, finish_content) = parse_result?;
+        // A `BEGIN` that ran at parse time called `exit` (ADR-17558 §7.16):
+        // the parse stopped there, and the program ends as an `exit` in its
+        // prologue would end it, running its END phasers.
+        if parse_result.is_err() && self.control.halted {
+            self.finish()?;
+            return Ok(self.output_sink().output.clone());
+        }
+        let (mut stmts, finish_content) = match parse_result {
+            Ok(parsed) => parsed,
+            Err(e) => {
+                // A module the parse already loaded registered its END phasers
+                // (ADR-17558), and rakudo runs them when the compile fails
+                // afterwards, under `-c` too: report the error first, then END.
+                // The mainline was never entered, so its LEAVE phasers do not
+                // run.
+                self.report_uncaught_early(&e);
+                let _ = self.finish_unit(false);
+                return Err(e);
+            }
+        };
         // The program's own revision, for routines it declares (ADR-17287).
         if let Some(path) = self.io.program_path_sym {
             crate::parser::unit_revisions::note_unit_language_revision(
@@ -658,6 +677,10 @@ impl Interpreter {
         // A term used before its declaration, judged in source order for the
         // same reason (ADR-15760 Amendment 1, 1b).
         let premature_term = crate::runtime::undeclared_routines::check_terms_in_source_order(&stmts);
+        // A call rakudo's optimizer refutes ("Calling f(Str) will never
+        // work ...") is a CHECK-time error too (#18874), judged on the
+        // statements as written, whose spans index `input`.
+        let static_refuted = self.check_static_refutations(&stmts, input);
         // `my $x will leave { ... }` expands to a scopeless `SyntheticBlock`
         // holding the declaration and its exit phasers. Those phasers belong to
         // the unit's scope, so lift them out where `split_block_phasers` sees
@@ -767,6 +790,7 @@ impl Interpreter {
                 self.check_undeclared_names_mainline(&body_main)?;
                 post_declared?;
                 premature_term?;
+                static_refuted?;
                 forward_vars?;
                 Ok(guards)
             });
@@ -1061,6 +1085,12 @@ impl Interpreter {
         if let Err(e) = main_result {
             let _ = self.finish();
             return Err(e);
+        }
+        // `-c` on a unit that compiled: rakudo runs no END phaser, not even
+        // one a module the compile loaded registered (#18921). A failed
+        // compile still runs them (above).
+        if compile_only {
+            self.control.skip_end_phasers = true;
         }
         self.finish()?;
         // GC program-end collect: deliver DESTROY for leaked cycles. Skipped
@@ -1482,6 +1512,12 @@ impl Interpreter {
     }
 
     pub(super) fn finish(&mut self) -> Result<(), RuntimeError> {
+        self.finish_unit(true)
+    }
+
+    /// [`Self::finish`], with the mainline's LEAVE phasers run only when
+    /// `mainline_entered`: a unit whose compile failed never entered it.
+    fn finish_unit(&mut self, mainline_entered: bool) -> Result<(), RuntimeError> {
         // On wasm a fire-and-forget `start` block is a task nobody pumped: it is
         // still sitting on the cooperative scheduler's queue. Run it here, at the
         // same point a native build would collect a finished thread's output, so
@@ -1500,7 +1536,7 @@ impl Interpreter {
         // LEAVE phasers a top-level `use` attached to the main compunit
         // (`runtime::attach_target`): the mainline is left before END runs.
         // An `exit` leaves no scope in raku, so it skips them.
-        let mainline_leave = if self.control.halted {
+        let mainline_leave = if self.control.halted || !mainline_entered {
             Ok(())
         } else {
             self.run_mainline_leave_phasers()

@@ -186,6 +186,37 @@ impl Interpreter {
         Some(Arc::from([]))
     }
 
+    /// The functions map's keys now, for [`Self::invalidate_fn_resolution_since`].
+    // Cost: O(r), r = registered functions.
+    pub(crate) fn fn_key_snapshot(&self) -> std::collections::HashSet<Symbol> {
+        self.routines().functions.keys().copied().collect()
+    }
+
+    /// [`Self::invalidate_fn_resolution`] for a span of registry edits whose
+    /// keys the caller did not track: every memo goes, and the base-name key
+    /// index evicts exactly the keys whose presence differs from `before`, so
+    /// it stays complete across the span (#12026). The index records only
+    /// which keys are registered, so a diff of the key sets is all it needs.
+    // Cost: O(r + c), r = registered functions now and in `before`, c = memos
+    // dropped.
+    #[track_caller]
+    pub(crate) fn invalidate_fn_resolution_since(
+        &mut self,
+        before: &std::collections::HashSet<Symbol>,
+    ) {
+        let changed: Vec<Symbol> = {
+            let registry = self.routines();
+            let functions = &registry.functions;
+            functions
+                .keys()
+                .filter(|key| !before.contains(*key))
+                .chain(before.iter().filter(|key| !functions.contains_key(*key)))
+                .copied()
+                .collect()
+        };
+        self.invalidate_fn_resolution_changing_keys(changed);
+    }
+
     /// Drop the whole index, completeness included.
     // Cost: O(b), b = indexed base names.
     pub(crate) fn clear_fn_keys_index(&mut self) {
@@ -285,6 +316,14 @@ impl Interpreter {
             return None;
         }
         let registry = self.routines();
+        // The tail index's first read folds in every symbol interned so far,
+        // which costs more than the one registry pass the caller falls back
+        // to; a module load is usually that first reader (#12026).
+        if crate::qualified_tail_index::tail_index_cold()
+            && crate::symbol::interned_count() > registry.functions.len()
+        {
+            return None;
+        }
         let mut keys: Vec<Symbol> = crate::qualified_tail_index::names_ending_in(base)
             .into_iter()
             .filter(|key| {

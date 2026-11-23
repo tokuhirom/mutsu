@@ -23,58 +23,33 @@ impl Interpreter {
             let ValueView::Sub(sub_data) = method_value.view() else {
                 return Ok(Value::NIL);
             };
-            let captured_env = if sub_data.env.is_empty() {
-                None
-            } else {
-                let mut env = sub_data.env.clone();
-                env.insert("__mutsu_declared_method_capture".to_string(), Value::int(2));
-                crate::term_names::bind_lexical_types_by_bare_name(&mut env);
-                Some(env)
-            };
-            let def = MethodDef {
-                value_prototype: None,
-                syms: Default::default(),
-                lexical_package: sub_data.package,
-                params: (sub_data.params.to_vec()).into(),
-                param_defs: (sub_data.param_defs.to_vec()).into(),
-                body: sub_data.body.clone(),
-                is_rw: sub_data.is_rw,
-                is_raw: sub_data.is_raw,
-                is_private: false,
-                is_multi: true,
-                is_my: false,
-                role_origin: None,
-                original_role: None,
-                return_type: None,
-                compiled_code: sub_data.compiled_code.clone(),
-                compiled_fns: None,
-                delegation: None,
-                is_default: false,
-                deprecated_message: None,
-                is_submethod: false,
-                is_hidden_from_backtrace: false,
-                captured_env,
-                source_file: sub_data.source_file.clone(),
-                role_param_bindings: None,
-                nested_capture_index: None,
-                captured_readonly: None,
-                routine_cell: Default::default(),
-                augment_epoch: 0,
-            };
+            // The same definition `^add_method` builds (the implicit invocant
+            // dropped, a declared `my method`'s bytecode taken from its
+            // routine), marked as a multi candidate: building it here by hand
+            // kept the invocant and an empty body, so the candidate answered
+            // Nil when called (#18797).
+            let def = self.method_def_from_code(&sub_data, false, true);
             // `^add_multi_method` must still *error* for an unregistered
             // class -- existence keys off `classes.contains_key`, not the
             // method table (ADR-0019 F4c design note (0)(iii)).
             if self.registry().classes.contains_key(&class_name) {
+                if self.registry().composed_classes.contains(&class_name) {
+                    // A composed class keeps the candidate aside until its
+                    // next `^compose`, as rakudo's `multi_methods_to_incorporate`
+                    // does: dispatch must not see it before then.
+                    self.registry_mut()
+                        .deferred_multi_methods
+                        .push((class_name, method_name, def));
+                    return Ok(Value::NIL);
+                }
                 self.registry_mut().push_user_method(
                     Symbol::intern(&class_name),
                     Symbol::intern(&method_name),
                     def,
                 );
-                if !self.registry().composed_classes.contains(&class_name) {
-                    self.registry_mut()
-                        .pending_multi_methods
-                        .insert((class_name.clone(), method_name.clone()));
-                }
+                self.registry_mut()
+                    .pending_multi_methods
+                    .insert((class_name.clone(), method_name.clone()));
                 self.caches.native_ctor_plan_cache.clear();
                 self.caches.native_ctor_plan_builtin.clear();
                 return Ok(Value::NIL);
@@ -152,6 +127,7 @@ impl Interpreter {
             self.registry_mut()
                 .pending_multi_methods
                 .retain(|(class, _)| class != &class_name);
+            self.install_deferred_multi_methods(&class_name);
             // This is the native step a custom `compose` hook's
             // `callsame` reaches: from here on the class's auto-generated
             // accessors count as installed (`classes_composing_accessors`).
@@ -167,6 +143,30 @@ impl Interpreter {
             // loses the freshly composed type and turns the following
             // call into an Any dispatch.
             Ok(args[0].clone())
+    }
+
+    /// Install the candidates `^add_multi_method` held back for the composed
+    /// class `class_name` (see `Registry::deferred_multi_methods`), in the
+    /// order they were added.
+    // Cost: O(d), d = held-back candidates of every class.
+    fn install_deferred_multi_methods(&mut self, class_name: &str) {
+        if self.registry().deferred_multi_methods.is_empty() {
+            return;
+        }
+        let mut ready = Vec::new();
+        self.registry_mut().deferred_multi_methods.retain(|(class, method, def)| {
+            if class == class_name {
+                ready.push((method.clone(), def.clone()));
+                false
+            } else {
+                true
+            }
+        });
+        let owner = Symbol::intern(class_name);
+        for (method, def) in ready {
+            self.registry_mut()
+                .push_user_method(owner, Symbol::intern(&method), def);
+        }
     }
 
     /// `ClassHOW.is_composed`: true after a user class reaches its native

@@ -784,7 +784,7 @@ impl Interpreter {
         value: &Value,
         why: &mut Option<Box<RuntimeError>>,
     ) -> bool {
-        if core_scalar_satisfies(constraint, value) {
+        if core_scalar_satisfies(constraint, value) && !self.core_name_subset_applies(constraint) {
             return true;
         }
         // The check recurses through subset bases, parameterizations and type
@@ -2757,6 +2757,25 @@ impl Interpreter {
     }
 }
 
+impl Interpreter {
+    /// Whether `constraint` names a subset this unit's code declared under a
+    /// core type's name (`subset Int of Any where ...`), which the core scalar
+    /// check must not answer for: the subset's `where` decides (#19013). A
+    /// module's own `Int` is still the core type.
+    // Cost: O(1) when no such subset was declared; otherwise one registry
+    // probe.
+    fn core_name_subset_applies(&self, constraint: &str) -> bool {
+        if !self.types.core_scalar_name_subset {
+            return false;
+        }
+        let name = constraint.strip_suffix(":D").unwrap_or(constraint);
+        self.registry()
+            .subsets
+            .get(name)
+            .is_some_and(|def| def.decl_unit == self.current_unit)
+    }
+}
+
 /// Whether `value`, a plain `Int` / `Num` / `Str` / `Bool` (or a built-in
 /// aggregate, pair or code value, for the few names those always are),
 /// trivially satisfies
@@ -2766,6 +2785,17 @@ impl Interpreter {
 /// yes -- every other shape goes through the full check.
 // Cost: O(1), a match on the value's kind and the constraint's length.
 #[inline]
+/// Whether `name` is one the core scalar check ([`core_scalar_satisfies`])
+/// answers by itself.
+// Cost: O(1).
+pub(crate) fn is_core_scalar_check_name(name: &str) -> bool {
+    matches!(
+        name,
+        "Int" | "Num" | "Str" | "Bool" | "Numeric" | "Real" | "Cool" | "Any" | "Mu" | "int" | "num"
+            | "Callable" | "Pair"
+    )
+}
+
 fn core_scalar_satisfies(constraint: &str, value: &Value) -> bool {
     let name = constraint.strip_suffix(":D").unwrap_or(constraint);
     match value.view() {

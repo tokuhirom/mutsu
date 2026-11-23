@@ -3,10 +3,8 @@ use Test;
 # An extended name's colonpair value is canonicalized by its compile-time
 # value, so `:k[1,2]`, `:k(1,2)` and `:k<1 2>` all name `k<1 2>` -- with a
 # subscript-adverb name as the key too (#18029).
-#
-# Kept apart from adverbial-pair-variable-name.t: a `[1,2]` / `(1,2)` value
-# in a declaration cannot be spelled back by the RakuAST `.AST` view yet
-# (#18612), so this file is not on ci/rakuast-ast-eval-passing.txt.
+# A `[1,2]` / `(1,2)` value in a declaration is spelled back by the RakuAST
+# `.AST` view too (#18612).
 
 plan 6;
 

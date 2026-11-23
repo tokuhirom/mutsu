@@ -154,6 +154,16 @@ pub(crate) struct CaptureView {
 }
 
 impl CaptureView {
+    /// Whether this view is a closure capture taken in an `EVAL`'d unit's
+    /// mainline ([`crate::env::Env::mark_eval_unit_capture`]): its own tier,
+    /// the first layer, carries the mark.
+    // Cost: O(1).
+    pub(crate) fn is_eval_unit_capture(&self) -> bool {
+        self.layers
+            .first()
+            .is_some_and(|layer| layer.tier.is_eval_unit_capture())
+    }
+
     pub(crate) fn new(layers: Vec<Layer>) -> Self {
         debug_assert!(
             layers

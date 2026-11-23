@@ -4685,6 +4685,9 @@ impl Compiler {
                     .set_sub_decl_free_var_decl_slots(idx, free_var_decl_slots);
                 self.code
                     .set_sub_decl_lexsub_free_aliases(idx, lexsub_free_aliases);
+                if name_expr.is_none() {
+                    self.note_static_view_plans(&env_sync_plans);
+                }
             }
             Stmt::MethodDecl {
                 name,

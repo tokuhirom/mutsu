@@ -626,12 +626,26 @@ impl Interpreter {
                 // for `+`) happen and type errors (e.g. X::Str::Numeric for
                 // `[+] "hello"`) are raised.  This matches Raku semantics where
                 // `[+] "2"` returns Int 2 (not Str "2").
+                // The bitwise operators' one-argument candidates: `[+|] x` is
+                // `x` as it is, `[~|] x` its Str, `[?|] x` its Bool (rakudo).
+                if list.len() == 1 && callable.is_none() {
+                    let one = match base_op {
+                        "+|" | "+&" | "+^" => Some(list[0].clone()),
+                        "~|" | "~&" | "~^" if !Self::value_is_buf(&list[0]) => {
+                            Some(Value::str(self.stringify_value(list[0].clone())?))
+                        }
+                        "?|" | "?&" | "?^" => Some(Value::truth(list[0].truthy())),
+                        _ => None,
+                    };
+                    if let Some(v) = one {
+                        let result = if negate { Value::truth(!v.truthy()) } else { v };
+                        self.stack.push(result);
+                        return Ok(());
+                    }
+                }
                 if list.len() == 1
                     && callable.is_none()
-                    && matches!(
-                        base_op,
-                        "+" | "-" | "*" | "/" | "%" | "**" | "+|" | "+&" | "+^"
-                    )
+                    && matches!(base_op, "+" | "-" | "*" | "/" | "%" | "**")
                 {
                     // Validate: non-numeric strings must throw X::Str::Numeric
                     if let ValueView::Str(s) = list[0].view()

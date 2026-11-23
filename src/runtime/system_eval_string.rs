@@ -30,8 +30,11 @@ impl Interpreter {
         }
         // The EVAL is the unit `$*CU` names while its BEGIN prologue and CHECK
         // phase run.
-        let _unit = crate::unit_source_text::UnitSourceTextGuard::enter(trimmed);
-        self.isolated_eval_unit(|interp| interp.eval_eval_source(trimmed))
+        // Leading blank lines stay: a diagnosis's `.line` counts them, as in
+        // rakudo (#18870).
+        let source = code.trim_end();
+        let _unit = crate::unit_source_text::UnitSourceTextGuard::enter(source);
+        self.isolated_eval_unit(|interp| interp.eval_eval_source(source))
     }
 
     /// `EVAL` of an already lowered RakuAST tree (`RakuAST::Node.EVAL`): the

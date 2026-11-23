@@ -28,8 +28,15 @@ pub(crate) fn declared_term_symbol(input: &str) -> PResult<'_, Expr> {
         // whose name also names a user-declared sub: parens always indicate a
         // sub call, so `name()` must dispatch to the sub rather than evaluate
         // the constant term and call its value.
+        // `T()` of a type (a role's or signature's type capture, #18939) is
+        // the coercion type `T(Any)`; only `T($v)` calls the bound type.
+        let empty_parens = input[consumed_len..]
+            .strip_prefix('(')
+            .is_some_and(|r| r.trim_start().starts_with(')'));
         if input[consumed_len..].starts_with('(')
-            && (callable || crate::parser::stmt::simple::is_user_declared_sub(&name))
+            && (callable
+                || crate::parser::stmt::simple::is_user_declared_sub(&name)
+                || (empty_parens && crate::parser::stmt::simple::is_user_declared_type(&name)))
         {
             return Err(PError::expected("declared term symbol"));
         }

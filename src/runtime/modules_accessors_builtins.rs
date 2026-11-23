@@ -72,6 +72,7 @@ pub(crate) mod module_load_facts;
 pub(crate) mod exporthow_facts;
 pub(crate) mod routine_scoped_enums;
 mod module_reinstate;
+pub(crate) mod module_load_claims;
 mod module_trait_routine_bindings;
 mod numeric_subclass_repr;
 mod proxy_store;

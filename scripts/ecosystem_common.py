@@ -812,6 +812,140 @@ def load_exclude(path: str) -> dict[str, tuple[str | None, str]]:
     return out
 
 
+class FileOverride:
+    """How the sweep runs one listed test file: see [`load_file_overrides`]."""
+
+    __slots__ = ("timeout", "alone", "reason")
+
+    def __init__(self, timeout: int | None, alone: bool, reason: str):
+        self.timeout = timeout
+        self.alone = alone
+        self.reason = reason
+
+    def budget(self, default: int) -> int:
+        """The per-file timeout for this file: the override when it is longer
+        than `default`, which an override never shortens."""
+        return max(default, self.timeout or 0)
+
+    def as_record(self) -> dict:
+        """The override as the record states it, so the ledger shows which
+        measurements ran under one."""
+        out: dict = {}
+        if self.timeout:
+            out["timeout"] = self.timeout
+        if self.alone:
+            out["alone"] = True
+        return out
+
+
+def load_file_overrides(path: str) -> dict[tuple[str, str], FileOverride]:
+    """Per-file run conditions for known-slow test files
+    (`ecosystem/file-overrides.txt`).
+
+    One entry per line:
+
+        <Dist::Name> <test/path> <option>[ <option>...] -- <reason, with an issue link>
+
+    where an option is `timeout=<seconds>` (a longer per-file budget, both
+    sides; the default is never shortened) or `alone` (the file runs while no
+    other sweep job runs an interpreter, for a suite whose own timing assertion
+    fails on a loaded runner). Only the listed file is affected. A line whose
+    first non-blank character is `#`, and every blank line, is ignored; a
+    missing file means no overrides.
+
+    Returns `{(dist, path): FileOverride}`. An entry is a workaround with an
+    end: once the issue it cites is tuned, its line is deleted.
+    """
+    if not os.path.isfile(path):
+        return {}
+    out: dict[tuple[str, str], FileOverride] = {}
+    with open(path, encoding="utf-8") as fh:
+        for lineno, raw in enumerate(fh, 1):
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            head, sep, reason = line.partition(" -- ")
+            fields = head.split()
+            if not sep or not reason.strip():
+                raise SystemExit(f"{path}:{lineno}: an override needs ` -- <reason>`")
+            if len(fields) < 3:
+                raise SystemExit(f"{path}:{lineno}: expected <dist> <path> <option>...")
+            dist, test_path, options = fields[0], fields[1], fields[2:]
+            timeout, alone = None, False
+            for option in options:
+                if option == "alone":
+                    alone = True
+                elif option.startswith("timeout="):
+                    value = option.partition("=")[2]
+                    if not value.isdigit() or int(value) <= 0:
+                        raise SystemExit(f"{path}:{lineno}: bad timeout {option!r}")
+                    timeout = int(value)
+                else:
+                    raise SystemExit(f"{path}:{lineno}: unknown option {option!r}")
+            if (dist, test_path) in out:
+                raise SystemExit(f"{path}:{lineno}: {dist} {test_path} is listed twice")
+            out[(dist, test_path)] = FileOverride(timeout, alone, reason.strip())
+    return out
+
+
+class RunGate:
+    """Lets interpreter runs overlap, except a run that must be alone.
+
+    Every interpreter run of the sweep takes the gate `shared()`, so `--jobs N`
+    workers run side by side as before. A file listed `alone` in
+    `file-overrides.txt` takes it `alone()`: it waits for the running ones to
+    finish, holds back new ones while it waits (so a busy pool cannot starve
+    it), and runs with the runner to itself. Never nest the two.
+    """
+
+    def __init__(self):
+        import threading
+        self._cond = threading.Condition()
+        self._running = 0
+        self._alone = False
+        self._waiting = 0
+
+    def shared(self):
+        return _GateHold(self, alone=False)
+
+    def alone(self):
+        return _GateHold(self, alone=True)
+
+    def _enter(self, alone: bool):
+        with self._cond:
+            if alone:
+                self._waiting += 1
+                while self._alone or self._running:
+                    self._cond.wait()
+                self._waiting -= 1
+                self._alone = True
+            else:
+                while self._alone or self._waiting:
+                    self._cond.wait()
+                self._running += 1
+
+    def _exit(self, alone: bool):
+        with self._cond:
+            if alone:
+                self._alone = False
+            else:
+                self._running -= 1
+            self._cond.notify_all()
+
+
+class _GateHold:
+    def __init__(self, gate: RunGate, alone: bool):
+        self._gate, self._alone = gate, alone
+
+    def __enter__(self):
+        self._gate._enter(self._alone)
+        return self
+
+    def __exit__(self, *exc):
+        self._gate._exit(self._alone)
+        return False
+
+
 def is_excluded(exclude: dict[str, tuple[str | None, str]], dist: str,
                 version: str | None) -> bool:
     """Whether `dist` at `version` is excluded by a [`load_exclude`] table.
@@ -983,6 +1117,85 @@ def kpi(records: list[dict], exclude: dict[str, tuple[str | None, str]]) -> dict
         "excluded_dists": sorted(r.get("dist") for r in records
                                  if is_excluded(exclude, r.get("dist"), r.get("version"))),
     }
+
+
+# --- regressions against the previous ledger ---------------------------------
+
+# Worst last: a record whose rank went up got worse. `no_baseline` is outside the
+# ranking: rakudo did not pass it, so it is no pass or fail of mutsu's.
+STATUS_RANK = {"green": 0, "partial": 1, "red": 2, "blocked_load": 3, "blocked_dep": 3}
+PASSING_FILE = ("parity", "accepted")
+
+
+def regressions(previous: dict[str, dict], current: dict[str, dict]):
+    """The distributions that got worse between two ledger snapshots.
+
+    Both are `{dist: record}`. Only a distribution measured at the same
+    `version` on both sides counts (a new release is a different subject), and
+    only changes mutsu is charged for: a status that moved up the ranking
+    (`green` -> `partial`/`red`/`blocked_load`, `partial` -> `red`, ...), or a
+    baseline file that was `parity`/`accepted` and no longer is, unless the
+    file is now `no_baseline` (rakudo failed it in the later sweep, which is
+    not a mutsu change). Returns `[(dist, version, was, now, [files])]` sorted
+    by name.
+    """
+    out = []
+    for dist, new in sorted(current.items()):
+        old = previous.get(dist)
+        if not old or old.get("version") != new.get("version"):
+            continue
+        was, now = old.get("status"), new.get("status")
+        worse_status = (was in STATUS_RANK and now in STATUS_RANK
+                        and STATUS_RANK[now] > STATUS_RANK[was])
+        old_ok = {f["path"] for f in old.get("files") or [] if f.get("cmp") in PASSING_FILE}
+        lost = sorted(f["path"] for f in new.get("files") or []
+                      if f["path"] in old_ok and f.get("cmp") not in PASSING_FILE
+                      and f.get("cmp") != "no_baseline")
+        if worse_status or lost:
+            out.append((dist, new.get("version"), was, now, lost))
+    return out
+
+
+def ledger_stamp(repo: str) -> str | None:
+    """The `ecosystem-data` commit the ledger on disk was materialized from
+    (`ecosystem/.ledger-ref`, written by `ecosystem-ledger.sh pull`/`worktree`),
+    or None when there is no stamp."""
+    try:
+        with open(os.path.join(repo, "ecosystem", ".ledger-ref"), encoding="utf-8") as fh:
+            return fh.read().strip() or None
+    except OSError:
+        return None
+
+
+def ledger_records_at(repo: str, ref: str) -> dict[str, dict] | None:
+    """`{dist: record}` of the ledger as committed at `ref`, or None when git
+    does not have that commit (a shallow clone, a bad ref) or it holds no
+    records. Read straight from git objects, so the working tree is untouched.
+    """
+    git = ["git", "-C", repo]
+    listing = subprocess.run(
+        git + ["ls-tree", "-r", "--name-only", ref, "--", "ecosystem/dists"],
+        capture_output=True, text=True)
+    if listing.returncode != 0:
+        return None
+    paths = [p for p in listing.stdout.splitlines() if p.endswith(".json")]
+    if not paths:
+        return None
+    blobs = subprocess.run(git + ["cat-file", "--batch"], capture_output=True,
+                           input="".join(f"{ref}:{p}\n" for p in paths).encode())
+    if blobs.returncode != 0:
+        return None
+    data, out, pos = blobs.stdout, {}, 0
+    while pos < len(data):
+        eol = data.index(b"\n", pos)
+        header = data[pos:eol].split()
+        if len(header) != 3 or header[1] != b"blob":
+            return None
+        size = int(header[2])
+        record = json.loads(data[eol + 1:eol + 1 + size])
+        out[record["dist"]] = record
+        pos = eol + 1 + size + 1
+    return out
 
 
 # --- self-test ---------------------------------------------------------------
@@ -1373,6 +1586,59 @@ def _self_test() -> int:
     if (k["graded_distributions"], k["green_distributions"]) != (4, 2):
         print(f"kpi: a pin on another version must not exclude: {k}", file=sys.stderr)
         failures += 1
+
+    # regressions(): a status moving down the ranking or a file losing
+    # parity at the same version counts; a new version, a file now
+    # `no_baseline`, an improvement and a new or vanished record do not.
+    def snap(status, version="1", **files):
+        return {"status": status, "version": version,
+                "files": [{"path": p, "cmp": c} for p, c in files.items()]}
+    prev = {"Grid": snap("green", t_a="parity"), "Same": snap("red", t_a="regression"),
+            "Bumped": snap("green", "1", t_a="parity"), "Lost": snap("partial", t_a="parity"),
+            "NoBase": snap("green", t_a="parity"), "Better": snap("red", t_a="regression"),
+            "Acc": snap("green", t_a="accepted"), "Gone": snap("green")}
+    cur = {"Grid": snap("red", t_a="regression"), "Same": snap("red", t_a="regression"),
+           "Bumped": snap("red", "2", t_a="regression"),
+           "Lost": snap("partial", t_a="regression", t_b="parity"),
+           "NoBase": snap("green", t_a="no_baseline"), "Better": snap("green", t_a="parity"),
+           "Acc": snap("green", t_a="parity"), "New": snap("red", t_a="regression")}
+    got = regressions(prev, cur)
+    want = [("Grid", "1", "green", "red", ["t_a"]), ("Lost", "1", "partial", "partial", ["t_a"])]
+    if got != want:
+        print(f"regressions: want {want!r}, got {got!r}", file=sys.stderr)
+        failures += 1
+
+    # ledger_records_at() / ledger_stamp(): read the records of a commit, not
+    # of the working tree, and report a missing commit or stamp as None.
+    if shutil.which("git"):
+        with tempfile.TemporaryDirectory() as repo:
+            def g(*a):
+                subprocess.run(["git", "-C", repo, *a], check=True, capture_output=True)
+            g("init", "-q")
+            os.makedirs(os.path.join(repo, "ecosystem", "dists", "A"))
+            rec_path = os.path.join(repo, "ecosystem", "dists", "A", "A-B.json")
+            with open(rec_path, "w", encoding="utf-8") as fh:
+                json.dump({"dist": "A::B", "status": "green"}, fh)
+            g("add", "-A")
+            g("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "x")
+            with open(rec_path, "w", encoding="utf-8") as fh:
+                json.dump({"dist": "A::B", "status": "red"}, fh)
+            at = ledger_records_at(repo, "HEAD")
+            if at != {"A::B": {"dist": "A::B", "status": "green"}}:
+                print(f"ledger_records_at: read {at!r}", file=sys.stderr)
+                failures += 1
+            if ledger_records_at(repo, "no-such-ref") is not None:
+                print("ledger_records_at: a missing ref must be None", file=sys.stderr)
+                failures += 1
+            if ledger_stamp(repo) is not None:
+                print("ledger_stamp: no stamp must be None", file=sys.stderr)
+                failures += 1
+            with open(os.path.join(repo, "ecosystem", ".ledger-ref"), "w",
+                      encoding="utf-8") as fh:
+                fh.write("abc123\n")
+            if ledger_stamp(repo) != "abc123":
+                print(f"ledger_stamp: read {ledger_stamp(repo)!r}", file=sys.stderr)
+                failures += 1
 
     print(f"ecosystem_common self-test: "
           f"{'all cases pass' if not failures else f'{failures} failure(s)'}")

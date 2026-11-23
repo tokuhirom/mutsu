@@ -21,6 +21,9 @@ struct Collector {
     packages: Vec<String>,
     multi_counters: HashMap<String, usize>,
     role_counters: HashMap<String, usize>,
+    /// The base keys of the routines being visited, innermost last: a
+    /// parameter's doc is filed under its routine's (`&f::$a`).
+    routines: Vec<String>,
     out: Vec<DocComment>,
 }
 
@@ -49,10 +52,23 @@ impl Collector {
         }
     }
 
+    /// The key a routine node files its parameters' docs under: `&name`,
+    /// `Pkg::method`, or `&<anon>` for an anonymous sub.
+    // Cost: O(f), f = fields of the node.
+    fn routine_base(&self, node: &RakuAstNode) -> Option<String> {
+        match (node.class, resolve::package_name(node)) {
+            (C::Method | C::Submethod, Some(name)) => Some(self.member_key(&name)),
+            (C::Sub, Some(name)) => Some(format!("&{name}")),
+            (C::Sub, None) => Some("&<anon>".to_string()),
+            _ => None,
+        }
+    }
+
     // Cost: O(size of the subtree).
     fn visit(&mut self, node: &RakuAstNode) {
         let doc = declarator_docs::doc(node);
         let mut entered_package = false;
+        let routine = self.routine_base(node);
         match node.class {
             c if is_package(c) => {
                 if let Some(name) = resolve::package_name(node) {
@@ -82,6 +98,21 @@ impl Collector {
                     }
                     self.packages.push(full);
                     entered_package = true;
+                }
+            }
+            // `my $f = anon Str sub {}; #= doc`: an anonymous routine is
+            // listed in `$=pod` under the parser's `&<anon>` key (#16356).
+            C::Sub if resolve::package_name(node).is_none() => {
+                if let Some(doc) = doc {
+                    self.out.push(DocComment {
+                        doc,
+                        wherefore_name: "&<anon>".to_string(),
+                        key: "&<anon>".to_string(),
+                        kind: DocDeclKind::Sub,
+                        return_type: anon_return_type(node),
+                        is_anonymous: true,
+                        ..DocComment::default()
+                    });
                 }
             }
             C::Sub | C::Method | C::Submethod => {
@@ -127,6 +158,41 @@ impl Collector {
                     });
                 }
             }
+            // `#| doc enum E <a b>` / `subset S of Int`: filed under the bare
+            // name, as the parser files a non-container package (#16356).
+            C::TypeEnum | C::TypeSubset => {
+                if let (Some(name), Some(doc)) = (resolve::package_name(node), doc) {
+                    self.out.push(DocComment {
+                        doc,
+                        wherefore_name: name.clone(),
+                        key: name,
+                        kind: DocDeclKind::Package,
+                        ..DocComment::default()
+                    });
+                }
+            }
+            // `sub f($a, #= doc`: filed under the routine's key (`&f::$a`).
+            C::Parameter => {
+                let sigiled = super::infix_origins::child(node, "target")
+                    .filter(|t| t.class == C::ParameterTargetVar)
+                    .and_then(|t| str_field(t, "name"));
+                if let (Some(sigiled), Some(doc)) = (sigiled, doc) {
+                    let key = match self.routines.last() {
+                        Some(owner) => {
+                            crate::qualified::qualified_text(owner.as_str(), sigiled.as_str())
+                                .to_string()
+                        }
+                        None => sigiled.clone(),
+                    };
+                    self.out.push(DocComment {
+                        doc,
+                        wherefore_name: sigiled,
+                        key,
+                        kind: DocDeclKind::Param,
+                        ..DocComment::default()
+                    });
+                }
+            }
             C::VarDeclarationSimple if str_field(node, "scope").as_deref() == Some("has") => {
                 if let (Some(name), Some(doc)) = (
                     resolve::package_name(node).or_else(|| {
@@ -148,8 +214,15 @@ impl Collector {
             }
             _ => {}
         }
+        let entered_routine = routine.is_some();
+        if let Some(routine) = routine {
+            self.routines.push(routine);
+        }
         for field in &node.fields {
             self.visit_field(node, field);
+        }
+        if entered_routine {
+            self.routines.pop();
         }
         if entered_package {
             self.packages.pop();
@@ -171,6 +244,14 @@ impl Collector {
             }
         }
     }
+}
+
+/// The return type an anonymous routine's signature names (`anon Str sub`).
+// Cost: O(f), f = fields of the node and its signature.
+fn anon_return_type(node: &RakuAstNode) -> Option<String> {
+    let signature = super::infix_origins::child(node, "signature")?;
+    let returns = super::infix_origins::child(signature, "returns")?;
+    resolve::type_node_name(returns)
 }
 
 /// The attribute name of a `has` declaration (`has $.a` is `a`).

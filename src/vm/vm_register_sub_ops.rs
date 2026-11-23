@@ -182,7 +182,8 @@ impl Interpreter {
             .get(idx as usize)
             .and_then(|plan| plan.frame_lexical)
         {
-            return self.exec_declare_frame_lexical_routine(code, idx, r, compiled_fns);
+            self.exec_declare_frame_lexical_routine(code, idx, r, compiled_fns)?;
+            return self.declared_monkey_see_no_eval(code, idx);
         }
         // #17771: a block's own plain operator routine binds in the block's
         // operator set, not in the registry.
@@ -193,7 +194,39 @@ impl Interpreter {
         {
             return self.exec_declare_block_operator(code, idx, set, compiled_fns);
         }
-        self.exec_register_sub_op_in_registry(code, idx, compiled_fns)
+        self.exec_register_sub_op_in_registry(code, idx, compiled_fns)?;
+        self.declared_monkey_see_no_eval(code, idx)
+    }
+
+    /// A routine the scope declares under the `MONKEY-SEE-NO-EVAL` pragma's
+    /// name *is* the pragma there (#18748): rakudo calls the
+    /// `&MONKEY-SEE-NO-EVAL` visible where a regex is compiled and goes by its
+    /// truthiness. The declaration is called once, when its scope's hoist pass
+    /// registers it, which is mutsu's counterpart of that compile-time call: a
+    /// variable the routine reads has not been assigned yet. The in-sequence
+    /// registration does not call it again.
+    // Cost: O(1), plus one call of the routine when the plan declares the pragma.
+    fn declared_monkey_see_no_eval(
+        &mut self,
+        code: &CompiledCode,
+        idx: u32,
+    ) -> Result<(), RuntimeError> {
+        let Some(plan) = code.sub_decl_plans.get(idx as usize) else {
+            return Ok(());
+        };
+        if !plan.pass.hoisted
+            || plan.name_chunk.is_some()
+            || !Self::is_monkey_see_no_eval_routine(&plan.name.resolve())
+        {
+            return Ok(());
+        }
+        let routine = self.resolve_code_var(&plan.name.resolve());
+        if routine.is_nil() {
+            return Ok(());
+        }
+        let on = self.call_sub_value(routine, Vec::new())?.truthy();
+        self.set_monkey_see_no_eval(on);
+        Ok(())
     }
 
     /// The ordinary sub registration: install the plan's routine into the
@@ -216,6 +249,7 @@ impl Interpreter {
             compiled_routine_keys,
             free_var_decl_slots,
             hoist_seed_slots,
+            static_view_slots: _,
             own_scope_decl_slots,
             lexsub_free_aliases: _,
             multi,

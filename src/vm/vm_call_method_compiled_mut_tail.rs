@@ -76,15 +76,7 @@ impl Interpreter {
         {
             // Ambiguous multi dispatch: two or more candidates matched equally
             // well. Raise X::Multi::Ambiguous instead of silently picking one.
-            if self.dispatch.dispatch_ambiguous {
-                self.dispatch.dispatch_ambiguous = false;
-                let sigs = self.format_method_candidate_signatures(cn, method, None);
-                return Err(
-                    crate::runtime::methods_signature_errors::make_multi_ambiguous_error(
-                        method, cn, &sigs,
-                    ),
-                );
-            }
+            self.take_dispatch_ambiguity(cn, method)?;
             if let Some(result) =
                 self.check_method_wrap_chain(cn, owner_class, method, &method_def, &target, &args)
             {

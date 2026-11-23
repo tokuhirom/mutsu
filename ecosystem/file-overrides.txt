@@ -1,0 +1,23 @@
+# ecosystem/file-overrides.txt
+#
+# Per-file run conditions for known-slow test files, so the sweep stops
+# flapping on them. Read by scripts/ecosystem-sweep.py; only a listed file is
+# affected, and the global `--timeout` stays the cap for everything else.
+#
+# Format: <Dist::Name> <test/path> <option>[ <option>...] -- <reason, with an issue link>
+#
+#   timeout=<seconds>  a longer per-file budget for this file, on both sides
+#                      (an override never shortens the default; a timed-out
+#                      first attempt still gets the usual doubled retry)
+#   alone              run this file while no other sweep job runs an
+#                      interpreter, for a suite whose own timing assertion
+#                      fails on a loaded runner
+#
+# Every entry is a workaround with an end date: once the issue it cites is
+# tuned -- the file passes comfortably under the normal cap and load -- delete
+# its line. A line whose first non-blank character is `#`, and every blank
+# line, is ignored. Keep sorted by name.
+
+AttrX::Mooish t/090-concurrent.custom.rakutest timeout=480 -- takes 203-261 s on mutsu against the 240 s cap (120 s plus the doubled retry), so it flaps between parity and timeout; https://github.com/tokuhirom/mutsu/issues/14812
+AttrX::Mooish t/090-concurrent.rakutest timeout=480 -- takes 203-261 s on mutsu against the 240 s cap (120 s plus the doubled retry), so it flaps between parity and timeout; https://github.com/tokuhirom/mutsu/issues/14812
+MCP::Server::Tool::Web t/12-extract.rakutest alone -- its own 30 s timing assertion ("A pathological megabyte stays fast") fails when the runner is loaded by other sweep jobs; https://github.com/tokuhirom/mutsu/issues/16897

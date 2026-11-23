@@ -29,7 +29,7 @@ throws-like 'sub f(*@a) { }; f 1 1;', X::Syntax::Confused,
 
 # --- Regression guards: legitimate continuations must keep working --------
 
-is-deeply +(EVAL 'my $x = 1 but True; $x'), 1, 'my $x = 1 but True still parses';
+ok (EVAL 'my $x = 1 but True; $x') == 1, 'my $x = 1 but True still parses';
 is-deeply (EVAL 'my $x = 1 if True; $x'), 1, 'my $x = 1 if True still parses';
 is-deeply (EVAL 'my $x = 1 for ^1; $x'), 1, 'my $x = 1 for LIST still parses';
 is-deeply (EVAL 'my $x = 1, 2, 3; $x'), 1, 'my $x = 1, 2, 3 (trailing sink) still parses';

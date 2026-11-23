@@ -4116,6 +4116,10 @@ pub(crate) enum OpCode {
         /// The `:x` argument's value is on the stack, above `:nth`'s
         /// (`[Code?, Nth?, X] → …`).
         x: bool,
+        /// `:c(N)` / `:pos(N)` (#18892): 0 when neither is written; else the
+        /// start's value is on the stack above `:x`'s (`[Code?, Nth?, X?,
+        /// Start] → …`), and 2 marks `:pos`, which anchors the first match.
+        start: u8,
         /// The replacement is an assignment-form thunk (`s[pat] = EXPR`), not
         /// a `qq` string (see `Expr::Subst::replacement_thunk`): its compiled
         /// closure is on the stack (`[Code] → …`), called once per match, and
@@ -4163,6 +4167,10 @@ pub(crate) enum OpCode {
         /// The `:x` argument's value is on the stack, above `:nth`'s
         /// (`[Code?, Nth?, X] → …`).
         x: bool,
+        /// `:c(N)` / `:pos(N)` (#18892): 0 when neither is written; else the
+        /// start's value is on the stack above `:x`'s (`[Code?, Nth?, X?,
+        /// Start] → …`), and 2 marks `:pos`, which anchors the first match.
+        start: u8,
         /// The replacement is an assignment-form thunk (`s[pat] = EXPR`), not
         /// a `qq` string (see `Expr::Subst::replacement_thunk`): its compiled
         /// closure is on the stack (`[Code] → …`), called once per match, and
@@ -5553,6 +5561,14 @@ pub(crate) struct CompiledSubDeclPlan {
     /// seeds the cell the declaration later adopts (#9911; see
     /// `vm/vm_hoist_capture_cells.rs`). Set on the hoisted plan only.
     pub(crate) hoist_seed_slots: Vec<u32>,
+    /// Under the static-outer latch (`crate::parser::static_outer_latch`), a sub
+    /// declared below its unit's top level: every plain user lexical visible
+    /// in the declaring scope -- later declarations of that scope included --
+    /// with the DECLARING frame's slot that holds it there. The sub's code
+    /// object then captures all of them, so its frame's lexical outer is its
+    /// declaring block (`$CALLER::OUTER::x`, ADR-12529 amendment A1 (b),
+    /// #18787). Baked when the declaring scope closes. Empty otherwise.
+    pub(crate) static_view_slots: Vec<(Symbol, u32)>,
     /// The same set on the IN-SEQUENCE plan: the free variables whose `my`
     /// the sub's own scope declares before it, so the in-sequence
     /// registration finds that scope's own binding in the slot. A slot
@@ -7070,6 +7086,11 @@ pub(crate) struct CompiledCode {
     /// compile (a hand-built chunk, a `#[test]` helper). See
     /// [`Self::location_at`].
     pub(crate) source_file: Option<Symbol>,
+    /// The package a routine or closure body is declared in (its
+    /// `$?PACKAGE`), stamped when the body is compiled; `None` for a unit's
+    /// mainline and other chunks. `CLIENT::` tells the calling code by it,
+    /// including a block that pushes no routine frame (#18845).
+    pub(crate) package: Option<Symbol>,
     /// Compile-time cursor: the source line attached to every op emitted from
     /// now on (set by the `Stmt::SetLine` marker). Not used at runtime.
     pub(crate) emit_line: u32,
@@ -7287,6 +7308,11 @@ pub(crate) struct CompiledCode {
     /// which resets `Interpreter::lexical_fatal_mode` from it at entry
     /// (#11391). False for every other chunk.
     pub(crate) method_fatal_pragma: bool,
+    /// Whether this chunk is compiled under `use v6.c`, where `$_` is
+    /// dynamic, so it may read or assign a caller's `$_` through `CALLER::`;
+    /// from 6.d on such an access is `X::Caller::NotDynamic` (#18988).
+    /// Stamped by the compiler; false for a chunk built outside a compile.
+    pub(crate) caller_topic_dynamic: bool,
     /// Whether a `CX::Succeed` raised inside this code (an explicit `succeed`,
     /// directly or from a routine it calls) unwinds PAST its call boundary.
     ///
@@ -8125,6 +8151,11 @@ pub(crate) struct CompiledCode {
     /// (`callframe`), and must keep seeing the dynamic chain. Set during
     /// `finalize`.
     pub(crate) static_name_lookup: bool,
+    /// This closure is created in an `EVAL`'d unit's mainline (outside every
+    /// routine and closure body of that unit): a reflective capture of it is
+    /// the unit's outermost scope (ADR-12529 amendment A1 (c), #18787). Set
+    /// by the compiler when it attaches the closure.
+    pub(crate) eval_mainline_closure: bool,
     /// True if this code directly calls `callsame`/`nextsame`/`callwith`/
     /// `nextwith`. Set during `emit()`. The compiled method fast paths
     /// (`call_compiled_method`/`call_compiled_method_fast`) push a
@@ -8864,6 +8895,7 @@ impl CompiledCode {
             closure_compiled_codes: Vec::new(),
             compiled_fns: None,
             source_file: crate::unit_source_file::current(),
+            package: None,
             atomic_env_sync_locals: Vec::new(),
             atomic_target_syms: rustc_hash::FxHashSet::default(),
             rw_arg_env_sync_syms: rustc_hash::FxHashSet::default(),
@@ -8872,6 +8904,7 @@ impl CompiledCode {
             is_routine: false,
             lexically_in_routine: false,
             method_fatal_pragma: false,
+            caller_topic_dynamic: false,
             succeed_passes_through: false,
             reads_topic: false,
             uses_routine_state: false,
@@ -8883,6 +8916,7 @@ impl CompiledCode {
             uses_samewith: false,
             needs_reflective_capture: false,
             static_name_lookup: false,
+            eval_mainline_closure: false,
             uses_dispatcher: false,
             may_observe_named_slurpy: false,
             reads_routine_magical: false,
@@ -13842,6 +13876,7 @@ impl CompiledCode {
             block_operator_set: None,
             free_var_decl_slots: Vec::new(),
             hoist_seed_slots: Vec::new(),
+            static_view_slots: Vec::new(),
             own_scope_decl_slots: Vec::new(),
             lexsub_free_aliases: Vec::new(),
             multi: *multi,
@@ -13950,6 +13985,19 @@ impl CompiledCode {
             panic!("declaration plan is not a sub");
         };
         self.sub_decl_plans[*plan_idx as usize].free_var_decl_slots = slots;
+    }
+
+    /// Set a sub plan's `CompiledSubDeclPlan::static_view_slots`.
+    pub(crate) fn set_sub_decl_static_view_slots(
+        &mut self,
+        decl_idx: u32,
+        slots: Vec<(Symbol, u32)>,
+    ) {
+        let Some(CompiledDeclPlanRef::Sub(plan_idx)) = self.decl_plans.get(decl_idx as usize)
+        else {
+            panic!("declaration plan is not a sub");
+        };
+        self.sub_decl_plans[*plan_idx as usize].static_view_slots = slots;
     }
 
     /// Set a hoisted sub plan's `CompiledSubDeclPlan::hoist_seed_slots`.

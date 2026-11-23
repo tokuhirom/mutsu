@@ -156,3 +156,82 @@ mod model {
         });
     }
 }
+
+/// ADR-18752 D1/D2: in-range element stores take the node's stripe on the
+/// SHARED side and CAS the slot word; every live-node reader (and every
+/// structural write) takes it EXCLUSIVELY and reads the slots non-atomically.
+///
+/// Loom's `unsync_load` is a non-atomic read that loom checks against every
+/// concurrent atomic access to the same location, so the model fails if a
+/// reader can overlap a store: exactly the data race §1 says "no lock at all"
+/// would be. The assertions add the value-level claims: a store's CAS is the
+/// only writer of the word it replaces, every slot holds a value some store
+/// wrote, and a store ordered before a read (by a join) is visible to it.
+#[cfg(test)]
+mod shared_store_model {
+    use loom::sync::RwLock;
+    use loom::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::Arc;
+
+    struct Node {
+        stripe: RwLock<()>,
+        slots: [AtomicU64; 2],
+    }
+
+    impl Node {
+        /// `store_word_in_range` under `acquire_shared_pair`.
+        fn store(&self, idx: usize, value: u64) -> bool {
+            let _shared = self.stripe.read().unwrap();
+            let slot = &self.slots[idx];
+            let current = slot.load(Ordering::Acquire);
+            slot.compare_exchange(current, value, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+        }
+
+        /// A live-node read (iteration) under the exclusive side.
+        fn read_all(&self) -> [u64; 2] {
+            let _exclusive = self.stripe.write().unwrap();
+            // SAFETY (model): loom reports any atomic access concurrent with
+            // these non-atomic loads.
+            unsafe { [self.slots[0].unsync_load(), self.slots[1].unsync_load()] }
+        }
+    }
+
+    #[test]
+    fn shared_stores_never_overlap_an_exclusive_reader() {
+        let mut builder = loom::model::Builder::new();
+        builder.preemption_bound = Some(3);
+        builder.check(|| {
+            let node = Arc::new(Node {
+                stripe: RwLock::new(()),
+                slots: [AtomicU64::new(0), AtomicU64::new(0)],
+            });
+            // Two stores to disjoint slots and one racing them on slot 0.
+            let a = {
+                let node = Arc::clone(&node);
+                loom::thread::spawn(move || node.store(0, 1))
+            };
+            let b = {
+                let node = Arc::clone(&node);
+                loom::thread::spawn(move || {
+                    let disjoint = node.store(1, 2);
+                    let same = node.store(0, 3);
+                    (disjoint, same)
+                })
+            };
+            let seen = node.read_all();
+            assert!(matches!(seen[0], 0 | 1 | 3), "slot 0 holds a value never stored");
+            assert!(matches!(seen[1], 0 | 2), "slot 1 holds a value never stored");
+            let stored_a = a.join().unwrap();
+            let (stored_b1, stored_b0) = b.join().unwrap();
+            let after = node.read_all();
+            // A slot's final word is the one its last successful CAS installed.
+            if stored_b1 {
+                assert_eq!(after[1], 2, "a joined disjoint store is not visible");
+            }
+            if stored_a || stored_b0 {
+                assert!(matches!(after[0], 1 | 3), "a joined store is not visible");
+            }
+        });
+    }
+}

@@ -575,6 +575,14 @@ impl Interpreter {
         target_slot: Option<u32>,
         element_share: bool,
     ) -> Result<(), RuntimeError> {
+        // ADR-18752: an in-range store of a plain word into a celled array
+        // that several threads share takes the stripes on the shared side.
+        if is_positional
+            && !element_share
+            && self.try_shared_in_range_store(code, name_idx, target_slot)
+        {
+            return Ok(());
+        }
         // A package-block `my %h` reached from one of the package's routines
         // lives in the package store, which every path below is blind to.
         //

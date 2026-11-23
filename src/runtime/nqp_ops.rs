@@ -505,7 +505,10 @@ impl Interpreter {
                 Ok(bool_int(
                     !type_name.is_empty()
                         && crate::runtime::boot_collection::boot_type_of(&v).is_none()
-                        && self.type_object_accepts(&v, crate::symbol::Symbol::intern(&type_name)),
+                        && self.type_object_accepts_resolved(
+                            &v,
+                            crate::symbol::Symbol::intern(&type_name),
+                        ),
                 ))
             }
 

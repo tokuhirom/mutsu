@@ -274,10 +274,21 @@ impl Interpreter {
     where
         I: IntoIterator<Item = (Option<String>, String)>,
     {
+        // Rakudo lists a unit's worries under one "Potential difficulties:"
+        // header: a worry following another drops its own.
+        let header = format!("{}\n", crate::parser::WORRY_HEADER);
+        let mut after_worry = false;
         for (file, message) in warnings {
             let key = (canonicalize_warning_file(file), message);
             if self.io.surfaced_parse_warnings.insert(key.clone()) {
-                self.write_warn_to_stderr(&key.1);
+                let is_worry = key.1.starts_with(&header);
+                let text = if is_worry && after_worry {
+                    &key.1[header.len()..]
+                } else {
+                    &key.1[..]
+                };
+                self.write_warn_to_stderr(text);
+                after_worry = is_worry;
             }
         }
     }

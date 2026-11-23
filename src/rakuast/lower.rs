@@ -750,9 +750,16 @@ pub(super) fn lower_stmt_kept(names: &NameScope, node: &RakuAstNode) -> Result<S
                     })
                 }
                 "die" => Ok(Stmt::Die(die_argument(args))),
+                // `fail("a", "b")`: the arguments as one list, as the parser
+                // keeps them (the message joins them, #16356).
+                "fail" if args.len() > 1 => Ok(Stmt::Fail(Expr::ArrayLiteral(args))),
                 "fail" => Ok(Stmt::Fail(
                     args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
                 )),
+                // `take(1, 2)`: one list, as the parser keeps it (#16356).
+                "take" | "take-rw" if args.len() > 1 => {
+                    Ok(Stmt::Take(Expr::ArrayLiteral(args), name == "take-rw"))
+                }
                 "take" | "take-rw" => Ok(Stmt::Take(
                     args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL)),
                     name == "take-rw",
@@ -1181,9 +1188,14 @@ fn class_traits(names: &NameScope, node: &RakuAstNode) -> Result<ClassTraits, Ru
 /// expansion of a sigilless declaration. Only the default scope round-trips.
 // Cost: O(n), n = size of the initializer.
 fn lower_term_declaration(names: &NameScope, node: &RakuAstNode) -> Result<Stmt, RuntimeError> {
-    if node.fields.iter().any(|f| f.name == Some("scope")) {
-        return Err(unsupported(node));
-    }
+    // `our \x` / `state \x` (#18426); `my` is the default.
+    let scope = leaf_str(node, "scope").ok();
+    let (is_our, is_state) = match scope.as_deref() {
+        None | Some("my") => (false, false),
+        Some("our") => (true, false),
+        Some("state") => (false, true),
+        Some(_) => return Err(unsupported(node)),
+    };
     let name = call_name_str(node)?;
     let type_constraint = match named_child(node, "type") {
         Ok(type_node) => Some(simple_type_name(names, node, type_node)?),
@@ -1222,8 +1234,8 @@ fn lower_term_declaration(names: &NameScope, node: &RakuAstNode) -> Result<Stmt,
                 name,
                 expr,
                 type_constraint,
-                is_state: false,
-                is_our: false,
+                is_state,
+                is_our,
                 form: crate::ast::parsed::SigillessForm::CallAssign,
             },
             &|name| super::shadowed_terms::is_declared_term(names, name),
@@ -1240,8 +1252,8 @@ fn lower_term_declaration(names: &NameScope, node: &RakuAstNode) -> Result<Stmt,
             name,
             expr,
             type_constraint,
-            is_state: false,
-            is_our: false,
+            is_state,
+            is_our,
             form,
         },
         &|name| super::shadowed_terms::is_declared_term(names, name),
@@ -4575,6 +4587,14 @@ pub(super) fn lower_expr(names: &NameScope, node: &RakuAstNode) -> Result<Expr, 
     }
     if let Some(expr) = super::deferred_name::lower(names, node) {
         return expr;
+    }
+    // `1 [+] 2` runs as `1 + 2` (#18504).
+    if let Some(peeled) = super::bracketed_infix::peeled(node) {
+        return lower_expr(names, &peeled);
+    }
+    // `1 [&plus] 2`: the call of the routine (#18469).
+    if let Some(call) = super::function_infix::lower(names, node) {
+        return call;
     }
     // A leaf carries the parser's own tree (`passthrough`); a deferred term
     // wraps one, so it is read first.

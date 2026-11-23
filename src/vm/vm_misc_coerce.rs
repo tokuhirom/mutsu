@@ -162,6 +162,13 @@ impl Interpreter {
             }
             return Ok(());
         }
+        // `+(5 but R)` is `(5 but R).Numeric`, which is the value itself.
+        if crate::value::mixin_identity::prefix_coercion_keeps_mixin(&val, "Numeric")
+            && !self.mixin_composes_method(&val, "Numeric")
+        {
+            self.stack.push(val);
+            return Ok(());
+        }
         let result = crate::runtime::utils::coerce_to_numeric(val);
         self.stack.push(result);
         Ok(())
@@ -198,6 +205,13 @@ impl Interpreter {
         // second mutator thread exists it renders a snapshot taken under the
         // stripe, as `.Str` does (ADR-0068 §16, #13016).
         let val = crate::value::container_read::shared_snapshot(&val).unwrap_or(val);
+        // `~("s" but R)` is the value itself, as `.Str` of a Str is.
+        if crate::value::mixin_identity::prefix_coercion_keeps_mixin(&val, "Str")
+            && !self.mixin_composes_method(&val, "Str")
+        {
+            self.stack.push(val);
+            return Ok(());
+        }
         // A user `^find_method` answers `.Stringy` (`find_method_intercept`).
         if let Some(r) = self.user_find_method_stringify(&val, "Stringy") {
             let caller_code = self.current_code;

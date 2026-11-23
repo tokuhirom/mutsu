@@ -135,24 +135,17 @@ impl Interpreter {
             saved_cur_line: self.cur_source_line,
             readonly_mark: self.enter_readonly_frame(),
             saved_locals_base: Some(self.locals.push_frame(0)),
-            saved_upvalues: std::mem::take(&mut self.upvalues),
+            saved_spill: self.take_call_frame_spill(),
             saved_stack_depth: self.stack.len(),
-            saved_local_bind_pairs: std::mem::take(&mut self.local_bind_pairs),
             saved_loop_local_vars: Some(self.topic_state.loop_local_vars.push_frame()),
             saved_loop_local_saved_env: Some(self.topic_state.loop_local_saved_env.push_frame()),
             saved_block_declared_vars: Some(self.lexicals.block_declared_vars.push_frame()),
-            saved_frame_authoritative: std::mem::take(&mut self.frame_authoritative),
-            saved_frame_owned: std::mem::take(&mut self.frame_owned),
             saved_active_loop_param_names: Some(
                 self.topic_state.active_loop_param_names.push_frame(),
             ),
             saved_active_loop_rw_param_names: Some(
                 self.topic_state.active_loop_rw_param_names.push_frame(),
             ),
-            saved_pending_caller_var_writeback: std::mem::take(
-                &mut self.pending_caller_var_writeback,
-            ),
-            saved_rw_param_rebinds: std::mem::take(&mut self.rw_param_rebinds),
             slot: false,
         };
         self.call_frames.push(frame);
@@ -173,24 +166,17 @@ impl Interpreter {
             saved_cur_line: self.cur_source_line,
             readonly_mark: self.enter_readonly_frame(),
             saved_locals_base: Some(self.locals.push_frame(0)),
-            saved_upvalues: std::mem::take(&mut self.upvalues),
+            saved_spill: self.take_call_frame_spill(),
             saved_stack_depth: self.stack.len(),
-            saved_local_bind_pairs: std::mem::take(&mut self.local_bind_pairs),
             saved_loop_local_vars: Some(self.topic_state.loop_local_vars.push_frame()),
             saved_loop_local_saved_env: Some(self.topic_state.loop_local_saved_env.push_frame()),
             saved_block_declared_vars: Some(self.lexicals.block_declared_vars.push_frame()),
-            saved_frame_authoritative: std::mem::take(&mut self.frame_authoritative),
-            saved_frame_owned: std::mem::take(&mut self.frame_owned),
             saved_active_loop_param_names: Some(
                 self.topic_state.active_loop_param_names.push_frame(),
             ),
             saved_active_loop_rw_param_names: Some(
                 self.topic_state.active_loop_rw_param_names.push_frame(),
             ),
-            saved_pending_caller_var_writeback: std::mem::take(
-                &mut self.pending_caller_var_writeback,
-            ),
-            saved_rw_param_rebinds: std::mem::take(&mut self.rw_param_rebinds),
             slot: false,
         };
         self.call_frames.push(frame);
@@ -214,8 +200,6 @@ impl Interpreter {
             // A slot frame moved nothing else out (ADR-18393 D1).
             return frame;
         }
-        self.upvalues = std::mem::take(&mut frame.saved_upvalues);
-        self.local_bind_pairs = std::mem::take(&mut frame.saved_local_bind_pairs);
         if let Some(caller) = frame.saved_loop_local_vars.take() {
             self.topic_state.loop_local_vars.pop_frame(caller);
         }
@@ -225,8 +209,6 @@ impl Interpreter {
         if let Some(caller) = frame.saved_block_declared_vars.take() {
             self.lexicals.block_declared_vars.pop_frame(caller);
         }
-        self.frame_authoritative = std::mem::take(&mut frame.saved_frame_authoritative);
-        self.frame_owned = std::mem::take(&mut frame.saved_frame_owned);
         if let Some(caller) = frame.saved_active_loop_param_names.take() {
             self.topic_state.active_loop_param_names.pop_frame(caller);
         }
@@ -236,15 +218,83 @@ impl Interpreter {
                 .pop_frame(caller);
         }
         self.exit_readonly_frame(frame.readonly_mark);
-        self.rw_param_rebinds = std::mem::take(&mut frame.saved_rw_param_rebinds);
-        // Unclaimed writebacks recorded in this frame belong further up; put
-        // them back beside the caller's.
-        let outer = std::mem::take(&mut frame.saved_pending_caller_var_writeback);
-        let inner = std::mem::replace(&mut self.pending_caller_var_writeback, outer);
+        self.restore_call_frame_spill(frame.saved_spill.take());
+        frame
+    }
+
+    /// Move the caller registers a [`VmCallFrameSpill`] holds out of the
+    /// interpreter, or `None` when every one of them is empty (the common
+    /// case, which then allocates nothing).
+    // Cost: O(1).
+    #[inline]
+    fn take_call_frame_spill(&mut self) -> Option<Box<VmCallFrameSpill>> {
+        if self.upvalues.is_empty()
+            && self.local_bind_pairs.is_empty()
+            && self.frame_authoritative.is_empty()
+            && self.frame_owned.is_empty()
+            && self.pending_caller_var_writeback.is_empty()
+            && self.rw_param_rebinds.is_empty()
+        {
+            return None;
+        }
+        Some(Box::new(VmCallFrameSpill {
+            saved_upvalues: std::mem::take(&mut self.upvalues),
+            saved_local_bind_pairs: std::mem::take(&mut self.local_bind_pairs),
+            saved_frame_authoritative: std::mem::take(&mut self.frame_authoritative),
+            saved_frame_owned: std::mem::take(&mut self.frame_owned),
+            saved_pending_caller_var_writeback: std::mem::take(
+                &mut self.pending_caller_var_writeback,
+            ),
+            saved_rw_param_rebinds: std::mem::take(&mut self.rw_param_rebinds),
+        }))
+    }
+
+    /// Give the caller back the registers [`Self::take_call_frame_spill`]
+    /// saved, dropping what the callee left in them. With no spill the
+    /// caller's were all empty: only a register the callee filled is
+    /// cleared. The callee's unclaimed caller-var writebacks belong further
+    /// up either way, so they are kept beside the caller's.
+    // Cost: O(1), plus O(w) to merge w unclaimed writebacks over a spilled set.
+    #[inline]
+    fn restore_call_frame_spill(&mut self, spill: Option<Box<VmCallFrameSpill>>) {
+        let Some(spill) = spill else {
+            if !self.upvalues.is_empty() {
+                self.upvalues = Vec::new();
+            }
+            if !self.local_bind_pairs.is_empty() {
+                self.local_bind_pairs = Vec::new();
+            }
+            if !self.frame_authoritative.is_empty() {
+                self.frame_authoritative = Vec::new();
+            }
+            if !self.frame_owned.is_empty() {
+                self.frame_owned = Vec::new();
+            }
+            if !self.rw_param_rebinds.is_empty() {
+                self.rw_param_rebinds = Vec::new();
+            }
+            return;
+        };
+        let VmCallFrameSpill {
+            saved_upvalues,
+            saved_local_bind_pairs,
+            saved_frame_authoritative,
+            saved_frame_owned,
+            saved_pending_caller_var_writeback,
+            saved_rw_param_rebinds,
+        } = *spill;
+        self.upvalues = saved_upvalues;
+        self.local_bind_pairs = saved_local_bind_pairs;
+        self.frame_authoritative = saved_frame_authoritative;
+        self.frame_owned = saved_frame_owned;
+        self.rw_param_rebinds = saved_rw_param_rebinds;
+        let inner = std::mem::replace(
+            &mut self.pending_caller_var_writeback,
+            saved_pending_caller_var_writeback,
+        );
         if !inner.is_empty() {
             self.pending_caller_var_writeback.extend(inner);
         }
-        frame
     }
 
     /// Recover `self.call_frames` (and the per-frame registers `pop_call_frame`
@@ -476,6 +526,18 @@ impl Interpreter {
             return None;
         }
         let name_str = name.as_str();
+        // A term key (`\Bool`, asked by `term_binding_sym` for every bareword
+        // type name on the type-check memo's hit path) is never a process
+        // dynamic, an `@`/`%` lane, an `our` mirror, an unmerged package
+        // variable or a twigil alias, so of the `get_env_with_main_alias_sym`
+        // cascade only its direct env probe can answer for one (#18274).
+        let term_candidate = name_str.starts_with(crate::term_names::TERM_PREFIX);
+        // A lexical type's type-namespace key (`\u{1}Name`, asked by
+        // `lexical_type_binding_sym` for a bareword type read) is likewise
+        // none of those, but a module's file-scope `my class` is a unit
+        // lexical, which the cascade finds under `Pkg::\u{1}Name` before its
+        // env probe; those two probes, in that order, are all it needs.
+        let lexical_type_candidate = name_str.starts_with(crate::term_names::LEXICAL_TYPE_PREFIX);
         // Each step's `<sigil><pkg>::<rest>` key and the walk itself are
         // memoized per symbol: no `format!` and no `"::"` search per read.
         for pkg in crate::qualified::package_ancestors(cur_sym) {
@@ -487,7 +549,31 @@ impl Interpreter {
             if let Some(v) = self.get_our_var_sym(candidate) {
                 return Some(v);
             }
-            if let Some(v) = self.get_env_with_main_alias_sym(candidate.as_str(), candidate) {
+            let env_hit = if term_candidate {
+                let narrow = self.env().get_sym(candidate).cloned();
+                // `term_key_may_be_bound_outside_env` relies on this: no
+                // env binds a package-qualified term key.
+                debug_assert!(narrow.is_none(), "an env binds {candidate:?}");
+                debug_assert_eq!(
+                    narrow.is_some(),
+                    self.get_env_with_main_alias_sym(candidate.as_str(), candidate)
+                        .is_some(),
+                    "a term-key candidate {candidate:?} found only by the alias cascade"
+                );
+                narrow
+            } else if lexical_type_candidate {
+                let narrow = self.lexical_type_candidate_probe(candidate);
+                debug_assert_eq!(
+                    narrow.is_some(),
+                    self.get_env_with_main_alias_sym(candidate.as_str(), candidate)
+                        .is_some(),
+                    "a lexical-type candidate {candidate:?} found only by the alias cascade"
+                );
+                narrow
+            } else {
+                self.get_env_with_main_alias_sym(candidate.as_str(), candidate)
+            };
+            if let Some(v) = env_hit {
                 return Some(v);
             }
             if let Some(v) = self
@@ -502,6 +588,22 @@ impl Interpreter {
             }
         }
         None
+    }
+
+    /// The two probes of the `get_env_with_main_alias_sym` cascade that can
+    /// answer for a package-qualified lexical-type key (`Pkg::\u{1}Name`), in
+    /// the cascade's order: the running compunit's file-scope lexicals
+    /// (skipped when an enclosing routine binds the name, as the cascade
+    /// does), then the env.
+    // Cost: `unit_scope_lexical`'s probe plus one env lookup.
+    fn lexical_type_candidate_probe(&self, candidate: Symbol) -> Option<Value> {
+        let name = candidate.as_str();
+        if !self.running_code_routine_scoped(name, Some(candidate))
+            && let Some(v) = self.unit_scope_lexical(name, Some(candidate))
+        {
+            return Some(v.into_deref());
+        }
+        self.env().get_sym(candidate).cloned()
     }
 
     /// Resolve a regex body's bare lexical through its defining grammar's

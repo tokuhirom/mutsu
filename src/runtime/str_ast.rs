@@ -35,6 +35,29 @@ impl Interpreter {
             })
         });
         crate::parser::clear_parser_lib_paths();
+        // rakudo compiles the string's unit under its name joined onto
+        // `$*CWD`, as an `EVAL`'s: a parse failure reports that file.
+        let result = result.map_err(|mut e| {
+            if e.code().is_some_and(|c| c.is_parse())
+                && let (Some(file), Some(text)) = (e.source_file(), e.source_text())
+                && !std::path::Path::new(file).is_absolute()
+            {
+                let (file, text) = (file.to_string(), text.to_string());
+                let compile_name = self.absolutify_unit_name(&file);
+                if let Some(ValueView::Instance { attributes, .. }) =
+                    e.exception.as_ref().map(|exc| exc.view())
+                {
+                    for key in ["filename", "file"] {
+                        let held = attributes.as_map().get(key).map(|v| v.to_string_value());
+                        if held.as_deref() == Some(file.as_str()) {
+                            attributes.insert(key.to_string(), Value::str(compile_name.clone()));
+                        }
+                    }
+                }
+                e.set_source_file_text(compile_name, text);
+            }
+            e
+        });
         // Rakudo's `.AST` resolves the tree's lookups before handing it out:
         // a `<name>` assertion's `my regex` among them.
         let result = result.map(crate::rakuast::annotate_str_ast);

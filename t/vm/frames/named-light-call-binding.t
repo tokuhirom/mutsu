@@ -31,7 +31,9 @@ is g(:colour<c2>), "c2", 'rename matches the inner key';
 sub h(:$x!) { $x }
 is h(:x(1)), 1, 'required named param binds';
 my $err;
-{ h(); CATCH { default { $err = $_ } } }
+# A literal call that can never bind is refuted at CHECK time (#18874);
+# the slip keeps this one a run-time binding failure.
+{ h(|()); CATCH { default { $err = $_ } } }
 ok $err ~~ X::AdHoc, 'missing required named param throws X::AdHoc';
 
 # A closure inside the body captures the named param by name.

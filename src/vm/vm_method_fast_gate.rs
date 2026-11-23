@@ -11,6 +11,13 @@ pub(crate) struct MethodFastGate {
     /// The call may drop the method's env overlay on exit instead of merging
     /// it into the caller's.
     pub(crate) can_skip_merge: bool,
+    /// The merge skip is refused only because the body calls something or
+    /// writes the env by name (`cc.has_calls` / `cc.has_env_writes`), not
+    /// because a parameter shares a caller container. Such a frame's writes
+    /// reach the caller through the variables' own cells (ADR-12529), so its
+    /// exit needs only the runtime-name carry the fast binder's non-skip
+    /// arm does, which the lean frame can do too (#18267).
+    pub(crate) merge_is_name_carry_only: bool,
     /// The receiver's attributes carry sigilless-alias metadata.
     pub(crate) has_attr_aliases: bool,
     /// The fast binder (`call_compiled_method_fast`) can bind this call.
@@ -354,9 +361,12 @@ impl Interpreter {
         // The container binds above happen only on the fast path.
         let has_rw_params = has_rw_params || (container_light && !fast);
         let can_skip_merge = !has_rw_params && can_skip_merge_if_light;
+        let merge_is_name_carry_only =
+            !has_rw_params && !has_aliasable_container_params && !shares_scalar_container;
         MethodFastGate {
             has_rw_params,
             can_skip_merge,
+            merge_is_name_carry_only,
             has_attr_aliases,
             fast,
         }

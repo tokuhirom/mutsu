@@ -148,16 +148,16 @@ impl Interpreter {
             0
         };
 
-        // Resolve negative start (from WhateverCode calling convention)
-        let start = if start_raw < 0 {
-            total_len as i64 + start_raw
-        } else {
-            start_raw
-        };
-
-        // Out-of-range check: return Failure wrapping X::OutOfRange
+        // A WhateverCode start already resolved against the length, so a
+        // negative start here is out of range, as is one past the end: rakudo
+        // fails with X::OutOfRange rather than counting from the end.
+        let start = start_raw;
         if start < 0 || start as usize > total_len {
-            return self.substr_out_of_range_failure(start, total_len);
+            return Ok(Self::substr_out_of_range_failure(
+                "Start argument to substr",
+                start,
+                &format!("0..{total_len}"),
+            ));
         }
 
         let start = start as usize;
@@ -170,8 +170,15 @@ impl Interpreter {
             let len_owned = len_val.deref_container();
             let len_val = len_owned.descalarize();
             match len_val.view() {
+                ValueView::Int(i) if i < 0 => {
+                    return Ok(Self::substr_out_of_range_failure(
+                        "Number of characters argument to substr",
+                        i,
+                        "0..^Inf",
+                    ));
+                }
                 ValueView::Int(i) => {
-                    let len = i.max(0) as usize;
+                    let len = i as usize;
                     (start + len).min(total_len)
                 }
                 ValueView::Num(f) if f.is_infinite() && f > 0.0 => total_len,
@@ -302,30 +309,26 @@ impl Interpreter {
         }
     }
 
-    /// Return a Failure wrapping X::OutOfRange for substr out-of-range start.
-    fn substr_out_of_range_failure(
-        &self,
-        start: i64,
-        total_len: usize,
-    ) -> Result<Value, RuntimeError> {
+    /// A Failure wrapping rakudo's X::OutOfRange for a substr argument
+    /// (`what`) that is out of `range`, with its hint to index relative to
+    /// the end.
+    // Cost: O(1).
+    fn substr_out_of_range_failure(what: &str, got: i64, range: &str) -> Value {
         let mut ex_attrs = std::collections::HashMap::new();
+        ex_attrs.insert("what".to_string(), Value::str(what.to_string()));
+        ex_attrs.insert("got".to_string(), Value::str(got.to_string()));
+        ex_attrs.insert("range".to_string(), Value::str(range.to_string()));
         ex_attrs.insert(
-            "what".to_string(),
-            Value::str("Start argument to substr".to_string()),
-        );
-        ex_attrs.insert("got".to_string(), Value::str(start.to_string()));
-        ex_attrs.insert("range".to_string(), Value::str(format!("0..{}", total_len)));
-        ex_attrs.insert(
-            "message".to_string(),
-            Value::str("X::OutOfRange".to_string()),
+            "comment".to_string(),
+            Value::str(format!(
+                "use *-{} if you want to index relative to the end",
+                got.unsigned_abs()
+            )),
         );
         let exception = Value::make_instance(Symbol::intern("X::OutOfRange"), ex_attrs);
         let mut failure_attrs = std::collections::HashMap::new();
         failure_attrs.insert("exception".to_string(), exception);
         failure_attrs.insert("handled".to_string(), Value::FALSE);
-        Ok(Value::make_instance(
-            Symbol::intern("Failure"),
-            failure_attrs,
-        ))
+        Value::make_instance(Symbol::intern("Failure"), failure_attrs)
     }
 }

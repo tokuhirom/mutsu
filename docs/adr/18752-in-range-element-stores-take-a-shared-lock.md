@@ -10,6 +10,18 @@
   [#8069](https://github.com/tokuhirom/mutsu/issues/8069),
   [#18752](https://github.com/tokuhirom/mutsu/issues/18752)
 
+## Implementation status (2026-11-23)
+
+D1, D2 and D3 are implemented for #8069 (`value::container_lock`'s
+`acquire_shared_pair`, `value::array_shared_store`,
+`vm::vm_shared_element_store`). The C4 timing condition was lifted by the
+maintainer on 2026-11-23. D2 is narrowed further than written: both the
+displaced word and the new word must be refcount-free, and the swap is a
+compare-and-swap, so no ownership moves through it and no displaced value is
+dropped; any other store takes the exclusive path. The C2 prototype gate passed
+(write section 47-59 ms against the 150 ms bound), so D4 is not implemented and
+stays open for a measured need.
+
 ## 1. Context
 
 ADR-8069 and ADR-18637 (#18693) made reads of a shared container stop writing shared cache

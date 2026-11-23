@@ -202,6 +202,10 @@ impl<'ast> Visit<'ast> for CallNames {
 
 
 /// The first bareword term that names nothing in scope.
+/// Whether a statement list imports names the walk cannot see (see
+/// `UndeclaredName::opaque`).
+pub(super) type OpaqueList = dyn Fn(&[Stmt]) -> bool;
+
 struct UndeclaredName<'a> {
     interp: &'a Interpreter,
     /// Everything the unit declares, scope-blind (the safe direction: a name
@@ -225,6 +229,10 @@ struct UndeclaredName<'a> {
     /// The import sets the unit's own top-level `use`s fill (the pre-run
     /// bound its routines there, not in the registry or the env).
     unit_sets: Vec<Symbol>,
+    /// A statement list below the unit's own that this answers for imports
+    /// names the walk cannot see (a `use` in it): the walk does not judge
+    /// the names in it (#13441).
+    opaque: Option<&'a OpaqueList>,
 }
 
 impl UndeclaredName<'_> {
@@ -277,6 +285,9 @@ impl UndeclaredName<'_> {
             || self.declared.contains(name)
             || interp.has_type(name)
             || interp.has_class(name)
+            // A top-level `package`/`module` another thread declared: its
+            // GLOBAL entry is world state (ADR-17216), its env binding is not.
+            || interp.is_bare_package_decl(name)
             || interp.has_function(name)
             || interp.has_multi_function_unindexed(name)
             // A type of the CORE setting mutsu has no registry entry for
@@ -335,6 +346,13 @@ impl UndeclaredName<'_> {
 }
 
 impl<'ast> Visit<'ast> for UndeclaredName<'_> {
+    fn visit_stmts(&mut self, body: &'ast [Stmt]) {
+        if self.opaque.is_some_and(|opaque| opaque(body)) {
+            return;
+        }
+        crate::ast_visit::walk_stmts(self, body);
+    }
+
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         if self.found.is_some() && !self.collect_all {
             return;
@@ -383,30 +401,32 @@ impl<'ast> Visit<'ast> for UndeclaredName<'_> {
 }
 
 impl Interpreter {
-    /// The first bareword term of `stmts` that names nothing in `declared` or
-    /// in the interpreter's scope, with the line it is on.
+    /// Every undeclared bareword term (`collect_all`), else only the first:
+    /// a bareword of `stmts` that names nothing in `declared` or in the
+    /// interpreter's scope, with the line it is on.
     // Cost: O(n * l), n = size of the unit's AST, l = cost of one
-    // registry/env lookup.
-    pub(super) fn first_undeclared_name(
-        &self,
-        stmts: &[Stmt],
-        declared: &HashSet<String>,
-        type_like_only: bool,
-    ) -> Option<(String, i64)> {
-        self.undeclared_names(stmts, declared, type_like_only, false)
-            .into_iter()
-            .next()
-    }
-
-    /// Every undeclared bareword term (`collect_all`), else only the first.
-    // Cost: as `first_undeclared_name`; the scan no longer stops at the first hit
-    // when `collect_all`.
+    // registry/env lookup; the scan no longer stops at the first hit when
+    // `collect_all`.
     pub(super) fn undeclared_names(
         &self,
         stmts: &[Stmt],
         declared: &HashSet<String>,
         type_like_only: bool,
         collect_all: bool,
+    ) -> Vec<(String, i64)> {
+        self.undeclared_names_in(stmts, declared, type_like_only, collect_all, None)
+    }
+
+    /// [`Self::undeclared_names`], skipping the statement lists `opaque`
+    /// answers for.
+    // Cost: as `undeclared_names`, plus `opaque` per statement list.
+    pub(super) fn undeclared_names_in(
+        &self,
+        stmts: &[Stmt],
+        declared: &HashSet<String>,
+        type_like_only: bool,
+        collect_all: bool,
+        opaque: Option<&OpaqueList>,
     ) -> Vec<(String, i64)> {
         let revision_6e = crate::parser::current_language_version().starts_with("6.e")
             || stmts.iter().any(|stmt| {
@@ -431,6 +451,7 @@ impl Interpreter {
                 .flatten()
                 .chain(self.module.eval_prerun_sets.iter().copied())
                 .collect(),
+            opaque,
         };
         walk_stmts(&mut scan, stmts);
         if collect_all {

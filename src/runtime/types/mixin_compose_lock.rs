@@ -14,47 +14,30 @@
 //! the whole type or waits for the thread that does. Rakudo serializes the
 //! same step (the metamodel's mixin cache is guarded by a lock).
 //!
-//! The lock is re-entrant per thread: composing a stacked type composes the
-//! type below it first, through the same function.
+//! It is the same lock a role's pun class is composed under
+//! (`pun_compose.rs`, #18858): composing a mixin can pun a role and punning
+//! one can compose a mixin, so two locks could be taken in opposite orders by
+//! two threads. That lock is re-entrant per thread (composing a stacked type
+//! composes the type below it first, through the same function), and a
+//! thread waiting on it counts as quiescent for the cycle collector's
+//! stop-the-world.
 
-use std::cell::Cell;
-use std::sync::{Mutex, MutexGuard};
-
-static MIXIN_COMPOSE: Mutex<()> = Mutex::new(());
-
-thread_local! {
-    /// How deep this thread is inside mixin composition.
-    static DEPTH: Cell<u32> = const { Cell::new(0) };
-}
+use crate::runtime::pun_compose::PunComposeGuard;
+use crate::value::RuntimeError;
 
 /// Held while this thread composes (or checks for) a mixin type.
 pub(crate) struct MixinComposeGuard {
-    /// The process-wide lock, held by the outermost guard of a thread only.
-    _outer: Option<MutexGuard<'static, ()>>,
+    _lock: PunComposeGuard,
 }
 
 impl MixinComposeGuard {
-    /// Take the composition lock, unless this thread already holds it. A
-    /// single-threaded program takes an uncontended mutex per composition,
-    /// which runs once per mixin type.
+    /// Take the type-composition lock (re-entrant on one thread). A
+    /// single-threaded program takes it uncontended, once per mixin type.
     // Cost: O(1), plus the wait for another thread's composition.
-    pub(crate) fn acquire() -> Self {
-        let depth = DEPTH.with(Cell::get);
-        let outer = (depth == 0).then(|| {
-            // A panic while composing leaves no half-written lock state worth
-            // refusing later compositions over: recover the guard.
-            MIXIN_COMPOSE
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-        });
-        DEPTH.with(|d| d.set(depth + 1));
-        Self { _outer: outer }
-    }
-}
-
-impl Drop for MixinComposeGuard {
-    fn drop(&mut self) {
-        DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
+    pub(crate) fn acquire() -> Result<Self, RuntimeError> {
+        Ok(Self {
+            _lock: PunComposeGuard::acquire()?,
+        })
     }
 }
 
@@ -64,13 +47,13 @@ mod tests {
 
     #[test]
     fn the_lock_is_reentrant_on_one_thread() {
-        let outer = MixinComposeGuard::acquire();
-        let inner = MixinComposeGuard::acquire();
-        assert_eq!(DEPTH.with(Cell::get), 2);
+        let outer = MixinComposeGuard::acquire().unwrap();
+        let inner = MixinComposeGuard::acquire().unwrap();
         drop(inner);
         drop(outer);
-        assert_eq!(DEPTH.with(Cell::get), 0);
-        // Released: another acquisition does not block.
-        drop(MixinComposeGuard::acquire());
+        // Released: another thread can take it.
+        std::thread::spawn(|| drop(MixinComposeGuard::acquire().unwrap()))
+            .join()
+            .unwrap();
     }
 }

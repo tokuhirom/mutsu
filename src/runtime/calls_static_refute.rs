@@ -27,8 +27,11 @@ impl Interpreter {
         // A run-time binding failure happens inside the callee: Rakudo's
         // backtrace starts `in sub f at <file> line <declaration line>`. The
         // callee's routine frame is not pushed until its parameters bound, so
-        // capture the backtrace with that frame on the stack now.
-        if !static_site && !func_name.is_empty() {
+        // capture the backtrace with that frame on the stack now. Only the
+        // compile-time refutation ("Calling f(Str) will never work") is
+        // reported at the call site; a static site's `where` constraint or
+        // missing required named argument is a run-time check like any other.
+        if !func_name.is_empty() && !Self::is_compile_time_refutation(&err) {
             self.attach_callee_frame_backtrace(&mut err, package, func_name);
         }
         err
@@ -48,6 +51,53 @@ impl Interpreter {
         );
         let saved_line = self.cur_source_line;
         if let Some(line) = line {
+            self.cur_source_line = line as _;
+        }
+        self.attach_lazy_backtrace_to_error(err, &[]);
+        self.cur_source_line = saved_line;
+        self.pop_routine();
+    }
+
+    /// Whether `err` is the compile-time `X::TypeCheck::Argument` a statically
+    /// refuted call raises.
+    // Cost: O(1).
+    fn is_compile_time_refutation(err: &RuntimeError) -> bool {
+        err.exception.as_ref().is_some_and(|ex| {
+            matches!(ex.view(), ValueView::Instance { class_name, .. }
+                if class_name.resolve() == "X::TypeCheck::Argument")
+        })
+    }
+
+    /// [`Self::attach_callee_frame_backtrace`] for a method: `err` gets the
+    /// backtrace it would carry had it been raised inside `method_def`, at
+    /// its declaration line.
+    // Cost: O(1) amortized; the backtrace renders only when read.
+    pub(crate) fn attach_method_frame_backtrace(
+        &mut self,
+        err: &mut RuntimeError,
+        owner: Symbol,
+        name: Symbol,
+        method_def: &crate::runtime::MethodDef,
+        cc: &crate::opcode::CompiledCode,
+    ) {
+        self.push_method_routine_with_location(
+            owner,
+            method_def.lexical_package,
+            name,
+            self.current_source_line(),
+            self.executing_source_file_sym(),
+            method_def.source_file_sym(),
+            method_def.is_submethod,
+            method_def.is_hidden_from_backtrace,
+            crate::value::next_instance_id(),
+            crate::runtime::routine_stack::FrameFixtures {
+                invocant: None,
+                class: None,
+                role: None,
+            },
+        );
+        let saved_line = self.cur_source_line;
+        if let Some(line) = cc.source_line {
             self.cur_source_line = line as _;
         }
         self.attach_lazy_backtrace_to_error(err, &[]);

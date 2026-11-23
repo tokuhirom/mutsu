@@ -72,14 +72,22 @@ pub(crate) fn infix_term_call(op: InfixTermOp, left: Expr, right: Vec<Expr>) -> 
             }
         }
         modifier => {
+            // One operand each side, no meta: the spelling RakuAST keeps as
+            // `ApplyInfix(FunctionInfix)` (#18469).
+            let plain = modifier.is_none() && right.len() == 1;
             let mut args = vec![left];
             args.extend(right);
             if modifier == Some('R') {
                 args.reverse();
             }
-            Expr::CallOn {
+            let call = Expr::CallOn {
                 target: Box::new(op.callable),
                 args,
+            };
+            if plain {
+                Expr::spelled(call, || crate::ast::spelled::Spelling::FunctionInfix)
+            } else {
+                call
             }
         }
     }

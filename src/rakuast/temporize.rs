@@ -454,7 +454,10 @@ fn lower_method_assign(
                 invocant_expr = Some(target.clone());
                 (String::new(), false)
             }
-            _ => return Err(unsupported(node)),
+            // `temp &f.wrap(...)`: a call on no container; the general
+            // lowering below raises X::Localizer::NoContainer, as the parser's
+            // own `temp` does (#16356).
+            _ => return Ok(None),
         };
         let method_name = match modifier {
             Some('^') if type_invocant => format!("^{}", name.resolve()),

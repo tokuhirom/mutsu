@@ -366,6 +366,7 @@ impl Compiler {
             self.import_compiled_functions(&mut cc, method_compiler.take_compiled_functions());
 
         cc.method_fatal_pragma = self.fatal_pragma_active;
+        cc.package = Some(method_compiler.compile_time_package_sym());
         let mut cf = CompiledFunction {
             code: std::sync::Arc::new(cc),
             source_file: None,

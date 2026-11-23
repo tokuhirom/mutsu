@@ -41,6 +41,9 @@ pub(super) fn slot_frame_body_ok(
     owner: Symbol,
 ) -> bool {
     if def.is_rw
+        // The slot frame finalizes without a return spec; a lean method's
+        // definite return (`--> Nil`) keeps the lean frame.
+        || def.return_type.is_some()
         // `reconcile_captured_readonly_ex` has work only for a code that
         // writes a free variable or an `is rw` method; the op list below
         // admits no write at all.
@@ -274,18 +277,13 @@ impl Interpreter {
             saved_cur_line: self.cur_source_line,
             readonly_mark: 0,
             saved_locals_base: Some(self.locals.push_frame(0)),
-            saved_upvalues: Vec::new(),
+            saved_spill: None,
             saved_stack_depth: self.stack.len(),
-            saved_local_bind_pairs: Vec::new(),
             saved_loop_local_vars: None,
             saved_loop_local_saved_env: None,
             saved_block_declared_vars: None,
-            saved_frame_authoritative: Vec::new(),
-            saved_frame_owned: Vec::new(),
             saved_active_loop_param_names: None,
             saved_active_loop_rw_param_names: None,
-            saved_pending_caller_var_writeback: Default::default(),
-            saved_rw_param_rebinds: Vec::new(),
             slot: true,
         };
         self.call_frames.push(frame);

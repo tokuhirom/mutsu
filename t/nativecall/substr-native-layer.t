@@ -24,7 +24,7 @@ is substr("hello world", 0, 5), 'hello', 'substr(str, start, len)';
 is "hello".substr(*-3), 'llo', '.substr(*-3) WhateverCode start';
 is "hello".substr(1, *-1), 'ell', '.substr(1, *-1) WhateverCode length';
 is "hello".substr(2..4), 'llo', '.substr(Range)';
-is "hello".substr(-2), 'lo', '.substr(negative start)';
+nok "hello".substr(-2).defined, '.substr(negative start) is out of range (Failure), as in rakudo';
 nok "abc".substr(10).defined, '.substr past end returns undefined (Failure)';
 
 # --- EVAL carrier (interpreter evaluates the call) ---

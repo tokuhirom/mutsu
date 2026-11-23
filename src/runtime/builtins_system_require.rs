@@ -901,6 +901,12 @@ impl Interpreter {
             Some(module_string.clone())
         };
 
+        // Another thread loading the same module (or file) finishes first,
+        // and this `require` then takes the already-loaded path (ADR-17216).
+        let _claim = file_target
+            .as_deref()
+            .or(module_name.as_deref())
+            .map(|key| self.claim_module_load(key));
         let load_from_file = file_target.is_some()
             || module_name
                 .as_ref()

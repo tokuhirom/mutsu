@@ -29,7 +29,7 @@ my multi sub md5(IO::Path:D $io --> Blob:D) {
     md5 $io.slurp(:bin)
 }
 my multi sub md5(Blob:D $msg --> Blob:D) {
-     my $digest := blob8.allocate(MD5_DIGEST_LENGTH);
+     my $digest := buf8.allocate(MD5_DIGEST_LENGTH);
      MD5($msg, $msg.bytes, $digest);
      $digest
 }
@@ -44,7 +44,7 @@ my multi sub sha1(IO::Path:D $io --> Blob:D) {
     sha1 $io.slurp(:bin)
 }
 my multi sub sha1(Blob:D $msg --> Blob:D) {
-     my $digest := blob8.allocate(SHA1_DIGEST_LENGTH);
+     my $digest := buf8.allocate(SHA1_DIGEST_LENGTH);
      SHA1($msg, $msg.bytes, $digest);
      $digest
 }
@@ -59,7 +59,7 @@ my multi sub sha224(IO::Path:D $io --> Blob:D) {
     sha224 $io.slurp(:bin)
 }
 my multi sub sha224(Blob:D $msg --> Blob:D) {
-     my $digest := blob8.allocate(SHA224_DIGEST_LENGTH);
+     my $digest := buf8.allocate(SHA224_DIGEST_LENGTH);
      SHA224($msg, $msg.bytes, $digest);
      $digest
 }
@@ -74,7 +74,7 @@ my multi sub sha256(IO::Path:D $io --> Blob:D) {
     sha256 $io.slurp(:bin)
 }
 my multi sub sha256(Blob:D $msg --> Blob:D) {
-     my $digest := blob8.allocate(SHA256_DIGEST_LENGTH);
+     my $digest := buf8.allocate(SHA256_DIGEST_LENGTH);
      SHA256($msg, $msg.bytes, $digest);
      $digest
 }
@@ -89,7 +89,7 @@ my multi sub sha384(IO::Path:D $io --> Blob:D) {
     sha384 $io.slurp(:bin)
 }
 my multi sub sha384(Blob:D $msg --> Blob:D) {
-     my $digest := blob8.allocate(SHA384_DIGEST_LENGTH);
+     my $digest := buf8.allocate(SHA384_DIGEST_LENGTH);
      SHA384($msg, $msg.bytes, $digest);
      $digest
 }
@@ -104,7 +104,7 @@ my multi sub sha512(IO::Path:D $io --> Blob:D) {
     sha512 $io.slurp(:bin)
 }
 my multi sub sha512(Blob:D $msg --> Blob:D) {
-     my $digest := blob8.allocate(SHA512_DIGEST_LENGTH);
+     my $digest := buf8.allocate(SHA512_DIGEST_LENGTH);
      SHA512($msg, $msg.bytes, $digest);
      $digest
 }
@@ -112,6 +112,6 @@ my sub sha512-hex(Any:D $source --> Str:D) is export { hexify sha512 $source }
 
 #- hack ------------------------------------------------------------------------
 # To allow version fetching
-module OpenSSL::Digest:ver<0.2.7>:auth<raku-community-modules> { }
+module OpenSSL::Digest:ver<0.2.10>:auth<raku-community-modules> { }
 
 # vim: expandtab shiftwidth=4

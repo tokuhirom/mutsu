@@ -80,7 +80,10 @@ pub(crate) fn classify_base_op(op: &str) -> OpPrecedence {
 /// Try to parse a bracket meta-op or bracket infix at a specific precedence level.
 /// Returns Some((meta, op, total_len)) for meta-ops,
 /// or Some(("", op, total_len)) for plain bracket infix.
-fn try_bracket_op_at_level(input: &str, level: &OpPrecedence) -> Option<(String, String, usize)> {
+pub(super) fn try_bracket_op_at_level(
+    input: &str,
+    level: &OpPrecedence,
+) -> Option<(String, String, usize)> {
     // Try R[op], Z[op], X[op]
     // Skip Z/X meta-ops — they need list-infix comma handling
     if let Some((meta, op, len)) = parse_meta_op(input)
@@ -121,7 +124,10 @@ fn try_bracket_op_at_level(input: &str, level: &OpPrecedence) -> Option<(String,
 /// Addition/subtraction: + -
 pub(crate) fn additive_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = multiplicative_expr(input)?;
+    // Whether `left` is an application this loop built (#18907).
+    let mut built_here = false;
     loop {
+        let built_here_before = std::mem::replace(&mut built_here, true);
         let (r, _) = ws(rest)?;
         if block_newline_terminates(input, rest, r, &left) {
             break;
@@ -218,6 +224,18 @@ pub(crate) fn additive_expr(input: &str) -> PResult<'_, Expr> {
             break;
         }
         // Try bracket meta-op at additive level: R[+], R[-], [R+], [R-], etc.
+        // `R-` / `R/`: right-associative, binding the nearest left operand
+        // (#18907).
+        if let Some((meta, op, len)) = try_bracket_op_at_level(r, &OpPrecedence::Additive)
+            && meta == "R"
+        {
+            let (r, _) = ws(&r[len..])?;
+            let (r, right) =
+                super::reverse_assoc::right_chain(r, &OpPrecedence::Additive, multiplicative_expr)?;
+            left = super::reverse_assoc::attach(left, built_here_before, op, right);
+            rest = r;
+            continue;
+        }
         if let Some((meta, op, len)) = try_bracket_op_at_level(r, &OpPrecedence::Additive) {
             let r = &r[len..];
             let (r, _) = ws(r)?;
@@ -288,7 +306,10 @@ fn prefix_expr_with_ws_dot(input: &str) -> PResult<'_, Expr> {
 /// Multiplication/division: * / % div mod gcd lcm
 pub(crate) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
     let (mut rest, mut left) = prefix_expr_with_ws_dot(input)?;
+    // Whether `left` is an application this loop built (#18907).
+    let mut built_here = false;
     loop {
+        let built_here_before = std::mem::replace(&mut built_here, true);
         let (r, _) = ws(rest)?;
         if block_newline_terminates(input, rest, r, &left) {
             break;
@@ -397,6 +418,21 @@ pub(crate) fn multiplicative_expr(input: &str) -> PResult<'_, Expr> {
             break;
         }
         // Try bracket meta-op at multiplicative level: R[*], R[/], [R*], [R/], etc.
+        // `R-` / `R/`: right-associative, binding the nearest left operand
+        // (#18907).
+        if let Some((meta, op, len)) = try_bracket_op_at_level(r, &OpPrecedence::Multiplicative)
+            && meta == "R"
+        {
+            let (r, _) = ws(&r[len..])?;
+            let (r, right) = super::reverse_assoc::right_chain(
+                r,
+                &OpPrecedence::Multiplicative,
+                prefix_expr_with_ws_dot,
+            )?;
+            left = super::reverse_assoc::attach(left, built_here_before, op, right);
+            rest = r;
+            continue;
+        }
         if let Some((meta, op, len)) = try_bracket_op_at_level(r, &OpPrecedence::Multiplicative) {
             let r = &r[len..];
             let (r, _) = ws(r)?;

@@ -217,15 +217,27 @@ impl Interpreter {
                 args,
             ));
         }
-        if matches!(
-            positional.first().map(|v| v.view()),
-            Some(ValueView::Package(_))
-        ) {
-            return Err(RuntimeError::new("Cannot convert type object to Int"));
+        let Some(arg) = positional.first() else {
+            return Ok(Value::int(0));
+        };
+        if let ValueView::Package(name) = arg.view() {
+            return Err(RuntimeError::new(format!(
+                "Cannot create an Int from a '{}' type object",
+                name.resolve()
+            )));
         }
-        Ok(Value::int(
-            positional.first().map_or(0, |v| crate::runtime::to_int(v)),
-        ))
+        // `Int.new(value)` is `value.Int`: a numeric string parses as Raku
+        // reads it (`"0x1F"` is 31), and one that is not a number dies with
+        // the `.Int` Failure's exception rather than answering 0.
+        if let ValueView::Str(_) = arg.view()
+            && let Some(result) = crate::builtins::methods_0arg::native_method_0arg(
+                arg,
+                crate::symbol::Symbol::intern("Int"),
+            )
+        {
+            return Self::sink_failure_to_error(result?);
+        }
+        Ok(Value::int(crate::runtime::to_int(arg)))
     }
 
     /// Build a `Num` from `.new(value)` as pure data: coerce the argument to
