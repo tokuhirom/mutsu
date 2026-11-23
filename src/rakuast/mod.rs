@@ -168,6 +168,8 @@ mod immediate_call;
 mod infix_func;
 pub(crate) mod literal_queries;
 pub(crate) mod name_queries;
+pub(crate) mod type_queries;
+mod type_capture_ctor;
 pub(crate) mod parameter_queries;
 pub(crate) mod sink_call;
 pub(crate) use infix_func::add_colonpair;
@@ -2365,6 +2367,10 @@ fn construct_values(
     // constructors build (rakudo's `RakuAST::Lookup` helpers, used by
     // CSS::Specification::Compiler's `my RakuAST::Type::Simple $type .=
     // from-identifier-parts(|@module)`).
+    // `Type::Capture.new($name, :smiley<D>)` / `.from-identifier("T", "D")`.
+    if let Some(result) = type_capture_ctor::construct(names, class_name, method, args) {
+        return result.map(Some);
+    }
     // `.raku` prints `Type::Setting` and `Type::Capture` over a plain name the
     // same way, so the text must evaluate back.
     let name_type = match class_name {
@@ -2502,19 +2508,19 @@ fn construct_class(
         }))));
     }
     if class_name == "RakuAST::Type::Enum" && method == "new" {
-        let name = named_arg(args, "name")
-            .ok_or_else(|| RuntimeError::new("RakuAST::Type::Enum.new requires `name`"))?;
-        require_rakuast_class(&name, RakuAstClass::Name, "RakuAST::Type::Enum.new")?;
+        // The name defaults to none (an anonymous enum) and the term may be
+        // any expression, as rakudo has it (#18978).
+        let name = named_arg(args, "name").filter(|v| !v.is_nil());
+        if let Some(name) = &name {
+            require_rakuast_class(name, RakuAstClass::Name, "RakuAST::Type::Enum.new")?;
+        }
         let term = named_arg(args, "term")
             .ok_or_else(|| RuntimeError::new("RakuAST::Type::Enum.new requires `term`"))?;
-        require_rakuast_class(&term, RakuAstClass::QuotedString, "RakuAST::Type::Enum.new")
-            .or_else(|_| {
-                require_rakuast_class(
-                    &term,
-                    RakuAstClass::CircumfixParentheses,
-                    "RakuAST::Type::Enum.new",
-                )
-            })?;
+        if lower::rakuast_node_of(&term).is_none() {
+            return Err(RuntimeError::new(
+                "RakuAST::Type::Enum.new expects a RakuAST node as `term`",
+            ));
+        }
         let mut fields = Vec::with_capacity(5);
         if let Some(scope) =
             named_arg(args, "scope").filter(|s| s.as_str().is_some_and(|s| !s.is_empty()))
@@ -2524,10 +2530,12 @@ fn construct_class(
                 value: RakuAstFieldValue::Node(scope),
             });
         }
-        fields.push(RakuAstField {
-            name: Some("name"),
-            value: RakuAstFieldValue::Node(name),
-        });
+        if let Some(name) = name {
+            fields.push(RakuAstField {
+                name: Some("name"),
+                value: RakuAstFieldValue::Node(name),
+            });
+        }
         if let Some(of) = named_arg(args, "of").filter(|v| !v.is_nil()) {
             fields.push(RakuAstField {
                 name: Some("of"),
@@ -4211,7 +4219,7 @@ fn multi_field_schema(
 /// A repeated name keeps the last one, as a Raku call does (`.new(:a(1), :a(2))`
 /// binds `2`; the idiom `.new(|%defaults, |%overrides)` relies on it).
 // Cost: O(a), a = arguments.
-fn named_arg(args: &[Value], name: &str) -> Option<Value> {
+pub(super) fn named_arg(args: &[Value], name: &str) -> Option<Value> {
     args.iter().rev().find_map(|a| match a.view() {
         ValueView::Pair(k, v) => (k.as_str() == name).then(|| v.clone()),
         ValueView::ValuePair(k, v) => (k.to_string_value() == name).then(|| v.clone()),
