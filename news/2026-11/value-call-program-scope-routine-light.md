@@ -15,6 +15,6 @@ nested in another routine still runs through its code object's captured env.
 Named arguments, `is rw`, `state` and the other shapes the light path does not
 take keep the general path.
 
-`@chars.first(&unsafe)` over 5000 one-character strings goes from 31,105 to
-12,980 instructions per element, now below the wrapped
-`@chars.first({ unsafe($_) })` at 15,350.
+`@chars.first(&unsafe)` over 5000 one-character strings goes from 31,343 to
+13,248 instructions per element, now below the wrapped
+`@chars.first({ unsafe($_) })` at 15,538.
