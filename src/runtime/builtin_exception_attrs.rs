@@ -4,9 +4,11 @@
 //! reads off rakudo's own classes (`.^attributes(:local)`, the attributes
 //! `.new` builds, and their literal initializers).
 //!
-//! `runtime_init` declares them as the classes' `ClassDef::attributes`, so
-//! `.^attributes`, the accessors, construction and the default `.raku` see
-//! them (#18654). An unset slot holds its type object, which the built-in
+//! `runtime_init` marks each built-in exception class, and its
+//! `ClassDef::attributes` declares them on first access ([`declare`],
+//! `class_attributes`), so `.^attributes`, the accessors, construction and the
+//! default `.raku` see them (#18654) while a program that never touches an
+//! exception class does not pay for them (#18956). An unset slot holds its type object, which the built-in
 //! message formatters read as absent (`value::exception_message::defined_attr`).
 
 use crate::value::Value;
@@ -47,10 +49,65 @@ fn table() -> &'static FxHashMap<&'static str, Vec<Row>> {
     })
 }
 
-/// Every class the table lists, with the attributes it declares.
-// Cost: O(c), c = classes in the table.
-pub(crate) fn all() -> impl Iterator<Item = (&'static str, &'static [Row])> {
-    table().iter().map(|(class, rows)| (*class, rows.as_slice()))
+/// Whether built-in class `class` may have table rows: the classes the table
+/// lists are all `X::` and `CX::` exceptions. Answers without parsing the
+/// table.
+// Cost: O(1).
+pub(crate) fn may_declare(class: &str) -> bool {
+    class.starts_with("X::") || class.starts_with("CX::")
+}
+
+/// Declares built-in exception class `class`'s attributes after `attrs`, the
+/// ones it already has (skipping a name already declared), and returns the
+/// private ones built from their named argument. The few private `is built`
+/// ones (`X::TypeCheck`'s `$!got`/`$!expected`, `X::Coerce::Role`'s
+/// `$!exception`, ...) each have an explicit reader method in rakudo, so they
+/// are declared with their accessor. An attribute a built-in method row
+/// already reads (`X::AdHoc.payload`, which falls back to the message an
+/// internal error carries) is built from its named argument but gets no
+/// generated accessor, so the row answers.
+// Cost: O(r * a), r = the class's table rows, a = attributes already declared
+// (plus the one-time table parse).
+pub(crate) fn declare(
+    class: &str,
+    attrs: &mut Vec<super::ClassAttributeDef>,
+) -> Vec<&'static str> {
+    let mut built = Vec::new();
+    let Some(rows) = table().get(class) else {
+        return built;
+    };
+    for row in rows {
+        if attrs.iter().any(|a| a.name == row.name) {
+            continue;
+        }
+        let build = row.build_default();
+        let row_reads_it = crate::builtins::method_table::owner_has_row(class, row.name);
+        if row_reads_it {
+            built.push(row.name);
+        }
+        attrs.push(super::ClassAttributeDef {
+            name: row.name.to_string(),
+            is_public: !row_reads_it,
+            default: build
+                .clone()
+                .or_else(|| row.unset_seed())
+                .map(crate::opcode::DeclTraitArg::Literal),
+            captured_env: None,
+            captured_unit: None,
+            declaring_package: None,
+            is_rw: false,
+            is_required: None,
+            sigil: row.sigil(),
+            type_constraint: None,
+            where_constraint: None,
+            declared_shape: None,
+            source_line: None,
+            source_file: None,
+            default_is_seed: build.is_none(),
+            default_is_trait: false,
+        });
+    }
+    built
 }
 
 impl Row {

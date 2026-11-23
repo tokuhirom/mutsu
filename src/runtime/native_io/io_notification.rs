@@ -145,7 +145,7 @@ impl Interpreter {
         let class_def =
             |name: &str, attributes: Vec<ClassAttributeDef>, methods: &[&str]| ClassDef {
                 parents: Vec::new(),
-                attributes,
+                attributes: attributes.into(),
                 native_methods: methods.iter().map(|m| m.to_string()).collect(),
                 mro: crate::runtime::sym_mro(&[name]),
                 attribute_types: HashMap::new(),

@@ -511,6 +511,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_function_dispatch();
         self.sync_world_wraps();
+        self.sync_world_tokens();
         let arity_usize = arity as usize;
         let spec = &code.named_arg_specs[spec_idx as usize];
         // ADR-0113: a frame-lexical callee must not be served by the
@@ -666,6 +667,7 @@ impl Interpreter {
         } = arg_kinds;
         crate::vm::vm_stats::record_function_dispatch();
         self.sync_world_wraps();
+        self.sync_world_tokens();
         if let Some(done) = self.exec_call_func_preamble(
             code,
             name_idx,

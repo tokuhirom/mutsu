@@ -1,11 +1,10 @@
 //! `RakuAST::Name` parts beyond plain identifiers: the empty edge of a name
 //! (`::Foo`, `::($x)`, `Foo::`) and the shapes the lowerer recognises.
 //!
-//! Rakudo 2026.09 spelled the empty edge `RakuAST::Name::Part::Empty`;
-//! rakudo/rakudo#6771 (in 2026.11) renamed it to `RakuAST::Name::Part::EmptyEdge`,
-//! because it can only be the first or the last part of a name. `.AST` emits
-//! `EmptyEdge` like Rakudo 2026.11, and the old `Empty` spelling is still
-//! accepted on the way in. Both edges are `EmptyEdge` instances; a hand-built
+//! The empty edge is rakudo 2026.11's `RakuAST::Name::Part::EmptyEdge`
+//! (rakudo/rakudo#6771 renamed it from 2026.09's `Name::Part::Empty`, which
+//! mutsu no longer accepts, #18977), because it can only be the first or the
+//! last part of a name. Both edges are `EmptyEdge` instances; a hand-built
 //! name may still hold the bare type object, which is accepted too.
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
@@ -26,26 +25,18 @@ fn is_name_part_class(class: RakuAstClass) -> bool {
         class,
         RakuAstClass::NamePartSimple
             | RakuAstClass::NamePartExpression
-            | RakuAstClass::NamePartEmpty
             | RakuAstClass::NamePartEmptyEdge
     )
 }
 
 fn is_empty_part_type_object(name: &str) -> bool {
-    matches!(
-        name,
-        "RakuAST::Name::Part::Empty" | "RakuAST::Name::Part::EmptyEdge"
-    )
+    name == "RakuAST::Name::Part::EmptyEdge"
 }
 
-/// Whether a name part is an empty edge, in either spelling, as a type object
-/// or an instance.
+/// Whether a name part is an empty edge, as a type object or an instance.
 pub(super) fn is_empty_part(value: &Value) -> bool {
     match value.view() {
-        ValueView::RakuAst(node) => matches!(
-            node.class,
-            RakuAstClass::NamePartEmpty | RakuAstClass::NamePartEmptyEdge
-        ),
+        ValueView::RakuAst(node) => matches!(node.class, RakuAstClass::NamePartEmptyEdge),
         ValueView::Package(name) => is_empty_part_type_object(&name.resolve()),
         _ => false,
     }

@@ -41,11 +41,12 @@ import manualJa from './content/manual.ja.js';
 const TEXT = { en: manualEn, ja: manualJa };
 
 /* The compatibility section quotes the roast figure. pages.yml writes
-   content/stats.json at deploy time by counting roast-whitelist.txt against
-   roast/, exactly as the landing page does, so the number on this page cannot
-   drift away from the suite. These values are the fallback for a local
-   checkout, where that file does not exist. */
-let STATS = { roastPass: 1426, roastTotal: 1454 };
+   content/stats.json at deploy time with scripts/roast-compat.py (the
+   roast/spectest.data files that pass; docs/roast-compatibility.md), exactly as
+   the landing page does, so the number on this page cannot drift away from the
+   suite. These values are the fallback for a local checkout, where that file
+   does not exist. */
+let STATS = { roastPass: 1425, roastTotal: 1425 };
 
 function fillStats(html) {
   const pct = (100 * STATS.roastPass / STATS.roastTotal).toFixed(1);

@@ -31,8 +31,9 @@ is $on-out, q:to/END/, 'the transcript is what rakudo prints';
     drained=62061635 left=0
     bound=3 72480 left=0
     buffer=7
+    ints=4 3078 left=0
     END
 
 # Not vacuous: every routine of the fixture ran as TRIR.
-is $on-err.lines.grep(*.contains(' accepted ')).elems, 4,
-    'fill, drain, count and buffer all compiled to TRIR';
+is $on-err.lines.grep(*.contains(' accepted ')).elems, 7,
+    'every routine of the fixture compiled to TRIR';

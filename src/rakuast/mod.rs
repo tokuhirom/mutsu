@@ -137,6 +137,7 @@ mod declared_routines;
 mod deferred_name;
 mod derived_methods;
 pub(crate) mod doc_block_edit;
+mod doc_block_paragraphs;
 pub(crate) mod doc_edit;
 mod doc_phaser;
 mod doc_source;
@@ -170,6 +171,8 @@ pub(crate) mod literal_queries;
 pub(crate) mod name_queries;
 pub(crate) mod parameter_queries;
 pub(crate) mod sink_call;
+mod type_capture_ctor;
+pub(crate) mod type_queries;
 pub(crate) use infix_func::add_colonpair;
 mod angle_subscript;
 mod assign_ro;
@@ -289,6 +292,7 @@ mod substitution;
 pub(crate) use indirect_bind::indirect_symbol_bind;
 mod symbolic_deref;
 mod temporize;
+mod term_bool_ctor;
 mod term_name;
 mod thunk;
 mod topic_subscript;
@@ -491,11 +495,9 @@ pub enum RakuAstClass {
     // tree can retain the exact Name shape.
     NamePartExpression,
     // The empty edge of a name: the leading `::` of `::Foo` / `::($x)` and the
-    // trailing `::` of a stash lookup `Foo::`. Rakudo 2026.09 spelled it
-    // `Name::Part::Empty`; rakudo/rakudo#6771 (2026.11) renamed it to
-    // `Name::Part::EmptyEdge`, which is what `.AST` emits; `Empty` is still
-    // accepted on input.
-    NamePartEmpty,
+    // trailing `::` of a stash lookup `Foo::` (rakudo 2026.11's
+    // `Name::Part::EmptyEdge`; the 2026.09 spelling `Name::Part::Empty` is
+    // gone, #18977).
     NamePartEmptyEdge,
     ArgList,
     /// `:a:!b:42c` written as a term: the colonpairs, one positional child each.
@@ -909,7 +911,6 @@ impl RakuAstClass {
             Name => "RakuAST::Name",
             NamePartSimple => "RakuAST::Name::Part::Simple",
             NamePartExpression => "RakuAST::Name::Part::Expression",
-            NamePartEmpty => "RakuAST::Name::Part::Empty",
             NamePartEmptyEdge => "RakuAST::Name::Part::EmptyEdge",
             ArgList => "RakuAST::ArgList",
             ColonPairs => "RakuAST::ColonPairs",
@@ -1193,7 +1194,6 @@ impl RakuAstClass {
                 | RakuAstClass::RegexInternalModifierIgnoreMark
                 | RakuAstClass::RegexInternalModifierSigspace
                 | RakuAstClass::RegexInternalModifierRatchet
-                | RakuAstClass::NamePartEmpty
                 | RakuAstClass::NamePartEmptyEdge
         )
     }
@@ -1349,13 +1349,11 @@ pub fn type_object_is_package(class_name: &str) -> bool {
 }
 
 /// The rakudo class a mutsu-only node class answers the hierarchy as. mutsu
-/// models two spellings rakudo folds into another class: `Call::BlockMethod`
-/// (rakudo renders `$x.&{...}` as a `Call::TermAsMethod`) and
-/// `Name::Part::Empty` (the pre-2026.11 spelling of `Name::Part::EmptyEdge`).
+/// models one spelling rakudo folds into another class: `Call::BlockMethod`
+/// (rakudo renders `$x.&{...}` as a `Call::TermAsMethod`).
 fn measured_name(class_name: &str) -> &str {
     match class_name {
         "RakuAST::Call::BlockMethod" => "RakuAST::Call::TermAsMethod",
-        "RakuAST::Name::Part::Empty" => "RakuAST::Name::Part::EmptyEdge",
         _ => class_name,
     }
 }
@@ -1478,7 +1476,6 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Name,
     RakuAstClass::NamePartSimple,
     RakuAstClass::NamePartExpression,
-    RakuAstClass::NamePartEmpty,
     RakuAstClass::NamePartEmptyEdge,
     RakuAstClass::ArgList,
     RakuAstClass::ColonPairs,
@@ -2343,6 +2340,9 @@ fn construct_values(
             ValueView::Str(_) => Some("RakuAST::StrLiteral"),
             ValueView::Num(_) => Some("RakuAST::NumLiteral"),
             ValueView::Rat(..) => Some("RakuAST::RatLiteral"),
+            // `42+i` / `v6.e` (#18979).
+            ValueView::Complex(..) => Some("RakuAST::ComplexLiteral"),
+            ValueView::Version { .. } => Some("RakuAST::VersionLiteral"),
             _ => None,
         };
         if let Some(literal) = literal {
@@ -2365,6 +2365,10 @@ fn construct_values(
     // constructors build (rakudo's `RakuAST::Lookup` helpers, used by
     // CSS::Specification::Compiler's `my RakuAST::Type::Simple $type .=
     // from-identifier-parts(|@module)`).
+    // `Type::Capture.new($name, :smiley<D>)` / `.from-identifier("T", "D")`.
+    if let Some(result) = type_capture_ctor::construct(names, class_name, method, args) {
+        return result.map(Some);
+    }
     // `.raku` prints `Type::Setting` and `Type::Capture` over a plain name the
     // same way, so the text must evaluate back.
     let name_type = match class_name {
@@ -2502,19 +2506,19 @@ fn construct_class(
         }))));
     }
     if class_name == "RakuAST::Type::Enum" && method == "new" {
-        let name = named_arg(args, "name")
-            .ok_or_else(|| RuntimeError::new("RakuAST::Type::Enum.new requires `name`"))?;
-        require_rakuast_class(&name, RakuAstClass::Name, "RakuAST::Type::Enum.new")?;
+        // The name defaults to none (an anonymous enum) and the term may be
+        // any expression, as rakudo has it (#18978).
+        let name = named_arg(args, "name").filter(|v| !v.is_nil());
+        if let Some(name) = &name {
+            require_rakuast_class(name, RakuAstClass::Name, "RakuAST::Type::Enum.new")?;
+        }
         let term = named_arg(args, "term")
             .ok_or_else(|| RuntimeError::new("RakuAST::Type::Enum.new requires `term`"))?;
-        require_rakuast_class(&term, RakuAstClass::QuotedString, "RakuAST::Type::Enum.new")
-            .or_else(|_| {
-                require_rakuast_class(
-                    &term,
-                    RakuAstClass::CircumfixParentheses,
-                    "RakuAST::Type::Enum.new",
-                )
-            })?;
+        if lower::rakuast_node_of(&term).is_none() {
+            return Err(RuntimeError::new(
+                "RakuAST::Type::Enum.new expects a RakuAST node as `term`",
+            ));
+        }
         let mut fields = Vec::with_capacity(5);
         if let Some(scope) =
             named_arg(args, "scope").filter(|s| s.as_str().is_some_and(|s| !s.is_empty()))
@@ -2524,10 +2528,12 @@ fn construct_class(
                 value: RakuAstFieldValue::Node(scope),
             });
         }
-        fields.push(RakuAstField {
-            name: Some("name"),
-            value: RakuAstFieldValue::Node(name),
-        });
+        if let Some(name) = name {
+            fields.push(RakuAstField {
+                name: Some("name"),
+                value: RakuAstFieldValue::Node(name),
+            });
+        }
         if let Some(of) = named_arg(args, "of").filter(|v| !v.is_nil()) {
             fields.push(RakuAstField {
                 name: Some("of"),
@@ -2720,6 +2726,9 @@ fn construct_class(
     }
     if class_name == "RakuAST::Doc::Block" && method == "from-alias" {
         return doc_block_edit::from_alias(args).map(Some);
+    }
+    if class_name == "RakuAST::Doc::Block" && method == "from-paragraphs" {
+        return doc_block_paragraphs::from_paragraphs(args).map(Some);
     }
     if class_name == "RakuAST::Doc::Block" && method == "from-config" {
         return doc_block_edit::from_config(args).map(Some);
@@ -3607,6 +3616,9 @@ fn construct_class(
         }
         return Ok(Some(slurpy_marker_value(class)));
     }
+    if let Some(node) = term_bool_ctor::construct(class_name, method, args) {
+        return node.map(Some);
+    }
     // `Term::Enum.new(Name)`: the same node as `Term::Enum.from-identifier`,
     // from a simple (single identifier) name node.
     if class_name == "RakuAST::Term::Enum" && method == "new" {
@@ -4142,7 +4154,6 @@ fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass>
         ("RakuAST::Term::Rand", "new") => RakuAstClass::TermRand,
         ("RakuAST::Prefix::Multislice", "new") => RakuAstClass::PrefixMultislice,
         ("RakuAST::Term::HyperWhatever", "new") => RakuAstClass::TermHyperWhatever,
-        ("RakuAST::Name::Part::Empty", "new") => RakuAstClass::NamePartEmpty,
         ("RakuAST::Name::Part::EmptyEdge", "new") => RakuAstClass::NamePartEmptyEdge,
         _ => return None,
     })
@@ -4211,7 +4222,7 @@ fn multi_field_schema(
 /// A repeated name keeps the last one, as a Raku call does (`.new(:a(1), :a(2))`
 /// binds `2`; the idiom `.new(|%defaults, |%overrides)` relies on it).
 // Cost: O(a), a = arguments.
-fn named_arg(args: &[Value], name: &str) -> Option<Value> {
+pub(super) fn named_arg(args: &[Value], name: &str) -> Option<Value> {
     args.iter().rev().find_map(|a| match a.view() {
         ValueView::Pair(k, v) => (k.as_str() == name).then(|| v.clone()),
         ValueView::ValuePair(k, v) => (k.to_string_value() == name).then(|| v.clone()),
@@ -4495,7 +4506,6 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::Role
             | RakuAstClass::RoleBody
             | RakuAstClass::NamePartExpression
-            | RakuAstClass::NamePartEmpty
             | RakuAstClass::NamePartEmptyEdge
             | RakuAstClass::TermName
             | RakuAstClass::TermNamed

@@ -31,7 +31,7 @@ fn only(node: &RakuAstNode, class: RakuAstClass, method: &str) -> Result<(), Run
 // Cost: O(1).
 pub(crate) fn from_string(args: &[Value]) -> Result<Value, RuntimeError> {
     match args {
-        [text] if matches!(text.view(), ValueView::Str(_)) => Ok(text.clone()),
+        [text] if let Some(text) = text.as_str() => paragraph_from_text(text),
         [other] => Err(RuntimeError::new(format!(
             "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter \
              '$text'; expected Str but got {}",
@@ -41,6 +41,24 @@ pub(crate) fn from_string(args: &[Value]) -> Result<Value, RuntimeError> {
             "Too few positionals passed; expected 2 arguments but got {}",
             args.len() + 1
         ))),
+    }
+}
+
+/// The `Doc::Paragraph` of `text` with its formatting codes, or the text
+/// itself when it holds none (rakudo's `Paragraph.from-string`). A code
+/// whose closer never comes dies as on rakudo (#19040).
+// Cost: O(n), n = length of the text.
+pub(crate) fn paragraph_from_text(text: &str) -> Result<Value, RuntimeError> {
+    match super::pod_blocks::cell_paragraph(text) {
+        Ok(Some(node)) => Ok(Value::rakuast(Box::new(node))),
+        Ok(None) => Ok(Value::str(text.to_string())),
+        Err(why) => match why.unterminated_message() {
+            Some(message) => Err(RuntimeError::new(message)),
+            // TODO: a code the reader does not take (an empty `B<>`, and the
+            // other `Declined::Other` shapes) stays the plain text; rakudo
+            // reads it as a code, so the reader should too (#19091).
+            None => Ok(Value::str(text.to_string())),
+        },
     }
 }
 

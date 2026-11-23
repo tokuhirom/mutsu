@@ -81,6 +81,7 @@ pub(crate) use class_introspection::UserMethodOrAccessor;
 pub(crate) mod cstruct_body;
 pub(crate) mod cstruct_layout;
 pub(crate) mod decl_gate;
+pub(crate) mod class_attributes;
 mod decl_types;
 pub(crate) mod deferred_body_imports;
 pub(crate) mod enum_bare_names;

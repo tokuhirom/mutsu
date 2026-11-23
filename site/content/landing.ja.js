@@ -17,7 +17,7 @@ export default {
 
   stats: {
     roastLabel: '完全にパスする Roast 仕様テストファイル',
-    roastNote: '公式 Raku テストスイート {total} ファイル中 {pass} ファイル',
+    roastNote: 'Rakudo が実行する仕様テスト (roast/spectest.data) {total} ファイル中 {pass} ファイル',
     binaryValue: '単一バイナリ',
     binaryLabel: '別途ランタイム不要',
     binaryNote: '<code>mutsu</code> と、同梱のパッケージマネージャ <code>mzef</code>',

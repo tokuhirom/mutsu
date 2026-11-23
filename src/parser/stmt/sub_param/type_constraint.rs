@@ -237,15 +237,26 @@ pub(crate) fn parse_of_type_constraint_chain(
 /// `Any` and enforces nothing — `sub f(::T:U $x) { }; f(42)` runs — so keeping
 /// the smiley would type-check where the reference implementation does not.
 pub(crate) fn strip_type_capture(input: &str) -> Option<(&str, String)> {
+    strip_type_capture_with_smiley(input).map(|(rest, name, _)| (rest, name))
+}
+
+/// [`strip_type_capture`], also answering the capture's smiley (`::T:D` ->
+/// `":D"`): rakudo reads `::T:D $x` as `::T Any:D $x` (#19020).
+// Cost: O(n), n = the capture name's length.
+pub(crate) fn strip_type_capture_with_smiley(
+    input: &str,
+) -> Option<(&str, String, Option<&'static str>)> {
     let after_colons = input.strip_prefix("::")?;
     if after_colons.starts_with('?') || after_colons.starts_with('(') {
         return None;
     }
     let (rest, name) = super::super::ident(after_colons).ok()?;
-    if rest.starts_with(":D") || rest.starts_with(":U") || rest.starts_with(":_") {
-        return Some((&rest[2..], name));
+    for smiley in [":D", ":U", ":_"] {
+        if rest.starts_with(smiley) {
+            return Some((&rest[2..], name, Some(smiley)));
+        }
     }
-    Some((rest, name))
+    Some((rest, name, None))
 }
 
 pub(crate) fn parse_implicit_invocant_marker(input: &str) -> Option<(&str, String)> {

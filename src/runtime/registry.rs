@@ -1119,10 +1119,36 @@ impl Registry {
     /// Keyed by already-interned symbols; see
     /// [`Self::user_method_local_role_presence_sym`] for why the MRO walks
     /// need this form.
+    ///
+    /// A built-in exception class declares its attributes on first access
+    /// (`class_attributes`), and `Interpreter::new` does not sync their
+    /// accessor rows, so a miss on such a class is answered from its
+    /// declaration, which is what the synced row would say (#18956).
+    // Cost: O(1) expected; O(a) on a miss for an `X::`/`CX::` owner, a = its
+    // declared attributes.
     pub(crate) fn accessor_is_public_sym(&self, owner: Symbol, name: Symbol) -> Option<bool> {
         self.method_entries
             .get(&MethodEntryKey { owner, name })
             .and_then(|entry| entry.accessor)
+            .or_else(|| self.builtin_exception_accessor(owner, name))
+    }
+
+    // Cost: O(a), a = `owner`'s declared attributes; O(1) for an owner that
+    // is not an `X::`/`CX::` class.
+    #[cold]
+    fn builtin_exception_accessor(&self, owner: Symbol, name: Symbol) -> Option<bool> {
+        let owner = owner.as_str();
+        if !super::builtin_exception_attrs::may_declare(owner) {
+            return None;
+        }
+        let name = name.as_str();
+        self.classes
+            .get(owner)?
+            .attributes
+            .iter()
+            .rev()
+            .find(|attr| attr.name == name)
+            .map(|attr| attr.is_public)
     }
 
     /// Whether `(owner, name)` has any live user candidate, and if so whether

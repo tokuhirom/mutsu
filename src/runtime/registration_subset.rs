@@ -91,6 +91,7 @@ impl Interpreter {
             predicate,
             version: version.to_string(),
             decl_package_sym: crate::symbol::Symbol::intern(&pkg),
+            decl_unit: self.current_unit,
             predicate_inline,
             predicate_int_compare,
             predicate_closure,
@@ -225,6 +226,9 @@ impl Interpreter {
             }
         } else {
             self.registry_mut().subsets.insert(name.to_string(), def);
+        }
+        if crate::runtime::types::is_core_scalar_check_name(name) {
+            self.types.core_scalar_name_subset = true;
         }
         if !self.qualified_identity_binding_is_redundant(name, &canonical) {
             self.env

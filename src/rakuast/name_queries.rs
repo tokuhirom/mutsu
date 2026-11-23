@@ -41,17 +41,10 @@ fn classify(part: &Value) -> Part {
             RakuAstClass::NamePartSimple => node_accessor(n, "name")
                 .and_then(|v| v.as_str().map(str::to_string))
                 .map_or(Part::Other, Part::Simple),
-            RakuAstClass::NamePartEmpty | RakuAstClass::NamePartEmptyEdge => Part::Empty,
+            RakuAstClass::NamePartEmptyEdge => Part::Empty,
             _ => Part::Other,
         },
-        ValueView::Package(name)
-            if name.with_str(|n| {
-                matches!(
-                    n,
-                    "RakuAST::Name::Part::Empty" | "RakuAST::Name::Part::EmptyEdge"
-                )
-            }) =>
-        {
+        ValueView::Package(name) if name.with_str(|n| n == "RakuAST::Name::Part::EmptyEdge") => {
             Part::Empty
         }
         _ => Part::Other,
@@ -249,15 +242,9 @@ pub(crate) fn part_call(node: &RakuAstNode, method: &str) -> Option<Value> {
                 .and_then(|v| v.as_str().map(|n| PSEUDO_PACKAGES.contains(&n)))
                 .unwrap_or(false),
         )),
-        (RakuAstClass::NamePartEmptyEdge | RakuAstClass::NamePartEmpty, "name") => {
-            Some(Value::str(String::new()))
-        }
-        (RakuAstClass::NamePartEmptyEdge | RakuAstClass::NamePartEmpty, "is-empty") => {
-            Some(Value::truth(true))
-        }
-        (RakuAstClass::NamePartEmptyEdge | RakuAstClass::NamePartEmpty, "is-pseudo-package") => {
-            Some(Value::truth(false))
-        }
+        (RakuAstClass::NamePartEmptyEdge, "name") => Some(Value::str(String::new())),
+        (RakuAstClass::NamePartEmptyEdge, "is-empty") => Some(Value::truth(true)),
+        (RakuAstClass::NamePartEmptyEdge, "is-pseudo-package") => Some(Value::truth(false)),
         (RakuAstClass::NamePartExpression, "is-empty") => Some(Value::truth(false)),
         // The value of the literal the part holds (`::("foo")` is `foo`).
         (RakuAstClass::NamePartExpression, "name") => {

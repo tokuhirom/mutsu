@@ -439,7 +439,17 @@ fn expand_dot_assign(
             // then fails the store with rakudo's `X::Assignment::RO` naming
             // the value ("Cannot modify an immutable Str (ab)"), as
             // `"ab" = 1` does (#18986).
-            let meth_result = if matches!(target, Expr::Literal(_)) {
+            // A routine call (`f() .= uc`) may return a container (`is rw`):
+            // the temp is bound to what it returns and the result assigned
+            // through it, as `f() = f().uc` does with one evaluation (#19024).
+            let call_target = matches!(target, Expr::Call { .. });
+            let meth_result = if call_target {
+                Expr::AssignExpr {
+                    name: tmp.clone(),
+                    expr: Box::new(meth_result),
+                    is_bind: false,
+                }
+            } else if matches!(target, Expr::Literal(_)) {
                 Expr::desugar_block(vec![
                     Stmt::Expr(meth_result),
                     Stmt::Expr(Expr::Call {
@@ -471,7 +481,7 @@ fn expand_dot_assign(
                     custom_traits: Vec::new(),
                     has_initializer: false,
                     constant: None,
-                    bind: None,
+                    bind: call_target.then_some(crate::ast::bind_decl::BindKind::Scalar),
                     where_constraint: None,
                 },
                 Stmt::Expr(ternary),

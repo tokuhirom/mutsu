@@ -13,6 +13,7 @@ mod methods_mixin_what_cache;
 mod methods_mut;
 mod methods_mut_accessor_assign;
 mod methods_mut_dispatch;
+mod scalar_container_name;
 mod methods_mut_hash;
 mod methods_mut_method_lvalue;
 mod methods_mut_proxy;

@@ -371,7 +371,8 @@ pub(super) fn model_fields(class: RakuAstClass) -> &'static [(&'static str, Abse
             ("args", Absent::EmptyNode(RakuAstClass::ArgList)),
         ],
         TypeEnum => &[
-            ("name", Absent::Required),
+            // An anonymous enum (`RakuAST::Type::Enum.new(:term(...))`, #18978).
+            ("name", Absent::EmptyNode(RakuAstClass::Name)),
             ("of", Absent::TypeObject("RakuAST::Type")),
             ("term", Absent::Required),
             ("traits", Absent::EmptyList),
