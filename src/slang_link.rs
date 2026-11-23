@@ -169,20 +169,23 @@ impl SlangHost {
                 grammar_roles,
                 action_roles,
             } => {
-            let request = HookRequest {
-                rule: rule.to_string(),
-                source: text.to_string(),
-                start,
-                node: None,
-                block,
-                span: None,
-                roles: (grammar_roles.clone(), action_roles.clone()),
-            };
-            let answer = crate::compile_time_loader::run_slang_hook(request, &mut |rule, pos, dynamics| {
-                back_call(rule, pos.saturating_sub(start), dynamics)
-                    .map(|found| found.map(|(end, node)| (end + start, node)))
-            });
-            return shift(answer);
+                let request = HookRequest {
+                    rule: rule.to_string(),
+                    source: text.to_string(),
+                    start,
+                    node: None,
+                    block,
+                    span: None,
+                    roles: (grammar_roles.clone(), action_roles.clone()),
+                };
+                let answer = crate::compile_time_loader::run_slang_hook(
+                    request,
+                    &mut |rule, pos, dynamics| {
+                        back_call(rule, pos.saturating_sub(start), dynamics)
+                            .map(|found| found.map(|(end, node)| (end + start, node)))
+                    },
+                );
+                return shift(answer);
             }
         };
         to_host
@@ -251,23 +254,25 @@ impl SlangHost {
                 grammar_roles,
                 action_roles,
             } => {
-            let request = HookRequest {
-                rule: rule.to_string(),
-                source: source.to_string(),
-                start,
-                node: Some(node),
-                block: None,
-                span,
-                roles: (grammar_roles.clone(), action_roles.clone()),
-            };
-            let answer = crate::compile_time_loader::run_slang_hook(request, &mut |_, _, _| {
-                Err(format!("the action override {rule} asked the parser for a production"))
-            });
-            return match answer {
-                Ok(Some((_, node))) => Ok(node),
-                Ok(None) => Err(format!("the action override {rule} answered no node")),
-                Err(message) => Err(message),
-            };
+                let request = HookRequest {
+                    rule: rule.to_string(),
+                    source: source.to_string(),
+                    start,
+                    node: Some(node),
+                    block: None,
+                    span,
+                    roles: (grammar_roles.clone(), action_roles.clone()),
+                };
+                let answer = crate::compile_time_loader::run_slang_hook(request, &mut |_, _, _| {
+                    Err(format!(
+                        "the action override {rule} asked the parser for a production"
+                    ))
+                });
+                return match answer {
+                    Ok(Some((_, node))) => Ok(node),
+                    Ok(None) => Err(format!("the action override {rule} answered no node")),
+                    Err(message) => Err(message),
+                };
             }
         };
         to_host
