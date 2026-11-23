@@ -105,7 +105,11 @@ const CORE_CREATE_TYPES: &[&str] = &[
 /// (`die`, `istype`, `create`, an op on a user object) is an observer.
 // Cost: O(a), a = operands (one indexed load for the op id, a tag test per
 // operand).
-pub(crate) fn nqp_op_never_observes(id: u16, args: &[crate::value::Value]) -> bool {
+pub(crate) fn nqp_op_never_observes(
+    id: u16,
+    args: &[crate::value::Value],
+    is_subset: impl Fn(&str) -> bool,
+) -> bool {
     use crate::value::ValueView;
     /// What each op id is, built once: indexed by id, so the per-op check is
     /// one load rather than a scan of [`DATA_NQP_OPS`] and a name compare.
@@ -115,6 +119,7 @@ pub(crate) fn nqp_op_never_observes(id: u16, args: &[crate::value::Value]) -> bo
         Data,
         Wrap,
         Create,
+        IsType,
     }
     static CLASSES: std::sync::OnceLock<Vec<Class>> = std::sync::OnceLock::new();
     let classes = CLASSES.get_or_init(|| {
@@ -131,6 +136,7 @@ pub(crate) fn nqp_op_never_observes(id: u16, args: &[crate::value::Value]) -> bo
         }
         set("p6scalarwithvalue", Class::Wrap);
         set("create", Class::Create);
+        set("istype", Class::IsType);
         classes
     });
     match classes
@@ -144,20 +150,39 @@ pub(crate) fn nqp_op_never_observes(id: u16, args: &[crate::value::Value]) -> bo
             v.view(),
             ValueView::Package(name) if CORE_CREATE_TYPES.contains(&name.as_str())
         )),
-        Class::Data => args.iter().all(|v| {
-            matches!(
-                v.view(),
-                ValueView::Int(_)
-                    | ValueView::BigInt(_)
-                    | ValueView::Num(_)
-                    | ValueView::Str(_)
-                    | ValueView::Bool(_)
-                    | ValueView::Nil
-                    | ValueView::Array(..)
-                    | ValueView::Hash(_)
-                    | ValueView::Uni(_)
-            )
-        }),
+        Class::Data => args.iter().all(plain_data),
+        // A type check of plain data against a core nominal type runs no
+        // code: no `where` block, no user `ACCEPTS`. A subset can still take
+        // a core type's name (`subset Int of Any where { ... }`), so one the
+        // registry knows keeps the check an observer.
+        Class::IsType => matches!(args, [v, t] if plain_data(v) && matches!(
+            t.view(),
+            ValueView::Package(name)
+                if crate::builtin_types::catalog::builtin_type_info(name.as_str()).is_some()
+                    && !is_subset(name.as_str())
+        )),
+    }
+}
+
+/// Whether `v` is plain data a data op can store, fetch or scan without
+/// running code: a core scalar, list, hash or `Uni`, or a `Scalar` container
+/// holding one (`nqp::p6scalarwithvalue`'s result, which JSON::Fast binds into
+/// every hash it builds).
+// Cost: O(1).
+fn plain_data(v: &crate::value::Value) -> bool {
+    use crate::value::ValueView;
+    match v.view() {
+        ValueView::Int(_)
+        | ValueView::BigInt(_)
+        | ValueView::Num(_)
+        | ValueView::Str(_)
+        | ValueView::Bool(_)
+        | ValueView::Nil
+        | ValueView::Array(..)
+        | ValueView::Hash(_)
+        | ValueView::Uni(_) => true,
+        ValueView::Scalar(inner) => !matches!(inner.view(), ValueView::Scalar(_)) && plain_data(inner),
+        _ => false,
     }
 }
 

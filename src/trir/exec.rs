@@ -516,6 +516,7 @@ impl Interpreter {
                                 && !super::lazy_frames::nqp_op_never_observes(
                                     *id,
                                     &self.trir.os[base..],
+                                    |name| self.registry().subsets.contains_key(name),
                                 )
                             {
                                 self.trir_observe();
