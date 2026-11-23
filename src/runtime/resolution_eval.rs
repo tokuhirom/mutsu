@@ -1274,7 +1274,8 @@ impl Interpreter {
                 | crate::opcode::OpCode::SetGlobal(idx)
                 | crate::opcode::OpCode::GetArrayVar(idx)
                 | crate::opcode::OpCode::GetHashVar(idx)
-                | crate::opcode::OpCode::CheckReadOnly(idx) => Some(*idx as usize),
+                | crate::opcode::OpCode::CheckReadOnly(idx)
+                | crate::opcode::OpCode::CheckReadOnlyModify(idx) => Some(*idx as usize),
                 _ => None,
             };
             let Some(idx) = name_idx else {

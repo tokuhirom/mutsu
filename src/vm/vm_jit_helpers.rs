@@ -190,6 +190,27 @@ pub(super) unsafe extern "C" fn check_read_only(
     })
 }
 
+/// [`check_read_only`] for a read-modify-write's target (#18986).
+pub(super) unsafe extern "C" fn check_read_only_modify(
+    interp: *mut Interpreter,
+    code: *const CompiledCode,
+    op_idx: u32,
+    name_idx: u32,
+) -> u32 {
+    // SAFETY: the JIT passes the live interpreter and the code it compiled,
+    // as for `check_read_only`.
+    let (interp, code) = unsafe { (&mut *interp, &*code) };
+    panic_boundary(
+        || match interp.exec_check_read_only_modify_op(code, name_idx) {
+            Ok(()) => JIT_STATUS_OK,
+            r => match interp.finish_op_result(code, op_idx as usize, r) {
+                Ok(()) => JIT_STATUS_OK,
+                Err(e) => park_err(interp, e),
+            },
+        },
+    )
+}
+
 /// The fallible half: `/=` and `%=` have no zero-argument meaning, so seeding an
 /// undefined container throws.
 pub(super) unsafe extern "C" fn meta_assign_identity_fallible(

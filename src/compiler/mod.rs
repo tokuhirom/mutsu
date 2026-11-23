@@ -2132,6 +2132,10 @@ pub(crate) struct Compiler {
     /// which for a non-`rw` scalar accessor is a throwaway -- see
     /// `OpCode::AssignExpr`'s flag, which this becomes.
     dot_twigil_rmw_assign: bool,
+    /// Set by the `Expr::CompoundAssign` arm for the `AssignExpr` its
+    /// expansion emits: a read-modify-write, whose read-only refusal names
+    /// an immutable binding's value (#18986).
+    compound_assign_target: bool,
     /// True while compiling the body of an `our`-scoped named sub. An `our sub` is
     /// installed into the package registry and stays callable after its declaring
     /// block exits, so the lexicals it reads/writes must be boxed into shared cells
@@ -2421,6 +2425,7 @@ impl Compiler {
             current_distribution: None,
             escaping_position: false,
             dot_twigil_rmw_assign: false,
+            compound_assign_target: false,
             compiling_our_sub: false,
             is_mainline: false,
             lexical_scope_known: false,

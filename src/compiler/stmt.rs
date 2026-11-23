@@ -2724,6 +2724,10 @@ impl Compiler {
                     },
                     _ => expr,
                 };
+                // A read-modify-write words an immutable binding's refusal by
+                // its value (#18986).
+                let modifies = matches!(expr, Expr::CompoundAssign { expanded, .. }
+                    if matches!(expanded.as_ref(), Expr::AssignExpr { name, .. } if name == effective_name));
                 // Emit readonly check for assignment to potentially readonly params.
                 // Skip the check for `:=` (rebinding replaces the container).
                 let name_idx = self
@@ -2870,7 +2874,7 @@ impl Compiler {
                     // Fuse `$local ~= rhs` into one instruction that reads the
                     // slot AFTER the RHS and appends in place (#8695). It
                     // performs its own store, so nothing is left to emit.
-                    let check = check_read_only.then_some(name_idx);
+                    let check = check_read_only.then_some((name_idx, modifies));
                     if self.try_compile_fused_concat_assign_local(
                         effective_name,
                         execution_expr,
@@ -2892,7 +2896,7 @@ impl Compiler {
                     // before the assignment dies. Right before the store, so the
                     // `SIGILLESS_STORE` mark it may set is that store's.
                     if check_read_only {
-                        self.code.emit(OpCode::CheckReadOnly(name_idx));
+                        self.code.emit(Self::read_only_check_op(name_idx, modifies));
                     }
                 }
                 // An assignment whose target is a sigilless binding (`-> \v`

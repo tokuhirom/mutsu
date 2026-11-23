@@ -1366,8 +1366,10 @@ impl Compiler {
                 // `AssignExpr` this expansion is about to emit.
                 self.dot_twigil_rmw_assign =
                     matches!(target.as_ref(), Expr::Var(n) if Self::is_dot_twigil_scalar(n));
+                self.compound_assign_target = true;
                 self.compile_expr(expanded);
                 self.dot_twigil_rmw_assign = false;
+                self.compound_assign_target = false;
             }
             // Capture variable ($0, $1, etc.)
             Expr::CaptureVar(name) => {
