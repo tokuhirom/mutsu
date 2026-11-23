@@ -104,6 +104,10 @@ pub(crate) struct ReplCompilerState {
     bound_compilers: HashMap<String, Value>,
     /// The units REPL sessions ran (`runtime::repl_session_scope`).
     pub(crate) session_units: HashSet<Symbol>,
+    /// The caller cells `compiler_eval` seeded into the unit it is running
+    /// (#16977): run-time bindings for the callbacks the unit calls, which
+    /// the unit's own undeclared-variable check does not count.
+    seeded_hidden: HashSet<Symbol>,
 }
 
 impl Interpreter {
@@ -454,6 +458,10 @@ impl Interpreter {
                 seeded.push((*key, value.clone()));
             }
         }
+        let saved_hidden = std::mem::replace(
+            &mut self.repl_compiler.seeded_hidden,
+            seeded.iter().map(|(key, _)| *key).collect(),
+        );
         let saved_env = std::mem::replace(&mut self.env, unit_env);
         let registry_before = self.snapshot_routine_registry();
         if let Some(ctx) = &outer_ctx {
@@ -486,6 +494,7 @@ impl Interpreter {
         let captured = self.repl_compiler.captured.take();
         self.restore_routine_registry(registry_before);
         self.env = saved_env;
+        self.repl_compiler.seeded_hidden = saved_hidden;
         let value = result?;
 
         let Some(mut captured) = captured else {
@@ -533,6 +542,14 @@ impl Interpreter {
             saved?;
         }
         Ok(value)
+    }
+
+    /// Whether `name` is a caller cell seeded into the running
+    /// `Perl6::Compiler.eval` unit, which its code does not see as declared.
+    // Cost: O(1) expected; one hashed probe when a unit seeded any cell.
+    pub(crate) fn repl_unit_hides(&self, name: &str) -> bool {
+        !self.repl_compiler.seeded_hidden.is_empty()
+            && self.repl_compiler.seeded_hidden.contains(&Symbol::intern(name))
     }
 
     /// Put an outer context's lexical routines back in scope for one unit.

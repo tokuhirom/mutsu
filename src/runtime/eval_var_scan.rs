@@ -202,9 +202,20 @@ impl UndeclaredVars<'_> {
     /// which would make an `our` of an unrelated block look declared.
     // Cost: O(1) hash probes.
     fn unit_lexical_declares(&self, name: &str) -> bool {
+
         self.interp.unit_scope_lexical(name, None).is_some()
             || (self.interp.any_lexical_package_frame()
                 && self.interp.module_imported_lexical(name).is_some())
+    }
+
+    /// Whether the run-time env around the `EVAL` binds `name`. A caller
+    /// cell `Perl6::Compiler.eval` hands its unit only so that a callback the
+    /// unit runs writes the cell it captured (#16977) is not a declaration the
+    /// unit's own code sees: a unit run without an outer context sees the
+    /// setting only.
+    // Cost: O(d) hash probes, d = env tiers.
+    fn env_declares(&self, name: &str) -> bool {
+        self.interp.env().contains_key(name) && !self.interp.repl_unit_hides(name)
     }
 
     /// Whether a static scope around the `EVAL` call declares `name`, here or
@@ -270,7 +281,7 @@ impl UndeclaredVars<'_> {
         }
         let env = self.interp.env();
         let sigiled = format!("${}", name);
-        if env.contains_key(&sigiled) {
+        if self.env_declares(&sigiled) {
             return None;
         }
         // A bare-name environment entry only declares the scalar `$name` if it
@@ -292,7 +303,7 @@ impl UndeclaredVars<'_> {
         // A class of the same spelling does not hide it either: the bare entry
         // holds the variable's value, not the type object (`class Out {}` in
         // the caller, `my $Out = []` in a saved REPL context, #17087).
-        if (env.contains_key(name) || self.unit_lexical_declares(name))
+        if (self.env_declares(name) || self.unit_lexical_declares(name))
             && (bare_holds_variable
                 || (!self.interp.registry().classes.contains_key(name)
                     && !self.interp.has_function(name)))
@@ -330,9 +341,8 @@ impl UndeclaredVars<'_> {
         {
             return None;
         }
-        let env = self.interp.env();
-        if env.contains_key(&sigiled)
-            || env.contains_key(name)
+        if self.env_declares(&sigiled)
+            || self.env_declares(name)
             || self.unit_lexical_declares(&sigiled)
         {
             return None;
@@ -366,13 +376,12 @@ impl UndeclaredVars<'_> {
             return;
         }
         let sigiled = format!("{sigil}{bare}");
-        let env = self.interp.env();
         let outer = self.caller_scope_declares(&spelled)
             || self.caller_scope_declares(&sigiled)
-            || env.contains_key(&sigiled)
+            || self.env_declares(&sigiled)
             || self.unit_lexical_declares(&sigiled)
             || (sigil == '$'
-                && env.contains_key(bare)
+                && self.env_declares(bare)
                 && !self.interp.registry().classes.contains_key(bare)
                 && !self.interp.has_function(bare));
         if outer {

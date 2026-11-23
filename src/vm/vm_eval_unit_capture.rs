@@ -8,9 +8,10 @@ use super::*;
 
 impl Interpreter {
     /// Record in `env`, the capture of a closure the `EVAL` mainline `code` is
-    /// creating, every plain user lexical `code` declares, as the shared cell
-    /// of its slot (boxed in place, so a write the unit makes after creating
-    /// the closure is seen, #19009), and mark the capture as the unit's. Each
+    /// creating, every plain user lexical `code` declares, and mark the
+    /// capture as the unit's. A scalar (stored sigil-less) is recorded as the
+    /// shared cell of its slot (boxed in place, so a write the unit makes after creating the
+    /// closure is seen, #19009); an `@`/`%`/`&` slot as its object. Each
     /// is kept under its `MetaNs::EvalUnit` key, which only `UNIT::` reads
     /// (`Env::unit_lexical`): under its own name it would answer the by-name
     /// lookups of the routines the closure calls, which still walk their
@@ -35,8 +36,19 @@ impl Interpreter {
                     continue;
                 }
                 seen.push(sym);
-                if let Some(cell) = self.box_static_view_local(code, slot, sym) {
-                    env.insert_sym(crate::meta_ns::MetaNs::EvalUnit.key(sym), cell);
+                let recorded = if !name.starts_with(['@', '%', '&', '\\']) {
+                    self.box_static_view_local(code, slot, sym)
+                } else {
+                    // An `@`/`%`/`&` slot (or a sigilless term) holds its aggregate or code object
+                    // itself, which a later in-place write mutates, so it is
+                    // shared as is. Wrapping it in a scalar cell would itemize
+                    // the slot under every mainline reader (`%h.classify-list`
+                    // stored into a copy, `@a[1] = Nil` lost the array's
+                    // default).
+                    self.locals.get(slot).filter(|v| !v.is_nil()).cloned()
+                };
+                if let Some(value) = recorded {
+                    env.insert_sym(crate::meta_ns::MetaNs::EvalUnit.key(sym), value);
                 }
             }
         }

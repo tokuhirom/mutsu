@@ -4,7 +4,7 @@ use Test;
 # calling frame (ADR-12529 amendment A1, #18787). Expected values checked
 # against rakudo.
 
-plan 13;
+plan 15;
 
 # A block-declared sub's lexical outer is its declaring block, not the
 # shadowing block it is called from.
@@ -75,4 +75,13 @@ my $x110 = 110;
     is $h({ $CALLER::UNIT::w }), 2, 'a later write of the EVAL unit';
     my $k = EVAL('my $s is dynamic = 1; { my $s = 5; }; my $g = -> $fn { $fn() }; $s = 2; $g');
     is $k({ $CALLER::UNIT::s }), 2, 'a later write of a name a nested block redeclares';
+}
+
+# The unit's aggregates stay themselves: recording them for `UNIT::` does not
+# wrap them in a scalar cell, so an in-place write the unit makes still lands.
+{
+    is EVAL('my %h; %h.classify-list({ $_ % 2 }, 1..6); %h.keys.sort.join(",")'),
+        '0,1', 'an EVAL unit hash a closure argument fills in place';
+    my $p = EVAL('my @l = 1; my $g = -> $fn { $fn() }; @l.push: 2; $g');
+    is $p({ @CALLER::UNIT::l.elems }), 1, 'an EVAL unit array';
 }
