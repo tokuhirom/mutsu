@@ -316,6 +316,12 @@ impl Interpreter {
             return None;
         }
         let registry = self.routines();
+        // Folding a backlog larger than the registry into the tail index
+        // costs more than the one registry pass the caller falls back to
+        // (the first read of a process folds every symbol interned so far).
+        if crate::qualified_tail_index::tail_index_backlog() > registry.functions.len() {
+            return None;
+        }
         let mut keys: Vec<Symbol> = crate::qualified_tail_index::names_ending_in(base)
             .into_iter()
             .filter(|key| {
