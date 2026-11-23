@@ -207,6 +207,20 @@ fn at_pos(target: &Value, args: &[Value]) -> Answer {
             Ok(index) => index,
             Err(e) => return Some(Err(e)),
         };
+    // A null slot (a hole `setelems` or a bind past the end grew, #17662)
+    // reads as `Mu`, as rakudo's `nqp::ifnull(nqp::atpos(...), Mu)` does.
+    let hole = crate::runtime::nqp_backing::with_nqp_backing_array(target, |array| {
+        match array.view() {
+            ValueView::Array(items, _) => {
+                items.initialized.is_some() && index < items.len() && items.hole_at(index)
+            }
+            _ => false,
+        }
+    })
+    .unwrap_or(false);
+    if hole {
+        return Some(Ok(mu()));
+    }
     Some(Ok(
         Interpreter::nqp_elem_at(target, index).unwrap_or_else(mu)
     ))
