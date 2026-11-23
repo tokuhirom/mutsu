@@ -92,7 +92,9 @@ impl Interpreter {
             if !attr_envs.is_empty()
                 && let Some(class_def) = registry.classes.get_mut(&class)
             {
-                for attr in class_def.attributes.iter_mut() {
+                // A built-in exception class's undeclared table rows have
+                // literal defaults with no scope to receive (#18956).
+                for attr in class_def.attributes.without_table_mut().iter_mut() {
                     if let Some((_, _, env)) = attr_envs
                         .iter()
                         .find(|(name, sigil, _)| *name == attr.name && *sigil == attr.sigil)

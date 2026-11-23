@@ -90,6 +90,25 @@ impl ClassAttributes {
         }
     }
 
+    /// The attributes declared outside the table, for a write that only
+    /// concerns those: a deferred class answers its pre-table list without
+    /// declaring the table rows, and any other class its whole list.
+    ///
+    /// The one caller hands a role's captured lexical scope to the composed
+    /// copies of the role's attributes (`give_role_captures_to_composed_
+    /// classes`). A table row's default is a literal that needs no scope, so
+    /// leaving the rows undeclared there changes nothing, and declaring them
+    /// would undo the deferral for every `X::Comp` class each time a module
+    /// that declares the role loads.
+    // Cost: O(1).
+    pub(crate) fn without_table_mut(&mut self) -> &mut Vec<ClassAttributeDef> {
+        if self.is_deferred() {
+            &mut self.attrs
+        } else {
+            self
+        }
+    }
+
     /// Whether `name` is a table attribute built from its named argument
     /// although declared private (`X::AdHoc`'s `$!payload`); what an explicit
     /// `is built` records in `ClassDef::attribute_built`.
