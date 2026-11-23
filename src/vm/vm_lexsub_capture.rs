@@ -312,7 +312,7 @@ impl Interpreter {
     /// binding of the name is replaced by the cell only while it is this
     /// slot's own.
     // Cost: O(d), d = env tiers probed for the name.
-    fn box_static_view_local(
+    pub(super) fn box_static_view_local(
         &mut self,
         code: &CompiledCode,
         slot: usize,

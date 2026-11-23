@@ -2277,9 +2277,13 @@ or a measured necessity:
   such closures instead. That put the scope around the `EVAL` into the
   capture, where the by-name lookups of the routines the closure calls (which
   still walk their callers, §1.3) found a caller's shadowing lexical: Red's
-  `t/124-compiler-callables` test 59 failed. The recorded values are the
-  locals' cells where they are cells, else their current values (a `TODO`:
-  boxing them in place changed that same Red result).
+  `t/124-compiler-callables` test 59 failed. Each recorded value is the
+  local's cell, boxed in place, so a later write is seen (#19009). A name a
+  nested block redeclares is the variable of its first slot, since `UNIT::`
+  names the unit's outermost scope. The env is rebound only while that slot
+  is the visible binding. Boxing the shadow that was visible where the
+  closure was created had handed it to the by-name readers of the outer
+  variable, which is what failed Red's test the first time.
 - **The caller-frame entry's flushed-slot overlay is a block tier**, not a
   frame root, so `Env::enclosing_scopes` of the entry starts at the calling
   frame's own root and link. A frame flattened into the bottom of its chain

@@ -4,7 +4,7 @@ use Test;
 # calling frame (ADR-12529 amendment A1, #18787). Expected values checked
 # against rakudo.
 
-plan 11;
+plan 13;
 
 # A block-declared sub's lexical outer is its declaring block, not the
 # shadowing block it is called from.
@@ -66,4 +66,13 @@ my $x110 = 110;
     my $g = EVAL('my $u is dynamic = 7; -> $fn { $fn() }');
     is $g({ $CALLER::UNIT::u }), 7, 'an EVAL unit lexical the pointy does not redeclare';
     is $x110, 110, 'the program scope is untouched';
+}
+
+# A write the EVAL'd unit makes after creating the closure is seen (#19009),
+# also when a nested block of the unit redeclares the name.
+{
+    my $h = EVAL('my $w is dynamic = 1; my $g = -> $fn { $fn() }; $w = 2; $g');
+    is $h({ $CALLER::UNIT::w }), 2, 'a later write of the EVAL unit';
+    my $k = EVAL('my $s is dynamic = 1; { my $s = 5; }; my $g = -> $fn { $fn() }; $s = 2; $g');
+    is $k({ $CALLER::UNIT::s }), 2, 'a later write of a name a nested block redeclares';
 }
