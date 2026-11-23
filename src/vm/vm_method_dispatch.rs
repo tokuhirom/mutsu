@@ -2857,12 +2857,12 @@ pub(crate) fn cheaply_unchanged(old: &Value, new: &Value) -> bool {
 /// the merge must not hand the method's `my $*OUT` back to the caller (where
 /// `print` reads it by its `$*OUT` key).
 // Cost: O(l), l = compiled locals.
-fn dynamic_decl_local(locals: &[String], s: &str) -> bool {
+pub(super) fn dynamic_decl_local(locals: &[String], s: &str) -> bool {
     s.strip_prefix('$')
         .is_some_and(|bare| bare.starts_with('*') && locals.iter().any(|l| l == bare))
 }
 
-fn attr_twigil_local(attributes: &AttrMap, s: &str) -> bool {
+pub(super) fn attr_twigil_local(attributes: &AttrMap, s: &str) -> bool {
     let bare = match s.as_bytes() {
         [b'@' | b'%', b'!' | b'.', ..] => &s[2..],
         [b'!' | b'.', ..] => &s[1..],
