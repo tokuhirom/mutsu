@@ -130,16 +130,6 @@ impl Interpreter {
         request: crate::slang_link::HookRequest,
         replay_log: bool,
     ) -> HostAnswer {
-        let crate::slang_link::HookRequest {
-            rule,
-            source,
-            start,
-            node,
-            block,
-            span,
-            roles,
-        } = request;
-        let (rule, source, roles) = (rule.as_str(), source.as_str(), &roles);
         let depth = HOOK_DEPTH.with(std::cell::Cell::get);
         if depth >= MAX_HOOK_DEPTH {
             return Err(format!(
@@ -151,12 +141,12 @@ impl Interpreter {
         // actions are not classes the production installed, so they must
         // not be replayed into the unit (where the grammar would lack its
         // host base's `panic`).
-        let composed = self.compose_slang_host(roles);
+        let composed = self.compose_slang_host(&request.roles);
         if replay_log {
             super::slang_class_replay::begin_class_log();
         }
         let answer =
-            composed.and_then(|()| self.run_slang_hook(rule, source, start, node, block, span, roles));
+            composed.and_then(|()| self.run_slang_hook(request));
         if replay_log {
             super::slang_class_replay::end_class_log();
         }
@@ -197,16 +187,17 @@ impl Interpreter {
     /// Match `rule` at character offset `start` of `source` with the composed
     /// grammar and read the node its action attached.
     // Cost: the token and the action.
-    fn run_slang_hook(
-        &mut self,
-        rule: &str,
-        source: &str,
-        start: usize,
-        node: Option<Value>,
-        block: Option<Value>,
-        span: Option<crate::slang_link::ActionSpan>,
-        roles: &(Vec<Value>, Vec<Value>),
-    ) -> HostAnswer {
+    fn run_slang_hook(&mut self, request: crate::slang_link::HookRequest) -> HostAnswer {
+        let crate::slang_link::HookRequest {
+            rule,
+            source,
+            start,
+            node,
+            block,
+            span,
+            roles,
+        } = request;
+        let (rule, source) = (rule.as_str(), source.as_str());
         let run = self.slang_host_entry()?;
         let grammar_roles = Value::array(roles.0.clone());
         let action_roles = Value::array(roles.1.clone());
