@@ -43,7 +43,7 @@ impl Interpreter {
                     None => chosen.push((sym, slot)),
                 }
             }
-            // TODO: box each local into a shared cell (as `box_static_view_local`
+            // TODO(#19009): box each local into a shared cell (as `box_static_view_local`
             // does), so a write the unit makes after creating the closure is
             // seen too. Boxing the `EVAL` mainline's locals in place changed
             // what Red's re-`EVAL`ed callables resolve (`t/124-compiler-
