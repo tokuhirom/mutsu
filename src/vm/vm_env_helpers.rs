@@ -531,9 +531,13 @@ impl Interpreter {
         // dynamic, an `@`/`%` lane, an `our` mirror, an unmerged package
         // variable or a twigil alias, so of the `get_env_with_main_alias_sym`
         // cascade only its direct env probe can answer for one (#18274).
-        // (A lexical type's `\u{1}` key is not: the cascade finds a module's
-        // file-scope `my class` under `Pkg::\u{1}Name`.)
         let term_candidate = name_str.starts_with(crate::term_names::TERM_PREFIX);
+        // A lexical type's type-namespace key (`\u{1}Name`, asked by
+        // `lexical_type_binding_sym` for a bareword type read) is likewise
+        // none of those, but a module's file-scope `my class` is a unit
+        // lexical, which the cascade finds under `Pkg::\u{1}Name` before its
+        // env probe; those two probes, in that order, are all it needs.
+        let lexical_type_candidate = name_str.starts_with(crate::term_names::LEXICAL_TYPE_PREFIX);
         // Each step's `<sigil><pkg>::<rest>` key and the walk itself are
         // memoized per symbol: no `format!` and no `"::"` search per read.
         for pkg in crate::qualified::package_ancestors(cur_sym) {
@@ -557,6 +561,15 @@ impl Interpreter {
                     "a term-key candidate {candidate:?} found only by the alias cascade"
                 );
                 narrow
+            } else if lexical_type_candidate {
+                let narrow = self.lexical_type_candidate_probe(candidate);
+                debug_assert_eq!(
+                    narrow.is_some(),
+                    self.get_env_with_main_alias_sym(candidate.as_str(), candidate)
+                        .is_some(),
+                    "a lexical-type candidate {candidate:?} found only by the alias cascade"
+                );
+                narrow
             } else {
                 self.get_env_with_main_alias_sym(candidate.as_str(), candidate)
             };
@@ -575,6 +588,22 @@ impl Interpreter {
             }
         }
         None
+    }
+
+    /// The two probes of the `get_env_with_main_alias_sym` cascade that can
+    /// answer for a package-qualified lexical-type key (`Pkg::\u{1}Name`), in
+    /// the cascade's order: the running compunit's file-scope lexicals
+    /// (skipped when an enclosing routine binds the name, as the cascade
+    /// does), then the env.
+    // Cost: `unit_scope_lexical`'s probe plus one env lookup.
+    fn lexical_type_candidate_probe(&self, candidate: Symbol) -> Option<Value> {
+        let name = candidate.as_str();
+        if !self.running_code_routine_scoped(name, Some(candidate))
+            && let Some(v) = self.unit_scope_lexical(name, Some(candidate))
+        {
+            return Some(v.into_deref());
+        }
+        self.env().get_sym(candidate).cloned()
     }
 
     /// Resolve a regex body's bare lexical through its defining grammar's
