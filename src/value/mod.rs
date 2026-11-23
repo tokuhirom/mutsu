@@ -599,6 +599,7 @@ pub(crate) mod array_coerce;
 mod array_data_ops;
 mod array_holes;
 mod array_plain_read;
+pub(crate) mod array_shared_store;
 /// The instance-attribute map (`Symbol -> Value`); see [`AttrMap`].
 mod attr_map;
 mod attr_site;

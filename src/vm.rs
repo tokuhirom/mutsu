@@ -407,6 +407,7 @@ mod vm_role_binding_observers;
 mod vm_role_capture_propagate;
 mod vm_shaped_receiver;
 mod vm_shared_array_lane;
+mod vm_shared_element_store;
 mod vm_slot_type_constraint;
 mod vm_user_iterator_lazy;
 pub(crate) use vm_slot_type_constraint::StoreDecl;
