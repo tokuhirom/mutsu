@@ -1,4 +1,4 @@
-unit class Template::Mustache:ver<1.2.6>:auth<zef:raku-community-modules>:api<1.2.0>;
+unit class Template::Mustache:ver<1.2.7>:auth<zef:raku-community-modules>:api<1.2.0>;
 
 role X[Str:D $err] is Exception {  # UNCOVERABLE
     has $.str;

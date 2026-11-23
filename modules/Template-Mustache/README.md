@@ -182,7 +182,7 @@ Copyright 2014 - 2020 Tim Siegel
 
 Copyright 2021 - 2022 Tim Smith
 
-Copyright 2025 Raku Community
+Copyright 2025, 2026 Raku Community
 
 This library is free software; you can redistribute it and/or modify it under the Artistic License 2.0.
 
