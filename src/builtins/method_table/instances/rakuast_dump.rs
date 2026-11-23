@@ -176,18 +176,17 @@ pub(crate) fn location_of_pos(source: &Value, pos: i64) -> Option<(i64, i64, Str
         .get(unit_source::ORIGINAL_FILE_ATTR)
         .map(Value::to_string_value)
         .unwrap_or_default();
-    let starts: Vec<i64> = match map.get(unit_source::LINE_STARTS_ATTR)?.view() {
-        ValueView::Array(starts, _) => starts
-            .iter()
-            .filter_map(|s| match s.view() {
-                ValueView::Int(i) => Some(i),
-                _ => None,
-            })
-            .collect(),
+    let starts = match map.get(unit_source::LINE_STARTS_ATTR)?.view() {
+        ValueView::Array(starts, _) => starts,
         _ => return None,
     };
-    let line = starts.partition_point(|&start| start <= pos).max(1);
-    let column = pos - starts.get(line - 1).copied().unwrap_or(0) + 1;
+    let line = starts
+        .partition_point(|start| matches!(start.view(), ValueView::Int(i) if i <= pos))
+        .max(1);
+    let column = match starts.get(line - 1).map(Value::view) {
+        Some(ValueView::Int(start)) => pos - start + 1,
+        _ => return None,
+    };
     Some((line as i64, column, file))
 }
 
