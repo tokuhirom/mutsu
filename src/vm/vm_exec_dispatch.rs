@@ -8410,7 +8410,7 @@ impl Interpreter {
                 // The target scope declares the name (the compiler emits a Nil
                 // constant otherwise), so a non-dynamic binding here is the
                 // X::Caller::NotDynamic case, not an absent one.
-                if !self.is_var_dynamic(name) {
+                if !self.is_var_dynamic(name) || Self::caller_topic_is_not_dynamic(name) {
                     return Err(crate::runtime::utils::caller_not_dynamic_error(name));
                 }
                 let val = self.get_outer_var(code, name, *depth as usize, *slot);

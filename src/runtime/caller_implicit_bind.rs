@@ -21,4 +21,13 @@ impl Interpreter {
             frame.saved_env.insert(key.to_string(), value);
         }
     }
+
+    /// Whether `name` is the caller's `$_` reached through `CALLER::` under
+    /// a language revision where `$_` is not dynamic (6.d on; 6.c declares
+    /// it dynamic): a read or an assignment is `X::Caller::NotDynamic`, and
+    /// only a bind reaches it (#18988).
+    // Cost: O(1).
+    pub(crate) fn caller_topic_is_not_dynamic(name: &str) -> bool {
+        name == "_" && !crate::parser::current_language_version_starts_with("6.c")
+    }
 }

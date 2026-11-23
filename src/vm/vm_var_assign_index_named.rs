@@ -3768,10 +3768,14 @@ impl Interpreter {
         if stash_name == "CALLER::" {
             let key = &Self::const_str(code, key_name_idx)[1..];
             let val = self.stack.pop().unwrap_or(Value::NIL);
-            let plain = match Self::split_bind_index_marker(val) {
-                Ok((bound, _)) => bound,
-                Err(plain) => plain,
+            let (plain, is_bind) = match Self::split_bind_index_marker(val) {
+                Ok((bound, _)) => (bound, true),
+                Err(plain) => (plain, false),
             };
+            // `$_` is not dynamic: only a bind reaches the caller's (#18988).
+            if !is_bind && (!self.is_var_dynamic(key) || Self::caller_topic_is_not_dynamic(key)) {
+                return Err(crate::runtime::utils::caller_not_dynamic_error(key));
+            }
             self.bind_caller_implicit_lexical(key, plain.clone());
             self.stack.push(plain);
             return Ok(());
