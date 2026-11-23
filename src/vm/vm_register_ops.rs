@@ -1365,6 +1365,9 @@ impl Interpreter {
                 None => self.env().filtered_flat_capture(&keep, probe),
             };
         self.finish_closure_capture(code, cc, &mut env);
+        if cc.eval_mainline_closure && crate::static_outer_latch::static_outer_observed() {
+            self.capture_eval_unit_lexicals(code, &mut env);
+        }
         if cc.static_name_lookup && cc.eval_mainline_closure {
             env.mark_eval_unit_capture();
         } else if cc.static_name_lookup && !self.env().chain_has_frame_root() {

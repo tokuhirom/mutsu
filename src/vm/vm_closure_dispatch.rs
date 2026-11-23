@@ -590,7 +590,6 @@ impl Interpreter {
                 capture_first,
                 activation_capture,
                 capture_names,
-                eval_unit,
             );
         } else {
             // Every other closure resolves a lexical through its capture and

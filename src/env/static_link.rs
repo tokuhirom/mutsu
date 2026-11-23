@@ -58,10 +58,6 @@ pub(crate) enum StaticLink {
         /// answers first -- a program-scope capture's nested-block lexicals
         /// ([`Env::program_scope_block_names`], #13595).
         capture_names: Option<Arc<rustc_hash::FxHashSet<Symbol>>>,
-        /// With `capture_first`: the capture is an `EVAL`'d unit's mainline
-        /// ([`Env::mark_eval_unit_capture`]), the scope `UNIT::` names for the
-        /// frame ([`Env::unit_scope`]).
-        unit_capture: bool,
     },
 }
 
@@ -181,7 +177,6 @@ impl Env {
         capture_first: bool,
         activation: bool,
         capture_names: Option<Arc<rustc_hash::FxHashSet<Symbol>>>,
-        unit_capture: bool,
     ) {
         let activation = if activation {
             self.fallback.clone()
@@ -224,7 +219,6 @@ impl Env {
                 capture_first,
                 activation,
                 capture_names,
-                unit_capture,
             }));
         self.chain_has_static_link = true;
     }
@@ -305,7 +299,6 @@ impl Env {
                 capture_first: false,
                 activation: activation.clone(),
                 capture_names: None,
-                unit_capture: false,
             })
         };
         let mut seg: Option<&Arc<Env>> = None;

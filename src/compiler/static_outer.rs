@@ -6,19 +6,13 @@ use super::*;
 
 impl Compiler {
     /// Mark `compiled`, a closure this compiler attaches, as created in an
-    /// `EVAL`'d unit's mainline when this compiler compiles one: a reflective
-    /// capture of it is the unit's outermost scope (A1 (c)). Under the
-    /// static-outer latch such a closure always takes the reflective capture,
-    /// so a frame it runs has the unit's lexicals for `CALLER::UNIT::` to read.
+    /// `EVAL`'d unit's mainline when this compiler compiles one: its capture
+    /// is the unit's outermost scope (A1 (c);
+    /// `Interpreter::capture_eval_unit_lexicals`).
     // Cost: O(1).
     pub(super) fn note_eval_mainline_closure(&self, compiled: &mut CompiledCode) {
-        if !self.in_eval_unit {
-            return;
-        }
-        compiled.eval_mainline_closure = true;
-        if crate::static_outer_latch::static_outer_observed() {
-            compiled.static_name_lookup = true;
-            compiled.needs_reflective_capture = true;
+        if self.in_eval_unit {
+            compiled.eval_mainline_closure = true;
         }
     }
 }

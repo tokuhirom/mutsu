@@ -27,6 +27,23 @@ impl Env {
         self.inner.is_eval_unit_capture()
     }
 
+    /// The lexical `key` of the compilation unit the frame this env runs in
+    /// belongs to: an `EVAL`'d unit's, recorded on the capture of a closure
+    /// created in its mainline, else the program scope's.
+    // Cost: O(d + l), d = chain tiers walked to the frame root, l = capture
+    // layers.
+    pub(crate) fn unit_lexical(&self, key: &str) -> Option<crate::value::Value> {
+        match self.unit_scope()? {
+            OuterScope::Capture(view) if view.is_eval_unit_capture() => {
+                let recorded = crate::meta_ns::MetaNs::EvalUnit.key_for_str(key);
+                view.get(&recorded)
+                    .or_else(|| view.get(&crate::symbol::Symbol::intern(key)))
+                    .cloned()
+            }
+            scope => scope.get(key),
+        }
+    }
+
     /// The scope `UNIT::` names for the frame this env runs in: the capture of
     /// a closure created in an `EVAL`'d unit's mainline, else the outermost of
     /// [`Self::enclosing_scopes`] (the program scope). `None` at the program
@@ -40,12 +57,8 @@ impl Env {
                 None => return root.flattened_frame_scopes().pop(),
             }
         }
-        if let Some(StaticLink::UnitOuter {
-            capture_first: true,
-            unit_capture: true,
-            ..
-        }) = root.inner.static_link()
-            && let Some(fb) = &root.fallback
+        if let Some(fb) = &root.fallback
+            && fb.is_eval_unit_capture()
         {
             return Some(OuterScope::Capture(Arc::clone(fb)));
         }

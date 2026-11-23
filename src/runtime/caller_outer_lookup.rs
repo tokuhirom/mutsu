@@ -41,7 +41,7 @@ impl Interpreter {
         let env = self.caller_env_stack.get(index)?;
         let key = format!("{sigil}{rest}");
         let found = if unit {
-            env.unit_scope().and_then(|scope| scope.get(&key))
+            env.unit_lexical(&key)
         } else {
             env.enclosing_scopes()
                 .iter()
