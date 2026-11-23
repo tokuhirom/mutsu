@@ -15301,9 +15301,7 @@ impl CompiledFunction {
                 }
             }
         }
-        // A routine with no parameter at all has a complete (empty) mapping,
-        // which admits it to the positional light path (#18080).
-        if !slots.is_empty() || (self.param_defs.is_empty() && self.params.is_empty()) {
+        if !slots.is_empty() {
             self.param_local_slots = Some(slots);
         }
         self.params_fill_frame = self.compute_params_fill_frame();
