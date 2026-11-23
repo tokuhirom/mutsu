@@ -18,7 +18,9 @@
 //!   candidate is, by the dispatcher's rules: a default, a `:D` smiley and an
 //!   optional named parameter do not save a candidate;
 //! - every argument is a literal (`Int`, `Num`, `Rat`, `Str`, `Bool`, `Nil`)
-//!   and none is named;
+//!   or a core type object (`Str`; a supertype of the parameter's type, such
+//!   as `Cool` for `Int`, may still bind and is not refuted), none is named,
+//!   and none is written as a word quote (`<a>`, which rakudo does not judge);
 //! - the refutation is an arity mismatch, a required named parameter with no
 //!   named argument, or a literal that fails a core nominal type (or the
 //!   `Positional` / `Associative` / `Callable` of an `@` / `%` / `&`
@@ -152,6 +154,14 @@ fn literal_arg(arg: &Expr) -> Option<Value> {
         {
             Some(value.clone())
         }
+        // A core type object (`f(Str)`); a smiley (`Int:D`) is a run-time check.
+        Expr::BareWord(name)
+            if !name.contains(':')
+                && crate::known_types::is_known_type_constraint(name)
+                && !crate::native_types::is_native_type_name(name) =>
+        {
+            Some(Value::package(crate::symbol::Symbol::intern(name)))
+        }
         _ => None,
     }
 }
@@ -254,6 +264,15 @@ impl Interpreter {
             let Some((rules, candidates)) = callees.get(site.name) else {
                 continue;
             };
+            // A type object the unit redeclares (a class, a sub of the name)
+            // is not the core one.
+            let redeclared = site.args.iter().any(|arg| {
+                matches!(arg.view(), ValueView::Package(name)
+                    if survey.decls.contains_key(name.resolve().as_str()))
+            });
+            if redeclared {
+                continue;
+            }
             let refuted = candidates
                 .iter()
                 .all(|params| self.refutes(params, &site.args, &survey.type_decls, *rules));
@@ -322,10 +341,25 @@ impl Interpreter {
         if args.len() < required || (!slurpy && args.len() > fixed.len()) {
             return true;
         }
-        fixed.iter().zip(args).any(|(param, arg)| {
-            judged_type(param, user_types, rules)
-                .is_some_and(|ty| !self.type_matches_value(ty, arg))
-        })
+        for (param, arg) in fixed.iter().zip(args) {
+            let Some(ty) = judged_type(param, user_types, rules) else {
+                continue;
+            };
+            if self.type_matches_value(ty, arg) {
+                continue;
+            }
+            // A type object that is a supertype of the parameter's type
+            // (`f(Cool)` for `Int $x`, `f(Mu)`) may still name a value that
+            // binds, so rakudo leaves it to the binder (#10944).
+            if let ValueView::Package(name) = arg.view() {
+                let param_type = Value::package(crate::symbol::Symbol::intern(ty));
+                if self.type_matches_value(&name.resolve(), &param_type) {
+                    continue;
+                }
+            }
+            return true;
+        }
+        false
     }
 }
 
