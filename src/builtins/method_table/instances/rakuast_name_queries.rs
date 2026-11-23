@@ -102,3 +102,43 @@ key_queries! {
     "first-colonpair" => first_colonpair,
     "without-colonpair" => without_colonpair,
 }
+
+/// A row and its handler for one `Name::Part::*` query (#18977).
+macro_rules! part_queries {
+    ($($owner:literal, $method:literal => $handler:ident),* $(,)?) => {
+        $(
+            // Cost: O(f), f = fields of the part.
+            fn $handler(target: &Value, _args: &[Value]) -> Result<Value, RuntimeError> {
+                let answer = native_node(target).and_then(|base| match base.view() {
+                    ValueView::RakuAst(node) => {
+                        crate::rakuast::name_queries::part_call(node, $method)
+                    }
+                    _ => None,
+                });
+                Ok(answer.unwrap_or(Value::NIL))
+            }
+        )*
+
+        pub(super) static PART_ROWS: &[MethodRow] = &[
+            $(MethodRow {
+                owner: $owner,
+                name: $method,
+                arity: 0,
+                handler: Handler::Pure($handler),
+                flags: RowFlags::OWNER_ONLY,
+                named: &[],
+            },)*
+        ];
+    };
+}
+
+part_queries! {
+    "RakuAST::Name::Part::Simple", "is-empty" => simple_is_empty,
+    "RakuAST::Name::Part::Simple", "is-pseudo-package" => simple_is_pseudo_package,
+    "RakuAST::Name::Part::EmptyEdge", "name" => edge_name,
+    "RakuAST::Name::Part::EmptyEdge", "is-empty" => edge_is_empty,
+    // Inherited from `Name::Part`, as on rakudo (`EmptyEdge` answers False).
+    "RakuAST::Name::Part", "is-pseudo-package" => edge_is_pseudo_package,
+    "RakuAST::Name::Part::Expression", "name" => expression_name,
+    "RakuAST::Name::Part::Expression", "is-empty" => expression_is_empty,
+}
