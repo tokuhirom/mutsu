@@ -1,4 +1,4 @@
-//! A positional store into a literal (`5[0] = 3`, `"a"[0] = 3`), #18960.
+//! Stores into scalar literals (`5[0] = 3`, `5<a> = 3`), #18960 and #19084.
 //!
 //! A literal is a value, not a container. rakudo's `Any.ASSIGN-POS` stores
 //! through `AT-POS`, which for index 0 is the literal itself, so the store
@@ -7,9 +7,11 @@
 //! right-hand side is evaluated first, as rakudo evaluates the arguments of
 //! `ASSIGN-POS` before calling it.
 //!
-//! This is decided at compile time because only the compiler knows the target
-//! is a literal: at run time an `is rw` routine's result and a literal are the
-//! same value, and the routine's must stay assignable.
+//! An associative store dies as its `AT-KEY` read does: a scalar literal does
+//! not support associative indexing. This is decided at compile time because
+//! only the compiler knows the target is a literal: at run time an `is rw`
+//! routine's result and a literal are the same value, and the routine's must
+//! stay assignable.
 
 use super::Compiler;
 use crate::ast::Expr;
@@ -37,8 +39,9 @@ fn is_scalar_literal(target: &Expr) -> bool {
 impl Compiler {
     /// Compile `target[index] = value` for a scalar-literal `target` (looked
     /// at through its parentheses): evaluate the operands in source order,
-    /// read the element as `AT-POS` would, and die with X::Assignment::RO
-    /// naming it. `false`, emitting nothing, for any other target.
+    /// read the element as `AT-POS` or `AT-KEY` would, then either die with
+    /// X::Assignment::RO for a positional store or let the associative read
+    /// raise its indexing error. `false`, emitting nothing, for other targets.
     // Cost: O(1) emitted opcodes.
     pub(super) fn compile_literal_index_assign(
         &mut self,
@@ -47,7 +50,7 @@ impl Compiler {
         value: &Expr,
         is_positional: bool,
     ) -> bool {
-        if !is_positional || matches!(value, Expr::IndexBindValue(_)) {
+        if matches!(value, Expr::IndexBindValue(_)) {
             return false;
         }
         if !is_scalar_literal(target) {
@@ -58,8 +61,14 @@ impl Compiler {
         self.compile_expr(value);
         self.code.emit(OpCode::Pop);
         self.code.emit(OpCode::Index {
-            is_positional: true,
+            is_positional,
         });
+        if !is_positional {
+            // AT-KEY answers an unhandled Failure for scalar values. A store
+            // must raise it here rather than discard it as an assigned value.
+            self.code.emit(OpCode::ThrowIfFailure);
+            return true;
+        }
         let name_idx = self
             .code
             .add_constant(Value::str_from("__mutsu_assignment_ro"));
