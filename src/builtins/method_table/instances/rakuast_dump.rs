@@ -212,8 +212,10 @@ fn escape(text: &str) -> String {
     out
 }
 
-/// `dump-extras($indent)`: a `QuotedString`'s postprocessors.
-// Cost: O(p), p = postprocessors.
+/// `dump-extras($indent)`: an expression's thunks and a `QuotedString`'s
+/// postprocessors.
+// Cost: O(n + p + d), n = nodes in a marked expression, p = postprocessors,
+// d = output length.
 pub(crate) fn extras(node: &RakuAstNode, indent: usize) -> String {
     let mut out = super::rakuast_thunk::dump_extras(node, indent);
     if node.class != RakuAstClass::QuotedString {

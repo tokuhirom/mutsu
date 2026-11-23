@@ -24,7 +24,7 @@ fn is_prime_marker(field: &RakuAstField) -> bool {
     field.name == Some(FIELD)
 }
 
-/// Whether `field` is the hidden marker, which no renderer shows.
+/// Whether `field` is a hidden thunk marker, which no renderer shows.
 // Cost: O(1).
 pub(super) fn is_marker(field: &RakuAstField) -> bool {
     is_prime_marker(field) || field.name == Some(BLOCK_FIELD)
