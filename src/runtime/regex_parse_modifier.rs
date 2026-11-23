@@ -387,76 +387,19 @@ impl Interpreter {
                 let inside_sq = quotes.inside_single(&chars, i);
                 let mut j = i + 1;
                 if j < chars.len() && chars[j] == '{' {
-                    j += 1;
-                    let name_start = j;
-                    while j < chars.len() && chars[j] != '}' {
-                        j += 1;
-                    }
-                    if j < chars.len() && j > name_start {
-                        // Inside single-quoted regex literals, $ is not interpolated
-                        if inside_sq {
-                            out.push('$');
-                            i += 1;
-                            continue;
-                        }
-                        let name: String = chars[name_start..j].iter().collect();
-                        // A `:my`-declared regex-local var: leave `${name}`
-                        // verbatim for the parser's match-time `VarInterp` lowering.
-                        if is_regex_local(&name, &declared_my_vars) {
-                            out.extend(chars[i..=j].iter());
-                            i = j + 1;
-                            continue;
-                        }
-                        let value = self
-                            .env
-                            .get(&name)
-                            .cloned()
-                            .or_else(|| self.env.get(&format!("${name}")).cloned())
-                            .or_else(|| self.regex_package_chain_var_fallback(&format!("${name}")))
-                            .unwrap_or(Value::NIL);
-                        let value = value.into_deref();
-                        Self::check_hash_in_regex(&value)?;
-                        // The `"..."` tokenizer arm strips the mark and makes
-                        // the whole literal a non-declarative atom.
-                        let inside_qq = quotes.inside_double(&chars, i);
-                        let is_const = self.is_compile_time_constant_scalar(&name);
-                        if !is_const {
-                            out.push(Self::NON_DECLARATIVE_INTERP_MARK);
-                        }
-                        // A Regex value: reroute through the `<$var>` tokenizer arm
-                        // (rather than splicing its pattern body here) so its
-                        // captures get isolated the same way `<$var>` isolates
-                        // them (see `RegexAtom::CaptureIsolatedGroup`). Not inside a
-                        // double-quoted regex literal — that domain is re-read
-                        // verbatim as literal text by the structural parser's own
-                        // `"..."` scanner, which would turn `<$name>` into four+
-                        // literal characters instead of an assertion.
-                        if !inside_qq
-                            && matches!(
-                                value.view(),
-                                ValueView::Regex(_) | ValueView::RegexWithAdverbs(_)
-                            )
-                        {
-                            out.push_str(&format!("<${name}>"));
-                        } else if !inside_qq
-                            && super::regex::regex_alias_var_call::ends_with_sigil_alias(&out)
-                        {
-                            out.push('[');
-                            Self::push_value_as_regex_pattern(&value, &mut out);
-                            out.push(']');
-                        } else {
-                            Self::push_value_as_regex_pattern(&value, &mut out);
-                        }
-                        if !is_const {
-                            out.push(Self::NON_DECLARATIVE_INTERP_MARK);
-                        }
-                        i = if inside_qq {
-                            j + 1
-                        } else {
-                            super::regex_variable_alias::variable_alias_end(&chars, j + 1)
-                                .unwrap_or(j + 1)
-                        };
-                        continue;
+                    // `${name}` is Perl 5 syntax rakudo rejects at compile
+                    // time (#18925); a pattern built at run time (a `<$var>`
+                    // source) is rejected the same way here. `${ code }` is
+                    // the end anchor followed by a code block.
+                    if !inside_sq
+                        && let Some(len) =
+                            super::regex::regex_braced_scalar::braced_scalar_name_len(&chars, i)
+                    {
+                        let name: String = chars[i + 2..i + 2 + len].iter().collect();
+                        return Err(super::regex::regex_braced_scalar::obsolete_braced_scalar(
+                            &name,
+                            quotes.inside_double(&chars, i),
+                        ));
                     }
                 } else if j < chars.len()
                     && (chars[j].is_alphabetic()

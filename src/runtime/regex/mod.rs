@@ -1,4 +1,5 @@
 mod regex_alias_subcap;
+pub(crate) mod regex_braced_scalar;
 mod regex_reduce_dispatch;
 mod regex_rule_def_file;
 pub(crate) mod regex_arg_purity;
