@@ -216,7 +216,7 @@ fn gist_item_into(v: &Value, out: &mut String) {
         ValueView::ContainerRef(cell) => gist_item_into(&cell.load(), out),
         // `$(...)` itemized element: `.gist` drops the itemization
         // sigil, so it gists like its inner value.
-        ValueView::Scalar(inner) => gist_item_into(&inner, out),
+        ValueView::Scalar(inner) => gist_item_into(inner, out),
         ValueView::Array(inner, kind) if kind != crate::value::ArrayKind::Lazy => {
             let (open, close) = super::gist_array_brackets(kind);
             gist_items_into(inner.iter(), open, close, gist_item_into, out);
