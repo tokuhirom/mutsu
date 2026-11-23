@@ -684,3 +684,40 @@ routine that keeps it would; none of the measured cases does).
 Remaining for 5b: a `BEGIN` that calls the unit's own routines, and a `BEGIN`
 over a typed or traited variable. Slice 4b (§7.10) no longer waits on 5b for
 the program's top level.
+
+### 7.18 Slice 4b, first part: the program interpreter hosts a slang it loaded (2026-11-23)
+
+A slang module the program interpreter loads at parse time (4a) whose
+productions a host runs (a hook, an action override, a `statementlist`
+wrapper) no longer falls back to the activation interpreter for its host. The
+program interpreter hosts it, and the parser's requests become nested calls on
+the parse's own thread, as §2.8 planned:
+
+- `slang_link::SlangHost` has two links: the activation interpreter's
+  channels (`Thread`) and `InProcess`. An in-process hook reaches the loader
+  (`CompileTimeLoader::run_slang_hook`). The loader runs the same host entry
+  the activation interpreter runs (`slang_host::hook_answer`), composing the
+  activation's own grammar and actions roles (`HookRequest::roles`).
+- The unit's parser state is suspended while the hook's code runs, since that
+  code may parse: a regex compiled at run time, an `EVAL`. Each back-call
+  puts it back, and parses the unit's text in it under a loader guard derived
+  from the hook's interpreter, so a `use` in a back-called block still loads
+  at parse time (`slang_host_inline`).
+- Nothing is logged for replay. The production runs in the interpreter that
+  runs the unit, so what its action does is already there, at parse time, as
+  on rakudo. A `BEGIN` after the production sees it; before this slice it saw
+  only the replay at run time (ADR-17243).
+- Each parse-time activation takes the rules and roles its load registered out
+  of the interpreter's shared lists (`split_off`). An enclosing load, a module
+  whose own compile `use`s a slang, therefore does not count the nested slang
+  as its own (#17267).
+
+**Still on the activation interpreter:** a slang that overrides a declarator
+(`routine-declarator`, `scope-declarator`, `package-declarator`). Its action
+works on the code object or package the production declares
+(`$method.meta-object does Tallied`, EEL's `pattern`, a `FOREIGN-LANG`
+package), which mutsu builds only when the unit is compiled. The unit
+therefore replays those actions against the real objects. Hosting it in
+process needs the parse's nodes to carry the meta-objects the unit installs.
+That, and the slangs the loader does not take (§7.10), are what keeps the
+activation interpreter alive.
