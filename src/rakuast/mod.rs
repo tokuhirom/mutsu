@@ -495,11 +495,9 @@ pub enum RakuAstClass {
     // tree can retain the exact Name shape.
     NamePartExpression,
     // The empty edge of a name: the leading `::` of `::Foo` / `::($x)` and the
-    // trailing `::` of a stash lookup `Foo::`. Rakudo 2026.09 spelled it
-    // `Name::Part::Empty`; rakudo/rakudo#6771 (2026.11) renamed it to
-    // `Name::Part::EmptyEdge`, which is what `.AST` emits; `Empty` is still
-    // accepted on input.
-    NamePartEmpty,
+    // trailing `::` of a stash lookup `Foo::` (rakudo 2026.11's
+    // `Name::Part::EmptyEdge`; the 2026.09 spelling `Name::Part::Empty` is
+    // gone, #18977).
     NamePartEmptyEdge,
     ArgList,
     /// `:a:!b:42c` written as a term: the colonpairs, one positional child each.
@@ -913,7 +911,6 @@ impl RakuAstClass {
             Name => "RakuAST::Name",
             NamePartSimple => "RakuAST::Name::Part::Simple",
             NamePartExpression => "RakuAST::Name::Part::Expression",
-            NamePartEmpty => "RakuAST::Name::Part::Empty",
             NamePartEmptyEdge => "RakuAST::Name::Part::EmptyEdge",
             ArgList => "RakuAST::ArgList",
             ColonPairs => "RakuAST::ColonPairs",
@@ -1197,7 +1194,6 @@ impl RakuAstClass {
                 | RakuAstClass::RegexInternalModifierIgnoreMark
                 | RakuAstClass::RegexInternalModifierSigspace
                 | RakuAstClass::RegexInternalModifierRatchet
-                | RakuAstClass::NamePartEmpty
                 | RakuAstClass::NamePartEmptyEdge
         )
     }
@@ -1353,13 +1349,11 @@ pub fn type_object_is_package(class_name: &str) -> bool {
 }
 
 /// The rakudo class a mutsu-only node class answers the hierarchy as. mutsu
-/// models two spellings rakudo folds into another class: `Call::BlockMethod`
-/// (rakudo renders `$x.&{...}` as a `Call::TermAsMethod`) and
-/// `Name::Part::Empty` (the pre-2026.11 spelling of `Name::Part::EmptyEdge`).
+/// models one spelling rakudo folds into another class: `Call::BlockMethod`
+/// (rakudo renders `$x.&{...}` as a `Call::TermAsMethod`).
 fn measured_name(class_name: &str) -> &str {
     match class_name {
         "RakuAST::Call::BlockMethod" => "RakuAST::Call::TermAsMethod",
-        "RakuAST::Name::Part::Empty" => "RakuAST::Name::Part::EmptyEdge",
         _ => class_name,
     }
 }
@@ -1482,7 +1476,6 @@ const RAKUAST_CLASSES: &[RakuAstClass] = &[
     RakuAstClass::Name,
     RakuAstClass::NamePartSimple,
     RakuAstClass::NamePartExpression,
-    RakuAstClass::NamePartEmpty,
     RakuAstClass::NamePartEmptyEdge,
     RakuAstClass::ArgList,
     RakuAstClass::ColonPairs,
@@ -4161,7 +4154,6 @@ fn zero_positional_class(class_name: &str, method: &str) -> Option<RakuAstClass>
         ("RakuAST::Term::Rand", "new") => RakuAstClass::TermRand,
         ("RakuAST::Prefix::Multislice", "new") => RakuAstClass::PrefixMultislice,
         ("RakuAST::Term::HyperWhatever", "new") => RakuAstClass::TermHyperWhatever,
-        ("RakuAST::Name::Part::Empty", "new") => RakuAstClass::NamePartEmpty,
         ("RakuAST::Name::Part::EmptyEdge", "new") => RakuAstClass::NamePartEmptyEdge,
         _ => return None,
     })
@@ -4514,7 +4506,6 @@ fn constructor_is_supported(class: RakuAstClass) -> bool {
             | RakuAstClass::Role
             | RakuAstClass::RoleBody
             | RakuAstClass::NamePartExpression
-            | RakuAstClass::NamePartEmpty
             | RakuAstClass::NamePartEmptyEdge
             | RakuAstClass::TermName
             | RakuAstClass::TermNamed
