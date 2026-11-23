@@ -141,7 +141,6 @@ IO::Socket::Async::SSL	dh-ciphers.rakutest
 IO::Socket::Async::SSL	ecdh-ciphers.rakutest
 IO::Socket::Async::SSL	encoding.rakutest
 IO::Socket::Async::SSL	thread-stress.rakutest
-IO::Socket::Async::SSL	upgrade.rakutest
 JSON::Fast	01-parse.t
 JSON::Fast	02-structure.t
 JSON::Fast	03-unicode.t
