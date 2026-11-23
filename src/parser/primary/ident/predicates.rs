@@ -258,6 +258,8 @@ pub(crate) fn is_listop(name: &str) -> bool {
             | "say"
             | "put"
             | "note"
+            // `dd` is a list operator like `note` (#19082).
+            | "dd"
             | "return"
             | "die"
             | "fail"
