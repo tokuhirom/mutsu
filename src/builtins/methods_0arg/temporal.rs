@@ -292,13 +292,18 @@ pub fn format_date_ordered(order: &str, year: i64, month: i64, day: i64, sep: &s
 /// Build a structured X::Temporal::InvalidFormat error carrying `invalid-str`
 /// (the offending input) and `target` (the type being constructed, e.g.
 /// 'DateTime' / 'Date').
-fn temporal_invalid_format_error(invalid_str: &str, target: &str, message: String) -> RuntimeError {
+/// Rakudo's `X::Temporal::InvalidFormat`: "Invalid <target> string
+/// '<invalid-str>'; use <format> instead", with all three as attributes.
+// Cost: O(n), n = the invalid string's length.
+fn temporal_invalid_format_error(invalid_str: &str, target: &str, format: &str) -> RuntimeError {
+    let message = format!("Invalid {target} string '{invalid_str}'; use {format} instead");
     let mut attrs = HashMap::new();
     attrs.insert(
         "invalid-str".to_string(),
         Value::str(invalid_str.to_string()),
     );
     attrs.insert("target".to_string(), Value::str(target.to_string()));
+    attrs.insert("format".to_string(), Value::str(format.to_string()));
     attrs.insert("message".to_string(), Value::str(message.clone()));
     let ex = Value::make_instance(Symbol::intern("X::Temporal::InvalidFormat"), attrs);
     let mut err = RuntimeError::new(message);
@@ -312,7 +317,7 @@ pub fn parse_date_string(s: &str) -> Result<(i64, i64, i64), RuntimeError> {
         temporal_invalid_format_error(
             s,
             "Date",
-            format!("Invalid Date string '{}'; use yyyy-mm-dd instead", s),
+            "yyyy-mm-dd",
         )
     };
 
@@ -354,11 +359,7 @@ pub fn parse_datetime_string(s: &str) -> Result<DateTimeParts, RuntimeError> {
         temporal_invalid_format_error(
             s,
             "DateTime",
-            format!(
-                "Invalid DateTime string '{}'; \
-                 use yyyy-mm-ddThh:mm:ss±hhmm or bg an abbreviation",
-                s
-            ),
+            "an ISO 8601 timestamp (yyyy-mm-ddThh:mm:ssZ or yyyy-mm-ddThh:mm:ss+01:00)",
         )
     };
 
