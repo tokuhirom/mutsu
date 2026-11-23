@@ -6,7 +6,7 @@ use Test;
 # only a declared element type. A value with no container (a literal, a
 # parameter, a `:=`-bound value, `self`) shows nothing.
 
-plan 17;
+plan 19;
 
 my $captured = '';
 my class Capture {
@@ -51,3 +51,9 @@ is dd-of({ dd IO::Path }), 'IO::Path', 'a qualified core type object too';
 my $t = IO::Path;
 is dd-of({ dd $t }), '$t = IO::Path', 'a scalar holding a type object still shows its name';
 is dd-of({ dd Int }), 'Int', 'a core type object';
+
+# #19056: dd returns Nil, as rakudo 2026.11's does.
+my $r = 0;
+dd-of({ $r = dd 7 });
+is $r.raku, 'Any', 'dd returns Nil (assigned, a Scalar holds Any)';
+is dd-of({ (dd 5).raku.note }), "5\nNil", 'the call itself is Nil';
