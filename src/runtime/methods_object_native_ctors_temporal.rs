@@ -231,7 +231,17 @@ impl Interpreter {
                 "DateTime.new cannot mix positional and component named arguments",
             ));
         }
-        if positional.len() >= 6 {
+        // rakudo's positional candidates take one argument (an epoch, Instant,
+        // Str or Date) or six (`$y, $mo, $d, $h, $mi, $s`); any other count
+        // matches no candidate.
+        if positional.len() > 1 && positional.len() != 6 {
+            return Err(super::methods_signature_errors::builtin_method_no_match(
+                &Value::package(crate::symbol::Symbol::intern("DateTime")),
+                "new",
+                args,
+            ));
+        }
+        if positional.len() == 6 {
             year = to_int(&positional[0]);
             month = to_int(&positional[1]);
             day = to_int(&positional[2]);
