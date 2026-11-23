@@ -286,10 +286,10 @@ fn identity_bucket(value: &Value) -> Option<u64> {
         // mixin with a `===` base and the same composition. A mixed type
         // object is also the composed class's type object, so it keeps the scan.
         ValueView::Mixin(inner, mixins) if !matches!(inner.view(), ValueView::Package(_)) => {
-            let inner_bucket = identity_bucket(&inner)?;
+            let inner_bucket = identity_bucket(inner)?;
             32u8.hash(&mut hasher);
             inner_bucket.hash(&mut hasher);
-            crate::value::types::mixin_identity_key(&mixins).hash(&mut hasher);
+            crate::value::types::mixin_identity_key(mixins).hash(&mut hasher);
         }
         ValueView::Nil => 24u8.hash(&mut hasher),
         ValueView::Whatever => 34u8.hash(&mut hasher),
