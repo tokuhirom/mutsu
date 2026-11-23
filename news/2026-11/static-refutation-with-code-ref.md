@@ -5,3 +5,6 @@ unit also wrote as `&f`. rakudo refutes `sub f(Int $x) {}; my $r = &f;
 f("a")` all the same, even after `&f.wrap(...)`, and now mutsu does too. Only
 a `&f` variable or parameter, which shadows the routine where it is in scope,
 still keeps the pass away from calls to that name.
+
+A `multi` written as `&p` stays unjudged: the reference can add candidates,
+as `BEGIN &p.add_dispatchee(&other)` does.

@@ -68,6 +68,10 @@ struct Survey<'ast> {
     /// (taken, passed, `.wrap`ped) does not: rakudo refutes the call all the
     /// same.
     code_vars: HashSet<String>,
+    /// Names written as a plain `&name` reference anywhere. A `multi` written
+    /// so is not judged: the reference can add candidates
+    /// (`&p.add_dispatchee(&other)` at BEGIN time).
+    code_refs: HashSet<String>,
     /// Whether the unit imports names from a module (`use`, `need`,
     /// `import`), whose `multi` candidates it cannot see. `Test` exports only
     /// its own functions, which are never judged.
@@ -133,6 +137,9 @@ impl<'ast> Visit<'ast> for Survey<'ast> {
                     && !super::undeclared_routines::module_imports_no_names(name) =>
             {
                 self.imports = true;
+            }
+            NameKind::CodeVar => {
+                self.code_refs.insert(name.trim_start_matches('&').to_string());
             }
             NameKind::VarDecl | NameKind::Param | NameKind::BlockParam => {
                 if let Some(code) = name.strip_prefix('&') {
@@ -464,6 +471,7 @@ fn callees<'ast>(
                 !candidates.is_empty()
                     && protos <= 1
                     && !survey.imports
+                    && !survey.code_refs.contains(*name)
                     && !Interpreter::is_builtin_function(name)
                     && !Interpreter::is_test_function_name(name)
             }
