@@ -433,7 +433,23 @@ fn expand_dot_assign(
                 quoted: false,
                 sugar: false,
             };
-            let then_expr = Expr::desugar_block(vec![Stmt::Expr(store_call), Stmt::Expr(tmp_var)]);
+            let then_expr = Expr::desugar_block(vec![Stmt::Expr(store_call), Stmt::Expr(tmp_var.clone())]);
+            // A literal is no container: `"ab".=uc` computes the method and
+            // then fails the store with rakudo's `X::Assignment::RO` naming
+            // the value ("Cannot modify an immutable Str (ab)"), as
+            // `"ab" = 1` does (#18986).
+            let meth_result = if matches!(target, Expr::Literal(_)) {
+                Expr::desugar_block(vec![
+                    Stmt::Expr(meth_result),
+                    Stmt::Expr(Expr::Call {
+                        name: Symbol::intern("__mutsu_assignment_ro"),
+                        args: vec![tmp_var],
+                        listop: false,
+                    }),
+                ])
+            } else {
+                meth_result
+            };
             let ternary = Expr::Ternary {
                 cond: Box::new(can_store),
                 then_expr: Box::new(then_expr),
