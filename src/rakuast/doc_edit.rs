@@ -31,7 +31,7 @@ fn only(node: &RakuAstNode, class: RakuAstClass, method: &str) -> Result<(), Run
 // Cost: O(1).
 pub(crate) fn from_string(args: &[Value]) -> Result<Value, RuntimeError> {
     match args {
-        [text] if matches!(text.view(), ValueView::Str(_)) => Ok(text.clone()),
+        [text] if let Some(text) = text.as_str() => Ok(paragraph_from_text(text)),
         [other] => Err(RuntimeError::new(format!(
             "X::TypeCheck::Binding::Parameter: Type check failed in binding to parameter \
              '$text'; expected Str but got {}",
@@ -41,6 +41,19 @@ pub(crate) fn from_string(args: &[Value]) -> Result<Value, RuntimeError> {
             "Too few positionals passed; expected 2 arguments but got {}",
             args.len() + 1
         ))),
+    }
+}
+
+/// The `Doc::Paragraph` of `text` with its formatting codes, or the text
+/// itself when it holds none (rakudo's `Paragraph.from-string`).
+// Cost: O(n), n = length of the text.
+pub(crate) fn paragraph_from_text(text: &str) -> Value {
+    match super::pod_blocks::cell_paragraph(text) {
+        Some(Some(node)) => Value::rakuast(Box::new(node)),
+        // TODO: text the pod reader does not take (an unterminated code)
+        // stays the plain text; rakudo dies with "RakuDoc markup code B
+        // missing endtag '>'".
+        _ => Value::str(text.to_string()),
     }
 }
 
