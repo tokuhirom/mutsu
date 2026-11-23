@@ -25,7 +25,8 @@ impl Interpreter {
             };
             self.dd_line(val, i, rendered)?;
         }
-        Ok(args.first().cloned().unwrap_or(Value::NIL))
+        // `dd` returns `Nil`, as rakudo 2026.11's does (#19056).
+        Ok(Value::NIL)
     }
 
     /// `__mutsu_dd(v1, r1, v2, r2, ...)`: a direct `dd` call, which the

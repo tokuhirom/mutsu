@@ -78,7 +78,7 @@ impl Interpreter {
             .registry()
             .classes
             .get(class)
-            .map(|def| def.attributes.clone())
+            .map(|def| def.attributes.to_vec())
             .unwrap_or_default();
         let bound: HashSet<String> = self
             .registry()
