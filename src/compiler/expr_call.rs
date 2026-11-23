@@ -504,7 +504,7 @@ impl Compiler {
             });
             return;
         }
-        if name == "dd" && self.try_compile_dd_element_call(name, args) {
+        if name == "dd" && self.try_compile_dd_call(name, args) {
             return;
         }
         // A `my &f` binding visible right here SHADOWS any package/registry

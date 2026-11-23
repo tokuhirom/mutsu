@@ -5,58 +5,100 @@ use super::*;
 use crate::value::ValueView;
 
 impl Interpreter {
+    /// `dd` called as a routine value (`&dd`, `.map(&dd)`): each argument's
+    /// value part is rendered by the static `raku_value`, a user-class
+    /// instance's through its `raku` method.
     // Cost: O(n + r), n = arguments and r = total rendered representation size.
     pub(super) fn builtin_dd(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
-        let arg_sources = self.pending_call_arg_sources.clone().unwrap_or_default();
         for (i, val) in args.iter().enumerate() {
-            // A RakuAST node prints as the source it stands for, without a
-            // variable label, as rakudo 2026.11's `dd` does (#18980); inside a
-            // container it stays `.raku`.
-            if matches!(val.view(), ValueView::RakuAst(_)) {
-                let text = self.deparse_node(val.clone(), &[])?.to_string_value();
-                let text = text.strip_suffix('\n').unwrap_or(&text);
-                // Through the dynamic `$*ERR`, like every other `dd` line (#19048).
-                self.write_to_named_handle("$*ERR", text, true)?;
-                continue;
-            }
-            // An element argument arrives as its `.VAR` descriptor (the
-            // compiler's `try_compile_dd_element_call`): print the element,
-            // named after the container it lives in (#19046).
-            if let Some((prefix, element)) = Self::dd_element_prefix(val) {
-                let element_repr = crate::builtins::methods_0arg::raku_repr::raku_value(&element);
-                self.write_to_named_handle("$*ERR", &format!("{prefix}{element_repr}"), true)?;
-                continue;
-            }
-            let source_name = arg_sources.get(i).and_then(|entry| entry.as_deref());
             // A user-class instance's `.raku` needs the class registry to collect
             // its public attributes, which the static `raku_value` cannot reach
-            // (it would render `F()`); dispatch the instance method instead.
-            let value_repr = if matches!(val.view(), ValueView::Instance { .. }) {
+            // (it would render `F()`).
+            // TODO: compile to bytecode -- only a direct `dd` call gets its
+            // `.raku` from the VM (`__mutsu_dd`); a routine-value call still
+            // renders here.
+            let rendered = if matches!(val.view(), ValueView::Instance { .. }) {
                 self.call_method_with_values(val.clone(), "raku", vec![])
+                    .ok()
                     .map(|v| v.to_string_value())
-                    .unwrap_or_else(|_| crate::builtins::methods_0arg::raku_repr::raku_value(val))
             } else {
-                crate::builtins::methods_0arg::raku_repr::raku_value(val)
+                None
             };
-            // A bareword records its own name as the source, as a scalar `$x`
-            // records `x`; the type object a bareword names is no container,
-            // so it takes no `$name = ` prefix (`dd IO::Path`, #19065).
-            let names_itself = matches!(val.view(), ValueView::Package(pkg)
-                if source_name.is_some_and(|source| {
-                    crate::value::user_facing_type_name(&pkg.resolve()) == source
-                }));
-            let prefix = if names_itself {
-                String::new()
-            } else {
-                // The argument's live cell: an `is rw` parameter's slot holds the
-                // caller's container, which names the caller's variable.
-                let cell = self.call_site_source_cell(i).cloned();
-                self.dd_prefix(source_name, cell.as_ref().unwrap_or(val))
-            };
-            let repr = format!("{prefix}{value_repr}");
-            self.write_to_named_handle("$*ERR", &repr, true)?;
+            self.dd_line(val, i, rendered)?;
         }
         Ok(args.first().cloned().unwrap_or(Value::NIL))
+    }
+
+    /// `__mutsu_dd(v1, r1, v2, r2, ...)`: a direct `dd` call, which the
+    /// compiler (`try_compile_dd_call`) hands each argument together with its
+    /// `.raku`, dispatched by the VM. rakudo's `dd` is `note prefix ~
+    /// $var.raku`, so a typed Array (`Array[Int].new(1)`), a Block's signature
+    /// or a user `raku` method all show as `.raku` answers (#19047). Argument
+    /// `k`'s call-site source is at index `2k`.
+    // Cost: O(n + r), n = arguments and r = total rendered representation size.
+    pub(super) fn builtin_dd_rendered(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
+        for (k, pair) in args.chunks(2).enumerate() {
+            let [val, rendered] = pair else {
+                return Err(RuntimeError::new("__mutsu_dd: an argument without its .raku"));
+            };
+            self.dd_line(val, 2 * k, Some(rendered.to_string_value()))?;
+        }
+        Ok(Value::NIL)
+    }
+
+    /// Write one `dd` line for `val`, whose call-site source is argument
+    /// `source_index`, with `rendered` as its `.raku` when the caller has it.
+    // Cost: O(|source| + r), r = the rendered representation size.
+    fn dd_line(
+        &mut self,
+        val: &Value,
+        source_index: usize,
+        rendered: Option<String>,
+    ) -> Result<(), RuntimeError> {
+        // A RakuAST node prints as the source it stands for, without a
+        // variable label, as rakudo 2026.11's `dd` does (#18980); inside a
+        // container it stays `.raku`.
+        if matches!(val.view(), ValueView::RakuAst(_)) {
+            let text = self.deparse_node(val.clone(), &[])?.to_string_value();
+            let text = text.strip_suffix('\n').unwrap_or(&text);
+            // Through the dynamic `$*ERR`, like every other `dd` line (#19048).
+            return self.write_to_named_handle("$*ERR", text, true).map(|_| ());
+        }
+        // An element argument arrives as its `.VAR` descriptor (the
+        // compiler's `try_compile_dd_call`): print the element, named after
+        // the container it lives in (#19046).
+        if let Some((prefix, element)) = Self::dd_element_prefix(val) {
+            let element_repr = rendered.unwrap_or_else(|| {
+                crate::builtins::methods_0arg::raku_repr::raku_value(&element)
+            });
+            return self
+                .write_to_named_handle("$*ERR", &format!("{prefix}{element_repr}"), true)
+                .map(|_| ());
+        }
+        let value_repr =
+            rendered.unwrap_or_else(|| crate::builtins::methods_0arg::raku_repr::raku_value(val));
+        let source_name = self
+            .pending_call_arg_sources
+            .as_ref()
+            .and_then(|sources| sources.get(source_index).cloned().flatten());
+        let source_name = source_name.as_deref();
+        // A bareword records its own name as the source, as a scalar `$x`
+        // records `x`; the type object a bareword names is no container,
+        // so it takes no `$name = ` prefix (`dd IO::Path`, #19065).
+        let names_itself = matches!(val.view(), ValueView::Package(pkg)
+            if source_name.is_some_and(|source| {
+                crate::value::user_facing_type_name(&pkg.resolve()) == source
+            }));
+        let prefix = if names_itself {
+            String::new()
+        } else {
+            // The argument's live cell: an `is rw` parameter's slot holds the
+            // caller's container, which names the caller's variable.
+            let cell = self.call_site_source_cell(source_index).cloned();
+            self.dd_prefix(source_name, cell.as_ref().unwrap_or(val))
+        };
+        self.write_to_named_handle("$*ERR", &format!("{prefix}{value_repr}"), true)
+            .map(|_| ())
     }
 
     /// The part of a `dd` line before the value, as rakudo's `dd`
