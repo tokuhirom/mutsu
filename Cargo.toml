@@ -118,7 +118,7 @@ rustc-hash = "2.1.1"
 # genuinely hard algorithm not to own (maintainer-approved 2026-11-22). Pinned
 # to the reviewed release; pulls in only `crossbeam-utils` (already in the
 # graph through `crossbeam-channel`).
-crossbeam-epoch = "=0.9.18"
+crossbeam-epoch = "=0.9.21"
 # KEEP (c): fast seeded hasher for maps keyed by user data (`value/user_key_map.rs`).
 foldhash = "0.2"
 # KEEP (a): AST/value serialization for precomp and the scan cache.
