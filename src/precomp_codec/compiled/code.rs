@@ -149,6 +149,7 @@ impl Encode for CompiledCode {
             uses_samewith,
             needs_reflective_capture,
             static_name_lookup,
+            eval_mainline_closure,
             uses_dispatcher,
             may_observe_named_slurpy,
             reads_routine_magical,
@@ -326,6 +327,7 @@ impl Encode for CompiledCode {
         uses_samewith.encode(encoder)?;
         needs_reflective_capture.encode(encoder)?;
         static_name_lookup.encode(encoder)?;
+        eval_mainline_closure.encode(encoder)?;
         uses_dispatcher.encode(encoder)?;
         may_observe_named_slurpy.encode(encoder)?;
         reads_routine_magical.encode(encoder)?;
@@ -486,6 +488,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             uses_samewith: Decode::decode(decoder)?,
             needs_reflective_capture: Decode::decode(decoder)?,
             static_name_lookup: Decode::decode(decoder)?,
+            eval_mainline_closure: Decode::decode(decoder)?,
             uses_dispatcher: Decode::decode(decoder)?,
             may_observe_named_slurpy: Decode::decode(decoder)?,
             reads_routine_magical: Decode::decode(decoder)?,

@@ -194,6 +194,7 @@ pub(crate) fn first_code_difference(a: &CompiledCode, b: &CompiledCode) -> Optio
         uses_samewith,
         needs_reflective_capture,
         static_name_lookup,
+        eval_mainline_closure,
         uses_dispatcher,
         may_observe_named_slurpy,
         reads_routine_magical,

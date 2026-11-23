@@ -396,7 +396,10 @@ impl Env {
         while !root.frame_root {
             match root.parent.as_deref() {
                 Some(parent) => root = parent,
-                None => return Vec::new(),
+                // A frame flattened into the bottom of its chain keeps its
+                // program scope and declaring activation in a record
+                // (`flattened_recording_program_scope`).
+                None => return root.flattened_frame_scopes(),
             }
         }
         let mut scopes = Vec::new();

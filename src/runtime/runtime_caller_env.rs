@@ -94,7 +94,13 @@ impl Interpreter {
         let entry_env = if flushed.is_empty() {
             self.env.clone()
         } else {
-            let mut env = Env::scoped_child(self.env.clone());
+            // A block tier, not a frame root: the entry is the calling frame,
+            // whose root (and static link, which `CALLER::OUTER::` reads,
+            // #18787) lies below the overlay.
+            let mut env = match Env::open_block_tier(self.env.clone()) {
+                Ok((env, _)) => env,
+                Err(env) => Env::scoped_child(env),
+            };
             for (sym, value) in &flushed {
                 env.insert_sym(*sym, value.clone());
             }
@@ -288,6 +294,10 @@ impl Interpreter {
             // Walking past the top of the call stack is not an error in Raku:
             // the lookup just misses and yields Nil.
             return Ok(Value::NIL);
+        }
+        // `CALLER::OUTER::x` / `CALLER::UNIT::x`: the caller's lexical scopes.
+        if let Some(found) = self.caller_lexical_chain_var(name, depth) {
+            return Ok(found);
         }
         let env = &self.caller_env_stack[stack_len - depth];
         // A sigil-less key is looked up as a term (a constant's term key,
