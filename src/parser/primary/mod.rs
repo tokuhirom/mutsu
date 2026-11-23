@@ -725,7 +725,10 @@ pub(in crate::parser) fn is_first_in_source(at: &str) -> bool {
     let Some(prefix) = prefix else {
         return true;
     };
-    matches!(super::helpers::ws_bol(&prefix), Ok((rest, ())) if rest.is_empty())
+    // A UTF-8 byte-order mark opening the file is no statement (#18872's
+    // check rejected `\u{FEFF}use v6;`, HTTP::Core and Math::Constants).
+    let prefix = prefix.strip_prefix('\u{FEFF}').unwrap_or(&prefix);
+    matches!(super::helpers::ws_bol(prefix), Ok((rest, ())) if rest.is_empty())
 }
 
 /// The (at most) `n` characters of the original source right before `at`, or
