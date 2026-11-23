@@ -12,7 +12,7 @@ use crate::parser::helpers::{parse_trait_angle_arg, skip_balanced_parens, ws, ws
 use crate::parser::parse_result::{PError, PResult, parse_char};
 use crate::parser::stmt::sub::parse_single_param;
 use crate::parser::stmt::{
-    ident, keyword, package_body_block_with_terms, parse_param_list, qualified_ident,
+    ident, keyword, package_body_block_with_captures, parse_param_list, qualified_ident,
 };
 
 pub(crate) fn role_type_param_constraint_is_known(type_name: &str) -> bool {
@@ -365,8 +365,19 @@ pub(crate) fn role_decl_with_keyword<'a>(input: &'a str, kw: &str) -> PResult<'a
         .filter(|pd| pd.sigilless)
         .map(|pd| pd.name.as_str())
         .collect();
+    // A type capture `::T` is a term too: `T($v)` calls the bound type, a
+    // coercion (#18939).
+    let captures: Vec<&str> = type_param_defs
+        .iter()
+        .filter_map(|pd| pd.name.strip_prefix(crate::ast::TYPE_CAPTURE_PREFIX))
+        .collect();
     let brace = rest;
-    let (rest, mut body) = package_body_block_with_terms(rest, &sigilless_terms)?;
+    let (rest, mut body) =
+        package_body_block_with_captures(
+            rest,
+            &sigilless_terms,
+            &captures,
+        )?;
     let spans = crate::parser::stmt::sub::package_spans(name_span, brace, rest, &body);
     crate::rakuast::nested_methods::hoist(&mut body);
     // Handle `also is rw;` in the role body

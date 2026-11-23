@@ -401,6 +401,8 @@ pub(crate) fn register_body_type_captures(params: &[crate::ast::ParamDef]) {
     for param in params {
         if let Some(name) = &param.type_capture {
             super::super::simple::register_user_type_verbatim(name);
+            // `T($v)` calls the captured type, a coercion (#18939).
+            super::super::simple::register_user_term_symbol(name);
         }
         if let Some(nested) = &param.sub_signature {
             register_body_type_captures(nested);
