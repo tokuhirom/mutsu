@@ -617,6 +617,9 @@ impl Interpreter {
         // around the load: a transitive `use` inside the module body must
         // resolve with ITS OWN (usually absent) selectors, not the outer ones.
         let (module, dist_selectors) = Self::split_dist_selectors(module);
+        // Another thread loading the same module finishes first, and this
+        // `use` then takes the already-loaded path (ADR-17216).
+        let _claim = self.claim_module_load(module);
         let saved = std::mem::replace(&mut self.module.pending_dist_selectors, dist_selectors);
         // `suppress_exports` is set for the whole duration of an enclosing
         // `CompUnit::Repository.need` load (see `load_module_from_path`), so

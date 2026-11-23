@@ -906,6 +906,8 @@ impl Interpreter {
         // `need` of a unit a `use` (or an earlier `need`) already loaded
         // hands back the same compunit: running its body again redeclares
         // its routines (#14539, CompUnit::Util `load('NativeCall')`).
+        // Another thread loading the same module finishes first (ADR-17216).
+        let _claim = self.claim_module_load(module);
         if self.module.world.loaded_modules.read().contains(module) && self.module_still_registered(module) {
             return Ok(false);
         }
