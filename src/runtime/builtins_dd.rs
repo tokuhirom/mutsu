@@ -13,10 +13,9 @@ impl Interpreter {
         for (i, val) in args.iter().enumerate() {
             // A user-class instance's `.raku` needs the class registry to collect
             // its public attributes, which the static `raku_value` cannot reach
-            // (it would render `F()`).
-            // TODO: compile to bytecode -- only a direct `dd` call gets its
-            // `.raku` from the VM (`__mutsu_dd`); a routine-value call still
-            // renders here.
+            // (it would render `F()`). This is the pre-#19047 fallback, now
+            // reached only by a routine-value call: a direct `dd` call gets
+            // its `.raku` from the VM (`__mutsu_dd`).
             let rendered = if matches!(val.view(), ValueView::Instance { .. }) {
                 self.call_method_with_values(val.clone(), "raku", vec![])
                     .ok()
