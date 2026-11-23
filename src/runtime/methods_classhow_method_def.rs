@@ -80,20 +80,11 @@ impl Interpreter {
             // the multi ranking weighs that position: `(Mu: Str)` ties with
             // `(Late: Cool)` (#18868). A method a class declared (a
             // `^find_method` carrier) keeps its class.
-            if sub_data.env.get("__mutsu_lookup_class").is_none() {
-                match defs.iter_mut().find(|pd| pd.is_invocant) {
-                    Some(invocant) => {
-                        if invocant.type_constraint.is_none() {
-                            invocant.type_constraint = Some("Mu".into());
-                        }
-                    }
-                    None => {
-                        let mut invocant = super::methods_format::positional_param("self");
-                        invocant.is_invocant = true;
-                        invocant.type_constraint = Some("Mu".into());
-                        defs.insert(0, invocant);
-                    }
-                }
+            if sub_data.env.get("__mutsu_lookup_class").is_none()
+                && let Some(invocant) = defs.iter_mut().find(|pd| pd.is_invocant)
+                && invocant.type_constraint.is_none()
+            {
+                invocant.type_constraint = Some("Mu".into());
             }
             defs
         } else {
