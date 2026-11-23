@@ -11,7 +11,8 @@ A routine declared at program scope resolves its names through its static
 link to that scope (ADR-12529), wherever it is called from. So a value call of
 such a routine now binds on the positional light path whenever its signature
 and the arguments admit it, exactly as the direct call does (#18083). A routine
-nested in another routine still runs through its code object's captured env.
+nested in another routine, or declared inside a block, still runs through its
+code object's captured env.
 Named arguments, `is rw`, `state` and the other shapes the light path does not
 take keep the general path.
 
