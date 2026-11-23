@@ -23,7 +23,7 @@ pub(crate) struct ClassAttributes {
     /// The built-in exception class whose table rows `list` still lacks, with
     /// the attributes declared before it was marked. `None` once `list` holds
     /// the full declaration, and for every other class.
-    deferred: Option<Box<Deferred>>,
+    deferred: Option<Deferred>,
     list: OnceLock<Declared>,
 }
 
@@ -47,7 +47,7 @@ impl ClassAttributes {
     // Cost: O(1).
     pub(crate) fn defer_builtin_exception(&mut self, class: Symbol) {
         let base = self.list.take().map(|d| d.attrs).unwrap_or_default();
-        self.deferred = Some(Box::new(Deferred { class, base }));
+        self.deferred = Some(Deferred { class, base });
     }
 
     /// Whether the table rows are still undeclared: the class's accessor rows

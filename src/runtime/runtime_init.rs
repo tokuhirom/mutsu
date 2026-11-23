@@ -1800,14 +1800,19 @@ impl Interpreter {
         // registries below, once `registry` (and its `role_parents`, for
         // transitive flattening) exists.
         let mut register_x_does: Vec<(String, Vec<String>)> = Vec::new();
+        // The MRO is collected in one reused buffer, as symbols, so a class
+        // costs no scratch allocation (#18956).
+        let exception_sym = Symbol::intern("Exception");
+        let mut mro_buf: Vec<Symbol> = Vec::new();
         let mut register_x = |name: &str, parent: &str, does: &[&str]| {
             // Walk up through existing classes to build full MRO, borrowing
             // each name from the class table rather than cloning it per step
             // (this closure runs for every built-in `X::` class at startup).
-            let mut mro: Vec<&str> = vec![name];
+            mro_buf.clear();
+            mro_buf.push(Symbol::intern(name));
             let mut cur = parent;
             loop {
-                mro.push(cur);
+                mro_buf.push(Symbol::intern(cur));
                 if let Some(cls) = classes.get(cur)
                     && let Some(p) = cls.parents.first()
                     && p != cur
@@ -1817,10 +1822,10 @@ impl Interpreter {
                 }
                 break;
             }
-            if !mro.contains(&"Exception") {
-                mro.push("Exception");
+            if !mro_buf.contains(&exception_sym) {
+                mro_buf.push(exception_sym);
             }
-            let mro: std::sync::Arc<[Symbol]> = mro.iter().map(|s| Symbol::intern(s)).collect();
+            let mro: std::sync::Arc<[Symbol]> = std::sync::Arc::from(mro_buf.as_slice());
             classes.insert(
                 name.to_string(),
                 ClassDef {
