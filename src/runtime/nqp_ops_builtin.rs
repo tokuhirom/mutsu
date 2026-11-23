@@ -591,7 +591,7 @@ impl Interpreter {
         {
             return Ok(());
         }
-        if attr_key == "descriptor" && Self::nqp_container_descriptor(obj).is_some() {
+        if attr_key == "descriptor" && Self::has_container_descriptor(obj) {
             return Self::nqp_bind_container_descriptor(obj, &val);
         }
         if Self::nqp_bind_container_storage(attr_key, obj, &val) {

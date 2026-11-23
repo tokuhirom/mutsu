@@ -492,6 +492,11 @@ impl Interpreter {
                 consumed_end = start + (out.consumed - consumed_base);
                 result
             }
+            MapGrepMode::Flat => {
+                let pulled = self.flat_pull_items(items, start, end, max_matches, out);
+                consumed_end = start + (out.consumed - consumed_base);
+                pulled
+            }
             MapGrepMode::Map => match max_matches {
                 Some(limit) => {
                     let fetch =

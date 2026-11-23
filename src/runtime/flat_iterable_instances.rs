@@ -16,8 +16,9 @@ impl Interpreter {
     /// `None` when there is no such instance. `Array` elements are items
     /// (itemized) and are not descended into.
     // Cost: O(n) tag scan over the n elements `flat` would visit, plus the
-    // `iterator` of each instance found. Rakudo: O(1) -- `flat` is lazy there;
-    // see the `todo:perf` issue for this scan.
+    // `iterator` of each instance found. The `flat` sub and a `Seq`
+    // receiver's `.flat` use it; a `List`'s `.flat` defers to its pull
+    // instead (#15962).
     pub(crate) fn expand_iterable_instances(
         &mut self,
         target: &Value,
@@ -97,6 +98,61 @@ impl Interpreter {
             }
         }
         Ok(changed.then_some(out))
+    }
+
+    /// One chunk of a deferred `.flat` ([`crate::value::MapGrepMode::Flat`],
+    /// #15962): flatten the source elements `start..end` in turn, stopping
+    /// once `max_produced` elements were produced. An `Iterable` instance is
+    /// read through its own `iterator` only when the pull reaches it.
+    // Cost: O(t) over the t nodes under the elements consumed, plus the
+    // `iterator` of each `Iterable` instance among them.
+    pub(crate) fn flat_pull_items(
+        &mut self,
+        items: &crate::value::MapGrepItems,
+        start: usize,
+        end: usize,
+        max_produced: Option<usize>,
+        out: &mut crate::value::PullOut,
+    ) -> Result<(), RuntimeError> {
+        let base = out.produced.len();
+        let Some(limit) = max_produced else {
+            for item in items.slice(start, end) {
+                out.consumed += 1;
+                self.flat_one_into(&item, &mut out.produced)?;
+            }
+            return Ok(());
+        };
+        let mut pos = start;
+        while pos < end && out.produced.len() - base < limit {
+            let Some(item) = items.get(pos) else {
+                break;
+            };
+            pos += 1;
+            out.consumed += 1;
+            self.flat_one_into(&item, &mut out.produced)?;
+        }
+        Ok(())
+    }
+
+    /// Append what one element of a flattened `List` contributes to `out`.
+    // Cost: O(t), t = nodes under `item`, plus the `iterator` of each
+    // `Iterable` instance among them.
+    fn flat_one_into(&mut self, item: &Value, out: &mut Vec<Value>) -> Result<(), RuntimeError> {
+        if item.is_scalar_leaf() {
+            out.push(item.clone());
+            return Ok(());
+        }
+        // The pure flattener reads a nested `.map`/`.grep` Seq's elements.
+        self.reify_nested_map_grep_for_read_element(item)?;
+        if Self::may_hold_iterable_instance(item)
+            && let Some(mut expanded) = self.expand_instance_items(std::slice::from_ref(item))?
+            && let Some(expanded) = expanded.pop()
+        {
+            crate::builtins::flat_val(&expanded, out, true);
+            return Ok(());
+        }
+        crate::builtins::flat_val(item, out, true);
+        Ok(())
     }
 
     /// Whether a list-like `target` has an element `flat` would have to ask

@@ -195,8 +195,16 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         // `(C.new, 9).flat` reads the `iterator` of an `Iterable` element
         // (#15322); the pure flattener cannot, so expand those elements first.
+        // A `List`'s `.flat` defers that to its pull instead (#15962).
         if method_sym.as_str() == "flat"
             && args.is_empty()
+            && !matches!(
+                target.view(),
+                ValueView::Array(
+                    _,
+                    crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList
+                )
+            )
             && Self::flat_may_hold_iterable_instance(target)
             && !match self.user_shadows_builtin(target, method_sym, args, false) {
                 Ok(shadows) => shadows,
