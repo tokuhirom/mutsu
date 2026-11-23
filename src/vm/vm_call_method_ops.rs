@@ -2345,6 +2345,7 @@ impl Interpreter {
                 // proven-pure compiled method path clears this (sets it true),
                 // letting the opcode tail skip the env_dirty mark + per-call pull.
                 self.dispatch.method_dispatch_pure = false;
+                let optional_receiver = (modifier == Some("?")).then(|| target.clone());
                 let call_result = if !skip_native {
                     // .Slip on arrays with `is default(X)`: fill holes with
                     // the default value instead of leaving Package("Any").
@@ -2432,7 +2433,12 @@ impl Interpreter {
                             self.stack.push(val);
                             if mark_dirty {}
                         }
-                        Err(e) if Self::is_method_not_found_error(&e) => {
+                        Err(e)
+                            if e.is_method_not_found_for_receiver(
+                                method,
+                                optional_receiver.as_ref().unwrap(),
+                            ) =>
+                        {
                             crate::vm::vm_stats::record_dispatch_entry_outcome(
                                 "callmethod",
                                 "notfound",
