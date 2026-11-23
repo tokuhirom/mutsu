@@ -155,16 +155,16 @@ pub(super) fn parse_atoms(
                 }
                 // An empty code (`B<>`) is a `Markup` with no atoms (#19091).
                 let (inner, used, inner_meta) =
-                    parse_atoms(body, Some(&closer), META_LETTERS.contains(ch)).map_err(
-                        |why| match why {
+                    parse_atoms(body, Some(&closer), META_LETTERS.contains(ch)).map_err(|why| {
+                        match why {
                             // The code being read names itself; a deeper one
                             // already did.
                             Declined::Unterminated(None) => {
                                 Declined::Unterminated(Some((ch, closer.clone())))
                             }
                             other => other,
-                        },
-                    )?;
+                        }
+                    })?;
                 at += 1 + opener.len() + used;
                 atoms.push(Atom::Markup(Markup {
                     letter: ch,
