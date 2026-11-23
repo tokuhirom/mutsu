@@ -7308,6 +7308,11 @@ pub(crate) struct CompiledCode {
     /// which resets `Interpreter::lexical_fatal_mode` from it at entry
     /// (#11391). False for every other chunk.
     pub(crate) method_fatal_pragma: bool,
+    /// Whether this chunk is compiled under `use v6.c`, where `$_` is
+    /// dynamic, so it may read or assign a caller's `$_` through `CALLER::`;
+    /// from 6.d on such an access is `X::Caller::NotDynamic` (#18988).
+    /// Stamped by the compiler; false for a chunk built outside a compile.
+    pub(crate) caller_topic_dynamic: bool,
     /// Whether a `CX::Succeed` raised inside this code (an explicit `succeed`,
     /// directly or from a routine it calls) unwinds PAST its call boundary.
     ///
@@ -8899,6 +8904,7 @@ impl CompiledCode {
             is_routine: false,
             lexically_in_routine: false,
             method_fatal_pragma: false,
+            caller_topic_dynamic: false,
             succeed_passes_through: false,
             reads_topic: false,
             uses_routine_state: false,

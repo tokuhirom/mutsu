@@ -441,7 +441,17 @@ impl Interpreter {
             return;
         }
         let plan = self.class_body_statics_plan(class_name);
-        for (k, v) in plan.iter() {
+        if plan.writes.is_empty() {
+            return;
+        }
+        // A frame that has written nothing yet takes the pre-built overlay
+        // (#18274): the same entries, without an insert per static per call.
+        if let Some(tier) = &plan.tier
+            && self.env.adopt_fresh_overlay(tier)
+        {
+            return;
+        }
+        for (k, v) in plan.writes.iter() {
             self.env.insert_sym_noting(*k, v.clone());
         }
     }
@@ -465,7 +475,11 @@ impl Interpreter {
     }
 
     // Cost: O(s), s = statics of `class_name`.
-    fn collect_own_class_body_statics(&self, class_name: &str, out: &mut Vec<(Symbol, Value)>) {
+    pub(crate) fn collect_own_class_body_statics(
+        &self,
+        class_name: &str,
+        out: &mut Vec<(Symbol, Value)>,
+    ) {
         match self.lexicals.package_lexicals.read().get(class_name) {
             Some(statics) if !statics.is_empty() => {
                 out.extend(statics.iter().map(|(k, v)| (Symbol::intern(k), v.clone())));
@@ -533,11 +547,11 @@ impl Interpreter {
 
     /// [`Self::inject_class_body_statics`], recording each injected name's
     /// previous binding in `saved` so the caller can restore its env.
-    // Cost: O(s), s = statics of `class_name`.
+    // Cost: O(s), s = class-body statics.
     pub(crate) fn inject_class_body_statics_saving(
         &mut self,
         class_name: &str,
-        saved: &mut Vec<(String, Option<Value>)>,
+        saved: &mut Vec<(Symbol, Option<Value>)>,
     ) {
         self.inject_class_body_statics_saving_except(class_name, saved, &[]);
     }
@@ -546,35 +560,43 @@ impl Interpreter {
     /// `except`: the callee's free variables that an enclosing routine of the
     /// callee declares (`CompiledCode::routine_scoped_free`). Those are that
     /// routine's own bindings, not the class body's same-named `my` (#16077).
+    /// The writes are the class's own statics, then their typed lanes, then
+    /// their stale lanes (`Nil`), served from the per-class statics plan
+    /// rather than rebuilt per call (#18274); `except` names plain lexicals,
+    /// never a `__mutsu_` lane key, so filtering every write by it is the
+    /// same as filtering the statics alone.
     // Cost: O(s * e), s = class-body statics, e = |except| (usually 0).
     pub(crate) fn inject_class_body_statics_saving_except(
         &mut self,
         class_name: &str,
-        saved: &mut Vec<(String, Option<Value>)>,
+        saved: &mut Vec<(Symbol, Option<Value>)>,
         except: &[Symbol],
     ) {
-        let to_inject: Vec<(String, Value)> =
-            match self.lexicals.package_lexicals.read().get(class_name) {
-                Some(statics) if !statics.is_empty() => statics
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v.clone()))
-                    .collect(),
-                _ => return,
-            };
-        for (k, v) in to_inject {
-            if except.iter().any(|sym| sym.with_str(|n| n == k)) {
+        if self.lexicals.package_lexicals.read().is_empty() {
+            return;
+        }
+        let plan = self.class_body_statics_plan(class_name);
+        for (k, v) in plan.own.iter() {
+            if except.contains(k) {
                 continue;
             }
-            saved.push((k.clone(), self.env.get(&k).cloned()));
-            self.env.insert(k, v);
+            saved.push((*k, self.env.get_sym(*k).cloned()));
+            self.env.insert_sym_noting(*k, v.clone());
         }
-        for (k, v) in self.class_body_static_meta_lanes(class_name) {
-            saved.push((k.clone(), self.env.get(&k).cloned()));
-            self.env.insert(k, v);
-        }
-        for lane in self.class_body_static_stale_lanes(class_name) {
-            saved.push((lane.resolve(), self.env.get_sym(lane).cloned()));
-            self.env.insert_sym(lane, Value::NIL);
+    }
+
+    /// Put back the bindings [`Self::inject_class_body_statics_saving`]
+    /// displaced, last write first.
+    // Cost: O(s), s = |saved|.
+    pub(crate) fn restore_class_body_statics(
+        &mut self,
+        saved: impl DoubleEndedIterator<Item = (Symbol, Option<Value>)>,
+    ) {
+        for (name, previous) in saved.rev() {
+            match previous {
+                Some(v) => self.env_mut().insert_sym(name, v),
+                None => self.env_mut().remove_sym(name),
+            };
         }
     }
 

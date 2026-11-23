@@ -41,6 +41,7 @@ name_queries! {
     "is-package-lookup" => is_package_lookup,
     "is-pseudo-package" => is_pseudo_package,
     "is-installable" => is_installable,
+    "is-package-search" => is_package_search,
     "has-colonpairs" => has_colonpairs,
     "first-part" => first_part,
     "last-part" => last_part,
@@ -60,11 +61,44 @@ fn qualified_with(target: &Value, args: &[Value]) -> Option<Result<Value, Runtim
     Some(crate::rakuast::name_queries::qualified_with(node, &args[0]))
 }
 
-pub(super) static ONE_ARG_ROWS: &[MethodRow] = &[MethodRow {
-    owner: "RakuAST::Name",
-    name: "qualified-with",
-    arity: 1,
-    handler: Handler::Narrow(qualified_with),
-    flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
-    named: &[],
-}];
+/// A row and its handler for one query that takes a colonpair key.
+macro_rules! key_queries {
+    ($($method:literal => $handler:ident),* $(,)?) => {
+        $(
+            // Cost: O(c + p), c = colonpairs, p = parts of the name.
+            fn $handler(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+                let base = native_node(target)?;
+                let ValueView::RakuAst(node) = base.view() else {
+                    return None;
+                };
+                let key = args.first()?.to_string_value();
+                crate::rakuast::name_queries::call_with_key(node, $method, &key).map(Ok)
+            }
+        )*
+
+        pub(super) static ONE_ARG_ROWS: &[MethodRow] = &[
+            MethodRow {
+                owner: "RakuAST::Name",
+                name: "qualified-with",
+                arity: 1,
+                handler: Handler::Narrow(qualified_with),
+                flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+                named: &[],
+            },
+            $(MethodRow {
+                owner: "RakuAST::Name",
+                name: $method,
+                arity: 1,
+                handler: Handler::Narrow($handler),
+                flags: RowFlags::OWNER_ONLY.or(RowFlags::ANY_ARGS),
+                named: &[],
+            },)*
+        ];
+    };
+}
+
+key_queries! {
+    "has-colonpair" => has_colonpair,
+    "first-colonpair" => first_colonpair,
+    "without-colonpair" => without_colonpair,
+}

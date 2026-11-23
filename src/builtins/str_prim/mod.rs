@@ -240,6 +240,7 @@ pub(crate) fn affix_matches(v: &Value, needle: &str, is_prefix: bool, fold: Fold
 /// `"\r\n"` answers `\r`). `None` past the end.
 ///
 /// Cost: O(1) amortized for a flat string, O(STRIDE) otherwise.
+#[inline]
 pub(crate) fn char_at(text: &str, idx: &GraphemeIndex, g: usize) -> Option<char> {
     if g >= idx.len() {
         return None;
@@ -285,6 +286,7 @@ pub(crate) fn nqp_ordbaseat(v: &Value, pos: i64) -> i64 {
 /// [`nqp_ordat`] over a string whose grapheme index the caller already holds.
 ///
 /// Cost: as [`char_at`].
+#[inline]
 pub(crate) fn ordat_in(text: &str, idx: &GraphemeIndex, pos: i64) -> i64 {
     usize::try_from(pos)
         .ok()

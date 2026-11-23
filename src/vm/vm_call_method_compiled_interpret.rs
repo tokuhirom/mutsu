@@ -665,6 +665,7 @@ impl Interpreter {
                     && Self::candidate_is_slurpy_only(&method_def)
                     && self.user_candidates_all_outranked_by_builtin(cn, method))
             {
+                self.take_dispatch_ambiguity(cn, method)?;
                 // A public attribute accessor can win over the method that
                 // resolution picked: a child class's accessor shadows a
                 // parent's explicit method (the accessor is a method at the
