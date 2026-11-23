@@ -289,6 +289,19 @@ impl Interpreter {
     /// `depth` is the number of CALLER:: levels (1 for $CALLER::x, 2 for $CALLER::CALLER::x).
     /// `name` is the bare variable name without sigil (e.g. "a" for $a).
     pub(crate) fn get_caller_var(&self, name: &str, depth: usize) -> Result<Value, RuntimeError> {
+        self.caller_var_lookup(name, depth, true)
+    }
+
+    /// [`Self::get_caller_var`]; `caller_topic_strict` says whether the
+    /// caller's `$_` is refused as not dynamic (`CALLER::`, #18988) rather
+    /// than read (`CALLERS::` reads it).
+    // Cost: O(t), t = the frame's tiers.
+    fn caller_var_lookup(
+        &self,
+        name: &str,
+        depth: usize,
+        caller_topic_strict: bool,
+    ) -> Result<Value, RuntimeError> {
         let stack_len = self.caller_env_stack.len();
         if depth == 0 || depth > stack_len {
             // Walking past the top of the call stack is not an error in Raku:
@@ -313,7 +326,9 @@ impl Interpreter {
         };
         if let Some(val) = found {
             // Check that the variable is declared `is dynamic`
-            if !self.is_var_dynamic(name) {
+            if !self.is_var_dynamic(name)
+                || (caller_topic_strict && self.caller_topic_is_not_dynamic(name))
+            {
                 return Err(crate::runtime::utils::caller_not_dynamic_error(reported));
             }
             Ok(val.clone())
@@ -380,7 +395,7 @@ impl Interpreter {
             // 6.e: a found symbol that is not dynamic is a Failure of
             // `X::Symbol::NotDynamic` through `CALLERS::` (`CALLER::` still
             // throws `X::Caller::NotDynamic`).
-            return match self.get_caller_var(name, depth) {
+            return match self.caller_var_lookup(name, depth, false) {
                 Err(err)
                     if crate::parser::current_language_version_starts_with("6.e")
                         && err.exception.as_deref().is_some_and(|ex| {
@@ -451,7 +466,7 @@ impl Interpreter {
                 "Cannot access caller variable '${name}' — not enough caller frames"
             )));
         }
-        if !self.is_var_dynamic(name) {
+        if !self.is_var_dynamic(name) || self.caller_topic_is_not_dynamic(name) {
             return Err(crate::runtime::utils::caller_not_dynamic_error(name));
         }
         if name == "_" && depth == 1 {
@@ -804,6 +819,13 @@ impl Interpreter {
             return Err(RuntimeError::new(format!(
                 "Cannot access caller variable '${target_name}' — not enough caller frames"
             )));
+        }
+        // The caller's own `$_` is not dynamic, but a bind reaches it
+        // (`$CALLER::_ := $v`), as `CALLER::<$_> := $v` does (#18988).
+        if target_name == "_" && depth == 1 {
+            let source_val = self.env.get(source_name).cloned().unwrap_or(Value::NIL);
+            self.bind_caller_implicit_lexical("_", source_val);
+            return Ok(());
         }
         if !self.is_var_dynamic(target_name) {
             return Err(RuntimeError::new(format!(

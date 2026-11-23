@@ -873,12 +873,9 @@ impl Compiler {
             && let Some(key_name) = lit.as_str()
             && (stash_name != "DYNAMIC::"
                 || (matches!(value, Expr::IndexBindValue(_)) && key_name.get(1..2) == Some("*")))
-            // A `CALLER::` bind reaches the caller's own `$_`/`$/`/`$!`
-            // (#17453); its other names, and an assignment, keep the generic
-            // stash path.
-            && (stash_name != "CALLER::"
-                || (matches!(value, Expr::IndexBindValue(_))
-                    && matches!(key_name, "$_" | "$/" | "$!")))
+            // A `CALLER::` store reaches the caller's own `$_`/`$/`/`$!`
+            // (#17453, #18988); its other names keep the generic stash path.
+            && (stash_name != "CALLER::" || matches!(key_name, "$_" | "$/" | "$!"))
         {
             // `PROCESS::<$x> := $!attr` / `:= $var` binds the source's own
             // container, like an element bind (`%h<k> := $!attr`): compile the
