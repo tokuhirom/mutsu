@@ -9,7 +9,9 @@
 //! `is-block-statement`, `origin.is-key`, `visit-children`), so it is as
 //! exact as they are.
 
-use crate::rakuast::{RakuAstClass, RakuAstFieldValue, RakuAstNode, node_accessor, origin_value_of, unit_source};
+use crate::rakuast::{
+    RakuAstClass, RakuAstFieldValue, RakuAstNode, node_accessor, origin_value_of, unit_source,
+};
 use crate::value::{Value, ValueView};
 
 /// `$node.dump($indent)`.
