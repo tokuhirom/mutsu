@@ -34,7 +34,7 @@ fn carrier_compiles(src: &str) -> u64 {
 
 fn parses(n: u32) -> String {
     format!(
-        "grammar G {{ token TOP {{ :my $*d = 1; a <x(2)> }} token x($k) {{ b }} }}\n\
+        "grammar G {{ token TOP {{ :my $*d = 1; a <x(2)> }}; token x($k) {{ b }} }}\n\
          my $c = 0; for ^{n} {{ $c++ if G.parse('ab') }}; say $c"
     )
 }

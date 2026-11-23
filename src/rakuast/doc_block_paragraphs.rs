@@ -68,15 +68,15 @@ pub(crate) fn from_paragraphs(args: &[Value]) -> Result<Value, RuntimeError> {
                     None => out.push(first),
                 }
                 rest_parts.extend(parts);
-                implicit_code_blocks(&rest_parts, &mut out);
+                implicit_code_blocks(&rest_parts, &mut out)?;
             }
         }
-        k if IMPLICIT.contains(&k) => implicit_code_blocks(&paragraphs, &mut out),
+        k if IMPLICIT.contains(&k) => implicit_code_blocks(&paragraphs, &mut out)?,
         _ => {
             out = paragraphs
                 .into_iter()
                 .map(|p| from_string_value(&p))
-                .collect()
+                .collect::<Result<_, _>>()?
         }
     }
     for paragraph in out {
@@ -168,10 +168,10 @@ fn marginalize(margin: &str, raw: Vec<Value>) -> Result<Vec<Value>, RuntimeError
 
 /// `Paragraph.from-string($text)` of a string paragraph; a node stays.
 // Cost: O(n), n = length of the text.
-fn from_string_value(paragraph: &Value) -> Value {
+fn from_string_value(paragraph: &Value) -> Result<Value, RuntimeError> {
     match paragraph.as_str() {
         Some(text) => super::doc_edit::paragraph_from_text(text),
-        None => paragraph.clone(),
+        None => Ok(paragraph.clone()),
     }
 }
 
@@ -193,28 +193,30 @@ fn node_leading_ws(paragraph: &Value) -> String {
 /// `!interpret-implicit-code-blocks(@paragraphs)`: lines indented deeper than
 /// the text around them become `implicit-code` blocks, the rest paragraphs.
 // Cost: O(n), n = size of the paragraphs.
-fn implicit_code_blocks(paragraphs: &[Value], out: &mut Vec<Value>) {
+fn implicit_code_blocks(paragraphs: &[Value], out: &mut Vec<Value>) -> Result<(), RuntimeError> {
     let mut ws = String::new();
     let mut offset = 0usize;
     let mut lines: Vec<String> = Vec::new();
     let mut codes: Vec<String> = Vec::new();
     let add_lines = |lines: &mut Vec<String>, out: &mut Vec<Value>| {
         if !lines.is_empty() {
-            out.push(super::doc_edit::paragraph_from_text(&lines.concat()));
+            out.push(super::doc_edit::paragraph_from_text(&lines.concat())?);
             lines.clear();
         }
+        Ok::<(), RuntimeError>(())
     };
     let add_codes = |codes: &mut Vec<String>, ws: &str, out: &mut Vec<Value>| {
         if !codes.is_empty() {
-            let paragraph = super::doc_edit::paragraph_from_text(&codes.concat());
+            let paragraph = super::doc_edit::paragraph_from_text(&codes.concat())?;
             out.push(implicit_code(ws, paragraph));
             codes.clear();
         }
+        Ok::<(), RuntimeError>(())
     };
     for paragraph in paragraphs {
         let Some(text) = paragraph.as_str() else {
-            add_codes(&mut codes, &ws, out);
-            add_lines(&mut lines, out);
+            add_codes(&mut codes, &ws, out)?;
+            add_lines(&mut lines, out)?;
             ws = node_leading_ws(paragraph);
             offset = ws.chars().count();
             out.push(paragraph.clone());
@@ -239,29 +241,30 @@ fn implicit_code_blocks(paragraphs: &[Value], out: &mut Vec<Value>) {
                 let line_ws = leading_ws(line).to_string();
                 let leading = line_ws.chars().count();
                 if leading > offset {
-                    add_lines(&mut lines, out);
+                    add_lines(&mut lines, out)?;
                     if codes.is_empty() {
                         ws = line_ws;
                         offset = leading;
                     }
                     codes.push(after_chars(line, offset).to_string());
                 } else if leading > 0 {
-                    add_codes(&mut codes, &ws, out);
+                    add_codes(&mut codes, &ws, out)?;
                     ws = line_ws;
                     offset = leading;
                     codes.push(after_chars(line, offset).to_string());
                 } else {
-                    add_codes(&mut codes, &ws, out);
+                    add_codes(&mut codes, &ws, out)?;
                     ws = line_ws;
                     offset = leading;
                     lines.push(line.trim_start().to_string());
                 }
             }
         }
-        add_lines(&mut lines, out);
+        add_lines(&mut lines, out)?;
     }
-    add_codes(&mut codes, &ws, out);
-    add_lines(&mut lines, out);
+    add_codes(&mut codes, &ws, out)?;
+    add_lines(&mut lines, out)?;
+    Ok(())
 }
 
 /// `Doc::Block.new(:margin($ws), :type<implicit-code>, :paragraphs(...))`.

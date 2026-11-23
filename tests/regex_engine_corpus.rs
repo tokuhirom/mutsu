@@ -798,7 +798,7 @@ it,it,it
 // the caller's loop; the Match tree it files is pinned.
 corpus_case!(
     subrule_calls_plain_and_ratchet,
-    r#"grammar G { token TOP { <a> <b> } token a { \d+ } token b { <c> | 'x' } token c { <[a..c]>+ } }; my $m = G.parse("12abc"); say $m.gist; say $m<a>.Str, $m<b>.Str, $m<b><c>.Str; say G.parse("12x").gist; say G.parse("12d").so"#,
+    r#"grammar G { token TOP { <a> <b> }; token a { \d+ }; token b { <c> | 'x' }; token c { <[a..c]>+ } }; my $m = G.parse("12abc"); say $m.gist; say $m<a>.Str, $m<b>.Str, $m<b><c>.Str; say G.parse("12x").gist; say G.parse("12d").so"#,
     r#"｢12abc｣
  a => ｢12｣
  b => ｢abc｣
@@ -812,7 +812,7 @@ False
 );
 corpus_case!(
     subrule_calls_resume_into_a_non_ratchet_callee,
-    r#"grammar H { regex TOP { <w> <w> } regex w { \w+ } }; say H.parse("abcd")<w>.map(*.Str).join(","); say ("abcd" ~~ / <H::w> 'd' /).gist; say ("abcd" ~~ / <H::w> <H::w> /).gist; my @log; grammar K { regex TOP { <r> 'c' } regex r { \w* { @log.push($/.Str) } } }; say K.parse("abc").so; say @log.join(",")"#,
+    r#"grammar H { regex TOP { <w> <w> }; regex w { \w+ } }; say H.parse("abcd")<w>.map(*.Str).join(","); say ("abcd" ~~ / <H::w> 'd' /).gist; say ("abcd" ~~ / <H::w> <H::w> /).gist; my @log; grammar K { regex TOP { <r> 'c' }; regex r { \w* { @log.push($/.Str) } } }; say K.parse("abc").so; say @log.join(",")"#,
     r#"abc,d
 ｢abcd｣
  H::w => ｢abc｣
@@ -825,7 +825,7 @@ abc,ab
 );
 corpus_case!(
     subrule_calls_dedup_a_callees_ends,
-    r#"my @log; grammar D { regex TOP { <d> 'b'? { @log.push("t") } } regex d { a || a || ab } }; say D.parse("ab").gist; say D.parse("a").gist; say @log.join(",")"#,
+    r#"my @log; grammar D { regex TOP { <d> 'b'? { @log.push("t") } }; regex d { a || a || ab } }; say D.parse("ab").gist; say D.parse("a").gist; say @log.join(",")"#,
     r#"｢ab｣
  d => ｢a｣
 ｢a｣
@@ -846,7 +846,7 @@ True
 );
 corpus_case!(
     quantified_subrule_calls,
-    r#"grammar R { token TOP { <a>+ <b>* <c>? <d> } token a { 'a' } token b { 'b' } token c { 'c' } token d { 'd' } }; my $r = R.parse("aaabbcd"); say $r.so; say $r<a>.elems, " ", $r<b>.elems, " ", ($r<c>.defined ?? "c" !! "-"); say R.parse("aad")<c>.defined; say R.parse("ad")<b>.elems; grammar S { regex TOP { <w> <w> <w> } regex w { \w ** 1..3 } }; say S.parse("abcdefgh")<w>.map(*.Str).join(","); say S.parse("abcde")<w>.map(*.Str).join(",")"#,
+    r#"grammar R { token TOP { <a>+ <b>* <c>? <d> }; token a { 'a' }; token b { 'b' }; token c { 'c' }; token d { 'd' } }; my $r = R.parse("aaabbcd"); say $r.so; say $r<a>.elems, " ", $r<b>.elems, " ", ($r<c>.defined ?? "c" !! "-"); say R.parse("aad")<c>.defined; say R.parse("ad")<b>.elems; grammar S { regex TOP { <w> <w> <w> }; regex w { \w ** 1..3 } }; say S.parse("abcdefgh")<w>.map(*.Str).join(","); say S.parse("abcde")<w>.map(*.Str).join(",")"#,
     r#"True
 3 2 c
 False
@@ -857,7 +857,7 @@ abc,d,e
 );
 corpus_case!(
     goal_matches,
-    r#"grammar Q { token TOP { <list> } rule list { '[' ~ ']' <item>* % ',' } token item { <num> | <word> | <list> } token num { \d+ } token word { <[a..z]>+ } }; my $m = Q.parse("[1, ab, [2,3], c]"); say $m.so; say $m<list><item>.elems; say $m<list><item>[2]<list><item>.map(*.Str).join("+"); say Q.parse("[1, ab").so; say ("x(a)y" ~~ / '(' ~ ')' (\w) /).gist; say ("x(a" ~~ / '(' ~ ')' (\w) /).gist; say ("((a))" ~~ / '(' ~ ')' [ <-[()]>+ | <?before '('> $<in>=[ '(' ~ ')' <-[()]>+ ] ] /).gist"#,
+    r#"grammar Q { token TOP { <list> }; rule list { '[' ~ ']' <item>* % ',' }; token item { <num> | <word> | <list> }; token num { \d+ }; token word { <[a..z]>+ } }; my $m = Q.parse("[1, ab, [2,3], c]"); say $m.so; say $m<list><item>.elems; say $m<list><item>[2]<list><item>.map(*.Str).join("+"); say Q.parse("[1, ab").so; say ("x(a)y" ~~ / '(' ~ ')' (\w) /).gist; say ("x(a" ~~ / '(' ~ ')' (\w) /).gist; say ("((a))" ~~ / '(' ~ ')' [ <-[()]>+ | <?before '('> $<in>=[ '(' ~ ')' <-[()]>+ ] ] /).gist"#,
     r#"True
 4
 2+3
@@ -871,7 +871,7 @@ Nil
 );
 corpus_case!(
     subrule_recursion_and_left_recursion,
-    r#"grammar N { token TOP { <list> } token list { '[' <list>* ']' } }; say N.parse("[" x 200 ~ "]" x 200).so; say N.parse("[[]" ~ "]").so; grammar L { token TOP { <e> } token e { <e> '+' <n> | <n> } token n { \d } }; say L.parse("1+2+3").so; say L.parse("1+2+")"#,
+    r#"grammar N { token TOP { <list> }; token list { '[' <list>* ']' } }; say N.parse("[" x 200 ~ "]" x 200).so; say N.parse("[[]" ~ "]").so; grammar L { token TOP { <e> }; token e { <e> '+' <n> | <n> }; token n { \d } }; say L.parse("1+2+3").so; say L.parse("1+2+")"#,
     r#"True
 True
 True
@@ -880,7 +880,7 @@ Nil
 );
 corpus_case!(
     subrule_captures_in_groups_and_aliases,
-    r#"grammar G { token TOP { (<a> <b>) <x=a> $<y>=<b> [ <a> <b> ]+ } token a { 'a' } token b { 'b' } }; my $m = G.parse("ababababab"); say $m.so; say $m[0]<a>.Str, $m[0]<b>.Str; say $m<x>.Str, $m<y>.Str; say $m<a>.elems, $m<b>.elems; say $m.gist"#,
+    r#"grammar G { token TOP { (<a> <b>) <x=a> $<y>=<b> [ <a> <b> ]+ }; token a { 'a' }; token b { 'b' } }; my $m = G.parse("ababababab"); say $m.so; say $m[0]<a>.Str, $m[0]<b>.Str; say $m<x>.Str, $m<y>.Str; say $m<a>.elems, $m<b>.elems; say $m.gist"#,
     r#"True
 ab
 ab
@@ -907,7 +907,7 @@ ab
 // on the side merged last keep the folded levels.
 corpus_case!(
     separated_quantifiers_filing_in_place,
-    r#"grammar G { rule TOP { <item>* % ',' } token item { \w+ } }; say G.parse("a, bb, c")<item>».Str.join("|"); grammar H { token TOP { [ <k> '=' <v> ]+ % ';' } token k { \w } token v { \d } }; my $m = H.parse("a=1;b=2"); say $m<k>».Str, $m<v>».Str, $m<k>.^name; say H.parse("a=1")<v>.^name; grammar J { token TOP { <x>+ % <x> } token x { \w } }; say J.parse("abc")<x>».Str.join("|"); grammar K { token TOP { <i>+ % (',') } token i { \d } }; my $k = K.parse("1,2,3"); say $k<i>».Str.join("|"), " ", $k[0]».Str.join("|"); grammar M { token TOP { [ <d>+ ]+ % '-' } token d { \d } }; say M.parse("12-3")<d>».Str.join("|"); grammar A { token TOP { [ <x=item> ]+ % ',' } token item { \w } }; my $a = A.parse("p,q"); say $a<x>».Str.join("|"), $a<item>».Str.join("|"), $a<x>[1] === $a<item>[1]; grammar Z { token TOP { <item>* % ',' } token item { \w } }; say Z.parse("")<item>.^name"#,
+    r#"grammar G { rule TOP { <item>* % ',' }; token item { \w+ } }; say G.parse("a, bb, c")<item>».Str.join("|"); grammar H { token TOP { [ <k> '=' <v> ]+ % ';' }; token k { \w }; token v { \d } }; my $m = H.parse("a=1;b=2"); say $m<k>».Str, $m<v>».Str, $m<k>.^name; say H.parse("a=1")<v>.^name; grammar J { token TOP { <x>+ % <x> }; token x { \w } }; say J.parse("abc")<x>».Str.join("|"); grammar K { token TOP { <i>+ % (',') }; token i { \d } }; my $k = K.parse("1,2,3"); say $k<i>».Str.join("|"), " ", $k[0]».Str.join("|"); grammar M { token TOP { [ <d>+ ]+ % '-' }; token d { \d } }; say M.parse("12-3")<d>».Str.join("|"); grammar A { token TOP { [ <x=item> ]+ % ',' }; token item { \w } }; my $a = A.parse("p,q"); say $a<x>».Str.join("|"), $a<item>».Str.join("|"), $a<x>[1] === $a<item>[1]; grammar Z { token TOP { <item>* % ',' }; token item { \w } }; say Z.parse("")<item>.^name"#,
     r#"a|bb|c
 [a b][1 2]Array
 Array
@@ -920,7 +920,7 @@ Array
 );
 corpus_case!(
     goal_matches_filing_in_place,
-    r#"grammar G { rule TOP { '[' ~ ']' <list> } rule list { <item>* % ',' } token item { \w+ } }; say G.parse("[a, bb, c ]")<list><item>».Str.join("|"); grammar P { token TOP { '(' ~ ')' (\d+) } }; my $p = P.parse("(42)"); say ~$p[0], $p.list.elems; grammar Q { token TOP { '(' ~ <close> <body> } token close { ')' } token body { \w+ } }; my $q = Q.parse("(xy)"); say ~$q<body>, ~$q<close>; grammar R { token TOP { '{' ~ '}' [ <k> ':' <k> ] } token k { \w } }; say R.parse(q[{a:b}])<k>».Str.join("|"); grammar S { token TOP { <a> '(' ~ ')' <a> } token a { \w } }; say S.parse("x(y)")<a>».Str.join("|"); grammar T { token TOP { '(' ~ <a> <a>+ } token a { \w } }; say T.parse("(bcd")<a>».Str.join("|"); grammar U { token TOP { '(' ~ ')' \d+ } }; say U.parse("(12").so"#,
+    r#"grammar G { rule TOP { '[' ~ ']' <list> }; rule list { <item>* % ',' }; token item { \w+ } }; say G.parse("[a, bb, c ]")<list><item>».Str.join("|"); grammar P { token TOP { '(' ~ ')' (\d+) } }; my $p = P.parse("(42)"); say ~$p[0], $p.list.elems; grammar Q { token TOP { '(' ~ <close> <body> }; token close { ')' }; token body { \w+ } }; my $q = Q.parse("(xy)"); say ~$q<body>, ~$q<close>; grammar R { token TOP { '{' ~ '}' [ <k> ':' <k> ] }; token k { \w } }; say R.parse(q[{a:b}])<k>».Str.join("|"); grammar S { token TOP { <a> '(' ~ ')' <a> }; token a { \w } }; say S.parse("x(y)")<a>».Str.join("|"); grammar T { token TOP { '(' ~ <a> <a>+ }; token a { \w } }; say T.parse("(bcd")<a>».Str.join("|"); grammar U { token TOP { '(' ~ ')' \d+ } }; say U.parse("(12").so"#,
     r#"a|bb|c
 421
 xy)

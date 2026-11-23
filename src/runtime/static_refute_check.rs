@@ -10,8 +10,13 @@
 //! It judges only what it can know without running anything:
 //!
 //! - the callee is a plain `sub` declared once in the whole unit, at its top
-//!   level: no `multi`, no `proto`, no other declaration of the name at any
-//!   depth, and no `&name` anywhere (a rebinding or wrap could replace it);
+//!   level, or the unit's top-level `multi` candidates (with at most one
+//!   `proto`): no other declaration of the name at any depth, and no `&name`
+//!   anywhere (a rebinding or wrap could replace it). A multi is judged only
+//!   when nothing else can add candidates: its name is no core or `Test`
+//!   routine, and the unit imports no module. It is refuted when every
+//!   candidate is, by the dispatcher's rules: a default, a `:D` smiley and an
+//!   optional named parameter do not save a candidate;
 //! - every argument is a literal (`Int`, `Num`, `Rat`, `Str`, `Bool`, `Nil`)
 //!   and none is named;
 //! - the refutation is an arity mismatch, a required named parameter with no
@@ -54,6 +59,10 @@ struct Survey<'ast> {
     decls: HashMap<String, usize>,
     /// Names that appear as `&name` or as a declared `&name` variable.
     code_vars: HashSet<String>,
+    /// Whether the unit imports names from a module (`use`, `need`,
+    /// `import`), whose `multi` candidates it cannot see. `Test` exports only
+    /// its own functions, which are never judged.
+    imports: bool,
     /// Names declared as a type anywhere in the unit.
     type_decls: HashSet<String>,
     /// Every by-name call whose arguments are all literals, in source order.
@@ -106,6 +115,12 @@ impl<'ast> Visit<'ast> for Survey<'ast> {
                 if kind == NameKind::Decl {
                     self.type_decls.insert(name.to_string());
                 }
+            }
+            NameKind::Module
+                if name != "Test"
+                    && !super::undeclared_routines::module_imports_no_names(name) =>
+            {
+                self.imports = true;
             }
             NameKind::CodeVar | NameKind::VarDecl | NameKind::Param | NameKind::BlockParam
                 if kind == NameKind::CodeVar || name.starts_with('&') =>
@@ -170,15 +185,33 @@ fn literal_call_args(args: &[CallArg]) -> Option<Vec<Value>> {
         .collect()
 }
 
+/// Which of rakudo's two static checks judges a callee: an `only` sub's, or a
+/// multi's, which tries every candidate as the dispatcher would.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Rules {
+    Only,
+    Multi,
+}
+
 /// The parameter type a positional literal must match, or `None` when the
-/// binder, not the signature, decides (a default, `is rw`, a smiley, a
-/// coercion or parametric type, a type the unit declares itself).
+/// binder, not the signature, decides (`is rw`, a coercion or parametric
+/// type, a type the unit declares itself; for an `only` sub also a default
+/// and a smiley, which a multi candidate's dispatch still judges: a literal
+/// is defined, so `Int:D` is `Int` for it).
 // Cost: O(t), t = length of the type name.
-fn judged_type<'a>(param: &'a ParamDef, user_types: &HashSet<String>) -> Option<&'a str> {
-    if param.default.is_some() || param.traits.iter().any(|t| t == "rw") {
+fn judged_type<'a>(
+    param: &'a ParamDef,
+    user_types: &HashSet<String>,
+    rules: Rules,
+) -> Option<&'a str> {
+    if param.traits.iter().any(|t| t == "rw") || (rules == Rules::Only && param.default.is_some())
+    {
         return None;
     }
-    let declared = param.type_constraint.as_deref();
+    let declared = param.type_constraint.as_deref().map(|ty| match rules {
+        Rules::Multi => ty.strip_suffix(":D").unwrap_or(ty),
+        Rules::Only => ty,
+    });
     let ty = match (declared, param.name.chars().next()) {
         (Some(ty), _) => ty,
         (None, Some('@')) => "Positional",
@@ -216,34 +249,24 @@ impl Interpreter {
         if survey.sites.is_empty() {
             return Ok(());
         }
-        let callees: HashMap<&str, &[ParamDef]> = stmts
-            .iter()
-            .filter_map(|stmt| match stmt {
-                Stmt::SubDecl {
-                    name,
-                    name_expr: None,
-                    param_defs,
-                    signature_alternates,
-                    multi: false,
-                    ..
-                } if signature_alternates.is_empty() => Some((name.as_str(), param_defs.as_slice())),
-                _ => None,
-            })
-            .filter(|(name, _)| {
-                survey.decls.get(*name) == Some(&1) && !survey.code_vars.contains(*name)
-            })
-            .collect();
+        let callees = callees(stmts, &survey);
         for (index, site) in survey.sites.iter().enumerate() {
-            let Some(params) = callees.get(site.name) else {
+            let Some((rules, candidates)) = callees.get(site.name) else {
                 continue;
             };
-            if !self.refutes(params, &site.args, &survey.type_decls) {
+            let refuted = candidates
+                .iter()
+                .all(|params| self.refutes(params, &site.args, &survey.type_decls, *rules));
+            if !refuted {
                 continue;
             }
             let Some(at) = call_offset(&survey.sites, index, source) else {
                 continue;
             };
-            return Err(refutation_error(site.name, params, &site.args, source, at));
+            if written_with_word_quote(source, at + site.name.len(), site.span) {
+                continue;
+            }
+            return Err(refutation_error(site.name, *rules, candidates, &site.args, source, at));
         }
         Ok(())
     }
@@ -251,7 +274,13 @@ impl Interpreter {
     /// Whether no binding of `args` to `params` can ever succeed, by the
     /// rules rakudo's optimizer applies (see the module docs).
     // Cost: O(p + a * t), p = parameters, a = arguments, t = one type match.
-    fn refutes(&mut self, params: &[ParamDef], args: &[Value], user_types: &HashSet<String>) -> bool {
+    fn refutes(
+        &mut self,
+        params: &[ParamDef],
+        args: &[Value],
+        user_types: &HashSet<String>,
+        rules: Rules,
+    ) -> bool {
         let unjudged = |p: &ParamDef| {
             p.type_capture.is_some()
                 || p.target == crate::ast::ParamTarget::TypeCapture
@@ -265,7 +294,8 @@ impl Interpreter {
         // rakudo's optimizer does not judge a signature with an optional
         // named parameter at all (`sub f($n, :$a) {}; f(1, 2)` is the
         // run-time "Too many positionals passed").
-        let optional_named = |p: &ParamDef| p.named && !p.required;
+        // A multi candidate's dispatch judges it all the same.
+        let optional_named = |p: &ParamDef| rules == Rules::Only && p.named && !p.required;
         if params.is_empty() || params.iter().any(|p| unjudged(p) || optional_named(p)) {
             return false;
         }
@@ -293,9 +323,64 @@ impl Interpreter {
             return true;
         }
         fixed.iter().zip(args).any(|(param, arg)| {
-            judged_type(param, user_types).is_some_and(|ty| !self.type_matches_value(ty, arg))
+            judged_type(param, user_types, rules)
+                .is_some_and(|ty| !self.type_matches_value(ty, arg))
         })
     }
+}
+
+/// The callees the pass judges, by name: an `only` sub declared once at the
+/// unit's top level, or the unit's top-level `multi` candidates (with their
+/// `proto`, if any) when the name is declared nowhere else; never a name
+/// written as `&name`.
+// Cost: O(s), s = top-level statements.
+fn callees<'ast>(
+    stmts: &'ast [Stmt],
+    survey: &Survey<'_>,
+) -> HashMap<&'ast str, (Rules, Vec<&'ast [ParamDef]>)> {
+    let mut found: HashMap<&str, (Rules, Vec<&[ParamDef]>)> = HashMap::new();
+    let mut protos: HashMap<&str, usize> = HashMap::new();
+    for stmt in stmts {
+        match stmt {
+            Stmt::SubDecl {
+                name,
+                name_expr: None,
+                param_defs,
+                signature_alternates,
+                multi,
+                ..
+            } if signature_alternates.is_empty() => {
+                let rules = if *multi { Rules::Multi } else { Rules::Only };
+                let entry = found.entry(name.as_str()).or_insert((rules, Vec::new()));
+                if entry.0 != rules {
+                    entry.1.clear();
+                    entry.0 = Rules::Only;
+                    continue;
+                }
+                entry.1.push(param_defs.as_slice());
+            }
+            Stmt::ProtoDecl { name, .. } => *protos.entry(name.as_str()).or_insert(0) += 1,
+            _ => {}
+        }
+    }
+    found.retain(|name, (rules, candidates)| {
+        let protos = protos.get(name).copied().unwrap_or(0);
+        let declared = survey.decls.get(*name).copied().unwrap_or(0);
+        // A `multi` adds to the candidates a core routine of the same name
+        // already has (`multi min(Int $a)`), which the unit does not show.
+        let whole = match rules {
+            Rules::Only => candidates.len() == 1 && protos == 0,
+            Rules::Multi => {
+                !candidates.is_empty()
+                    && protos <= 1
+                    && !survey.imports
+                    && !Interpreter::is_builtin_function(name)
+                    && !Interpreter::is_test_function_name(name)
+            }
+        };
+        whole && declared == candidates.len() + protos && !survey.code_vars.contains(*name)
+    });
+    found
 }
 
 /// The byte offset of the `index`-th site's call in `source`: the k-th
@@ -316,6 +401,21 @@ fn call_offset(sites: &[Site<'_>], index: usize, source: &str) -> Option<usize> 
     let text = source.get(span.from as usize..span.to as usize)?;
     let occurrences = word_occurrences(text, site.name);
     (occurrences.len() == total).then(|| span.from as usize + occurrences[rank])
+}
+
+/// Whether the rest of the call's statement, from byte `from`, holds a word
+/// quote (`<a>`, `«a»`, `qw/a/`, `q:w/a/`). The parser folds `<a>` to the
+/// same `Str` literal as `"a"`, but rakudo does not judge a word quote
+/// statically (`f(<a>)` is a run-time type check failure), so such a call
+/// is left to the binder. A `<` that is not a quote only makes the pass
+/// skip a call it could have judged.
+// Cost: O(s), s = length of the statement.
+fn written_with_word_quote(source: &str, from: usize, span: SrcSpan) -> bool {
+    source
+        .get(from..(span.to as usize).max(from))
+        .is_none_or(|rest| {
+            rest.contains(['<', '\u{ab}']) || rest.contains("qw") || rest.contains(":w")
+        })
 }
 
 /// The byte offsets in `text` where `name` stands as a whole routine name.
@@ -345,17 +445,26 @@ fn word_occurrences(text: &str, name: &str) -> Vec<usize> {
 // Cost: O(p + a + s), p = parameters, a = arguments, s = length of `source`.
 fn refutation_error(
     name: &str,
-    params: &[ParamDef],
+    rules: Rules,
+    candidates: &[&[ParamDef]],
     args: &[Value],
     source: &str,
     at: usize,
 ) -> RuntimeError {
     let arg_types = Interpreter::arg_type_names(args);
-    let signature = Interpreter::build_signature_string(params);
-    let message = format!(
-        "Calling {name}({}) will never work with declared signature {signature}",
-        arg_types.join(", ")
-    );
+    let signatures: Vec<String> = candidates
+        .iter()
+        .map(|params| Interpreter::build_signature_string(params))
+        .collect();
+    let call = format!("Calling {name}({})", arg_types.join(", "));
+    let message = match rules {
+        Rules::Only => format!("{call} will never work with declared signature {}", signatures[0]),
+        Rules::Multi => format!(
+            "{call} will never work with any of these multi signatures:\n    {}",
+            signatures.join("\n    ")
+        ),
+    };
+    let signature = signatures.join("\n");
     let line = 1 + source[..at].matches('\n').count();
     let column = 1 + source[..at].rsplit('\n').next().map_or(0, |l| l.chars().count());
     let pos = source[..at].chars().count();
