@@ -289,8 +289,12 @@ impl Interpreter {
         // Wrap non-Exception values in X::AdHoc (Raku behavior).
         let wrap_adhoc = |raw: Value| {
             let mut attrs = HashMap::new();
+            // An object payload's message is its `Str`, computed when read
+            // (#19083); a value's is its text.
+            if !matches!(raw.view(), ValueView::Instance { .. } | ValueView::Package(_)) {
+                attrs.insert("message".to_string(), Value::str(raw.to_string_value()));
+            }
             attrs.insert("payload".to_string(), raw.clone());
-            attrs.insert("message".to_string(), Value::str(raw.to_string_value()));
             Value::make_instance(Symbol::intern("X::AdHoc"), attrs)
         };
         let is_exception = if let ValueView::Instance { class_name, .. } = raw_exception.view() {

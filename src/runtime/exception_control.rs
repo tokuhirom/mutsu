@@ -85,13 +85,79 @@ impl Interpreter {
             return None;
         };
         let cn = class_name.resolve();
-        if self.has_user_method(&cn, method)
-            || (matches!(method, "gist" | "Str" | "Stringy")
-                && self.exception_render_needs_interpreter(target, &cn))
+        if self.has_user_method(&cn, method) {
+            return None;
+        }
+        // An `X::AdHoc` message is `$!payload.Str`; an object payload's `Str`
+        // may be user code, which the pure rows cannot run (#19083).
+        if cn == "X::AdHoc"
+            && let Some(payload) = Self::adhoc_object_payload(target)
+            && let Some(answer) = self.adhoc_object_payload_text(target, &payload, method)
+        {
+            return Some(answer);
+        }
+        if (matches!(method, "gist" | "Str" | "Stringy")
+            && self.exception_render_needs_interpreter(target, &cn))
         {
             return None;
         }
         crate::builtins::method_table::exception::answer(target, method)
+    }
+
+    /// The payload of an `X::AdHoc` without a stored `message` when it is an
+    /// object or type object, whose `Str` the interpreter must call.
+    // Cost: O(1).
+    pub(super) fn adhoc_object_payload(target: &Value) -> Option<Value> {
+        let ValueView::Instance { attributes, .. } = target.view() else {
+            return None;
+        };
+        let map = attributes.as_map();
+        if map.get("message").is_some_and(|m| !m.is_nil()) {
+            return None;
+        }
+        map.get("payload")
+            .filter(|p| matches!(p.view(), ValueView::Instance { .. } | ValueView::Package(_)))
+            .cloned()
+    }
+
+    /// `message`, `Str`, `Stringy` or `gist` of an `X::AdHoc` whose text is
+    /// its object payload's `Str`; `None` for another method.
+    // Cost: the payload's `Str` call, plus O(b) for `gist`, b = chars of the
+    // backtrace.
+    fn adhoc_object_payload_text(
+        &mut self,
+        target: &Value,
+        payload: &Value,
+        method: &str,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if !matches!(method, "message" | "Str" | "Stringy" | "gist") {
+            return None;
+        }
+        // A `Str` that dies makes `message` die, as in rakudo; `print`'s
+        // renderer would swallow it.
+        let text = match payload.view() {
+            ValueView::Instance { .. } => self
+                .call_method_with_values(payload.clone(), "Str", vec![])
+                .and_then(|r| crate::runtime::unbox_str_answer(&r)),
+            _ => self.render_str_value_checked(payload),
+        };
+        let text = match text {
+            Ok(text) => text,
+            Err(err) => return Some(Err(err)),
+        };
+        let backtrace = match target.view() {
+            ValueView::Instance { attributes, .. } if method == "gist" => attributes
+                .as_map()
+                .get("backtrace")
+                .map(Value::to_string_value)
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
+        Some(Ok(Value::str(if backtrace.is_empty() {
+            text
+        } else {
+            format!("{text}\n{backtrace}")
+        })))
     }
 
     /// `Exception.throw`, `rethrow`, `die`, `fail` and `resume` on an exception
@@ -234,7 +300,10 @@ impl Interpreter {
     /// `with self!handle-errors { ... } else { .fail }`). `None` for a Failure
     /// with no exception.
     // Cost: O(m), m = chars of the message.
-    pub(crate) fn failure_control(&mut self, target: &Value) -> Option<Result<Value, RuntimeError>> {
+    pub(crate) fn failure_control(
+        &mut self,
+        target: &Value,
+    ) -> Option<Result<Value, RuntimeError>> {
         let ValueView::Instance { attributes, .. } = target.view() else {
             return None;
         };
@@ -312,7 +381,15 @@ mod tests {
             );
         }
         for method in [
-            "new", "message", "gist", "Str", "payload", "backtrace", "elems", "name", "WHAT",
+            "new",
+            "message",
+            "gist",
+            "Str",
+            "payload",
+            "backtrace",
+            "elems",
+            "name",
+            "WHAT",
         ] {
             assert!(
                 !CONTROL_METHODS.contains(&method),
