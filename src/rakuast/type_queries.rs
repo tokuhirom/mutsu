@@ -18,10 +18,11 @@ pub(crate) fn call(node: &RakuAstNode, method: &str) -> Option<Value> {
     use RakuAstClass::*;
     match (node.class, method) {
         // `int`, `uint8`, `num64`, `str`: a native type.
-        (TypeSimple | TypeSetting, "is-native") => Some(Value::truth(
-            type_identifier(node)
-                .is_some_and(|name| crate::native_types::is_native_array_element_type(&name)),
-        )),
+        (TypeSimple | TypeSetting, "is-native") => {
+            Some(Value::truth(type_identifier(node).is_some_and(|name| {
+                crate::native_types::is_native_array_element_type(&name)
+            })))
+        }
         // Only a coercion type coerces.
         (
             TypeSimple | TypeSetting | TypeDefinedness | TypeParameterized | TypeSubset
