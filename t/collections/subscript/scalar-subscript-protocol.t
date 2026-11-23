@@ -83,21 +83,23 @@ plan 31;
     is $s[0], 1, 'and is left alone';
 }
 
-# --- positional subscript: X::Assignment::RO naming the value ---------------
+# --- positional subscript: index 0 is the scalar's own container -----------
+# (rakudo's `Any.ASSIGN-POS` stores through `AT-POS(0)`, the container itself;
+# any other index is out of range, #18952)
 
 {
     my $s = 42;
-    throws-like { $s[0] = 5 }, X::Assignment::RO,
-        message => 'Cannot modify an immutable Int (42)',
-        'a positional store into an Int is refused';
+    throws-like { $s[1] = 5 }, X::OutOfRange,
+        message => 'Index out of range. Is: 1, should be in 0..0',
+        'a positional store past index 0 of an Int is out of range';
     is $s, 42, 'and is not replaced by an Array';
 }
 
 {
     my $s = "str";
-    throws-like { $s[0] = 5 }, X::Assignment::RO,
-        message => 'Cannot modify an immutable Str (str)',
-        'a positional store into a Str is refused';
+    throws-like { $s[1] = 5 }, X::OutOfRange,
+        message => 'Index out of range. Is: 1, should be in 0..0',
+        'a positional store past index 0 of a Str is out of range';
     is $s, "str", 'and is not replaced by an Array';
 }
 

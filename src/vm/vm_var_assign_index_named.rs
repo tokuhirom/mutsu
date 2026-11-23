@@ -361,18 +361,7 @@ impl Interpreter {
     ) -> Option<RuntimeError> {
         let view = target.view();
         // Scalar numeric/string values do neither protocol.
-        let bare_scalar = matches!(
-            view,
-            ValueView::Int(_)
-                | ValueView::BigInt(_)
-                | ValueView::Num(_)
-                | ValueView::Str(_)
-                | ValueView::Bool(_)
-                | ValueView::Rat(..)
-                | ValueView::FatRat(..)
-                | ValueView::BigRat(..)
-                | ValueView::Complex(..)
-        );
+        let bare_scalar = Self::is_bare_scalar(target);
         if is_positional {
             // A `List`/`Array`/`Range`/`Seq` DOES do Positional, so a positional
             // store into one is a store, refused (or not) by the element rules
@@ -4536,6 +4525,23 @@ impl Interpreter {
                     ) {
                         return Ok(true);
                     }
+                    // `@a[0][0] = v` over a defined scalar element: index 0 is
+                    // the element's own container, which takes the value; any
+                    // other index is out of range (#18952). A typed array keeps
+                    // the refusal below.
+                    // TODO: type-check the value against the array's element
+                    // type here, as `@a[0] = v` does, instead of refusing.
+                    if arr.value_type.is_none()
+                        && let Some(at) = Self::scalar_slot_position(
+                            &arr[inner_i],
+                            outer_positional,
+                            &outer_key,
+                        )
+                    {
+                        at?;
+                        arr[inner_i] = val.clone();
+                        return Ok(true);
+                    }
                     // A slot that already holds a DEFINED non-container value
                     // is not autovivifiable: rakudo refuses the store instead
                     // of clobbering the value.
@@ -4701,6 +4707,7 @@ impl Interpreter {
                             .get_or_insert_with(ValueMap::default)
                             .insert(inner_key.clone(), obj.clone());
                     }
+                    let untyped = oh.value_type.is_none();
                     let inner_val = oh.entry(inner_key).or_insert_with(|| {
                         // See the array-outer arm: a brand-new autovivified
                         // row tracks its gaps from birth.
@@ -4725,6 +4732,16 @@ impl Interpreter {
                         val.clone(),
                         false,
                     ) {
+                        return Ok(());
+                    }
+                    // `%h<a>[0] = v` over a defined scalar value: index 0 is
+                    // the entry's own container (#18952), as in the array arm.
+                    if untyped
+                        && let Some(at) =
+                            Self::scalar_slot_position(inner_val, outer_positional, &outer_key)
+                    {
+                        at?;
+                        *inner_val = val.clone();
                         return Ok(());
                     }
                     if let Some(err) = Self::subscript_descent_refusal_at(
@@ -4971,6 +4988,48 @@ impl Interpreter {
             _ => return false,
         };
         aggregate.replace_container_contents(&coerced)
+    }
+
+    /// What a positional store at `key` into `slot`, an element holding a
+    /// defined bare scalar, does: rakudo's `Any.ASSIGN-POS` stores through
+    /// `AT-POS`, and a defined scalar's `AT-POS(0)` is its own container. So
+    /// index 0 replaces the element (`Some(Ok(()))`) and any other integer
+    /// index is out of range `0..0`. `None` when `slot` is not such a scalar
+    /// or the store is not an integer-positional one (#18952).
+    // Cost: O(k), k = length of `key`.
+    pub(crate) fn scalar_slot_position(
+        slot: &Value,
+        positional: bool,
+        key: &str,
+    ) -> Option<Result<(), RuntimeError>> {
+        if !positional
+            || !Self::is_bare_scalar(slot)
+            || !crate::runtime::types::value_is_defined(slot)
+        {
+            return None;
+        }
+        match key.parse::<i64>().ok()? {
+            0 => Some(Ok(())),
+            i => Some(Err(RuntimeError::out_of_range("Index", Value::int(i), "0..0"))),
+        }
+    }
+
+    /// Whether `value` is a scalar numeric or string value, which does neither
+    /// subscript protocol.
+    // Cost: O(1).
+    pub(crate) fn is_bare_scalar(value: &Value) -> bool {
+        matches!(
+            value.view(),
+            ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Num(_)
+                | ValueView::Str(_)
+                | ValueView::Bool(_)
+                | ValueView::Rat(..)
+                | ValueView::FatRat(..)
+                | ValueView::BigRat(..)
+                | ValueView::Complex(..)
+        )
     }
 
     /// [`Interpreter::subscript_descent_refusal_at`] with the key the next
