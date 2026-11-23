@@ -116,6 +116,7 @@ mod decl_tail;
 mod decl_tail_origins;
 mod decl_traits;
 mod declarator_docs;
+mod trailing_comma_list;
 
 /// The `#|` / `#=` docs a node carries (leading, trailing).
 // Cost: O(1).
