@@ -125,6 +125,8 @@ impl GraphemeIndex {
     }
 
     /// Byte offset at which grapheme `g` starts; `s.len()` for `g >= len`.
+    // Cost: O(1) for a flat string (inlined), O(STRIDE) otherwise.
+    #[inline]
     pub(crate) fn byte_at(&self, s: &str, g: usize) -> usize {
         if g >= self.len {
             return s.len();
@@ -132,6 +134,14 @@ impl GraphemeIndex {
         if self.flat {
             return g;
         }
+        self.byte_at_marked(s, g)
+    }
+
+    /// [`Self::byte_at`] for a string that is not flat: walk from the
+    /// nearest checkpoint.
+    // Cost: O(STRIDE).
+    #[inline(never)]
+    fn byte_at_marked(&self, s: &str, g: usize) -> usize {
         let k = g / STRIDE;
         let skip = g - k * STRIDE;
         Units::from(s, self.marks[k])

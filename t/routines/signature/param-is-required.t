@@ -9,13 +9,15 @@ plan 8;
 sub need-n(:$n is required) { $n }
 lives-ok { need-n(n => 5) }, ':$n is required lives when n is passed';
 is need-n(n => 5), 5, ':$n is required binds the value';
-dies-ok { need-n() }, ':$n is required dies when n is missing';
+# A literal call that can never bind is refuted at CHECK time (#18874);
+# the slip keeps this one a run-time binding failure.
+dies-ok { need-n(|()) }, ':$n is required dies when n is missing';
 
 # `is required` matches the `!` shorthand behaviour and message.
 sub need-bang(:$n!) { $n }
 {
-    my $msg-trait = (try { need-n(); CATCH { default { .message } } }) // $!.message;
-    my $msg-bang  = (try { need-bang(); CATCH { default { .message } } }) // $!.message;
+    my $msg-trait = (try { need-n(|()); CATCH { default { .message } } }) // $!.message;
+    my $msg-bang  = (try { need-bang(|()); CATCH { default { .message } } }) // $!.message;
     is $msg-trait, $msg-bang, 'is required and ! give the same error message';
 }
 

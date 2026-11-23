@@ -617,6 +617,9 @@ impl Interpreter {
         // around the load: a transitive `use` inside the module body must
         // resolve with ITS OWN (usually absent) selectors, not the outer ones.
         let (module, dist_selectors) = Self::split_dist_selectors(module);
+        // Another thread loading the same module finishes first, and this
+        // `use` then takes the already-loaded path (ADR-17216).
+        let _claim = self.claim_module_load(module);
         let saved = std::mem::replace(&mut self.module.pending_dist_selectors, dist_selectors);
         // `suppress_exports` is set for the whole duration of an enclosing
         // `CompUnit::Repository.need` load (see `load_module_from_path`), so
@@ -1013,6 +1016,9 @@ impl Interpreter {
                         .extend(symbol_tags.iter().cloned());
                 }
             }
+            // Every key the renames below move, for one keyed invalidation
+            // after the loop (#12026).
+            let mut renamed_keys: Vec<Symbol> = Vec::new();
             for (name, symbol_tags) in &owned_exports {
                 let is_mandatory = symbol_tags.contains("MANDATORY");
                 if !want_all
@@ -1035,6 +1041,7 @@ impl Interpreter {
                             let qualified = Symbol::intern(
                                 crate::qualified::qualified_text(module, name).as_str(),
                             );
+                            renamed_keys.extend([global_key, qualified]);
                             self.routines_mut()
                                 .functions_mut()
                                 .entry(qualified)
@@ -1053,8 +1060,6 @@ impl Interpreter {
                         })
                         .copied()
                         .collect();
-                    // Invalidate name-keyed resolution caches (keys renamed).
-                    self.invalidate_fn_resolution();
                     for mk in multi_keys {
                         let removed = self.routines_mut().functions_mut().remove(&mk);
                         if let Some(def) = removed {
@@ -1062,6 +1067,7 @@ impl Interpreter {
                             let qualified = Symbol::intern(
                                 crate::qualified::qualified_text(module, &suffix).as_str(),
                             );
+                            renamed_keys.extend([mk, qualified]);
                             self.routines_mut()
                                 .functions_mut()
                                 .entry(qualified)
@@ -1069,6 +1075,10 @@ impl Interpreter {
                         }
                     }
                 }
+            }
+            if !renamed_keys.is_empty() {
+                // Invalidate name-keyed resolution caches (keys renamed).
+                self.invalidate_fn_resolution_changing_keys(renamed_keys);
             }
 
             // Remove GLOBAL:: operator sub entries (infix/prefix/postfix/circumfix)
@@ -1121,11 +1131,11 @@ impl Interpreter {
                 })
                 .copied()
                 .collect();
-            for k in non_exported_op_globals {
+            for &k in &non_exported_op_globals {
                 self.routines_mut().functions_mut().remove(&k);
             }
             // Invalidate name-keyed resolution caches.
-            self.invalidate_fn_resolution();
+            self.invalidate_fn_resolution_changing_keys(non_exported_op_globals);
 
             // Remove GLOBAL:: sub aliases that were leaked by sub hoisting during
             // this module load, are NOT exported, and shadow a core builtin.
@@ -1172,11 +1182,11 @@ impl Interpreter {
                     })
                     .copied()
                     .collect();
-                for k in leaked_globals {
+                for &k in &leaked_globals {
                     self.routines_mut().functions_mut().remove(&k);
                 }
                 // Invalidate name-keyed resolution caches.
-                self.invalidate_fn_resolution();
+                self.invalidate_fn_resolution_changing_keys(leaked_globals);
             }
 
             crate::runtime::cow_table_mut(&mut self.module.world.loaded_modules.write_guard())

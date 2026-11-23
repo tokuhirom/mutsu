@@ -395,6 +395,14 @@ impl Interpreter {
             crate::parser::set_current_language_version(version);
             saved
         });
+        // `$*RAKU.version` is the revision of the unit compiled last: the
+        // EVAL's own `use v6.x`, else the calling unit's (#18867).
+        if is_eval_unit {
+            let version = unit_version
+                .clone()
+                .unwrap_or_else(crate::parser::current_language_version);
+            Self::set_shared_raku_language_version(&version);
+        }
         let (mut code, mut fns) = compiler.compile(body);
         if let Some(saved) = saved_version {
             crate::parser::set_current_language_version(&saved);

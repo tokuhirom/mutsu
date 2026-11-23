@@ -19,7 +19,7 @@ plan 10;
     is DateTime.^mro.elems, 4, 'refinement MRO has the CORE type as parent';
 }
 
-ok DateTime.new(2025, 1, 1).^can('hello').not,
+ok DateTime.new(2025, 1, 1, 0, 0, 0).^can('hello').not,
     'the refinement does not leak out of its block';
 
 {

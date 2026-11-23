@@ -116,6 +116,13 @@ impl Value {
                 if class_name == "Failure" {
                     return false;
                 }
+                // `StrDistance.Bool` is its distance's: false when `tr///`
+                // changed nothing (`before` and `after` agree).
+                if class_name == "StrDistance" {
+                    let map = attributes.as_map();
+                    return map.get("before").map(Value::to_string_value)
+                        != map.get("after").map(Value::to_string_value);
+                }
                 // `Duration` does `Real`: a zero Duration is false.
                 if class_name == "Duration"
                     && let Some(v) = attributes.as_map().get("value")

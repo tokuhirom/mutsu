@@ -16,6 +16,7 @@ impl Compiler {
                 global,
                 nth,
                 x,
+                start,
                 replacement_thunk,
                 tree: _,
             } => {
@@ -29,6 +30,7 @@ impl Compiler {
                     *global,
                     nth,
                     x,
+                    start,
                     replacement_thunk.as_deref().map(|t| &t.expr),
                 );
             }
@@ -42,6 +44,7 @@ impl Compiler {
                 global,
                 nth,
                 x,
+                start,
                 replacement_thunk,
                 tree: _,
             } => {
@@ -55,6 +58,7 @@ impl Compiler {
                     *global,
                     nth,
                     x,
+                    start,
                     replacement_thunk.as_deref().map(|t| &t.expr),
                 );
             }
@@ -127,6 +131,7 @@ impl Compiler {
         global: bool,
         nth: &Option<Box<Expr>>,
         x: &Option<Box<Expr>>,
+        start: &Option<Box<crate::ast::SubstStart>>,
         replacement_thunk: Option<&Expr>,
     ) {
         self.compile_subst_replacement_thunk(replacement_thunk);
@@ -134,6 +139,7 @@ impl Compiler {
         let pattern_idx = self.code.add_constant(Value::str(pattern.to_string()));
         let replacement_idx = self.code.add_constant(Value::str(replacement.to_string()));
         let (nth, x) = self.compile_subst_adverb_args(nth, x);
+        let start = self.compile_subst_start(start);
         let qq_thunks = self.compile_pattern_qq_thunks(pattern);
         self.code.emit(OpCode::Subst {
             pattern_idx,
@@ -145,6 +151,7 @@ impl Compiler {
             global,
             nth,
             x,
+            start,
             replacement_thunk,
             qq_thunks,
         });
@@ -165,6 +172,17 @@ impl Compiler {
         (nth.is_some(), x.is_some())
     }
 
+    /// Push a substitution's `:c` / `:pos` value above its `:x`'s, and report
+    /// the `start` operand of `OpCode::Subst` (#18892).
+    // Cost: O(1) emitted ops plus the argument expression.
+    fn compile_subst_start(&mut self, start: &Option<Box<crate::ast::SubstStart>>) -> u8 {
+        let Some(start) = start else {
+            return 0;
+        };
+        self.compile_expr(&start.expr);
+        if start.anchored { 2 } else { 1 }
+    }
+
     /// Compile S/// non-destructive substitution.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn compile_expr_nondestructive_subst(
@@ -178,6 +196,7 @@ impl Compiler {
         global: bool,
         nth: &Option<Box<Expr>>,
         x: &Option<Box<Expr>>,
+        start: &Option<Box<crate::ast::SubstStart>>,
         replacement_thunk: Option<&Expr>,
     ) {
         self.compile_subst_replacement_thunk(replacement_thunk);
@@ -185,6 +204,7 @@ impl Compiler {
         let pattern_idx = self.code.add_constant(Value::str(pattern.to_string()));
         let replacement_idx = self.code.add_constant(Value::str(replacement.to_string()));
         let (nth, x) = self.compile_subst_adverb_args(nth, x);
+        let start = self.compile_subst_start(start);
         let qq_thunks = self.compile_pattern_qq_thunks(pattern);
         self.code.emit(OpCode::NonDestructiveSubst {
             pattern_idx,
@@ -196,6 +216,7 @@ impl Compiler {
             global,
             nth,
             x,
+            start,
             replacement_thunk,
             qq_thunks,
         });

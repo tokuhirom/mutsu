@@ -2,7 +2,10 @@
 
 - **Status**: Accepted (2026-10-10, by tokuhirom; Proposed earlier the same
   day). Phase 0 is done and phases 1-3 are in progress; record each phase's
-  progress in §3.
+  progress in §3. Amendment A1 (§9, a precise static outer for
+  block-declared routines under a unit latch) is **Accepted** (2026-11-22, by the
+  maintainer), on the condition that the implementation PR measures part (c)'s
+  cost on EVAL-heavy code (Red) and shows no regression.
 - **Date**: 2026-10-10
 - **Related**: [ADR-0018](0018-slot-addressed-lexical-capture-and-env-sync.md)
   (locals are slot-addressed; escaping mutable lexicals are cells — this ADR
@@ -2031,3 +2034,266 @@ the battery run named a consumer that depended on the old resolution
   surfaced them, so a large batch moves the phase-3 figure, not this table.
 - **#12526's binder half.** It is independent of this ADR and can land
   first.
+
+## 9. Amendment A1 (Accepted, 2026-11-22, by the maintainer): a precise static outer for block-declared routines, under a unit latch
+
+Carrier: [#18787](https://github.com/tokuhirom/mutsu/issues/18787) (part of
+[#18742](https://github.com/tokuhirom/mutsu/issues/18742)). This amendment
+changes *when* a named routine captures the activation that declares it, which
+phase 3's slices so far decided only by the routine's free variables. It does
+not change §2's decision; it is a phase-3 step that needs its own decision
+because it adds a compile-time latch and a second capture shape.
+
+### 9.1 Context
+
+`CALLER::OUTER::x` and `CALLER::UNIT::x` name a scope on the *static* chain
+of a *dynamic* neighbour: the caller frame's lexical outer, and the caller's
+compilation unit. Roast pins both (`S02-names/pseudo-6d.t` 137/144/145,
+`6.c/S02-names/pseudo-6c.t` the same numbers, `pseudo-6e.t` 157/164/165):
+
+```raku
+{
+    sub f1($f) { my $x is dynamic = 100; $f() }
+    my $x = 102;
+    { my $x = 104; f1({ $CALLER::OUTER::x }) }   # 102: f1's outer, not the call site
+}
+my $f = EVAL('my $x110 is dynamic = 113; -> $fn { my $x110 is dynamic = 114; $fn() }');
+$f({ $CALLER::UNIT::x110 })                      # 113: the EVAL unit's mainline
+```
+
+The reader exists (WIP branch `fix/18787-caller-static-link`,
+`Interpreter::caller_lexical_chain_var`): it walks the caller frame's
+`Env::enclosing_scopes()`, the walk `nqp::ctxouter` already uses. It answers
+correctly only when the caller frame's static link is precise, and in both
+shapes it is not:
+
+1. **A block-declared routine with no free variables has no static outer of
+   its own.** `capture_lexsub_activation` builds a per-activation code object
+   only for a routine that reads a local of its declaring code
+   (`free_var_syms`), and `bind_lexsub_upvalues` only for a routine a closure
+   names. `f1` reads nothing of its block, so it is the registry's plain code
+   object; its frame root links `UnitOuter` to the *live* program scope,
+   whose innermost tier at the call holds the shadowing `$x = 104`. Measured
+   on the WIP branch: 104, rakudo 102.
+2. **A closure created at an EVAL unit's program scope links to the main
+   program scope.** Its capture is marked `program_scope_capture`, and the
+   frame that runs it links to the program scope that is live when it runs
+   — the main program's — not to the EVAL mainline it was created in. Only
+   the capture still holds `$x110 = 113`. Measured: `Nil`, rakudo 113.
+
+A third imprecision sits next to (1): when `capture_lexsub_activation` does
+capture, it picks each free variable's slot with
+`code.locals.iter().rposition(..)`, the *last* slot of that name in the
+declaring code, which is the right one only when no nested block of the
+declaring code redeclares the name.
+
+Rakudo closes a routine over its declaring block on every entry of that
+block (`capturelex`), unconditionally. mutsu cannot afford that for every
+program today (§9.4, alternative A), and needs it only where something can
+observe a frame's static outer by name from *outside* that frame.
+
+### 9.2 Decision
+
+**(a) A unit latch.** A compilation unit is *static-outer-observing* when its
+source holds a site that reads another frame's lexical chain:
+
+- a pseudo-package chain that starts at a dynamic neighbour and continues
+  along the static chain: `CALLER::`/`CALLERS::`/`DYNAMIC::` followed by
+  `OUTER::`, `OUTERS::`, `UNIT::`, `LEXICAL::` or `SETTING::`, in a sigiled
+  name, a stash subscript (`CALLER::OUTER::<$x>`) or a `.WHO`;
+- a `CALLER::`/`CALLERS::` chain with a symbolic segment after it
+  (`$CALLER::($unit)::x110`, roast 145), since the segment may name any of
+  the above;
+- a multi-segment symbolic name whose first segment is symbolic
+  (`::($a)::($b)::x`, `::($a)::('$x')` with a further chain), since `$a` may
+  be `CALLER`. A single `::($name)` does not latch: it resolves in the scope
+  it is written in.
+
+The parser records the latch on the unit while it parses such a name — the
+pseudo-package names are already recognised there — so detecting it costs no
+pass over the AST. A unit is compiled latched when its own flag is set **or**
+the process-global latch was already set by a unit compiled before it (the
+same monotonic, over-set-is-conservative contract as
+`caller_frame_read_possible`, and replayed from the compiled-bytecode cache
+like the other compile latches, ADR-11756 §2.2).
+
+**(b) In a latched unit, every block-declared routine gets a static-view
+activation capture.** "Block-declared" means declared anywhere but the
+unit's top-level statement list: in a bare block, a loop or conditional body,
+a routine body or a closure. (A top-level routine's outer *is* the program
+scope, which the existing `UnitOuter` link already names correctly.) For such
+a routine the compiler:
+
+- binds it as a frame lexical `&name` of the declaring code, the existing
+  `my sub` road (`CompiledSubDeclPlan::frame_lexical`), so a by-name call in
+  the declaring scope (`f1(...)`) reaches *this activation's* code object by
+  slot rather than the registry's latest one. The registry entry stays, for
+  the names that resolve through it from outside the scope (`&OUTER::f1`,
+  introspection, `CALLER::LEXICAL::`);
+- emits a **static-view table** on the plan: for every plain user lexical
+  visible at the declaration point in the declaring code, the name and the
+  slot that holds it *at that scope* (the compiler's scope stack knows it;
+  later declarations in the same block are included, as rakudo's pad
+  includes them). This replaces the `rposition` guess for these routines.
+
+At run time, the activation's code object is built once, on the first use
+that can escape the activation — the first call, a `&name` read, or a
+closure naming it (today's `bind_lexsub_upvalues` trigger) — and cached in
+the frame-lexical slot for the rest of the activation. It is
+`capture_lexsub_activation`'s code object with the static-view table in place
+of `free_var_syms`: each listed local is boxed in place into a shared cell
+(ADR-0018; an uninitialised slot gets a fresh cell that the declaration's
+own initialisation then assigns through, as for any captured local) and
+bound in the capture, which is marked `mark_activation_capture`. The capture
+tier's fallback is the declaring frame's own enclosing scope (its activation
+capture, or the program scope), so `OUTER::OUTER::` from a nested routine
+keeps walking the static chain. Calling it goes through the existing
+`activation_routine_of` / `call_compiled_function_named_in(.., activation)`
+path, and `Env::enclosing_scopes()` puts the capture first.
+
+**(c) A closure created at an EVAL unit's program scope records that unit.**
+When `mark_program_scope_capture` runs while the program scope is an EVAL
+mainline (`mark_as_eval_unit`), the capture is marked as that unit's mainline
+instead of "the live program scope": the closure's frame links capture-first,
+with the capture standing for the unit, and `OuterScope` carries a
+`unit_mainline` flag. `UNIT::` from a frame then answers from the innermost
+scope so flagged, else from the program scope. This applies to every unit,
+latched or not: it is the correct static outer, it costs one flag write per
+closure created at an EVAL mainline, and it touches no main-program closure.
+
+**(d) The reader** is the WIP branch's `caller_lexical_chain_var`, built on
+`caller_scope(depth)` from #17733 (`src/runtime/caller_scope_routines.rs`,
+PR #18796) rather than indexing `caller_env_stack` itself, so there is one
+caller-frame mechanism.
+
+### 9.3 Cost, soundness and semantics
+
+- **A program with no such site pays nothing at run time.** The latch is read
+  by the compiler, not by the VM: an unlatched unit compiles to the bytecode
+  it compiles to today (no table, no frame-lexical binding, no runtime
+  branch), and no by-name call or declaration gains a check. The parser cost
+  is one flag store per recognised pseudo-package chain. Part (c) is outside
+  the latch and costs one flag per closure created at an EVAL mainline.
+- **A latched unit pays per activation, not per call.** Each block-declared
+  routine's first escaping use per activation boxes the listed locals of its
+  declaring code into cells — the cost an escaping closure over those names
+  pays today — and its frame links capture-first. A loop that declares a
+  routine in its body builds one capture per iteration that *uses* the
+  routine, which is rakudo's `capturelex` cost. The `bench-*` rows and
+  FunctionalParsers hold no latched site, so §3's measurement rows do not
+  move; the implementation PR measures one latched microbenchmark (a
+  block-declared routine called in a loop) A/B, per the `perf-tuning` skill.
+- **Sound by construction, not by analysis.** The capture binds *cells*, so a
+  write the declaring activation makes after the capture was built — including
+  the initialisation of a lexical declared after the routine — is what the
+  routine and `CALLER::OUTER::` see. Nothing depends on predicting which names
+  a reader will ask for: the table lists every visible lexical, and a symbolic
+  reader (`CALLER::($unit)::`) is covered by the same capture. This is the
+  "cell, not snapshot" choice of the Design-judgment guidance and of
+  `S12-construction/roles-6e.t`.
+- **Semantics match rakudo where the latch holds.** `OUTER::` of a
+  block-declared routine's frame is its declaring block's pad in that
+  activation; the routine's own body still resolves its free variables the
+  same way (now through the scope-correct slot rather than `rposition`).
+- **Where the latch does not hold, behaviour is today's.** A site compiled
+  *after* the routine's unit — an `EVAL` string or a later-loaded module
+  that reads `CALLER::OUTER::` of a frame running an earlier unit's routine —
+  finds that routine without a precise outer and reads the live program
+  scope, as now. Roast's shapes all hold the site and the routine in one
+  unit (or the routine in an EVAL compiled after the site's unit, which the
+  global half of the latch covers). Closing the remainder is alternative A.
+
+### 9.4 Alternatives
+
+- **A. Every block-declared routine captures its activation, unconditionally**
+  (rakudo's model, and phase 3's end state). Correct everywhere, including
+  cross-unit sites. Rejected *for now*: it puts a cell-boxing capture on every
+  block-declared routine's activation in every program, unmeasured, and
+  boxing turns slot-plain locals of the declaring frame into cells, which the
+  JIT and the light call paths handle more slowly. It becomes the plan when
+  phase 3 removes the registry as a routine's binding; the latch then
+  disappears and this amendment's table is the mechanism it uses.
+- **B. A run-time process latch** (the `caller_frame_read_possible` style:
+  compile everything the same and decide at run time). It would also cover
+  sites compiled later, but the scope-correct slot table must exist at
+  compile time anyway, and the by-name call path and every declaration would
+  need a run-time branch — a cost on programs without the site, which this
+  amendment exists to avoid.
+- **C. Find the declaring activation through the dynamic chain** at the
+  reader: walk `caller_env_stack` to the frame that declared `f1`. Wrong
+  whenever the routine escaped its declaring activation or was called from
+  elsewhere — the dynamic chain is not the static chain, the confusion §1
+  exists to end.
+- **D. Capture only the names a reader asks for** (a compile-time list of
+  `CALLER::OUTER::` names). Symbolic sites (`CALLER::($unit)::`) defeat it,
+  and the failure mode is a silent wrong answer — ADR-0094 §4's objection to
+  trimming captures.
+- **E. Keep `program_scope_capture` a boolean and special-case EVAL in the
+  reader** (look for the EVAL mainline on the caller chain). Same objection
+  as C: the EVAL that created the closure has returned by the time the
+  closure runs.
+
+### 9.5 Verification
+
+Regression tests in `t/` (checked against `raku`) for: the two shapes of
+§9.1; a block-declared routine whose block declares the name after it; a
+routine called after its block exited (the capture outlives the activation);
+two activations of the same block (each routine sees its own activation); a
+nested block shadowing a free variable (the `rposition` case); and
+`OUTER::OUTER::` from a routine declared in a routine. The gate's roast focus
+is `S02-names`; `pseudo-6d.t` and `6.c/pseudo-6c.t` reach the whitelist when
+they pass completely.
+
+### 9.6 Implementation (2026-11-23, #18787)
+
+Landed with these differences from §9.2. Each is narrower than the text above
+or a measured necessity:
+
+- **(a) The latch is process-global and set from source text.**
+  `crate::parser::static_outer_latch` scans every unit's source when it is parsed (and
+  when a bytecode-cache hit loads it unparsed), as `opcode::note_dispatcher_mention`
+  does: it looks for `CALLER`/`CALLERS`/`DYNAMIC` followed by
+  `::OUTER`/`UNIT`/`LEXICAL`/`SETTING`/`::(`, and for those words spelled as
+  a string. The latch is monotonic, and an over-set (a comment) only costs the
+  latched code shape. It is not stored per unit, so a unit compiled after
+  any latched unit is latched too.
+- **(b) The static view is baked when the declaring scope closes**
+  (`Compiler::bake_static_views_closing`), so it holds that scope's later
+  declarations (`CompiledSubDeclPlan::static_view_slots`).
+  `capture_lexsub_activation` binds the whole view, each name at its scope's
+  slot, in place of the `rposition` guess. A cell replaces the env's binding
+  only while that slot is the visible one (`box_static_view_local`).
+  The by-name call from the declaring code does not go through a frame-lexical
+  `&name` slot. A latch-gated check in `exec_call_func_op` (one relaxed load on
+  the by-name slow path) finds the plan and calls the capture through
+  `activation_routine_of` (`vm_static_view_call.rs`). The capture is built
+  per call, not cached per activation.
+- **(c) The unit's lexicals are recorded under their own keys.** A reflective
+  closure created in an `EVAL` mainline gets the eval-unit mark instead of
+  `program_scope_capture` (not behind the latch). Under the latch, every
+  closure created there also records that mainline's own plain lexicals
+  under `MetaNs::EvalUnit` keys, and only `UNIT::` reads them
+  (`Env::unit_lexical`). A first version forced the reflective capture on
+  such closures instead. That put the scope around the `EVAL` into the
+  capture, where the by-name lookups of the routines the closure calls (which
+  still walk their callers, §1.3) found a caller's shadowing lexical: Red's
+  `t/124-compiler-callables` test 59 failed. The recorded values are the
+  locals' cells where they are cells, else their current values (a `TODO`:
+  boxing them in place changed that same Red result).
+- **The caller-frame entry's flushed-slot overlay is a block tier**, not a
+  frame root, so `Env::enclosing_scopes` of the entry starts at the calling
+  frame's own root and link. A frame flattened into the bottom of its chain
+  answers from its record (`Env::flattened_frame_scopes`).
+- **The reader** (`caller_lexical_chain_var`) reads the `caller_env_stack`
+  entry, the same one `CALLER::` reads. `caller_scope(depth)` from #17733 answers
+  which *routines* a caller's package scope holds, a different question, so
+  the reader does not build on it.
+
+**Measured (the acceptance condition).** Red 0.2.16's whole suite (175
+files; Red itself latches through `CALLERS::OUTERS::`), release builds, one
+file at a time, against the merge base. Pass/fail is identical on every file:
+all pass except `t/154` and `t/158`, which time out at 300 s on both.
+Wall time over the 173 passing files is 2495.0 s on the base and 2488.1 s on
+the branch (0.997x). The per-file outliers above 1.15x (`000-meta`,
+`001-tdd`, `054`, `127`) came out within 2.5% of the base when re-run three
+times each.

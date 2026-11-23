@@ -106,6 +106,10 @@ pub(crate) enum Spelling {
     /// `a !< b` / `a !eq b`: the parser evaluates this as `!(a < b)` but
     /// RakuAST keeps the `MetaInfix::Negate` at the infix application.
     NegatedInfix,
+    /// `1 [&plus] 2`: a routine used as an infix. The parser calls the
+    /// routine with both operands; RakuAST keeps an `ApplyInfix` over a
+    /// `FunctionInfix` (#18469).
+    FunctionInfix,
     /// `a !(elem) b`, `a !∈ b`: the `!` meta-negation of a set relation, with the
     /// relation as written after the `!`. The parser evaluates it as `!(a ∈ b)`;
     /// RakuAST keeps `MetaInfix::Negate(Infix("(elem)"))`.

@@ -86,22 +86,31 @@ impl Interpreter {
     pub(super) fn exec_bool_bit_or_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack
-            .push(Value::truth(left.truthy() | right.truthy()));
+        self.stack.push(crate::builtins::bool_bitop(
+            &left,
+            &right,
+            crate::builtins::BitOp::Or,
+        ));
     }
 
     pub(super) fn exec_bool_bit_and_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack
-            .push(Value::truth(left.truthy() & right.truthy()));
+        self.stack.push(crate::builtins::bool_bitop(
+            &left,
+            &right,
+            crate::builtins::BitOp::And,
+        ));
     }
 
     pub(super) fn exec_bool_bit_xor_op(&mut self) {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
-        self.stack
-            .push(Value::truth(left.truthy() ^ right.truthy()));
+        self.stack.push(crate::builtins::bool_bitop(
+            &left,
+            &right,
+            crate::builtins::BitOp::Xor,
+        ));
     }
 
     /// String bitwise AND (~&): AND corresponding codepoints of two strings.

@@ -618,3 +618,106 @@ Remaining for 5b: a `BEGIN` that reads the unit's lexicals or calls its
 routines (it needs the unit frame, or ADR-0134's static cells, during the
 parse), and slice 4b after it.
 
+
+### 7.16 Slice 5b: a `BEGIN` that calls an imported routine (2026-11-23)
+
+A top-level `BEGIN` of the program that calls a routine an earlier `use`
+imports (`use Test; BEGIN plan 3;`, ≈11 of the top-level `BEGIN`s in `t/` and
+roast) now runs at parse time too:
+
+- The parser records each top-level `use` the loader loaded at parse time, in
+  source order (`begin_at_parse::UNIT_PARSE_TIME_USES`). `use Test` is
+  recorded although it is not preloaded: its load is no prologue effect
+  (`is_inert_pragma`). A conditional `use` is not recorded.
+- `begin_body_core_names` accepts a non-core callee (or term) that one of those
+  `use`s imports (`Stmt::Use::imports`), when the unit does not declare that
+  name itself (`parser::unit_declares_name`).
+- The loader runs the `use` statements that import the routines the body calls
+  ahead of the body, in one compile. Their module is loaded, so running one
+  imports (a hook module installs the map its parse-time load recorded for
+  that statement's site, which a re-run of the statement reuses); `use Test`
+  loads Test there. The prologue runs the same `use`s again in position, as a
+  block entered twice would.
+- An `exit` in such a `BEGIN` ends the program there: the parse stops, and the
+  run finishes as after an `exit` in the prologue (END phasers, the status),
+  without reporting the rest of the unit (rakudo: `BEGIN { plan 1;
+  skip-rest; exit }; 1 +;` reports no syntax error).
+
+Not covered: a module END phaser after a later syntax error (rakudo runs Test's
+plan check, mutsu does not; #18918, a separate gap of every parse-time load).
+
+Remaining for 5b: a `BEGIN` that reads the unit's lexicals or calls its
+routines (it needs the unit frame, or ADR-0134's static cells, during the
+parse), and slice 4b after it.
+
+### 7.17 Slice 5b: a `BEGIN` over the unit's variables (2026-11-23)
+
+A top-level `BEGIN` of the program that reads or writes the unit's own
+top-level variables (`my @log; BEGIN @log.push(1);`, `my $n; BEGIN $n++;`,
+≈15 in `t/` and roast, mostly tests of the prologue itself) now runs at parse
+time too, without the unit's frame, which does not exist until the unit is
+compiled:
+
+- The parser keeps the unit's **plain** top-level `my` variables declared so
+  far (`begin_at_parse::UNIT_VARS`): a scalar, array or hash with no type,
+  trait, shape, `where`, binding or other declaration mark. Any other variable
+  the body reaches keeps it in the prologue, as before.
+- `begin_body_core_names` accepts those as the body's free variables, unless
+  the body makes a closure (a block, a pointy block, an anonymous routine, a
+  WhateverCode, a `sub`), which could keep a parse-time copy instead of the
+  unit's variable.
+- The loader binds each to a parse-time copy by name for the run: a fresh
+  `Any`, `[]` or `{}` (a `BEGIN` sees the variable without its initializer, as
+  on rakudo), or the value an earlier parse-time `BEGIN` left in it. It hands
+  back the values the run left (`BeginOutcome::Ran`), and the parser keeps, in
+  the `BEGIN`'s place, a `BEGIN` of plain assignments of those values. The
+  prologue runs it at that position, so the unit's variables start from them
+  exactly as if the original `BEGIN` had run there; that replay is no prologue
+  effect, so a later `use` or `BEGIN` still runs at parse time.
+
+The unit's frame is not involved, so this does not touch lane:env's frame
+work (ADR-12529). Identity is not kept: the unit's array is a copy of the one
+the `BEGIN` filled, which only a closure or an escaping reference could tell,
+and the body makes neither (a body that passes the variable to an imported
+routine that keeps it would; none of the measured cases does).
+
+Remaining for 5b: a `BEGIN` that calls the unit's own routines, and a `BEGIN`
+over a typed or traited variable. Slice 4b (§7.10) no longer waits on 5b for
+the program's top level.
+
+### 7.18 Slice 4b, first part: the program interpreter hosts a slang it loaded (2026-11-23)
+
+A slang module the program interpreter loads at parse time (4a) whose
+productions a host runs (a hook, an action override, a `statementlist`
+wrapper) no longer falls back to the activation interpreter for its host. The
+program interpreter hosts it, and the parser's requests become nested calls on
+the parse's own thread, as §2.8 planned:
+
+- `slang_link::SlangHost` has two links: the activation interpreter's
+  channels (`Thread`) and `InProcess`. An in-process hook reaches the loader
+  (`CompileTimeLoader::run_slang_hook`). The loader runs the same host entry
+  the activation interpreter runs (`slang_host::hook_answer`), composing the
+  activation's own grammar and actions roles (`HookRequest::roles`).
+- The unit's parser state is suspended while the hook's code runs, since that
+  code may parse: a regex compiled at run time, an `EVAL`. Each back-call
+  puts it back, and parses the unit's text in it under a loader guard derived
+  from the hook's interpreter, so a `use` in a back-called block still loads
+  at parse time (`slang_host_inline`).
+- Nothing is logged for replay. The production runs in the interpreter that
+  runs the unit, so what its action does is already there, at parse time, as
+  on rakudo. A `BEGIN` after the production sees it; before this slice it saw
+  only the replay at run time (ADR-17243).
+- Each parse-time activation takes the rules and roles its load registered out
+  of the interpreter's shared lists (`split_off`). An enclosing load, a module
+  whose own compile `use`s a slang, therefore does not count the nested slang
+  as its own (#17267).
+
+**Still on the activation interpreter:** a slang that overrides a declarator
+(`routine-declarator`, `scope-declarator`, `package-declarator`). Its action
+works on the code object or package the production declares
+(`$method.meta-object does Tallied`, EEL's `pattern`, a `FOREIGN-LANG`
+package), which mutsu builds only when the unit is compiled. The unit
+therefore replays those actions against the real objects. Hosting it in
+process needs the parse's nodes to carry the meta-objects the unit installs.
+That, and the slangs the loader does not take (§7.10), are what keeps the
+activation interpreter alive.

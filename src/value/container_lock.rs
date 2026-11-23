@@ -68,7 +68,7 @@
 
 use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 /// Set once a thread that can run user VM code has been spawned; never
 /// cleared. A program that never spawns one skips every lock below.
@@ -100,11 +100,11 @@ const STRIPES: usize = 64;
 /// three workers' combined CPU time was ~2x a single worker's for the same
 /// instruction count (#17337).
 #[repr(align(128))]
-struct Stripe(Mutex<()>);
+struct Stripe(RwLock<()>);
 
-static STRIPE_LOCKS: [Stripe; STRIPES] = [const { Stripe(Mutex::new(())) }; STRIPES];
+static STRIPE_LOCKS: [Stripe; STRIPES] = [const { Stripe(RwLock::new(())) }; STRIPES];
 
-fn stripe_for(addr: usize) -> &'static Mutex<()> {
+fn stripe_for(addr: usize) -> &'static RwLock<()> {
     &STRIPE_LOCKS[stripe_index(addr)].0
 }
 
@@ -124,6 +124,9 @@ thread_local! {
     /// so a caller nested inside a guard can ask whether it already covers a
     /// key ([`ContainerStructGuard::held_covers`]).
     static HELD_STRIPES: Cell<(usize, usize)> = const { Cell::new((NO_STRIPE, NO_STRIPE)) };
+    /// Whether this thread's guard holds its stripes on the shared side
+    /// (ADR-18752 D1: an in-range element store).
+    static HOLDS_SHARED_SIDE: Cell<bool> = const { Cell::new(false) };
 }
 
 const NO_STRIPE: usize = usize::MAX;
@@ -133,10 +136,10 @@ const NO_STRIPE: usize = usize::MAX;
 /// Obtain it with [`ContainerStructGuard::acquire_for`] and keep it in a local
 /// so it is released when the mutation region ends.
 pub(crate) struct ContainerStructGuard {
-    _guard: MutexGuard<'static, ()>,
+    _guard: StripeGuard,
     /// The node's stripe, for a celled container whose node hashes to a
     /// different stripe than its cell. See [`Self::acquire_for`].
-    _node_guard: Option<MutexGuard<'static, ()>>,
+    _node_guard: Option<StripeGuard>,
 }
 
 impl ContainerStructGuard {
@@ -241,11 +244,11 @@ impl ContainerStructGuard {
             return None;
         }
         HOLDS_STRUCT_LOCK.with(|held| held.set(true));
-        let lock = |i: usize| {
-            STRIPE_LOCKS[i]
+        let lock = |i: usize| StripeGuard::Exclusive {
+            _held: STRIPE_LOCKS[i]
                 .0
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
         };
         let first = lock(ia.min(ib));
         let second = lock(ia.max(ib));
@@ -286,9 +289,11 @@ impl ContainerStructGuard {
         // unrelated container that hashes to it would then panic too. The
         // invariant this lock protects is "one writer at a time", which a
         // previous panic does not invalidate, so recover rather than propagate.
-        let guard = stripe_for(addr)
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let guard = StripeGuard::Exclusive {
+            _held: stripe_for(addr)
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        };
         HELD_STRIPES.with(|held| held.set((stripe_index(addr), NO_STRIPE)));
         Some(Self {
             _guard: guard,
@@ -307,7 +312,9 @@ impl ContainerStructGuard {
     // Cost: O(k), k = keys.
     pub(crate) fn held_covers(addrs: &[usize]) -> bool {
         let (a, b) = HELD_STRIPES.with(Cell::get);
-        a != NO_STRIPE
+        // The shared side excludes no other store, so it covers nothing.
+        !HOLDS_SHARED_SIDE.with(Cell::get)
+            && a != NO_STRIPE
             && addrs.iter().all(|&addr| {
                 let i = stripe_index(addr);
                 i == a || i == b
@@ -315,9 +322,59 @@ impl ContainerStructGuard {
     }
 }
 
+/// One held stripe, on either side of ADR-18752 D1's reader/writer lock.
+/// The roles are inverted from the usual read/write meaning: the *shared*
+/// side is an in-range element store, which excludes no other such store; the
+/// *exclusive* side is everything else that holds a stripe (every structural
+/// write and every live-node read), as under ADR-0068.
+enum StripeGuard {
+    Exclusive {
+        _held: RwLockWriteGuard<'static, ()>,
+    },
+    Shared {
+        _held: RwLockReadGuard<'static, ()>,
+    },
+}
+
+impl ContainerStructGuard {
+    /// Take the stripes of a celled array's `cell` and `node` on the SHARED
+    /// side, for an in-range element store (ADR-18752 D1). The keys are the
+    /// ones every exclusive holder of this container takes, so the store still
+    /// excludes every structural write and live-node read; it excludes no
+    /// other in-range store.
+    ///
+    /// `None` when no second mutator thread exists (nothing to exclude) or
+    /// when this thread already holds a stripe: the at-most-one rule holds for
+    /// both sides, and the caller then takes the ordinary path.
+    // Cost: O(1).
+    pub(crate) fn acquire_shared_pair(cell: usize, node: usize) -> Option<Self> {
+        if !multi_mutator_threads_live() || HOLDS_STRUCT_LOCK.with(Cell::get) {
+            return None;
+        }
+        let (ia, ib) = (stripe_index(cell), stripe_index(node));
+        let shared = |i: usize| StripeGuard::Shared {
+            _held: STRIPE_LOCKS[i]
+                .0
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        };
+        HOLDS_STRUCT_LOCK.with(|held| held.set(true));
+        HOLDS_SHARED_SIDE.with(|held| held.set(true));
+        // Stripe order, like every pair, so no two threads wait on each other.
+        let first = shared(ia.min(ib));
+        let second = (ia != ib).then(|| shared(ia.max(ib)));
+        HELD_STRIPES.with(|held| held.set((ia, if ia == ib { NO_STRIPE } else { ib })));
+        Some(Self {
+            _guard: first,
+            _node_guard: second,
+        })
+    }
+}
+
 impl Drop for ContainerStructGuard {
     fn drop(&mut self) {
         HOLDS_STRUCT_LOCK.with(|held| held.set(false));
+        HOLDS_SHARED_SIDE.with(|held| held.set(false));
         HELD_STRIPES.with(|held| held.set((NO_STRIPE, NO_STRIPE)));
     }
 }
@@ -413,8 +470,8 @@ mod tests {
         assert!(writer.is_some());
         let (cell_free, node_free) = std::thread::spawn(move || {
             (
-                stripe_for(cell).try_lock().is_ok(),
-                stripe_for(node).try_lock().is_ok(),
+                stripe_for(cell).try_write().is_ok(),
+                stripe_for(node).try_write().is_ok(),
             )
         })
         .join()
@@ -422,7 +479,7 @@ mod tests {
         assert!(!cell_free, "the cell's stripe is held");
         assert!(!node_free, "the node's stripe is held");
         drop(writer);
-        assert!(stripe_for(node).try_lock().is_ok());
+        assert!(stripe_for(node).try_write().is_ok());
         // One key, or two keys on one stripe, takes a single lock.
         assert!(ContainerStructGuard::acquire_pair(0x8040, 0x8040 + (STRIPES << 4)).is_some());
     }

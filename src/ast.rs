@@ -1465,6 +1465,34 @@ pub(crate) struct SubstThunk {
     /// operator's name); `None` for a plain `=`. What the RakuAST boundary
     /// shows as `MetaInfix::Assign(Infix(OP))`.
     pub(crate) infix: Option<Box<str>>,
+    /// Whether the plain `=` is an item assignment, decided from the
+    /// enclosing expression's `$*LEFTSIGIL` (`crate::ast::left_sigil`): what
+    /// the RakuAST boundary shows as `Assignment.new(:item)`. Execution does
+    /// not read it.
+    #[serde(default)]
+    pub(crate) item: bool,
+}
+
+impl SubstThunk {
+    /// The thunk of a parsed `s[pat] = EXPR`; the enclosing expression's
+    /// parse decides `item` ([`left_sigil::mark_substitutions`]).
+    // Cost: O(1).
+    pub(crate) fn assign(expr: Expr) -> Self {
+        Self {
+            expr,
+            infix: None,
+            item: false,
+        }
+    }
+}
+
+/// Where a substitution starts: the `:c(N)` / `:continue(N)` or `:p(N)` /
+/// `:pos(N)` argument (`Expr::Subst::start`). `anchored` is `:pos`, which
+/// requires the first match to start exactly there (#18892).
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
+pub(crate) struct SubstStart {
+    pub(crate) expr: Expr,
+    pub(crate) anchored: bool,
 }
 
 #[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
@@ -1628,6 +1656,9 @@ pub(crate) enum Expr {
         /// expression evaluated where the substitution runs. `None` when `:x`
         /// is absent.
         x: Option<Box<Expr>>,
+        /// The `:c` / `:pos` argument, evaluated where the substitution runs;
+        /// `None` when neither is written.
+        start: Option<Box<SubstStart>>,
         /// The RHS of an assignment-form substitution (`s[pat] = EXPR`,
         /// `S[pat] = EXPR`), parsed in the enclosing scope. It is a thunk, not
         /// a Block: it is evaluated per match with `$/` bound to that match, a
@@ -1659,6 +1690,9 @@ pub(crate) enum Expr {
         /// expression evaluated where the substitution runs. `None` when `:x`
         /// is absent.
         x: Option<Box<Expr>>,
+        /// The `:c` / `:pos` argument, evaluated where the substitution runs;
+        /// `None` when neither is written.
+        start: Option<Box<SubstStart>>,
         /// The RHS of an assignment-form substitution (`s[pat] = EXPR`,
         /// `S[pat] = EXPR`), parsed in the enclosing scope. It is a thunk, not
         /// a Block: it is evaluated per match with `$/` bound to that match, a

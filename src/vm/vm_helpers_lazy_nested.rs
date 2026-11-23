@@ -11,6 +11,17 @@ impl Interpreter {
         self.reify_nested_map_grep_for_read_inner(value, false, &mut seen)
     }
 
+    /// [`Self::reify_nested_map_grep_for_read`] for one element of a
+    /// collection, walked as the whole-collection walk walks its elements.
+    // Cost: as `reify_nested_map_grep_for_read`, over `item`.
+    pub(crate) fn reify_nested_map_grep_for_read_element(
+        &mut self,
+        item: &Value,
+    ) -> Result<(), RuntimeError> {
+        let mut seen = std::collections::HashSet::new();
+        self.reify_nested_map_grep_for_read_inner(item, true, &mut seen)
+    }
+
     /// Whether the nested-read walk may have something to do for `item`:
     /// everything but a scalar leaf (an `Int`, `Str`, ... holds no nested
     /// `Seq`). A pure tag probe, so the walk skips the leaves of a large list

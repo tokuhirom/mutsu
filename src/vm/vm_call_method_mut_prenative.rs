@@ -14,7 +14,7 @@ impl Interpreter {
     /// The list is shared by both opcodes rather than split per opcode: it only
     /// ever makes the gate MORE conservative, and a name that has a dedicated
     /// branch on one path is not worth gating on the other.
-    pub(super) fn dispatch_branches_before_native_probe(method: &str) -> bool {
+    pub(crate) fn dispatch_branches_before_native_probe(method: &str) -> bool {
         matches!(
             method,
             "new"
@@ -200,7 +200,7 @@ impl Interpreter {
     ///
     /// Returns `None` to continue with the general path unchanged.
     #[allow(clippy::too_many_arguments)]
-    pub(super) fn try_env_pure_scalar_native_dispatch(
+    pub(crate) fn try_env_pure_scalar_native_dispatch(
         &mut self,
         entry: &str,
         target: &Value,

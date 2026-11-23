@@ -214,7 +214,7 @@ impl Interpreter {
         // the parameters are bound, so a parameter of that name still wins.
         // The displaced bindings are put back before the call's env merge below,
         // so the static is not written over the caller's same-named lexical.
-        let mut shadowed_by_statics: Vec<(String, Option<Value>)> = Vec::new();
+        let mut shadowed_by_statics: Vec<(Symbol, Option<Value>)> = Vec::new();
         if pkg_guard.is_some() && self.class_has_package_lexicals(def_package) {
             self.inject_class_body_statics_saving_except(
                 def_package,
@@ -637,12 +637,7 @@ impl Interpreter {
         // Rust panic mid-loop above, the guard's `Drop` still runs during
         // unwind even though this line is never reached.
         drop(pkg_guard);
-        for (name, previous) in shadowed_by_statics.into_iter().rev() {
-            match previous {
-                Some(v) => self.env_mut().insert(name, v),
-                None => self.env_mut().remove(&name),
-            };
-        }
+        self.restore_class_body_statics(shadowed_by_statics.into_iter());
         self.pop_routine();
         self.pop_test_assertion_context(pushed_assertion);
         self.pop_block();

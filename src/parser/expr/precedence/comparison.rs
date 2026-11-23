@@ -6,22 +6,35 @@ pub(crate) fn comparison_expr_mode(input: &str, mode: ExprMode) -> PResult<'_, E
     // The set relations share the chaining level with the comparisons, so
     // either may follow the other (`$x ∈ @a == True`).
     let mut left = Some(left);
+    // The last chaining operator, as written: a built-in one takes no adverb.
+    let mut chaining: Option<&str> = None;
     loop {
         let (r, _) = ws(rest)?;
         let rhs = |s| structural_comparison_expr_mode(s, mode);
-        if let Some(r) = set_relation_tail(r, &mut left, &rhs)? {
-            rest = r;
+        if let Some(r2) = set_relation_tail(r, &mut left, &rhs)? {
+            chaining = r.split_whitespace().next();
+            rest = r2;
             continue;
         }
         let (r2, l2) = comparison_tail(rest, left.take().expect("left operand"), mode)?;
         let progressed = r2.len() != rest.len();
+        if progressed {
+            chaining = super::chain_cmp::chaining_op_spelling(r);
+        }
         rest = r2;
         left = Some(l2);
         if !progressed {
             break;
         }
     }
-    Ok((rest, left.expect("left operand")))
+    let left = left.expect("left operand");
+    // A user operator that shadows the comparison takes adverbs.
+    if let Some(op) = chaining
+        && !matches!(left, Expr::InfixFunc { .. })
+    {
+        super::chain_cmp::reject_chaining_adverb(rest, op)?;
+    }
+    Ok((rest, left))
 }
 
 /// The comparison operators (if any) that follow an already-parsed `left`

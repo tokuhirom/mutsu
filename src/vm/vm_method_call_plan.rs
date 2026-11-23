@@ -85,6 +85,65 @@ pub(crate) struct MethodCallPlan {
     /// re-asks `can_fast_dispatch_private_method_vm` on every call, as the
     /// private dispatch arm does.
     pub(crate) private: bool,
+    /// What the fast binder's prologue asks of the owner and the method on
+    /// every call, answered once for this plan (#18267 D1a); `None` when the
+    /// answer can change without a registry write (a published mixin owner).
+    pub(crate) facts: Option<MethodFrameFacts>,
+}
+
+/// The per-call questions `call_compiled_method_fast_in_unit` asks that are
+/// a function of the resolved `(owner, MethodDef)` and the receiver class
+/// alone, so a [`MethodCallPlan`] answers them once (#18267 D1a). Each reads
+/// the registry only, which the plan table's generation key pins.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct MethodFrameFacts {
+    /// `is_role(owner)`.
+    pub(crate) owner_is_role: bool,
+    /// `method_has_role_bindings(def, owner, receiver)`.
+    pub(crate) has_role_bindings: bool,
+    /// `method_body_package(owner, owner_sym, def)`.
+    pub(crate) body_package: Option<Symbol>,
+    /// The role the body was written in (`?ROLE`), interned.
+    pub(crate) role_context: Option<Symbol>,
+}
+
+impl MethodFrameFacts {
+    /// The role a method body runs for: its owner when the owner is a role,
+    /// else the role it was composed from, if any.
+    // Cost: O(1) plus one intern for a composed role method.
+    pub(crate) fn role_context_of(
+        owner_is_role: bool,
+        owner_sym: Symbol,
+        def: &crate::runtime::MethodDef,
+    ) -> Option<Symbol> {
+        if owner_is_role {
+            Some(owner_sym)
+        } else {
+            def.original_role
+                .as_deref()
+                .or(def.role_origin.as_deref())
+                .map(Symbol::intern)
+        }
+    }
+}
+
+/// How `call_compiled_method_fast` runs a call: the fast-path gate's
+/// `can_skip_merge`, and a plan's precomputed [`MethodFrameFacts`].
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct MethodFastHints {
+    pub(crate) can_skip_merge: bool,
+    pub(crate) facts: Option<MethodFrameFacts>,
+}
+
+impl MethodFastHints {
+    /// A call that was not replayed from a plan: every fact is asked anew.
+    // Cost: O(1).
+    pub(crate) fn unplanned(can_skip_merge: bool) -> Self {
+        MethodFastHints {
+            can_skip_merge,
+            facts: None,
+        }
+    }
 }
 
 /// An argument whose fast-path gate reading is fixed by its type key.
@@ -370,9 +429,28 @@ impl Interpreter {
             cc,
             owner,
             receiver,
-            gate.can_skip_merge,
+            gate.can_skip_merge || gate.merge_is_name_carry_only,
         );
-        let slot_frame = lean && super::vm_method_slot_frame::slot_frame_body_ok(def, cc, owner);
+        // A slot frame has no overlay to carry anything out of.
+        let slot_frame = lean
+            && gate.can_skip_merge
+            && super::vm_method_slot_frame::slot_frame_body_ok(def, cc, owner);
+        // A mixin owner another thread may publish is asked anew per call
+        // (`method_body_package` reads `published_mixins`, which no registry
+        // write of this interpreter moves).
+        let facts = (!self.types.published_mixins.may_hold(owner.as_str())).then(|| {
+            let owner_is_role = self.is_role(owner.as_str());
+            MethodFrameFacts {
+                owner_is_role,
+                has_role_bindings: self.method_has_role_bindings(
+                    def,
+                    owner.as_str(),
+                    receiver.as_str(),
+                ),
+                body_package: self.method_body_package(owner.as_str(), owner, def),
+                role_context: MethodFrameFacts::role_context_of(owner_is_role, owner, def),
+            }
+        });
         Some(std::sync::Arc::new(MethodCallPlan {
             owner,
             def: std::sync::Arc::clone(def),
@@ -381,6 +459,7 @@ impl Interpreter {
             slot_frame,
             container_params: def.has_container_params(),
             private,
+            facts,
         }))
     }
 
@@ -498,6 +577,8 @@ impl Interpreter {
                 method_def: def,
                 cc,
                 compiled_fns: fns_ref,
+                body_package: plan.facts.map(|facts| facts.body_package),
+                can_skip_merge: plan.can_skip_merge,
             };
             if plan.slot_frame && self.slot_frame_entry_ok() {
                 self.call_compiled_method_slot(&call, args, target.clone())
@@ -514,7 +595,10 @@ impl Interpreter {
                 args,
                 target.clone(),
                 fns_ref,
-                plan.can_skip_merge,
+                MethodFastHints {
+                    can_skip_merge: plan.can_skip_merge,
+                    facts: plan.facts,
+                },
             )
         };
         if pushed_dispatch {

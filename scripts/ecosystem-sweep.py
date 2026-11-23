@@ -46,6 +46,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import ecosystem_common as eco  # noqa: E402
@@ -55,6 +56,7 @@ DATA_DIR = os.path.join(REPO, "ecosystem")
 DISTS_DIR = os.path.join(DATA_DIR, "dists")
 EXCLUDE_LIST = os.path.join(DATA_DIR, "exclude.txt")
 ACCEPTED_LIST = os.path.join(DATA_DIR, "accepted-divergences.toml")
+OVERRIDE_LIST = os.path.join(DATA_DIR, "file-overrides.txt")
 SCHEMA = 1
 HARNESS = 3
 
@@ -73,6 +75,10 @@ TEST_PROBE = 'use Test; plan 1; is MONKEY-SEE-NO-EVAL(), 1, "vendored Test"'
 # worker finished.
 _print_lock = threading.Lock()
 _tally_lock = threading.Lock()
+
+# Every interpreter run takes this gate: shared, so `--jobs N` runs overlap, or
+# alone for a file `ecosystem/file-overrides.txt` marks `alone`.
+_run_gate = eco.RunGate()
 
 
 def log(msg):
@@ -269,13 +275,14 @@ def sweep_dist(name, index, opts, bundled) -> dict:
         blocked = False
         for module in sorted(meta.get("provides") or {}):
             probe = ["-e", f"use {module}; exit 0"]
-            m_rc, m_out = run([opts.mutsu] + libs + probe,
-                              cache_dir=mutsu_cache, **common)
-            # Both interpreters must get the same untimed load warmup. The
-            # old conditional rakudo probe made the first file cold on
-            # rakudo but warm on mutsu whenever mutsu loaded successfully.
-            r_rc, _r_out = run([opts.raku] + libs + probe,
-                               cache_dir=raku_cache, **common)
+            with _run_gate.shared():
+                m_rc, m_out = run([opts.mutsu] + libs + probe,
+                                  cache_dir=mutsu_cache, **common)
+                # Both interpreters must get the same untimed load warmup. The
+                # old conditional rakudo probe made the first file cold on
+                # rakudo but warm on mutsu whenever mutsu loaded successfully.
+                r_rc, _r_out = run([opts.raku] + libs + probe,
+                                   cache_dir=raku_cache, **common)
             if m_rc == 0:
                 record["load"][module] = "ok"
                 continue
@@ -294,19 +301,33 @@ def sweep_dist(name, index, opts, bundled) -> dict:
             tests = tests[:opts.max_files]
         for path in tests:
             rel = os.path.relpath(path, root)
-            # Both sides get the same retry budget. Giving mutsu three chances
-            # at a file the baseline got one is not a fair comparison, even
-            # though the asymmetry would only ever shrink the denominator.
-            raku, raku_flaky = measure([opts.raku] + libs + [path],
-                                       attempts=opts.attempts,
-                                       cache_dir=raku_cache, **common)
-            if raku["verdict"] != "pass":
-                record["files"].append({"path": rel, "raku": raku, "cmp": "no_baseline"})
+            # A known-slow file listed in ecosystem/file-overrides.txt gets a
+            # longer budget or the runner to itself -- on both sides alike.
+            override = getattr(opts, "file_overrides", {}).get((name, rel))
+            file_common = dict(common)
+            if override:
+                file_common["timeout"] = override.budget(opts.timeout)
+            gate = (_run_gate.alone() if override and override.alone
+                    else _run_gate.shared())
+            with gate:
+                # Both sides get the same retry budget. Giving mutsu three
+                # chances at a file the baseline got one is not a fair
+                # comparison, even though the asymmetry would only ever shrink
+                # the denominator.
+                raku, raku_flaky = measure([opts.raku] + libs + [path],
+                                           attempts=opts.attempts,
+                                           cache_dir=raku_cache, **file_common)
+                mutsu = flaky = None
+                if raku["verdict"] == "pass":
+                    mutsu, flaky = measure([opts.mutsu] + libs + [path],
+                                           attempts=opts.attempts,
+                                           cache_dir=mutsu_cache, **file_common)
+            extra = {"override": override.as_record()} if override else {}
+            if mutsu is None:
+                record["files"].append({"path": rel, "raku": raku,
+                                        "cmp": "no_baseline", **extra})
                 continue
-            mutsu, flaky = measure([opts.mutsu] + libs + [path],
-                                   attempts=opts.attempts,
-                                   cache_dir=mutsu_cache, **common)
-            entry = {"path": rel, "raku": raku, "mutsu": mutsu}
+            entry = {"path": rel, "raku": raku, "mutsu": mutsu, **extra}
             if flaky or raku_flaky:
                 entry["flaky"] = True
             entry["cmp"] = grade_file(name, entry, opts.accepted)
@@ -470,22 +491,28 @@ def regrade():
 
 # --- rollup ------------------------------------------------------------------
 
-def rollup(append_history=False):
+def rollup(append_history=False, previous_ref=None):
     records = load_records()
     if not records:
         sys.exit(f"no records under {DISTS_DIR} — run a sweep first")
     by_status = collections.Counter(r["status"] for r in records)
     accepted = sum(1 for r in records for f in r.get("files", [])
                    if f.get("cmp") == "accepted")
+    exclude = eco.load_exclude(EXCLUDE_LIST)
     # The KPI itself is eco.kpi(), shared with gen-ecosystem-manifest.py so the
     # site page and this summary publish one definition.
-    numbers = eco.kpi(records, eco.load_exclude(EXCLUDE_LIST))
+    numbers = eco.kpi(records, exclude)
 
     summary = {
         "schema": SCHEMA,
         "generated": dt.date.today().isoformat(),
         "distributions": len(records),
+        # Every record's own status, excluded distributions included (the
+        # history row's `measured` / `blocked_dep` read this).
         "status": dict(sorted(by_status.items())),
+        # The status table as summary.md shows it: in-scope records by status,
+        # and the exclude.txt ones on a row of their own.
+        "status_table": status_rows(records, exclude),
         **numbers,
         "accepted_files": accepted,
     }
@@ -493,14 +520,76 @@ def rollup(append_history=False):
     with open(os.path.join(DATA_DIR, "summary.json"), "w", encoding="utf-8") as fh:
         json.dump(summary, fh, indent=2, sort_keys=True)
         fh.write("\n")
-    write_summary_md(summary, records)
+    write_summary_md(summary, records, regressed_since(records, previous_ref))
     if append_history:
         append_history_row(summary, records)
     render_chart()
     return summary
 
 
-def write_summary_md(summary, records):
+# The status-table row that counts the exclude.txt distributions.
+EXCLUDED_ROW = "excluded"
+
+
+def status_rows(records, exclude) -> list[list]:
+    """The rollup's status table: `[status, count]` for every in-scope record,
+    by status, then one `[EXCLUDED_ROW, count]` row for the distributions
+    `exclude.txt` lists, whatever their own status. An excluded record is
+    counted only there, so its frozen old status (a `red` the project decided
+    never to support) does not read as a failing distribution. The KPI is
+    `eco.kpi()`'s and does not change."""
+    in_scope = collections.Counter()
+    excluded = 0
+    for r in records:
+        if eco.is_excluded(exclude, r.get("dist"), r.get("version")):
+            excluded += 1
+        else:
+            in_scope[r["status"]] += 1
+    rows = [[status, count] for status, count in sorted(in_scope.items())]
+    if excluded:
+        rows.append([EXCLUDED_ROW, excluded])
+    return rows
+
+
+def regressed_since(records, previous_ref=None):
+    """`eco.regressions()` of the records on disk against the ledger commit they
+    replace, or None when that commit is not available here.
+
+    The base is `previous_ref` if given, else the `ecosystem-data` commit the
+    ledger on disk was materialized from (`ecosystem/.ledger-ref`). In the
+    sweep's `collect` job that is the ledger tip before this run's records were
+    applied, so the list is exactly what this sweep made worse; after a plain
+    `ecosystem-ledger.sh pull` it is empty until a local re-measurement or
+    `--regrade` changes a record.
+    """
+    ref = previous_ref or eco.ledger_stamp(REPO)
+    previous = eco.ledger_records_at(REPO, ref) if ref else None
+    if previous is None:
+        return None
+    return eco.regressions(previous, {r["dist"]: r for r in records})
+
+
+def regressed_md(regressed) -> list[str]:
+    """summary.md's "Regressed since the previous ledger" section."""
+    lines = ["## Regressed since the previous ledger", "",
+             "Distributions measured at the same version in the ledger commit this",
+             "rollup replaces that got a worse status, or a baseline file that",
+             "lost parity (a file rakudo now fails is not counted).", ""]
+    if regressed is None:
+        return lines + ["_The previous ledger commit is not available here._"]
+    out = []
+    for dist, version, was, now, files in regressed:
+        line = f"- `{dist}` {version}: {was} → {now}"
+        if files:
+            shown = ", ".join(f"`{f}`" for f in files[:3])
+            more = ", …" if len(files) > 3 else ""
+            line += (f" ({len(files)} file{'s' if len(files) != 1 else ''} "
+                     f"lost parity: {shown}{more})")
+        out.append(line)
+    return lines + (out or ["_None._"])
+
+
+def write_summary_md(summary, records, regressed=None):
     lines = [
         "# Ecosystem parity — summary",
         "",
@@ -524,8 +613,11 @@ def write_summary_md(summary, records):
         "| status | distributions |",
         "|---|---|",
     ]
-    for status, count in summary["status"].items():
-        lines.append(f"| `{status}` | {count} |")
+    for status, count in summary["status_table"]:
+        label = (f"`{status}`" if status != EXCLUDED_ROW
+                 else "out of scope (`exclude.txt`, any status)")
+        lines.append(f"| {label} | {count} |")
+    lines += [""] + regressed_md(regressed)
     lines += ["", "## Distributions", "",
               "| distribution | version | status | baseline files passed |", "|---|---|---|---|"]
     for r in sorted(records, key=lambda r: r["dist"].lower()):
@@ -685,6 +777,9 @@ def main():
                          "records, then --rollup; measures nothing")
     ap.add_argument("--history", action="store_true",
                     help="with --rollup, also append a history.tsv row (full sweeps only)")
+    ap.add_argument("--previous-ref", metavar="REF",
+                    help="with --rollup, the ledger commit summary.md's regression "
+                         "list compares against (default: ecosystem/.ledger-ref)")
     ap.add_argument("--jobs", type=int, default=1)
     ap.add_argument("--timeout", type=int, default=120, help="per test file, both sides")
     ap.add_argument("--attempts", type=int, default=3, help="retries for a non-passing file")
@@ -703,13 +798,14 @@ def main():
     if args.regrade:
         regrade()
     if args.rollup or args.regrade:
-        summary = rollup(append_history=args.history)
+        summary = rollup(append_history=args.history, previous_ref=args.previous_ref)
         print(json.dumps(summary, indent=2, sort_keys=True))
         return 0
     if not (args.only or args.prefix or args.all or args.status or args.stale):
         ap.error("nothing selected: pass --only / --prefix / --all / --status / --stale")
 
     args = preflight(args)
+    args.file_overrides = eco.load_file_overrides(OVERRIDE_LIST)
     index = eco.load_index(refresh=args.refresh_index)
     os.makedirs(DATA_DIR, exist_ok=True)
     write_index_snapshot(index, args)
@@ -926,6 +1022,83 @@ def _self_test() -> int:
         {"cmp": "parity", "raku": passing_side, "mutsu": passing_side}])
     check("an accepted file is out of the denominator",
           totals["baseline_files"] == 1 and status_of(totals) == "green")
+
+    # file-overrides.txt: a listed file gets a longer budget (never a shorter
+    # one) and/or the runner to itself; anything malformed is refused.
+    with tempfile.TemporaryDirectory() as tmp:
+        path = os.path.join(tmp, "file-overrides.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("# header\n"
+                     "A::B t/slow.t timeout=480 -- slow, #1\n"
+                     "A::B t/timing.t alone -- timing assertion, #2\n"
+                     "C t/x.t timeout=60 alone -- both, #3\n")
+        table = eco.load_file_overrides(path)
+        slow = table[("A::B", "t/slow.t")]
+        check("timeout= raises the budget", slow.budget(120) == 480 and not slow.alone)
+        check("an override never shortens the budget", table[("C", "t/x.t")].budget(120) == 120)
+        check("alone is recorded", table[("A::B", "t/timing.t")].as_record() == {"alone": True})
+        check("an unlisted file has no override", ("A::B", "t/other.t") not in table)
+        for bad in ("A t/x.t timeout=480\n", "A t/x.t -- no option\n",
+                    "A t/x.t timeout=abc -- r\n", "A t/x.t fast -- r\n",
+                    "A t/x.t alone -- r\nA t/x.t alone -- r\n"):
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write(bad)
+            try:
+                eco.load_file_overrides(path)
+                refused = False
+            except SystemExit:
+                refused = True
+            check(f"a malformed override is refused: {bad.strip()!r}", refused)
+
+    # RunGate: an `alone` run overlaps no shared run, and shared runs overlap.
+    gate = eco.RunGate()
+    active = {"shared": 0, "alone": 0, "max_shared": 0, "overlap": False}
+    state_lock = threading.Lock()
+
+    def hold(kind, secs):
+        with (gate.alone() if kind == "alone" else gate.shared()):
+            with state_lock:
+                active[kind] += 1
+                active["max_shared"] = max(active["max_shared"], active["shared"])
+                if active["alone"] and (active["shared"] or active["alone"] > 1):
+                    active["overlap"] = True
+            time.sleep(secs)
+            with state_lock:
+                active[kind] -= 1
+    threads = [threading.Thread(target=hold, args=(k, 0.05))
+               for k in ["shared"] * 4 + ["alone"] + ["shared"] * 4 + ["alone"]]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    check("an alone run never overlaps another run", not active["overlap"])
+    check("shared runs still overlap", active["max_shared"] > 1)
+
+    # status_rows(): an excluded record is counted on the excluded row only,
+    # whatever its own status; an in-scope one by its status.
+    rows = status_rows(
+        [{"dist": "Red::Out", "version": "1", "status": "red"},
+         {"dist": "Green::In", "version": "1", "status": "green"},
+         {"dist": "Red::In", "version": "1", "status": "red"},
+         {"dist": "Pinned", "version": "2", "status": "red"}],
+        {"Red::Out": (None, "out of scope"), "Pinned": ("1", "only 1")})
+    check("the status table counts an excluded record only on its own row",
+          rows == [["green", 1], ["red", 2], [EXCLUDED_ROW, 1]])
+    check("no excluded row when nothing is excluded",
+          status_rows([{"dist": "A", "version": "1", "status": "green"}], {})
+          == [["green", 1]])
+
+    # regressed_md(): the summary.md section, with or without a base commit.
+    md = regressed_md([("Grid", "1", "green", "red", ["t/a.t"]),
+                       ("Wide", "2", "partial", "partial",
+                        ["t/1.t", "t/2.t", "t/3.t", "t/4.t"])])
+    check("a regression is listed with the file that lost parity",
+          "- `Grid` 1: green → red (1 file lost parity: `t/a.t`)" in md)
+    check("more than three lost files are elided",
+          "- `Wide` 2: partial → partial (4 files lost parity: "
+          "`t/1.t`, `t/2.t`, `t/3.t`, …)" in md)
+    check("an empty list says so", regressed_md([])[-1] == "_None._")
+    check("no base commit says so", "not available" in regressed_md(None)[-1])
 
     run = real_run
     print(f"ecosystem-sweep self-test: "

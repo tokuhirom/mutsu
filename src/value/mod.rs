@@ -599,6 +599,7 @@ pub(crate) mod array_coerce;
 mod array_data_ops;
 mod array_holes;
 mod array_plain_read;
+pub(crate) mod array_shared_store;
 /// The instance-attribute map (`Symbol -> Value`); see [`AttrMap`].
 mod attr_map;
 mod attr_site;
@@ -613,6 +614,7 @@ pub(crate) mod compare;
 pub(crate) mod container_lock;
 pub(crate) mod container_read;
 mod dispatch_shape;
+pub(crate) mod mixin_identity;
 pub(crate) use dispatch_shape::iterator_kind::native_iterator_is_lazy;
 pub(crate) mod render_guard;
 pub(crate) mod seq_gen;
@@ -2771,6 +2773,10 @@ pub(crate) struct PairData {
     pub(crate) key: PairKey,
     pub(crate) value: Value,
     pub(crate) source: Option<String>,
+    /// The Pair object's own identity, for the `.WHICH` of a Pair that holds
+    /// a container (whose identity is the object, not its content). See
+    /// [`which_id::WhichId`].
+    pub(crate) which_id: which_id::WhichId,
 }
 
 /// The `Value` representation (3b-1 step A). Private to `crate::value` — this
@@ -3228,6 +3234,7 @@ impl Value {
             key: PairKey::String(key),
             value: val,
             source: None,
+            which_id: Default::default(),
         })))
     }
     #[inline]
@@ -3236,6 +3243,7 @@ impl Value {
             key: PairKey::Value(key),
             value: val,
             source: None,
+            which_id: Default::default(),
         })))
     }
     #[inline]

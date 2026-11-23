@@ -594,6 +594,11 @@ pub(crate) struct Registry {
     /// composed yet. Rakudo keeps those candidates in `multi_methods_to_incorporate`
     /// until `compose`, so `^can` does not see them before then.
     pub(crate) pending_multi_methods: CowTable<std::collections::HashSet<(String, String)>>,
+    /// Candidates a `^add_multi_method` added to a class that was already
+    /// composed, as `(class, method, definition)`. Rakudo keeps them in
+    /// `multi_methods_to_incorporate` until the next `compose`, so dispatch
+    /// does not see them before then; `mop_compose` installs them.
+    pub(crate) deferred_multi_methods: CowTable<Vec<(String, String, MethodDef)>>,
     /// Classes whose HOW `compose` hook already ran through an attribute
     /// trait's deferred compose (`run_pending_attr_composes`); consumed by
     /// `queue_trait_how_compose` so the hook is not queued a second time.

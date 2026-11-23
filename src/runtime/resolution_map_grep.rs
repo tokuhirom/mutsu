@@ -395,6 +395,12 @@ impl Interpreter {
             compiler.seed_outer_code_var_names(origin.outer_code_var_names.iter().cloned());
             compiler.seed_enclosing_terms_from(origin);
             compiler.seed_lexical_import_chain_from(origin);
+            // The package the block was written in, as its own closure
+            // compile saw it: `$?PACKAGE` in the body, and the package
+            // `CLIENT::` tells the block by (#18845).
+            if let Some(package) = origin.package {
+                compiler.enclosing_package = Some(package.as_str().to_string());
+            }
         }
         let normalized_body = normalize_tail_stmt_for_value(&data.body);
         // The body is compiled as a top-level chunk, where a bare LEAVE /
@@ -446,6 +452,7 @@ impl Interpreter {
             crate::compiler::frame_lexical_inherit::bind_origin_code_var_upvalues(
                 &mut code, origin,
             );
+            code.package = origin.package;
         }
         let code = std::sync::Arc::new(code);
         let fns = std::sync::Arc::new(fns);

@@ -1,39 +1,41 @@
+# A bareword type name or constant read inside a class nested in a package
+# resolves through the enclosing package chain; a term key (`\Bool`) takes
+# the narrow env probe there, not the alias cascade (#18274).
 use Test;
-
-# Barewords a method resolves through its enclosing packages
-# (`package_chain_var_fallback`): the package candidates are probed by
-# symbol, in the `our` store, the env and the top-level package table. A
-# core type name probed the same way misses every store and stays the type.
-
-plan 8;
-
-module PCT {
-    our constant Greeting = 'hi';
-    my constant Limit = 3;
-    our $counter = 10;
-    class Inner::Deep {
-        method greet { Greeting }
-        method limit { Limit }
-        method counter { $counter }
-        method bool { Bool }
-        method str-name { Str.^name }
-        method coerce($x) { Int($x) }
+module M {
+    my constant LIMIT = 3;
+    our constant OURC = 7;
+    my \sigless = 11;
+    class M::C {
+        method lim { LIMIT }
+        method ourc { OURC }
+        method sl { sigless }
+        method chk($x) { $x ~~ Int }
+        method chk-bool($x) { $x ~~ Bool }
     }
 }
-
-my $o = PCT::Inner::Deep.new;
-is $o.greet, 'hi', 'our constant of an enclosing module';
-is $o.limit, 3, 'my constant of an enclosing module';
-is $o.counter, 10, 'our scalar of an enclosing module';
-ok $o.bool === Bool, 'a core type name misses the package chain and stays the type';
-is $o.str-name, 'Str', 'a core type name used as an invocant';
-is $o.coerce('42'), 42, 'a core type name used as a coercer';
-
-module Shadow {
-    my constant Bool = 'shadowed';
-    class K { method b { Bool } }
+module N {
+    my constant Bool = Str;
+    class N::K {
+        method chk($x) { $x ~~ Bool }
+    }
 }
-is Shadow::K.new.b, 'shadowed', 'an enclosing module constant shadows a core type name';
-
-# Repeated reads keep resolving (no stale answer after the first miss).
-is (^3).map({ $o.bool.^name }).join(','), 'Bool,Bool,Bool', 'repeated misses stay misses';
+is M::C.lim, 3, 'package-block constant';
+is M::C.ourc, 7, 'our constant';
+is M::C.sl, 11, 'sigilless';
+ok M::C.chk(5), 'core type check';
+ok M::C.chk-bool(True), 'Bool';
+nok M::C.chk-bool(5), 'not Bool';
+for ^3 { ok M::C.chk-bool(True), "repeat $_" }
+ok N::K.chk("x"), "constant shadows Bool in the package chain";
+nok N::K.chk(True), 'shadowed Bool is Str';
+sub outer(\Bool) {
+    my sub inner($x) { $x ~~ Bool }
+    inner("s"), inner(1)
+}
+is-deeply outer(Str).List, (True, False), 'sigilless parameter shadows a type name in a nested sub';
+my \Real = Str;
+sub r($x) { $x ~~ Real }
+for ^3 { ok r("x"), "file-scope sigilless term shadows a core type in a sub ($_)" }
+nok r(1.5), 'the shadowing term is Str';
+done-testing;

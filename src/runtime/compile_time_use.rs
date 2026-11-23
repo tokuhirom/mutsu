@@ -43,6 +43,8 @@ impl CompileTimeLoader for Interpreter {
             return LoadOutcome::NotTaken;
         };
         let (bare, _) = Self::split_dist_selectors(module);
+        // Another thread loading the same module finishes first (ADR-17216).
+        let _claim = self.claim_module_load(bare);
         // A module loaded already (by an earlier `use`) does not load again,
         // but its `sub EXPORT` runs for this `use` too, now, as rakudo runs it
         // once per `use` statement at compile time.
@@ -208,8 +210,21 @@ impl CompileTimeLoader for Interpreter {
 
     // Cost: O(n) for the analysis, n = size of the phaser's body; the
     // phaser's own run otherwise.
-    fn run_begin(&mut self, begin: &Stmt) -> crate::compile_time_loader::BeginOutcome {
-        self.run_parse_time_begin(begin)
+    fn run_begin(
+        &mut self,
+        begin: &Stmt,
+        unit: &crate::compile_time_loader::UnitAtParse<'_>,
+    ) -> crate::compile_time_loader::BeginOutcome {
+        self.run_parse_time_begin(begin, unit)
+    }
+
+    // Cost: the production.
+    fn run_slang_hook(
+        &mut self,
+        request: crate::slang_link::HookRequest,
+        back_call: &mut crate::slang_link::BackCall<'_>,
+    ) -> crate::slang_link::HostAnswer {
+        self.run_in_process_slang_hook(request, back_call)
     }
 
     // Cost: O(1).

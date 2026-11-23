@@ -372,7 +372,12 @@ impl Interpreter {
     /// already-materialized instance in place for a later parse in the same
     /// process, e.g. a nested `EVAL` with a different `use v6.x`).
     pub(crate) fn language_version_value() -> Value {
-        let lang_version = crate::parser::current_language_version();
+        Self::language_version_value_of(&crate::parser::current_language_version())
+    }
+
+    /// [`Self::language_version_value`] for the revision `lang_version`.
+    // Cost: O(v), v = the length of `lang_version`.
+    pub(crate) fn language_version_value_of(lang_version: &str) -> Value {
         let parts: Vec<crate::value::VersionPart> = lang_version
             .split('.')
             .filter(|s| !s.is_empty())
@@ -458,10 +463,54 @@ impl Interpreter {
     /// effect for the most recent completed parse.
     pub(super) fn update_raku_version_from_parser(&mut self) {
         let lang_version = crate::parser::current_language_version();
+        self.set_raku_language_version(&lang_version);
+    }
+
+    /// Make `$*RAKU.version` / `$*PERL.version` the revision `lang_version`.
+    ///
+    /// Rakudo's `$*RAKU` is one process-wide object whose `version` is the
+    /// language version of the most recently compiled unit: after
+    /// `EVAL q[use v6.c; …]` it reads `v6.c`, inside the EVAL and after it
+    /// (#18867). So an EVAL unit with its own `use v6.x` calls this as well
+    /// as the top-level parse.
+    // Cost: O(1) attribute writes.
+    pub(crate) fn set_raku_language_version(&mut self, lang_version: &str) {
         if lang_version.is_empty() || lang_version == "6" {
             return;
         }
-        let new_version = Self::language_version_value();
+        Self::set_shared_raku_language_version(lang_version);
+        let new_version = Self::language_version_value_of(lang_version);
+        self.set_env_raku_version(&new_version);
+    }
+
+    /// The process-wide `$*RAKU` / `$*PERL` instances' half of
+    /// [`Self::set_raku_language_version`], whether or not this interpreter
+    /// has read them yet: their attributes are one shared cell, so every
+    /// holder sees the write.
+    // Cost: O(1) attribute writes.
+    pub(crate) fn set_shared_raku_language_version(lang_version: &str) {
+        if lang_version.is_empty() || lang_version == "6" {
+            return;
+        }
+        let new_version = Self::language_version_value_of(lang_version);
+        for key in ["*RAKU", "*PERL"] {
+            if let Some(v) = Self::lazy_magic_dynamic_var(key)
+                && let ValueView::Instance {
+                    class_name,
+                    attributes,
+                    id,
+                } = v.view()
+            {
+                let mut new_attrs = attributes.to_map();
+                new_attrs.insert("version".to_string(), new_version.clone());
+                let _ = Value::write_back_sharing(&attributes, class_name, new_attrs, id);
+            }
+        }
+    }
+
+    /// The env overlay's materialized `$*RAKU` / `$*PERL` entries.
+    // Cost: O(1) attribute writes.
+    fn set_env_raku_version(&mut self, new_version: &Value) {
         for key in ["*RAKU", "?RAKU", "*PERL", "?PERL"] {
             if let Some(v) = self.env.get(key).cloned()
                 && let ValueView::Instance {

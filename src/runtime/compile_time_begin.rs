@@ -40,13 +40,33 @@ pub(crate) fn is_program_parse() -> bool {
 
 impl Interpreter {
     /// Run a unit-level statement-form `BEGIN` the parser just finished, if
-    /// the parse is the program's and the body reaches nothing of the unit.
-    // Cost: O(n) for the analysis, n = size of the phaser's body; the
+    /// the parse is the program's and the body reaches nothing of the unit
+    /// but core names, the routines the unit's parse-time `use`s import and
+    /// its plain top-level `my` variables (`unit`). The imports it needs run
+    /// first, as the prologue would have run them ahead of it; the variables
+    /// are parse-time copies, whose values it leaves are handed back for the
+    /// prologue to write into the unit's own (ADR-17558 §7.17).
+    // Cost: O(n + u * i + v) for the analysis, n = size of the phaser's body,
+    // u = `uses`, i = names each imports, v = the unit's variables; the
     // phaser's own run otherwise.
-    pub(crate) fn run_parse_time_begin(&mut self, begin: &Stmt) -> BeginOutcome {
+    pub(crate) fn run_parse_time_begin(
+        &mut self,
+        begin: &Stmt,
+        unit: &crate::compile_time_loader::UnitAtParse<'_>,
+    ) -> BeginOutcome {
         if !is_program_parse() {
             return BeginOutcome::NotTaken;
         }
+        let uses = unit.uses;
+        let imports_name = |use_stmt: &Stmt, name: &str| {
+            matches!(use_stmt, Stmt::Use { imports, .. } if imports.iter().any(|i| i == name))
+        };
+        let imported = |name: &str| uses.iter().any(|u| imports_name(u, name));
+        let unit_var = |name: &str| unit.vars.iter().any(|(var, _)| var == name);
+        let reach = crate::runtime::begin_prologue::UnitReach {
+            imported: &imported,
+            unit_var: &unit_var,
+        };
         // The lowering and the run are not part of the unit's parse: a parse
         // they trigger (the lowering itself, a regex compiled at run time)
         // must not see or disturb the unit's parser state, which resumes
@@ -57,31 +77,94 @@ impl Interpreter {
         // is (`parse_compilation_unit_of`); the phaser alone needs nothing of
         // the rest of the unit to lower, since a closed body names none of it.
         let lowered = crate::rakuast::frontend::finish_unit(vec![begin.clone()]);
-        let names = match lowered.as_deref() {
+        let closed = match lowered.as_deref() {
             Ok([Stmt::Phaser { body, bare, .. }]) => {
-                crate::runtime::begin_prologue::begin_body_core_names(body, *bare)
+                crate::runtime::begin_prologue::begin_body_core_names(body, *bare, &reach)
             }
             _ => None,
         };
         drop(suspended);
-        let (Ok(lowered), Some(names)) = (lowered, names) else {
+        let (Ok(lowered), Some(closed)) = (lowered, closed) else {
             return BeginOutcome::NotTaken;
         };
-        if names.iter().any(|name| crate::parser::unit_provides_name(name)) {
+        if closed.core.iter().any(|name| crate::parser::unit_provides_name(name))
+            || closed.imported.iter().any(|name| crate::parser::unit_declares_name(name))
+        {
             return BeginOutcome::NotTaken;
         }
+        // The imports the body needs, in source order, ahead of it: the `use`
+        // statements themselves, whose module is loaded, so running one only
+        // imports (a hook module's map is the one its parse-time load
+        // recorded for that statement's site).
+        let mut program: Vec<Stmt> = uses
+            .iter()
+            .filter(|u| closed.imported.iter().any(|name| imports_name(u, name)))
+            .cloned()
+            .collect();
         let suspended = crate::parser::unit_state::suspend();
+        if !program.is_empty() {
+            match crate::rakuast::frontend::finish_unit(program) {
+                Ok(lowered_uses) => program = lowered_uses,
+                Err(_) => {
+                    drop(suspended);
+                    return BeginOutcome::NotTaken;
+                }
+            }
+        }
+        program.extend(lowered);
         // Compiled as the prologue compiles it, so a failure is the same
         // `X::Comp::BeginTime` the prologue would raise.
         let mut compiler = crate::compiler::Compiler::new();
         compiler.set_current_package(self.current_package());
         compiler.is_mainline = true;
-        let (code, compiled_fns) = compiler.compile(&lowered);
+        let (code, compiled_fns) = compiler.compile(&program);
+        // The unit's variables it reaches are its free variables, which the
+        // run resolves by name: bind each to its parse-time copy, starting
+        // from what an earlier parse-time `BEGIN` left in it.
+        let saved: Vec<(String, Option<Value>)> = closed
+            .unit_vars
+            .iter()
+            .map(|name| {
+                let start = unit
+                    .vars
+                    .iter()
+                    .find(|(var, _)| var == name)
+                    .and_then(|(_, value)| value.clone())
+                    .unwrap_or_else(|| Self::parse_time_var_start(name));
+                (name.clone(), self.env.insert(name.clone(), start))
+            })
+            .collect();
         let result = self.run_top(&code, &compiled_fns);
+        let mut left = Vec::with_capacity(saved.len());
+        for (name, previous) in saved {
+            let value = match previous {
+                Some(previous) => self.env.insert(name.clone(), previous),
+                None => self.env.remove(&name),
+            };
+            left.push((name, value.unwrap_or(Value::NIL)));
+        }
         drop(suspended);
+        // An `exit` in it ends the process here, before the rest of the unit
+        // is parsed (rakudo: `BEGIN { plan 1; skip-rest; exit }; 1 +;` reports
+        // no syntax error). The parse stops with this error, which the
+        // program's run does not report: it sees the exit and finishes.
+        if self.control.halted {
+            return BeginOutcome::Failed(RuntimeError::new("exit in a parse-time BEGIN"));
+        }
         match result {
-            Ok(_) => BeginOutcome::Ran,
+            Ok(_) => BeginOutcome::Ran(left),
             Err(err) => BeginOutcome::Failed(err),
+        }
+    }
+
+    /// The value a plain `my` variable named `name` (the compiler's name:
+    /// `x`, `@a`, `%h`) holds before anything is assigned to it.
+    // Cost: O(1).
+    fn parse_time_var_start(name: &str) -> Value {
+        match name.as_bytes().first() {
+            Some(b'@') => Value::real_array(Vec::new()),
+            Some(b'%') => Value::hash(crate::value::HashData::default()),
+            _ => Value::package(crate::symbol::Symbol::intern("Any")),
         }
     }
 }

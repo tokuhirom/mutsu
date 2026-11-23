@@ -700,6 +700,7 @@ impl Compiler {
         // ADR-0113: bind the body's call-only `my sub`s as frame lexicals.
         // Before `compute_needs_env_sync`, which finalizes the chunk.
         sub_compiler.resolve_frame_lexical_routines(body);
+        sub_compiler.bake_static_views_closing(0);
         sub_compiler.note_routines_naming_lexicals();
         sub_compiler.code.compute_needs_env_sync();
         sub_compiler.record_routine_scoped_free();
@@ -716,6 +717,7 @@ impl Compiler {
             &mut sub_compiler.code,
             std::mem::take(&mut sub_compiler.compiled_functions),
         );
+        sub_compiler.code.package = Some(sub_compiler.compile_time_package_sym());
         let mut cf = CompiledFunction {
             code: std::sync::Arc::new(sub_compiler.code),
             source_file: None,
@@ -2113,6 +2115,7 @@ impl Compiler {
         // within the body, otherwise fall back to the parent compiler's
         // last_source_line.
         sub_compiler.code.source_line = sub_compiler.last_source_line.or(self.last_source_line);
+        sub_compiler.bake_static_views_closing(0);
         sub_compiler.note_routines_naming_lexicals();
         sub_compiler.code.compute_needs_env_sync();
         // A parameter DEFAULT or `where` constraint is evaluated from the
@@ -2172,6 +2175,7 @@ impl Compiler {
         }
         // See the twin call in `compile_sub_body` (#10827).
         self.absorb_outer_captures(&sub_compiler.code);
+        sub_compiler.code.package = Some(sub_compiler.compile_time_package_sym());
         sub_compiler.code
     }
 }

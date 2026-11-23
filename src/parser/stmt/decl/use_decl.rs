@@ -7,6 +7,44 @@ use crate::ast::{Expr, Stmt};
 use crate::symbol::Symbol;
 use crate::value::{Value, ValueView};
 
+/// Where a unit's leading language-version pragma (`use v6.c;`, after any
+/// whitespace, comments and Pod) ends in `source`, or `0` when the unit does
+/// not start with one. A program prologue (`-MModule`) goes after it, so the
+/// pragma stays the unit's first statement.
+// Cost: O(p), p = the length of the leading blanks and pragma.
+pub(crate) fn leading_version_pragma_end(source: &str) -> usize {
+    // A UTF-8 byte-order mark opening the file comes before the pragma.
+    let after_bom = source.strip_prefix('\u{FEFF}').unwrap_or(source);
+    let Ok((rest, ())) = super::super::super::helpers::ws_bol(after_bom) else {
+        return 0;
+    };
+    let Some(after_use) = keyword("use", rest) else {
+        return 0;
+    };
+    let Ok((after_use, _)) = ws1(after_use) else {
+        return 0;
+    };
+    if !after_use.starts_with("v6") {
+        return 0;
+    }
+    match after_use.find(';') {
+        Some(semi) => source.len() - after_use.len() + semi + 1,
+        None => 0,
+    }
+}
+
+/// `X::Language::TooLate`: a `use v6...` that is not the unit's first
+/// statement.
+fn too_late_to_switch_version() -> PError {
+    let message = "Too late to switch language version. Must be used as the very first statement."
+        .to_string();
+    let ex = Value::make_instance(
+        Symbol::intern("X::Language::TooLate"),
+        std::collections::HashMap::from([("message".to_string(), Value::str(message.clone()))]),
+    );
+    PError::fatal_with_exception(message, Box::new(ex))
+}
+
 /// Parse a `use` statement.
 pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     let rest = keyword("use", input).ok_or_else(|| PError::expected("use statement"))?;
@@ -18,6 +56,12 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
         let (r, version_token) = take_while1(rest, |c: char| {
             c.is_alphanumeric() || c == '.' || c == '*' || c == '+'
         })?;
+        // A language version is chosen before anything is compiled: rakudo
+        // takes it only as the unit's first statement (comments and Pod
+        // aside), and anywhere else it is X::Language::TooLate.
+        if !crate::parser::primary::is_first_in_source(input) {
+            return Err(too_late_to_switch_version());
+        }
         let version = normalize_language_version(version_token);
         super::super::simple::set_current_language_version(&version);
         let (r, _) = ws(r)?;
@@ -397,6 +441,16 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
     // wrapper. Parsing it here (rather than recovering a `sub MAIN` later in
     // stmt-list parsing) also keeps an unrelated `use Foo proto; sub MAIN`
     // pair from being mistaken for this construct.
+    // A parse-time `BEGIN` after it that calls a routine it imports runs this
+    // import first (ADR-17558 §7.16). A conditional `use` imports only when
+    // its BEGIN-time condition holds, so it is left out. `use Test` is not
+    // preloaded, but its load is no prologue effect (`is_inert_pragma`): the
+    // `BEGIN` that needs it loads it, as its `use` would at that point.
+    let loads_for_begin =
+        site != 0 || matches!(&use_stmt, Stmt::Use { module, arg: None, .. } if module == "Test");
+    if loads_for_begin && !empty_import && use_stmt_condition_free(&use_stmt) {
+        super::super::simple::note_parse_time_use(&use_stmt);
+    }
     let stmt = if let Some(proto) = inline_proto {
         crate::parser::stmt::control::parsed_block::finish_total(
             crate::ast::parsed::ParsedStmt::InlineProtoUse {
@@ -408,6 +462,18 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
         use_stmt
     };
     Ok((rest, stmt))
+}
+
+/// Whether `use_stmt` has no `:if`/`:unless` condition.
+// Cost: O(1).
+fn use_stmt_condition_free(use_stmt: &Stmt) -> bool {
+    matches!(
+        use_stmt,
+        Stmt::Use {
+            condition: None,
+            ..
+        }
+    )
 }
 
 /// The positional arguments of a `use` whose elements are all literals, as

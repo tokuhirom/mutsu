@@ -4,33 +4,7 @@ use super::native_methods::*;
 use super::*;
 use crate::symbol::Symbol;
 use crate::value::AttrMap;
-
-/// Block until the control supplier emits a `limit:N` directive (or the 30s
-/// bound elapses), consuming it through a push sink — registration replays a
-/// directive that was emitted before we started listening, and later emits
-/// wake the wait instantly (the old 10ms snapshot poll both lagged and could
-/// miss a directive cleared by a supplier reset).
-fn wait_for_control_limit(ctrl_id: u64) -> i64 {
-    let waker = crate::value::waker::ReactWaker::new();
-    let sink_id = supplier_sink_register(ctrl_id, 0, &waker, true);
-    let mut current_limit: i64 = 0;
-    let start = crate::thread_compat::Instant::now();
-    while current_limit == 0 && start.elapsed() < std::time::Duration::from_secs(30) {
-        for (_, event, _) in waker.drain() {
-            if let crate::value::waker::SinkEvent::Emit(val) = event
-                && let Some(rest) = val.to_string_value().strip_prefix("limit:")
-                && let Ok(n) = rest.trim().parse::<i64>()
-            {
-                current_limit = n;
-            }
-        }
-        if current_limit == 0 {
-            waker.wait_activity(std::time::Duration::from_millis(100));
-        }
-    }
-    supplier_sink_unregister(ctrl_id, sink_id);
-    current_limit
-}
+use super::supply_throttle_control::ControlLimitSink;
 
 /// Start order of `Supply.throttle`'s jobs: `next` is the next input index to
 /// start, `unyielded` the started jobs that have neither finished nor parked.
@@ -82,12 +56,13 @@ impl Interpreter {
                 let vals = source_values;
                 let blk = block;
                 let mut thread_interp = self.clone_for_thread_for_block(&blk);
+                let control = ControlLimitSink::register(ctrl_id);
                 // Runs a full interpreter (VM safepoints park it during
                 // execution): registered GC mutator; the control wait and the
                 // worker joins are quiescent safe regions. Pooled (ADR-0020
                 // slice 3): one-shot coordinator, may block — the pool grows.
                 crate::runtime::worker_pool::submit(move || {
-                    let current_limit = wait_for_control_limit(ctrl_id);
+                    let current_limit = control.wait_limit();
                     let effective_limit = if current_limit > 0 {
                         current_limit
                     } else {
@@ -272,10 +247,11 @@ impl Interpreter {
             let vals = source_values;
             let secs = seconds;
             let mut thread_interp = self.clone_for_thread();
+            let control = ControlLimitSink::register(ctrl_id);
             // Registered GC mutator (runs a full interpreter); the control
             // wait is a quiescent safe region. Pooled (ADR-0020 slice 3).
             crate::runtime::worker_pool::submit(move || {
-                let current_limit = wait_for_control_limit(ctrl_id);
+                let current_limit = control.wait_limit();
                 let effective_limit = if current_limit > 0 {
                     current_limit as usize
                 } else {

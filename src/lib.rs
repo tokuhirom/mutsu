@@ -187,6 +187,14 @@ pub fn gc_register_main_thread() {
     gc::mark_thread_registered(true);
 }
 
+/// Where `source`'s leading language-version pragma (`use v6.c;`) ends, or
+/// `0` when it has none: the place a program prologue such as `-MModule`'s
+/// `use` goes, so the pragma stays the unit's first statement.
+// Cost: O(p), p = the length of the leading blanks and pragma.
+pub fn leading_version_pragma_end(source: &str) -> usize {
+    parser::leading_version_pragma_end(source)
+}
+
 /// Parse source code and return a pretty-printed AST string.
 pub fn dump_ast(input: &str) -> Result<String, RuntimeError> {
     // Dumping does not execute: no parse-time probe may run a `use`d module.

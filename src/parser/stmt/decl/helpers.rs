@@ -230,9 +230,14 @@ fn is_plain_sub_name(name: &str) -> bool {
 }
 
 pub(crate) fn normalize_language_version(version_token: &str) -> String {
-    if version_token.starts_with("v6.c") {
+    // The dot after `v6` is optional: `use v6c` is `use v6.c`.
+    let revision = version_token
+        .strip_prefix("v6")
+        .map(|rest| rest.strip_prefix('.').unwrap_or(rest))
+        .unwrap_or("");
+    if revision.starts_with('c') {
         "6.c".to_string()
-    } else if version_token.starts_with("v6.e") || version_token.starts_with("v6.*") {
+    } else if revision.starts_with('e') || revision.starts_with('*') {
         // `v6.*` selects the newest language revision the compiler supports.
         "6.e".to_string()
     } else {

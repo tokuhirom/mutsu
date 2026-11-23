@@ -2045,17 +2045,18 @@ pub(super) fn name_from_identifier(s: &str) -> RakuAstNode {
 
 pub(super) use super::type_build::{build_type_node, is_pseudo_type, is_simple_type};
 
-/// `my \x = 5` / `my Int \x := $s` -> `VarDeclaration::Term(type?, name,
-/// initializer)`. A scoped one (`our \x`, `state \x`) stays the boundary.
+/// `my \x = 5` / `our Int \x := $s` -> `VarDeclaration::Term(scope?, type?,
+/// name, initializer)`; `scope` only for `our` / `state` (#18426).
 // Cost: O(n), n = size of the initializer.
 pub(super) fn term_declaration(
     names: &NameScope,
     decl: &crate::ast::sigilless_decl::SigillessDecl<'_>,
 ) -> Result<RakuAstNode, RuntimeError> {
-    if decl.is_our || decl.is_state {
-        return Err(unsupported("scoped sigilless declaration"));
-    }
     let mut fields = Vec::new();
+    if decl.is_our || decl.is_state {
+        let scope = if decl.is_our { "our" } else { "state" };
+        fields.push(leaf_field(Some("scope"), Value::str_from(scope)));
+    }
     if let Some(type_name) = decl.type_constraint {
         fields.push(node_field(Some("type"), build_type_node(names, type_name)?));
     }
@@ -2527,6 +2528,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
                     &spelled.expr,
                 )
             }
+            Spelling::FunctionInfix => super::function_infix::view_spelled(names, &spelled.expr),
             Spelling::NegatedSetInfix(written) => {
                 let Some((left, _, right)) = negated_set_operands(&spelled.expr) else {
                     return Err(unsupported("negated set spelling without its relation"));
@@ -5677,15 +5679,16 @@ pub(super) fn word_quote_with(quotewords: bool, val: bool, word: &str) -> RakuAs
         fields: vec![
             RakuAstField {
                 name: Some("processors"),
-                value: RakuAstFieldValue::List(processors),
+                value: RakuAstFieldValue::List(processors.clone()),
             },
             RakuAstField {
                 name: Some("segments"),
-                value: RakuAstFieldValue::List(vec![Value::rakuast(Box::new(RakuAstNode {
-                    origin: Default::default(),
-                    class: RakuAstClass::StrLiteral,
-                    fields: vec![leaf_field(None, Value::str(word.to_string()))],
-                }))]),
+                // A balanced inner `<...>` is a nested quote (#18457).
+                value: RakuAstFieldValue::List(super::nested_words::segments(
+                    quotewords,
+                    word,
+                    &processors,
+                )),
             },
         ],
     }

@@ -1,4 +1,5 @@
 use super::vm_method_call_attrs::CallAttrs;
+use super::vm_method_call_plan::{MethodFastHints, MethodFrameFacts};
 use super::*;
 use crate::meta_ns::MetaNs;
 use crate::value::AttrMap;
@@ -77,7 +78,15 @@ impl Interpreter {
             self.pop_lexical_class_scope();
         }
         self.current_unit = saved_unit;
-        result
+        result.map_err(|mut err| {
+            // An error the body raised carries its backtrace already; one
+            // without is the binder's, raised before the method's frame was
+            // pushed. Rakudo reports it inside the method (`in method m`).
+            if !err.has_backtrace() && err.control.is_none() && !err.is_leave {
+                self.attach_method_frame_backtrace(&mut err, owner_sym, method_sym, method_def, cc);
+            }
+            err
+        })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -199,7 +208,7 @@ impl Interpreter {
                 args,
                 base,
                 compiled_fns,
-                can_skip_merge,
+                MethodFastHints::unplanned(can_skip_merge),
             );
         }
 
@@ -1515,7 +1524,7 @@ impl Interpreter {
         args: Vec<Value>,
         base: Value,
         compiled_fns: &CompiledFns,
-        can_skip_merge: bool,
+        hints: MethodFastHints,
     ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
         let unit = self.unit_of_source_sym(cc.source_file);
         let saved_unit = std::mem::replace(&mut self.current_unit, unit);
@@ -1532,7 +1541,7 @@ impl Interpreter {
             args,
             base,
             compiled_fns,
-            can_skip_merge,
+            hints,
         );
         if scopes_lexical_types {
             self.pop_lexical_class_scope();
@@ -1552,7 +1561,7 @@ impl Interpreter {
         args: Vec<Value>,
         base: Value,
         compiled_fns: &CompiledFns,
-        can_skip_merge: bool,
+        hints: MethodFastHints,
     ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
         // #10986: a multi winner's subset predicates already ran in dispatch
         // (`pending_skip_constraint_recheck`); taken at entry so it describes
@@ -1573,9 +1582,11 @@ impl Interpreter {
                 args,
                 base,
                 compiled_fns,
-                can_skip_merge,
+                hints,
             )
         );
+        let can_skip_merge = hints.can_skip_merge;
+        let facts = hints.facts;
         let skip_constraint_recheck = std::mem::take(&mut self.pending_skip_constraint_recheck);
         // See `call_compiled_method`: interned by the caller (#10961).
         let owner_class: &str = owner_sym.as_str();
@@ -1584,7 +1595,10 @@ impl Interpreter {
         crate::alloc_scope_named!(_sc_pro, "mfast:prologue");
         // The owner's role-ness is asked here once per call and handed to the
         // frame, so the body's attribute accesses never ask it again.
-        let owner_is_role = self.is_role(owner_class);
+        let owner_is_role = match facts {
+            Some(facts) => facts.owner_is_role,
+            None => self.is_role(owner_class),
+        };
         // One walk for both cells: the primary is the role cell when `self`
         // composes the owner role, else the instance cell, which then also
         // serves as the fallback for keys the role cell lacks.
@@ -1653,8 +1667,10 @@ impl Interpreter {
         // A role method whose body and signature name none of its bindings
         // skips the install (`vm_role_binding_observers`); `has_role_bindings`
         // then also skips the re-applications below.
-        let mut has_role_bindings =
-            self.method_has_role_bindings(method_def, owner_class, receiver_class_name);
+        let mut has_role_bindings = match facts {
+            Some(facts) => facts.has_role_bindings,
+            None => self.method_has_role_bindings(method_def, owner_class, receiver_class_name),
+        };
         let role_binding_names: std::sync::Arc<[String]> = if has_role_bindings {
             match self.install_observed_method_role_bindings(
                 receiver_class_name,
@@ -1688,26 +1704,23 @@ impl Interpreter {
         // switches it (rare) — the unconditional save cloned a String per call.
         // See the matching comment in `call_compiled_method`: keyed on
         // `owner_class`, not the dynamic `receiver_class_name` (#9008).
-        let saved_package: Option<Symbol> = self
-            .method_body_package(owner_class, owner_sym, method_def)
-            .map(|package| {
-                let saved = self.current_package_sym();
-                self.set_current_package_sym(package);
-                saved
-            });
+        let body_package = match facts {
+            Some(facts) => facts.body_package,
+            None => self.method_body_package(owner_class, owner_sym, method_def),
+        };
+        let saved_package: Option<Symbol> = body_package.map(|package| {
+            let saved = self.current_package_sym();
+            self.set_current_package_sym(package);
+            saved
+        });
 
         // Compute role context without touching env. A role owner is its own
         // context (already interned); a method composed from a role into a
         // class carries its role's name, interned once here for both the
         // `?ROLE` slot and the routine frame below.
-        let role_context: Option<Symbol> = if owner_is_role {
-            Some(owner_sym)
-        } else {
-            method_def
-                .original_role
-                .as_deref()
-                .or(method_def.role_origin.as_deref())
-                .map(Symbol::intern)
+        let role_context: Option<Symbol> = match facts {
+            Some(facts) => facts.role_context,
+            None => MethodFrameFacts::role_context_of(owner_is_role, owner_sym, method_def),
         };
 
         // Build param name → arg value mapping (skip invocant). Positional
@@ -2844,12 +2857,12 @@ pub(crate) fn cheaply_unchanged(old: &Value, new: &Value) -> bool {
 /// the merge must not hand the method's `my $*OUT` back to the caller (where
 /// `print` reads it by its `$*OUT` key).
 // Cost: O(l), l = compiled locals.
-fn dynamic_decl_local(locals: &[String], s: &str) -> bool {
+pub(super) fn dynamic_decl_local(locals: &[String], s: &str) -> bool {
     s.strip_prefix('$')
         .is_some_and(|bare| bare.starts_with('*') && locals.iter().any(|l| l == bare))
 }
 
-fn attr_twigil_local(attributes: &AttrMap, s: &str) -> bool {
+pub(super) fn attr_twigil_local(attributes: &AttrMap, s: &str) -> bool {
     let bare = match s.as_bytes() {
         [b'@' | b'%', b'!' | b'.', ..] => &s[2..],
         [b'!' | b'.', ..] => &s[1..],

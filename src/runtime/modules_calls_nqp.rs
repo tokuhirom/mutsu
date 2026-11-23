@@ -1,6 +1,7 @@
 mod call_helpers;
 mod calls;
 mod calls_static_refute;
+mod static_refute_check;
 mod class;
 mod class_attr_table;
 mod class_dispatch;

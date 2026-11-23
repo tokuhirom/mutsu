@@ -574,6 +574,7 @@ impl Interpreter {
         // A cache hit skips the parse, which is where a unit's mention of a
         // deferral builtin is noted (`parser::parse_program`); note it here.
         crate::opcode::note_dispatcher_mention(&code);
+        crate::parser::static_outer_latch::note_mention(&code);
         let precomp_eligible = self.module_precomp_eligible(&code)
             && unit.is_none_or(super::module_bytecode::ModuleUnit::may_use_cache);
         let parse_session = unit.map(super::module_bytecode::ModuleUnit::parse_session);
@@ -905,6 +906,8 @@ impl Interpreter {
         // `need` of a unit a `use` (or an earlier `need`) already loaded
         // hands back the same compunit: running its body again redeclares
         // its routines (#14539, CompUnit::Util `load('NativeCall')`).
+        // Another thread loading the same module finishes first (ADR-17216).
+        let _claim = self.claim_module_load(module);
         if self.module.world.loaded_modules.read().contains(module) && self.module_still_registered(module) {
             return Ok(false);
         }
@@ -1086,6 +1089,7 @@ impl Interpreter {
                 // A hit skips the parse, which is where a unit's mention of a
                 // deferral builtin is noted (`parser::parse_program`).
                 crate::opcode::note_dispatcher_mention(&source_text);
+                crate::parser::static_outer_latch::note_mention(&source_text);
                 self.replay_parse_effects(&source_path, &entry.effects);
                 let ast = super::module_load_facts::ModuleAst::encoded(
                     entry.ast.clone(),
@@ -1513,6 +1517,18 @@ impl Interpreter {
                 }),
                 Err(err) => Err(err),
             };
+            // A compile error the body raised for itself (a `use` of a module
+            // nobody can find) is this module's, not the importer's: render it
+            // under the module's file, with a snippet of its own source.
+            let result = result.map_err(|mut err| {
+                if err.code().is_some_and(|code| code.is_parse()) && err.source_file().is_none() {
+                    err.set_source_file_text(
+                        source_path.to_string_lossy().to_string(),
+                        module_source.clone(),
+                    );
+                }
+                err
+            });
             self.exit_readonly_frame(readonly_mark);
             self.module.import_target_package = saved_import_target;
             // The importer's tables come back, but the module's named docs are
@@ -2004,6 +2020,9 @@ impl Interpreter {
             self.module.module_loading_unit_stack.pop();
             self.current_unit = saved_unit;
             self.set_current_package(saved_package);
+            // The epilogue below moves routines in and out of the registry;
+            // the invalidation after it evicts exactly the keys it changed.
+            let fn_keys_before_epilogue = self.fn_key_snapshot();
             if result.is_ok() {
                 // A `sub MAIN` defined in a used module is NOT the program's MAIN
                 // and must not be auto-dispatched at program end -- unless the
@@ -2034,7 +2053,10 @@ impl Interpreter {
             // hidden.
             self.restore_toplevel_global_routines(hidden_toplevel);
             // Invalidate name-keyed resolution caches.
-            self.invalidate_fn_resolution();
+            self.invalidate_fn_resolution_since(&fn_keys_before_epilogue);
+            // The export below (`sub EXPORT`, hidden export routines coming
+            // back, leaked MAINs leaving) is diffed the same way.
+            let fn_keys_before_export = self.fn_key_snapshot();
             // If the module defined `sub EXPORT`, call it with the `use` args and
             // install the symbols it returns into the caller's scope. The
             // enclosing compunit's hook comes back either way -- an aborted
@@ -2085,7 +2107,7 @@ impl Interpreter {
                 &before_function_keys,
                 main_exported,
             );
-            self.invalidate_fn_resolution();
+            self.invalidate_fn_resolution_since(&fn_keys_before_export);
             // The module's own package-less `our sub`s are part of its GLOBAL
             // merge (ADR-11136).
             if unit_name.is_none() {

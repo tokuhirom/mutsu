@@ -8,6 +8,9 @@ use OpenSSL::Stack;
 
 use NativeCall;
 
+constant SSL_CTRL_SET_TLSEXT_HOSTNAME = 55;
+constant TLSEXT_NAMETYPE_host_name    = 0;
+
 class SSL is repr('CStruct') {
     has int32 $.version;
     has int32 $.type;
@@ -106,5 +109,29 @@ our sub SSL_set_client_CA_list(
 our sub SSL_ctrl(
   SSL, int32, long, Str
 --> long) is native(&ssl-lib) { ... }
+
+# const char *SSL_get_version(const SSL *ssl)
+our sub SSL_get_version(
+  SSL
+--> Str) is native(&ssl-lib) { ... }
+
+# int SSL_version(const SSL *s)
+our sub SSL_version(
+  SSL
+--> int32) is native(&ssl-lib) { ... }
+
+# int SSL_set_alpn_protos(SSL *ssl, const unsigned char *protos,
+#                         unsigned int protos_len)
+our sub SSL_set_alpn_protos(
+  SSL, Buf, uint32
+--> int32) is native(&ssl-lib) { ... }
+
+# void SSL_get0_alpn_selected(const SSL *ssl, const unsigned char **data,
+#                             unsigned int *len)
+our sub SSL_get0_alpn_selected(
+  SSL,
+  CArray[CArray[uint8]],
+  uint32 is rw
+) is native(&ssl-lib) { ... }
 
 # vim: expandtab shiftwidth=4

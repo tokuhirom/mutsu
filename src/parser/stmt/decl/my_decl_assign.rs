@@ -932,7 +932,14 @@ fn sunk_list(mut stmts: Vec<Stmt>) -> Stmt {
 /// Handle binding `:=` or `::=`.
 fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     let (rest, _) = ws(input)?;
-    let (mut rest, mut expr) = parse_assign_expr_or_comma(rest)?;
+    // `:=` is item-assignment precedence: in statement context a loose
+    // word-logical ends the initializer, and the tail is re-attached below
+    // (`my $x := 1 orelse 2` is `(my $x := 1) orelse 2`, #18938).
+    let (mut rest, mut expr) = if s.apply_modifier {
+        parse_assign_expr_or_comma_no_word_logical(rest)?
+    } else {
+        parse_assign_expr_or_comma(rest)?
+    };
     let (tail, _) = ws(rest)?;
     if let Expr::BareWord(name) = &expr
         && !tail.is_empty()
@@ -1024,6 +1031,9 @@ fn handle_binding(input: &str, s: MyDeclState) -> PResult<'_, Stmt> {
     )
     .map_err(PError::from_typed)?;
     if s.apply_modifier {
+        let seed = crate::parser::stmt::word_logical_split::seed_read_expr(&bound_name);
+        let (rest, stmt) =
+            crate::parser::stmt::word_logical_split::wrap_trailing_word_logical(rest, stmt, seed)?;
         return parse_statement_modifier(rest, stmt);
     }
     Ok((rest, stmt))

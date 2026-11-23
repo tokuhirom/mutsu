@@ -201,6 +201,11 @@ impl Interpreter {
                     "samemark" | "mm" => transforms.samemark = value.truthy(),
                     "samespace" | "ss" => transforms.samespace = value.truthy(),
                     "sigspace" | "s" => transforms.sigspace = value.truthy(),
+                    // A substitution cannot overlap its matches: rakudo refuses
+                    // the short adverbs (#18897).
+                    "ov" | "ex" if value.truthy() => {
+                        return Err(Self::str_subst_adverb_error(key.as_str(), value));
+                    }
                     _ => {}
                 }
             } else {

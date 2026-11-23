@@ -1406,7 +1406,7 @@ impl Interpreter {
         }
         // `Pair.freeze` on a non-variable receiver (e.g. `Pair.new(...).freeze`,
         // or a `.freeze.foo` chain): decontainerize the value, mark it read-only,
-        // and return it. There is no variable to rebind here (empty target name).
+        // and return it (`Value::freeze_pair`, which works on the Pair object).
         if method == "freeze"
             && args.is_empty()
             && matches!(
@@ -1415,8 +1415,7 @@ impl Interpreter {
             )
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "pair-freeze");
-            let frozen = self.pair_freeze(&target, "");
-            self.stack.push(frozen);
+            self.stack.push(target.freeze_pair());
             return Ok(());
         }
         // `proto method` body dispatch (see try_proto_method_body).

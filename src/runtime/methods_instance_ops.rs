@@ -459,6 +459,24 @@ impl Interpreter {
                     fields.join(", ")
                 ))));
             }
+            // `tr///`'s `StrDistance` has no class declaration to read its
+            // public attributes from either: `before` and `after` are all of it.
+            "StrDistance" if matches!(method, "raku" | "gist") => {
+                let attrs = attributes.as_map();
+                let fields: Vec<String> = ["before", "after"]
+                    .iter()
+                    .filter_map(|k| {
+                        attrs.get(*k).map(|a| {
+                            let a = crate::builtins::methods_0arg::raku_repr::raku_value(a);
+                            format!("{k} => {a}")
+                        })
+                    })
+                    .collect();
+                return Some(Ok(Value::str(format!(
+                    "StrDistance.new({})",
+                    fields.join(", ")
+                ))));
+            }
             "Backtrace::Frame" => {
                 let attr_map = attributes.as_map();
                 let file_value = attr_map
@@ -506,11 +524,14 @@ impl Interpreter {
         // handed back): read them out before rendering them.
         self.seed_cstruct_fields_for_method(&class_key, Some(target));
         self.raku_cycle_guards.leaf.enter(target_id);
-        let public_attrs = self.collect_public_raku_attrs(
+        // Read the values under the attribute lock, then render them with it
+        // released: rendering runs user code that may write this instance.
+        let values = self.collect_public_raku_attr_values(
             &class_key,
             &(attributes).as_map(),
             mixin.map(|(overrides, _)| overrides),
         );
+        let public_attrs = self.render_public_raku_attrs(values);
         let cycle_hit = self.raku_cycle_guards.leaf.leave(&target_id);
         let body = if public_attrs.is_empty() {
             format!("{}.new", display_name)

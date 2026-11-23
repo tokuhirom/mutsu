@@ -176,15 +176,68 @@ fn flat_hammer(target: &Value) -> Value {
 
 /// Flatten a collection one level, preserving the existing lazy and shaped
 /// Array cases.
-// Cost: O(1) per call for lazy List/Array, LazyList and infinite Range;
-// otherwise O(t), t = leaves reached through flattenable nesting.
+// Cost: O(1) per call for a List (a long one defers, a short one scans at
+// most `FLAT_EAGER_SCAN_MAX` elements), an Array, LazyList and infinite
+// Range; otherwise O(t), t = leaves reached through flattenable nesting.
 pub(crate) fn flat(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     // An `Iterable` instance among the elements is read through its own
-    // `iterator`, which only the interpreter can ask (#15322).
+    // `iterator`, which only the interpreter can ask (#15322): a `List`
+    // defers that to the pull (#15962); any other receiver declines.
+    if let Some(deferred) = deferred_flat(target) {
+        return Some(Ok(deferred));
+    }
     if crate::runtime::Interpreter::flat_may_hold_iterable_instance(target) {
         return None;
     }
     flat_plain(target, args)
+}
+
+/// The most elements of a `List` whose `.flat` scans them up front for an
+/// `Iterable` instance; a longer `List` flattens through a deferred pull
+/// instead, so creating its `.flat` stays O(1) (#15962). Scanning a short
+/// one keeps the plain pure cursor for the common case.
+const FLAT_EAGER_SCAN_MAX: usize = 64;
+
+/// Whether `.flat` of `target` is the deferred pull of [`deferred_flat`]: a
+/// `List` longer than [`FLAT_EAGER_SCAN_MAX`]. The `Seq` receiver the
+/// method dispatch reifies for `flat` needs no nested-Seq walk then, as
+/// the pull reifies each element it reaches.
+// Cost: O(1).
+pub(crate) fn flat_defers_long_list(target: &Value) -> bool {
+    matches!(
+        target.view(),
+        ValueView::Array(
+            items,
+            crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList
+        ) if items.len() > FLAT_EAGER_SCAN_MAX
+    )
+}
+
+/// `.flat` of a `List` as a deferred pull (`MapGrepMode::Flat`) when the
+/// list is long, or short but holding an `Iterable` instance; `None` for
+/// every other receiver.
+// Cost: O(1) for a long List, O(FLAT_EAGER_SCAN_MAX) tag compares otherwise.
+fn deferred_flat(target: &Value) -> Option<Value> {
+    if !flat_defers_long_list(target)
+        && !(matches!(
+            target.view(),
+            ValueView::Array(
+                _,
+                crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList
+            )
+        ) && crate::runtime::Interpreter::flat_may_hold_iterable_instance(target))
+    {
+        return None;
+    }
+    let operand = crate::builtins::deitemize_flat_operand(target);
+    Some(Value::seq_deferred(crate::value::SeqSource::MapGrep {
+        items: crate::value::MapGrepItems::Live(operand),
+        pos: 0,
+        func: None,
+        fatal: false,
+        mode: crate::value::MapGrepMode::Flat,
+        plan: Default::default(),
+    }))
 }
 
 /// [`flat`] for a receiver known to hold no `Iterable` instance the

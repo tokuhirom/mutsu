@@ -26,7 +26,17 @@ dies-ok { from-json(Q<{"k": /*/ 1}>, :allow-jsonc) },
 dies-ok { from-json(Q<{"k": /* unterminated 1}>, :allow-jsonc) },
     'unterminated block comment is rejected';
 
-is-deeply from-json("[1] // trailing", :allow-jsonc), $[1],
+is-deeply from-json("[1] // trailing\n", :allow-jsonc), $[1],
     'trailing line comment after the document';
+
+is-deeply from-json("[1] /* trailing */", :allow-jsonc), $[1],
+    'trailing block comment at end of input';
+
+# A line comment running into end of input (no newline) is rejected by
+# JSON::Fast 0.21.0 on rakudo as well: its comment skipper steps one past the
+# end, so the "additional text" check fires. mutsu runs the module verbatim and
+# must agree with rakudo here.
+dies-ok { from-json("[1] // trailing", :allow-jsonc) },
+    'line comment at end of input without a newline dies, as on rakudo';
 
 done-testing;

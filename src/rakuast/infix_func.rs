@@ -46,12 +46,15 @@ pub(super) fn is_hidden_adverbs(node: &RakuAstNode, field: &RakuAstField) -> boo
 }
 
 /// `$node.add-colonpair($pair)`: append an adverb to an `ApplyInfix` (its
-/// `colonpairs`) or an `ApplyListInfix` (its hidden adverbs).
+/// `colonpairs`) or an `ApplyListInfix` (its hidden adverbs), or a colonpair
+/// to a `Name`.
 // Cost: O(1) amortized.
 pub(crate) fn add_colonpair(node: &mut RakuAstNode, pair: Value) -> Result<(), RuntimeError> {
     let field = match node.class {
         RakuAstClass::ApplyInfix => "colonpairs",
         RakuAstClass::ApplyListInfix => ADVERBS,
+        // `Name.add-colonpair($pair)` (#18976).
+        RakuAstClass::Name => "colonpairs",
         _ => {
             return Err(RuntimeError::new(
                 "add-colonpair is only available on RakuAST::ApplyInfix and RakuAST::ApplyListInfix",

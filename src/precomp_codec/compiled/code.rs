@@ -19,6 +19,7 @@ impl Encode for CompiledCode {
             ops,
             op_lines,
             source_file,
+            package,
             emit_line,
             constants,
             const_index,
@@ -57,6 +58,7 @@ impl Encode for CompiledCode {
             is_routine,
             lexically_in_routine,
             method_fatal_pragma,
+            caller_topic_dynamic,
             succeed_passes_through,
             reads_topic,
             mentions_native_scalar_type_name,
@@ -148,6 +150,7 @@ impl Encode for CompiledCode {
             uses_samewith,
             needs_reflective_capture,
             static_name_lookup,
+            eval_mainline_closure,
             uses_dispatcher,
             may_observe_named_slurpy,
             reads_routine_magical,
@@ -192,6 +195,7 @@ impl Encode for CompiledCode {
         ops.encode(encoder)?;
         op_lines.encode(encoder)?;
         source_file.encode(encoder)?;
+        package.encode(encoder)?;
         emit_line.encode(encoder)?;
         constants.encode(encoder)?;
         require_empty(const_index.is_empty(), "CompiledCode::const_index")?;
@@ -230,6 +234,7 @@ impl Encode for CompiledCode {
         is_routine.encode(encoder)?;
         lexically_in_routine.encode(encoder)?;
         method_fatal_pragma.encode(encoder)?;
+        caller_topic_dynamic.encode(encoder)?;
         succeed_passes_through.encode(encoder)?;
         reads_topic.encode(encoder)?;
         mentions_native_scalar_type_name.encode(encoder)?;
@@ -324,6 +329,7 @@ impl Encode for CompiledCode {
         uses_samewith.encode(encoder)?;
         needs_reflective_capture.encode(encoder)?;
         static_name_lookup.encode(encoder)?;
+        eval_mainline_closure.encode(encoder)?;
         uses_dispatcher.encode(encoder)?;
         may_observe_named_slurpy.encode(encoder)?;
         reads_routine_magical.encode(encoder)?;
@@ -350,6 +356,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             ops: Decode::decode(decoder)?,
             op_lines: Decode::decode(decoder)?,
             source_file: Decode::decode(decoder)?,
+            package: Decode::decode(decoder)?,
             emit_line: Decode::decode(decoder)?,
             constants: Decode::decode(decoder)?,
             const_index: Default::default(),
@@ -386,6 +393,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             is_routine: Decode::decode(decoder)?,
             lexically_in_routine: Decode::decode(decoder)?,
             method_fatal_pragma: Decode::decode(decoder)?,
+            caller_topic_dynamic: Decode::decode(decoder)?,
             succeed_passes_through: Decode::decode(decoder)?,
             reads_topic: Decode::decode(decoder)?,
             mentions_native_scalar_type_name: Decode::decode(decoder)?,
@@ -483,6 +491,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             uses_samewith: Decode::decode(decoder)?,
             needs_reflective_capture: Decode::decode(decoder)?,
             static_name_lookup: Decode::decode(decoder)?,
+            eval_mainline_closure: Decode::decode(decoder)?,
             uses_dispatcher: Decode::decode(decoder)?,
             may_observe_named_slurpy: Decode::decode(decoder)?,
             reads_routine_magical: Decode::decode(decoder)?,

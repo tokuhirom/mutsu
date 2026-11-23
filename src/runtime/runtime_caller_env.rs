@@ -94,7 +94,13 @@ impl Interpreter {
         let entry_env = if flushed.is_empty() {
             self.env.clone()
         } else {
-            let mut env = Env::scoped_child(self.env.clone());
+            // A block tier, not a frame root: the entry is the calling frame,
+            // whose root (and static link, which `CALLER::OUTER::` reads,
+            // #18787) lies below the overlay.
+            let mut env = match Env::open_block_tier(self.env.clone()) {
+                Ok((env, _)) => env,
+                Err(env) => Env::scoped_child(env),
+            };
             for (sym, value) in &flushed {
                 env.insert_sym(*sym, value.clone());
             }
@@ -283,11 +289,28 @@ impl Interpreter {
     /// `depth` is the number of CALLER:: levels (1 for $CALLER::x, 2 for $CALLER::CALLER::x).
     /// `name` is the bare variable name without sigil (e.g. "a" for $a).
     pub(crate) fn get_caller_var(&self, name: &str, depth: usize) -> Result<Value, RuntimeError> {
+        self.caller_var_lookup(name, depth, true)
+    }
+
+    /// [`Self::get_caller_var`]; `caller_topic_strict` says whether the
+    /// caller's `$_` is refused as not dynamic (`CALLER::`, #18988) rather
+    /// than read (`CALLERS::` reads it).
+    // Cost: O(t), t = the frame's tiers.
+    fn caller_var_lookup(
+        &self,
+        name: &str,
+        depth: usize,
+        caller_topic_strict: bool,
+    ) -> Result<Value, RuntimeError> {
         let stack_len = self.caller_env_stack.len();
         if depth == 0 || depth > stack_len {
             // Walking past the top of the call stack is not an error in Raku:
             // the lookup just misses and yields Nil.
             return Ok(Value::NIL);
+        }
+        // `CALLER::OUTER::x` / `CALLER::UNIT::x`: the caller's lexical scopes.
+        if let Some(found) = self.caller_lexical_chain_var(name, depth) {
+            return Ok(found);
         }
         let env = &self.caller_env_stack[stack_len - depth];
         // A sigil-less key is looked up as a term (a constant's term key,
@@ -303,7 +326,9 @@ impl Interpreter {
         };
         if let Some(val) = found {
             // Check that the variable is declared `is dynamic`
-            if !self.is_var_dynamic(name) {
+            if !self.is_var_dynamic(name)
+                || (caller_topic_strict && self.caller_topic_is_not_dynamic(name))
+            {
                 return Err(crate::runtime::utils::caller_not_dynamic_error(reported));
             }
             Ok(val.clone())
@@ -370,7 +395,7 @@ impl Interpreter {
             // 6.e: a found symbol that is not dynamic is a Failure of
             // `X::Symbol::NotDynamic` through `CALLERS::` (`CALLER::` still
             // throws `X::Caller::NotDynamic`).
-            return match self.get_caller_var(name, depth) {
+            return match self.caller_var_lookup(name, depth, false) {
                 Err(err)
                     if crate::parser::current_language_version_starts_with("6.e")
                         && err.exception.as_deref().is_some_and(|ex| {
@@ -441,8 +466,15 @@ impl Interpreter {
                 "Cannot access caller variable '${name}' — not enough caller frames"
             )));
         }
-        if !self.is_var_dynamic(name) {
+        if !self.is_var_dynamic(name) || self.caller_topic_is_not_dynamic(name) {
             return Err(crate::runtime::utils::caller_not_dynamic_error(name));
+        }
+        if name == "_" && depth == 1 {
+            // `$CALLER::_ = v` / `$CALLER::_++`: the caller's topic, which
+            // the return-time writeback deliberately skips (each routine has
+            // its own `$_`), and which is not the callee's own `$_` either.
+            self.write_caller_topic(value);
+            return Ok(());
         }
         let idx = stack_len - depth;
         self.caller_env_stack[idx].insert(name.to_string(), value.clone());
@@ -483,20 +515,26 @@ impl Interpreter {
             )));
         }
         if name == "_" {
-            // The topic is per-frame, so a general runtime-name write would
-            // replay the callee's topic through every intervening frame. Write
-            // directly into this call frame's saved caller env instead; the
-            // caller-var drain below updates its authoritative local slot once
-            // when this frame returns.
-            if let Some(frame) = self.call_frames.last_mut() {
-                frame.saved_env.insert(name.to_string(), value);
-                self.record_caller_var_writeback(name);
-            }
+            self.write_caller_topic(value);
         } else {
             self.env_mut().insert(name.to_string(), value);
             self.record_runtime_name_write(name);
         }
         Ok(())
+    }
+
+    /// Write `value` into the calling routine's topic `$_`. The topic is
+    /// per-frame, so a general runtime-name write would replay the callee's
+    /// topic through every intervening frame; this writes directly into the
+    /// current call frame's saved caller env instead, and the caller-var drain
+    /// updates the caller's authoritative local slot once when this frame
+    /// returns.
+    // Cost: O(1).
+    fn write_caller_topic(&mut self, value: Value) {
+        if let Some(frame) = self.call_frames.last_mut() {
+            frame.saved_env.insert("_".to_string(), value);
+            self.record_caller_var_writeback("_");
+        }
     }
 
     /// Record a by-name env write to a caller-frame lexical (retain-on-miss list).
@@ -660,17 +698,12 @@ impl Interpreter {
     /// no such frame the client is the mainline (`GLOBAL`, the revision of
     /// the file that made the outermost call). Returns the client's package
     /// and revision letter.
-    // TODO: rakudo tells the client by package, not by file, and sees a
-    // `.map` block's own context, which pushes no frame here (#18845).
+    /// The fallback of `client_code` (`vm_client_code`), for code with no
+    /// recorded package or a call chain that ends before the client.
     // Cost: O(f), f = routine frames, plus one revision-table probe.
     pub(crate) fn client_frame(&self, own_file: Option<Symbol>) -> (Symbol, char) {
         let frames: &[crate::runtime::RoutineFrame] = &self.routine_stack;
-        let revision_of = |file: Option<Symbol>| {
-            file.and_then(crate::parser::unit_revisions::unit_language_revision)
-                .and_then(|version| {
-                    version.as_str().strip_prefix("6.").and_then(|r| r.chars().next())
-                })
-        };
+        let revision_of = Self::unit_revision_letter;
         let declared_in = |frame: &crate::runtime::RoutineFrame| frame.def_file.or(frame.file);
         match frames
             .iter()
@@ -689,9 +722,17 @@ impl Interpreter {
         }
     }
 
+    /// The letter of the language revision the unit `file` is compiled
+    /// under (`d` for `6.d`), when it recorded one.
+    // Cost: O(1), one revision-table probe.
+    pub(crate) fn unit_revision_letter(file: Option<Symbol>) -> Option<char> {
+        file.and_then(crate::parser::unit_revisions::unit_language_revision)
+            .and_then(|version| version.as_str().strip_prefix("6.").and_then(|r| r.chars().next()))
+    }
+
     /// The letter of the language revision the running code is under.
     // Cost: O(1).
-    fn running_revision_letter(&self) -> char {
+    pub(crate) fn running_revision_letter(&self) -> char {
         ['e', 'd', 'c']
             .into_iter()
             .find(|r| crate::parser::current_language_version_starts_with(&format!("6.{r}")))
@@ -778,6 +819,13 @@ impl Interpreter {
             return Err(RuntimeError::new(format!(
                 "Cannot access caller variable '${target_name}' — not enough caller frames"
             )));
+        }
+        // The caller's own `$_` is not dynamic, but a bind reaches it
+        // (`$CALLER::_ := $v`), as `CALLER::<$_> := $v` does (#18988).
+        if target_name == "_" && depth == 1 {
+            let source_val = self.env.get(source_name).cloned().unwrap_or(Value::NIL);
+            self.bind_caller_implicit_lexical("_", source_val);
+            return Ok(());
         }
         if !self.is_var_dynamic(target_name) {
             return Err(RuntimeError::new(format!(

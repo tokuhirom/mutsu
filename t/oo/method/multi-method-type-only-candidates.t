@@ -35,7 +35,10 @@ class Wide {
 }
 is Wide.new.m(1), 'int', 'narrowest nominal candidate wins';
 is Wide.new.m('a'), 'cool', 'a Str is a Cool';
-is Wide.new.m(Any.new), 'any', 'an Any object takes the Any candidate';
+# `Any $x` and an untyped `$x` are the same type: rakudo calls that tie
+# ambiguous (#18868).
+throws-like { Wide.new.m(Any.new) }, X::Multi::Ambiguous,
+    'an Any object ties the Any and the untyped candidates';
 
 # Int, Num, Str and Rat are unrelated classes: none accepts another.
 class Disjoint {

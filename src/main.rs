@@ -357,13 +357,15 @@ fn run_main() {
     // program's own unit (so the module's `EXPORT` addresses it through `$*CU`,
     // and what it does to a dynamic variable such as `$*ARGFILES` survives into
     // the program): written on the program's first line, which keeps every line
-    // number.
+    // number, after a leading language-version pragma if there is one.
     let (with_args, preload_modules): (Vec<String>, Vec<String>) = (preload_modules, Vec::new());
     let input = if with_args.is_empty() {
         input
     } else {
-        let uses: String = with_args.iter().map(|m| format!("use {m}; ")).collect();
-        format!("{uses}{input}")
+        let uses: String = with_args.iter().map(|m| format!(" use {m};")).collect();
+        // After a leading `use v6.x;`, which must stay the first statement.
+        let at = mutsu::leading_version_pragma_end(&input);
+        format!("{}{uses} {}", &input[..at], &input[at..])
     };
 
     if dump_ast {

@@ -6,7 +6,7 @@
   ],
   "build-depends": [
     "File::Directory::Tree:ver<0.2+>:auth<zef:raku-community-modules>",
-    "JSON::Fast:ver<0.19+>:auth<cpan:TIMOTIMO>"
+    "JSON::Fast:ver<0.20+>:auth<zef:timo>"
   ],
   "depends": [
   ],
@@ -57,5 +57,5 @@
   ],
   "test-depends": [
   ],
-  "version": "0.2.7"
+  "version": "0.2.10"
 }

@@ -366,6 +366,12 @@ impl Interpreter {
                 i += 1 + consumed;
                 continue;
             }
+            // A `$name` the parse entry points hoisted as a match-time lexical
+            // (`with_match_time_scalars`, #14510) is left in the text below for
+            // the structural parser's `VarInterp`; that is every bound scalar.
+            // What is still spliced here: a `constant` (inlined at compile
+            // time, part of the declarative LTM prefix, as on rakudo), a
+            // `"..."` literal's text, and a name no scope binds.
             if ch == '$' {
                 // `$$` is the end-of-line anchor, not a scalar reference. It has
                 // to be recognised BEFORE the `${…}` branch below: in `/ . $${ … } /`
@@ -394,6 +400,16 @@ impl Interpreter {
                             continue;
                         }
                         let name: String = chars[name_start..j].iter().collect();
+                        // `${name}` is Perl 5's braced scalar: rejected, as on
+                        // rakudo, rather than spliced (#18925). The parse-time
+                        // validator already refuses it in a literal pattern;
+                        // this covers a pattern built at run time.
+                        if let Some(err) = super::regex_dollar_brace::obsolete_braced_name(
+                            &name,
+                            quotes.inside_double(&chars, i),
+                        ) {
+                            return Err(err);
+                        }
                         // A `:my`-declared regex-local var: leave `${name}`
                         // verbatim for the parser's match-time `VarInterp` lowering.
                         if is_regex_local(&name, &declared_my_vars) {
@@ -504,7 +520,13 @@ impl Interpreter {
                     // atom instead of pre-substituting an outer-scope value here.
                     if is_regex_local(&name, &declared_my_vars) {
                         out.extend(chars[i..j].iter());
-                        i = j;
+                        // `$foo=ATOM` is an alias to the variable: the atom
+                        // is dropped (#14628).
+                        i = if quotes.inside_double(&chars, i) {
+                            j
+                        } else {
+                            super::regex_variable_alias::variable_alias_end(&chars, j).unwrap_or(j)
+                        };
                         continue;
                     }
                     // A `<$re>` reference re-resolving `$re`'s OWN
@@ -1107,15 +1129,16 @@ impl Interpreter {
         err
     }
 
-    /// Create an X::SecurityPolicy error for prohibited regex interpolation.
+    /// The `X::SecurityPolicy::Eval` a prohibited regex interpolation throws,
+    /// with rakudo's payload; its message is the class's own.
     pub(super) fn make_security_policy_error() -> RuntimeError {
-        let msg = "Prohibited regex interpolation";
         let mut attrs = std::collections::HashMap::new();
-        attrs.insert("message".to_string(), Value::str(msg.to_string()));
-        let ex = Value::make_instance(Symbol::intern("X::SecurityPolicy"), attrs);
-        let mut err = RuntimeError::new(msg);
-        err.exception = Some(Box::new(ex));
-        err
+        attrs.insert(
+            "payload".to_string(),
+            Value::str("Prohibited regex interpolation".to_string()),
+        );
+        let ex = Value::make_instance(Symbol::intern("X::SecurityPolicy::Eval"), attrs);
+        RuntimeError::from_exception_value(ex)
     }
 }
 

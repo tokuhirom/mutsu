@@ -66,6 +66,15 @@ impl Interpreter {
     /// `src` is the string it holds, and remembering `src`'s otherwise.
     // Cost: O(1) on a memo hit, plus `char_at`.
     pub(super) fn trir_ord_at_memo(memo: &mut super::frame::StrMemo, src: &Value, pos: i64) -> i64 {
+        // A hit by the text's address: the memo's string and `src` read the
+        // same buffer, so the index describes it. A tag probe, where `view()`
+        // decodes through the out-of-line kind match and bumps the refcount.
+        if let (Some((s, idx)), Some(text)) = (memo.as_ref(), src.as_str()) {
+            let held: &str = s.as_str();
+            if std::ptr::eq(held.as_ptr(), text.as_ptr()) && held.len() == text.len() {
+                return crate::builtins::str_prim::ordat_in(held, idx, pos);
+            }
+        }
         let ValueView::Str(arc) = src.view() else {
             return Self::trir_ord_at(src, pos);
         };

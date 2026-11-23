@@ -141,7 +141,7 @@ impl Interpreter {
         // From the "already registered?" check below to the publication at
         // the end, no other thread composes a mixin type: it would otherwise
         // find this type registered but not yet composed (#18266).
-        let _compose = super::mixin_compose_lock::MixinComposeGuard::acquire();
+        let _compose = super::mixin_compose_lock::MixinComposeGuard::acquire()?;
         let name = format!("{}+{{{}}}", base_class, fresh.join(","));
         let role_ids: Vec<Option<u64>> = fresh
             .iter()

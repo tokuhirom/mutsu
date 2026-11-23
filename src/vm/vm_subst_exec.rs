@@ -11,6 +11,11 @@ pub(super) struct SubstOp {
     pub(super) nth: Option<Value>,
     /// The `:x` argument's value.
     pub(super) x: Option<Value>,
+    /// The char position the scan starts at (`:c` / `:pos`, #18892); 0 when
+    /// neither is written.
+    pub(super) start: usize,
+    /// `:pos`: the first match must start exactly at `start`.
+    pub(super) anchored: bool,
     pub(super) samecase: bool,
     pub(super) sigspace: bool,
     pub(super) samemark: bool,
@@ -44,10 +49,12 @@ impl Interpreter {
         global: bool,
         nth: bool,
         x: bool,
+        start: u8,
         replacement_thunk: bool,
     ) -> Result<SubstOp, RuntimeError> {
         let pattern = Self::const_str(code, pattern_idx).to_string();
-        // The stack holds `[Code?, Nth?, X?]`: pop in reverse.
+        // The stack holds `[Code?, Nth?, X?, Start?]`: pop in reverse.
+        let start_value = (start != 0).then(|| self.stack.pop().unwrap_or(Value::NIL));
         let x = x.then(|| self.stack.pop().unwrap_or(Value::NIL));
         let nth = nth.then(|| self.stack.pop().unwrap_or(Value::NIL));
         // The replacement is an assignment-form thunk, compiled to the closure
@@ -58,11 +65,17 @@ impl Interpreter {
         } else {
             self.subst_replacement_plan(Self::const_str(code, replacement_idx))?
         };
+        let start_pos = match &start_value {
+            Some(v) => Self::subst_start_position(v)?,
+            None => 0,
+        };
         Ok(SubstOp {
             pattern,
             plan,
             nth,
             x,
+            start: start_pos,
+            anchored: start == 2,
             samecase,
             sigspace,
             samemark,
@@ -83,13 +96,18 @@ impl Interpreter {
     ) -> Vec<(usize, usize, SubstMatchCaps)> {
         let first_only = op.nth.is_none() && op.x.is_none() && !op.global;
         let mut out = Vec::new();
-        let mut pos = 0usize;
+        let mut pos = op.start;
         // One target for the whole scan — see the note in `native_subst_regex`:
         // rebuilding it per match is what made `s:g///` quadratic (#8247).
         while let Some((start, end, positional, named, spans)) = loan_env!(
             self,
             regex_find_first_from_with_all_captures_in(&op.pattern, target, pos)
         ) {
+            // `:pos` anchors only the first match: nothing at the position is
+            // no match at all.
+            if op.anchored && out.is_empty() && start != op.start {
+                break;
+            }
             out.push((
                 start,
                 end,
@@ -270,6 +288,7 @@ impl Interpreter {
         global: bool,
         nth: bool,
         x: bool,
+        start: u8,
         replacement_thunk: bool,
         qq_thunks: Option<&[(Symbol, u32)]>,
     ) -> Result<(), RuntimeError> {
@@ -284,6 +303,7 @@ impl Interpreter {
             global,
             nth,
             x,
+            start,
             replacement_thunk,
         )?;
         let outcome = self.run_subst_with_qq_thunks(&op, qq_thunks)?;
@@ -318,6 +338,7 @@ impl Interpreter {
         global: bool,
         nth: bool,
         x: bool,
+        start: u8,
         replacement_thunk: bool,
         qq_thunks: Option<&[(Symbol, u32)]>,
     ) -> Result<(), RuntimeError> {
@@ -332,6 +353,7 @@ impl Interpreter {
             global,
             nth,
             x,
+            start,
             replacement_thunk,
         )?;
         // A Junction topic autothreads, as the `.subst` method call does (#15627):
@@ -486,5 +508,20 @@ impl Interpreter {
             self.note_caller_env_write(&source_var);
         }
         Ok(())
+    }
+}
+
+impl Interpreter {
+    /// The char position a substitution's `:c` / `:pos` argument `value`
+    /// names (#18892). A negative one names no position, so nothing matches
+    /// (`s:c(-1)/b/X/` leaves the subject alone, as in rakudo).
+    // Cost: O(1).
+    fn subst_start_position(value: &Value) -> Result<usize, RuntimeError> {
+        let n = value.to_f64();
+        Ok(if n.is_nan() || n < 0.0 {
+            usize::MAX
+        } else {
+            n as usize
+        })
     }
 }
