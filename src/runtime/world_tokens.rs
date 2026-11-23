@@ -96,9 +96,12 @@ impl Interpreter {
         key: &str,
         params: Option<Arc<Vec<crate::ast::ParamDef>>>,
     ) {
-        let Some((package, _)) = key.rsplit_once("::") else {
+        let Some((package, _)) =
+            crate::qualified::split_qualified(crate::qualified::known_symbol(key))
+        else {
             return;
         };
+        let package = package.as_str();
         if !publishable_package(package) || self.is_my_scoped_type_name(package) {
             return;
         }
