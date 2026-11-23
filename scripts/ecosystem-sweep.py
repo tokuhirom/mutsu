@@ -491,7 +491,7 @@ def regrade():
 
 # --- rollup ------------------------------------------------------------------
 
-def rollup(append_history=False):
+def rollup(append_history=False, previous_ref=None):
     records = load_records()
     if not records:
         sys.exit(f"no records under {DISTS_DIR} — run a sweep first")
@@ -520,7 +520,7 @@ def rollup(append_history=False):
     with open(os.path.join(DATA_DIR, "summary.json"), "w", encoding="utf-8") as fh:
         json.dump(summary, fh, indent=2, sort_keys=True)
         fh.write("\n")
-    write_summary_md(summary, records)
+    write_summary_md(summary, records, regressed_since(records, previous_ref))
     if append_history:
         append_history_row(summary, records)
     render_chart()
@@ -551,7 +551,45 @@ def status_rows(records, exclude) -> list[list]:
     return rows
 
 
-def write_summary_md(summary, records):
+def regressed_since(records, previous_ref=None):
+    """`eco.regressions()` of the records on disk against the ledger commit they
+    replace, or None when that commit is not available here.
+
+    The base is `previous_ref` if given, else the `ecosystem-data` commit the
+    ledger on disk was materialized from (`ecosystem/.ledger-ref`). In the
+    sweep's `collect` job that is the ledger tip before this run's records were
+    applied, so the list is exactly what this sweep made worse; after a plain
+    `ecosystem-ledger.sh pull` it is empty until a local re-measurement or
+    `--regrade` changes a record.
+    """
+    ref = previous_ref or eco.ledger_stamp(REPO)
+    previous = eco.ledger_records_at(REPO, ref) if ref else None
+    if previous is None:
+        return None
+    return eco.regressions(previous, {r["dist"]: r for r in records})
+
+
+def regressed_md(regressed) -> list[str]:
+    """summary.md's "Regressed since the previous ledger" section."""
+    lines = ["## Regressed since the previous ledger", "",
+             "Distributions measured at the same version in the ledger commit this",
+             "rollup replaces that got a worse status, or a baseline file that",
+             "lost parity (a file rakudo now fails is not counted).", ""]
+    if regressed is None:
+        return lines + ["_The previous ledger commit is not available here._"]
+    out = []
+    for dist, version, was, now, files in regressed:
+        line = f"- `{dist}` {version}: {was} → {now}"
+        if files:
+            shown = ", ".join(f"`{f}`" for f in files[:3])
+            more = ", …" if len(files) > 3 else ""
+            line += (f" ({len(files)} file{'s' if len(files) != 1 else ''} "
+                     f"lost parity: {shown}{more})")
+        out.append(line)
+    return lines + (out or ["_None._"])
+
+
+def write_summary_md(summary, records, regressed=None):
     lines = [
         "# Ecosystem parity — summary",
         "",
@@ -579,6 +617,7 @@ def write_summary_md(summary, records):
         label = (f"`{status}`" if status != EXCLUDED_ROW
                  else "out of scope (`exclude.txt`, any status)")
         lines.append(f"| {label} | {count} |")
+    lines += [""] + regressed_md(regressed)
     lines += ["", "## Distributions", "",
               "| distribution | version | status | baseline files passed |", "|---|---|---|---|"]
     for r in sorted(records, key=lambda r: r["dist"].lower()):
@@ -738,6 +777,9 @@ def main():
                          "records, then --rollup; measures nothing")
     ap.add_argument("--history", action="store_true",
                     help="with --rollup, also append a history.tsv row (full sweeps only)")
+    ap.add_argument("--previous-ref", metavar="REF",
+                    help="with --rollup, the ledger commit summary.md's regression "
+                         "list compares against (default: ecosystem/.ledger-ref)")
     ap.add_argument("--jobs", type=int, default=1)
     ap.add_argument("--timeout", type=int, default=120, help="per test file, both sides")
     ap.add_argument("--attempts", type=int, default=3, help="retries for a non-passing file")
@@ -756,7 +798,7 @@ def main():
     if args.regrade:
         regrade()
     if args.rollup or args.regrade:
-        summary = rollup(append_history=args.history)
+        summary = rollup(append_history=args.history, previous_ref=args.previous_ref)
         print(json.dumps(summary, indent=2, sort_keys=True))
         return 0
     if not (args.only or args.prefix or args.all or args.status or args.stale):
@@ -1045,6 +1087,18 @@ def _self_test() -> int:
     check("no excluded row when nothing is excluded",
           status_rows([{"dist": "A", "version": "1", "status": "green"}], {})
           == [["green", 1]])
+
+    # regressed_md(): the summary.md section, with or without a base commit.
+    md = regressed_md([("Grid", "1", "green", "red", ["t/a.t"]),
+                       ("Wide", "2", "partial", "partial",
+                        ["t/1.t", "t/2.t", "t/3.t", "t/4.t"])])
+    check("a regression is listed with the file that lost parity",
+          "- `Grid` 1: green → red (1 file lost parity: `t/a.t`)" in md)
+    check("more than three lost files are elided",
+          "- `Wide` 2: partial → partial (4 files lost parity: "
+          "`t/1.t`, `t/2.t`, `t/3.t`, …)" in md)
+    check("an empty list says so", regressed_md([])[-1] == "_None._")
+    check("no base commit says so", "not available" in regressed_md(None)[-1])
 
     run = real_run
     print(f"ecosystem-sweep self-test: "

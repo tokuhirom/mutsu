@@ -75,7 +75,7 @@ mutsu where raku passes it. The test is "does a dist file differ from raku becau
   `ecosystem` and re-tier; when a slow-but-passing issue starts timing out, add both.
 
 It is how the ecosystem blockers are listed (`label:ecosystem`); it never replaces `todo:*`, and it
-is unrelated to the `ecosystem:lock` label, which marks the lock board and nothing else. The filer
+is unrelated to the `ecosystem:lock` label, which marked the retired lock board. The filer
 sets it when the criterion holds (no triage needed); anyone may add or remove it as the state of
 the blocking file changes.
 
@@ -234,11 +234,11 @@ convention:
   as many following paragraphs as you like all work.
 - The branch name in `Releasing:` must match the one in `Claiming:` exactly.
   It is how the sync pairs them, and a mismatch leaves the claim live forever.
-- `Locking:` / `Unlocking:` on the lock board are deliberately not claims — that
-  board locks distributions, not the issue they are posted on.
+- `Locking:` / `Unlocking:` lines (the retired ecosystem lock board's format)
+  are not claims.
 
 A claim whose session died is expired by the scheduled run of the same workflow,
-on the evidence-based test the lock board already uses: older than 24 hours
+on an evidence-based test: older than 24 hours
 **and** no such branch on `origin`. It posts a real `Releasing:` comment rather
 than silently dropping the label, because the log is the record. Re-claim if it
 expires one you are still on.
@@ -310,33 +310,17 @@ noted the earlier one, judged it forfeit for being unpushed, and proceeded. Both
 agents then ran the full suites and opened a PR for the same work — one of which
 was thrown away.)
 
-### Locking a resource that is not an issue — the lock board
+### A resource that is not an issue gets one
 
-The protocol above needs somewhere to put the claim, and it uses the issue
-itself. Work that is *not* an issue has nowhere: an `ecosystem/` distribution is
-picked out of a ledger of 251 records, and two agents drawing the same one waste
-a build slot exactly as two agents on one issue do.
-
-For those, the claim goes on a **lock board** — one long-lived issue whose
-comments are the append-only log, holding `Locking:` / `Unlocking:` lines that
-name the resource and the claiming branch. The tiebreaker, the exclusivity rule
-and the "re-read before you spend and before you publish" checkpoints are the
-same as above; only the resource differs. Nothing else in the repository can
-carry it: a lock file in git conflicts on every write and outlives the session
-that wrote it, and a label — as the `working` section explains — is a
-read-then-write two agents can both win.
-
-The one addition a board needs is a way to break a lock its session died
-holding, and it is evidence-based rather than a judgement call: 24 hours old
-**and** no such branch on `origin` (or its PR merged/closed). Both halves are
-checkable by anyone, which is what keeps it from reintroducing the race.
-
-The board for `ecosystem/` distributions is
-[#17702](https://github.com/tokuhirom/mutsu/issues/17702) — the single open issue
-labelled `ecosystem:lock`, which is the authority if the number ever drifts — and
-the procedure around it is
+The protocol above puts the claim on the issue itself. Work that starts from
+something else — an `ecosystem/` distribution picked off
+`scripts/ecosystem-tickets.py --queue` — is given an issue first (an `ecosystem`
+issue whose body carries an `eco-dist: <Dist::Name>` marker line) and claimed
+there like any other. A dedicated lock-board issue (`Locking:` / `Unlocking:`
+lines, last #17702) served this until 2026-11-23; it was retired with the
+ecosystem dashboard (#15488) once the queue had shrunk to sweep fallout. The
+procedure is
 [`.agents/skills/ecosystem-dist-queue/SKILL.md`](../.agents/skills/ecosystem-dist-queue/SKILL.md).
-A board issue is infrastructure: it is never worked and never closed.
 
 ### Losing a claim late
 

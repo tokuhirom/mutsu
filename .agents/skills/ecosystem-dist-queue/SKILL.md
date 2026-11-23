@@ -1,46 +1,35 @@
 ---
 name: ecosystem-dist-queue
-description: Take the next zef distribution off the ordered ecosystem queue (`scripts/ecosystem-tickets.py --queue`), lock it on the lock board (issue #17702) so no other agent works the same one, diagnose it with the ecosystem-dist-fix loop, then fix it or file its root cause in the right lane, and release the lock. Use when asked to make some/any module work rather than a named one ("モジュールを一個動くようにして", "work the ecosystem queue", "grab the next ecosystem module and fix it"), or when running several such agents in parallel and they must not collide.
+description: Take the next zef distribution off the ordered ecosystem queue (`scripts/ecosystem-tickets.py --queue`), claim it through its tracking issue (filing one with an `eco-dist:` marker when none exists) with the ordinary `Claiming:` comment, diagnose it with the ecosystem-dist-fix loop, then fix it or file its root cause in the right lane, and release the claim. Use when asked to make some/any module work rather than a named one ("モジュールを一個動くようにして", "work the ecosystem queue", "grab the next ecosystem module and fix it").
 metadata:
-  short-description: Take the next queued distribution, lock it, fix or file it
+  short-description: Take the next queued distribution, claim its issue, fix or file it
 ---
 
 # Ecosystem distribution queue
 
-One run = **one distribution, the highest-ranked free one in the queue, held under a lock,
-diagnosed, then fixed or filed, released**.
+One run = **one distribution, the highest-ranked unclaimed one in the queue, claimed through its
+issue, diagnosed, then fixed or filed, released**.
 
-This skill is only the *selection, routing and mutual-exclusion* wrapper. The work itself —
-checkout, rakudo baseline, reduction, fix-versus-issue, `t/` pin, PR — is
+This skill is only the *selection and routing* wrapper. The work itself — checkout, rakudo
+baseline, reduction, fix-versus-issue, `t/` pin, PR — is
 [`ecosystem-dist-fix`](../ecosystem-dist-fix/SKILL.md) and is not repeated here. Read that skill
 before your first run; this page assumes it.
 
-## Why an ordered queue, and why a lock
+## Why an ordered queue, and why claims go through issues
 
-**An order, because the remainder is small enough to work in full.** This skill used to draw a
-distribution at random (it was `ecosystem-dist-roulette` until 2026-10-11). The draw existed to stop
-agents cherry-picking whichever record looked cheapest, which moves the parity KPI without moving
-the language. With ~240 actionable records left, the same guarantee comes from a fixed order over
-**the whole remainder**: nothing is skipped for looking hard, the list is simply worked top-down,
-and that cannot be gamed. The order also puts the biggest payoff first — a distribution many others
-depend on unblocks all of them.
+**An order, so nothing is cherry-picked.** A fixed order over **the whole remainder** means nothing
+is skipped for looking hard; the list is simply worked top-down, and that cannot be gamed. The
+order also puts the biggest payoff first — a distribution many others depend on unblocks all of
+them. (This skill drew at random as `ecosystem-dist-roulette` until 2026-10-11.)
 
-**A lock, because a distribution is not an issue.** Parallel agents already avoid colliding on
-issues by claiming them in the issue's own comments (`docs/issue-workflow.md`). A distribution has
-no issue to carry that claim, and nothing else in the repo can: a lock file in git conflicts and
-goes stale, and a label is a read-then-write two agents can both win. So the claim lives on one
-long-lived board issue, whose comments are an append-only log GitHub returns in creation order —
-the only thing every agent reads identically.
-
-The board does not prevent a collision. It makes both sides **agree on who lost**, which is all an
-optimistic protocol can do, and all it needs to do.
-
-**The lock board is [tokuhirom/mutsu#17702](https://github.com/tokuhirom/mutsu/issues/17702)** — the
-single open issue labelled `ecosystem:lock`. If that number is ever wrong, the label is the
-authority: `gh issue list --repo tokuhirom/mutsu --label ecosystem:lock` (remote: `list_issues` with
-`labels: ["ecosystem:lock"]`), and there is exactly one. (The board rotates to a fresh issue once
-its comment log grows too large for a single `get_comments` call to return — the procedure is the
-[`ecosystem-lock-board-rotation`](../ecosystem-lock-board-rotation/SKILL.md) skill. #7884 was the first board, closed 2026-09-21 at 318 comments.)
+**Claims go through issues.** A distribution is claimed on the open `ecosystem` issue that tracks
+it, with the same `Claiming:` / `Releasing:` protocol as any other issue
+([`docs/issue-workflow.md`](../../../docs/issue-workflow.md)); a distribution with no tracking issue
+gets one filed first. Until 2026-11-23 distributions were locked on a dedicated lock-board issue
+(last #17702) and summarized on a dashboard issue (#15488). Both were retired once dist parity
+reached 99.9% and the free queue was only sweep fallout: at that size a separate lock protocol,
+its rotation and the dashboard job cost more than they saved. Regressions are now triaged from the
+ledger's own rollup, the "Regressed since the previous ledger" section of `ecosystem/summary.md`.
 
 ## 1. Compute the queue
 
@@ -66,56 +55,40 @@ that is the step 3 (c) case.
 The order is recomputed from the ledger every time; never commit a generated queue file (the
 script's docstring says why). The ledger only changes with the nightly sweep, so the queue does too.
 
-## 2. Read the board, take the first free entry
+## 2. Find each entry's issue, take the first unclaimed one
+
+A distribution's tracking issue is an open `ecosystem` issue whose body carries an
+`eco-dist: <Dist::Name>` marker line (the name as the ledger spells it), or an
+`eco-cluster: <id>` line for a cluster containing it (the line `ecosystem-tickets.py --issue`
+emits). Find it with a body search:
 
 ```sh
-gh issue view 17702 --repo tokuhirom/mutsu --comments
+gh api -X GET search/issues -f q='repo:tokuhirom/mutsu is:issue is:open "eco-dist: String::Utils"'
+gh issue list --repo tokuhirom/mutsu --label ecosystem --state open   # the whole set
 ```
 
-Remote container: `issue_read` with `method: "get_comments"`, `owner: tokuhirom`, `repo: mutsu`,
-`issue_number: 17702`. Page to the end — the log is oldest-first and the live locks are spread
-through it, not only at the bottom. If a single `get_comments` call now exceeds the tool's response
-size limit, the board needs rotating again — follow
-[`ecosystem-lock-board-rotation`](../ecosystem-lock-board-rotation/SKILL.md) before locking.
-
-Build the held set: a `Locking: <dist> <branch>` line is **live** until a matching
-`Unlocking: <dist> <branch>` (same distribution, same branch) appears after it. Keep the comment id
-of every live lock; you will need it in step 4.
+Remote container: `list_issues` with `labels: ["ecosystem"]`, `state: "OPEN"`, and read the
+bodies. An open issue that *mentions* a queued distribution without a marker line probably tracks
+it too: read it, and add the marker line if it does.
 
 Then walk the queue from rank 1 and **take the first entry that**
 
-- has no live lock on the board, and
-- has no open issue already tracking it, and no open PR working it. The tracking issues are the
-  open `ecosystem` issues whose body carries an `eco-dist: <Dist::Name>` marker line (or an
-  `eco-cluster: <id>` line for a cluster containing it). `scripts/ecosystem-dashboard.py` lists
-  them for you: its "Waiting on an issue" part is exactly the entries to pass, "Locked" is the
-  board's live set, and "Free queue" is what is left, in work order. It is a view of the board and
-  the issues, not a lock: still post `Locking:` (step 4). Its "Needs attention" part names open
-  issues that mention a queued distribution without a marker; read those before taking that
-  distribution, and add the marker line to the issue if it does track it.
+- has no open issue carrying a live claim (a `working` label, or a `Claiming:` comment not yet
+  followed by its `Releasing:`), and no open PR working it.
 
-Those are the only reasons to pass an entry. **Skipping one because it looks hard is
-cherry-picking** and is exactly what the order exists to rule out. An entry waiting on an issue is
-passed because someone owns its cause already, not because it is hard; it comes back into play when
-that issue closes and the next sweep re-measures it.
+An entry with an **unclaimed** tracking issue is taken by claiming that issue. An entry with **no**
+tracking issue gets one before you start: a short `todo:ticket` issue (`ecosystem` label, its
+`lane:*` label, the `eco-dist:` marker line, the queue row as the symptom), which you then claim.
 
-```sh
-scripts/ecosystem-dashboard.py                  # needs `gh api`; prints the body
-scripts/ecosystem-dashboard.py --issues-json tmp/issues.json --comments-json tmp/board.json
-```
+A claimed entry is the only one to pass. **Skipping one because it looks hard is cherry-picking**
+and is exactly what the order exists to rule out.
 
-The dashboard issue is [#15488](https://github.com/tokuhirom/mutsu/issues/15488) (deliberately without the `ecosystem` label, so the script does not read its own output). Its body is this output, regenerated wholesale (`--update <N>`); nobody edits it
-by hand. The nightly sweep's `dashboard` job (`ecosystem-sweep.yml`) regenerates it after the
-ledger is pushed; run `--update 15488` yourself for a fresher view (a lock you just took shows up
-only after a refresh, so the board stays the authority). Locks are still appended to the board as comments, never kept in the dashboard body: a
-body edit is a read-modify-write that two agents can both win.
+## 3. Claim it, then diagnose and route
 
-## 3. Lock it, then diagnose and route
-
-Lock it per step 4 below, then run [`ecosystem-dist-fix`](../ecosystem-dist-fix/SKILL.md)'s loop
+Claim it per step 4 below, then run [`ecosystem-dist-fix`](../ecosystem-dist-fix/SKILL.md)'s loop
 through its diagnosis: read the record, `checkout-dist.py`, load probe, rakudo first and mutsu second
 per file, reduce into `tmp/`. If rakudo does not pass the files either (`no_baseline` in fact), say
-so in the unlock note and take the next entry.
+so in the release note and take the next entry.
 
 Then decide by **where the root cause lives** — not by how big the fix looks:
 
@@ -130,65 +103,32 @@ Then decide by **where the root cause lives** — not by how big the fix looks:
   `ecosystem` label when a dist file fails, hangs, times out or flakes against raku (plus
   `todo:ticket`/`todo:deep`) and an `eco-dist: <Dist::Name>` line in the
   body, make it a sub-issue of the campaign's carrier
-  when the campaign's ADR covers it, unlock with `filed #N`, and take the next entry.
+  when the campaign's ADR covers it (when the issue you claimed already is that issue, give it the
+  lane and carrier instead), release with `filed #N`, and take the next entry.
 - **(c) The same signature fails 3 or more distributions** (the queue row shows a cluster id): file
   one issue for the cause with the
   [`ecosystem-cluster-filing`](../ecosystem-cluster-filing/SKILL.md) skill
   (`scripts/ecosystem-tickets.py --issue <id>` drafts the body) rather than a one-off fix in this
-  distribution's PR, unlock with `filed #N`, and take the next entry.
+  distribution's PR, release with `filed #N`, and take the next entry.
 
 `guts` and `native` records more often end in (b) or an issue than in (a); that decides the outcome,
 never whether you take the entry.
 
 ### Stop condition
 
-When every remaining queue entry is locked, waiting on an open issue, or waiting on a campaign, say
-so (in the final report, listing the issues it waits on) and **stop**. The queue is re-checked after
+When every remaining queue entry's issue is claimed, or it waits on a campaign, say so (in the
+final report, listing the issues it waits on) and **stop**. The queue is re-checked after
 each nightly sweep, when closed issues have turned into re-measured records.
 
-## 4. Lock protocol
+## 4. Claim protocol
 
-Post one comment to #17702 whose **first line is exactly**:
-
-```
-Locking: String::Utils claude/ecosystem-string-utils-ab12
-```
-
-The distribution as the ledger spells it (`::`, not the filename's `--`), then the branch you will
-push. The branch is what identifies you — every agent posts as the same GitHub user, so a lock that
-names no branch names nobody.
-
-```sh
-gh issue comment 17702 --repo tokuhirom/mutsu --body 'Locking: String::Utils claude/<branch>'
-```
-
-Then **read the comments again** and compare ids. Among the live locks for *that distribution*, the
-**lowest comment id wins** — ids increase, so it is the earliest entry. Compare ids, never
-`created_at`: it has one-second resolution and two agents can tie on it.
-
-If you did not win, you lost. Post `Unlocking: <dist> <your-branch>`, go back to step 2's next
-entry, and do not argue the point: "my branch is further along", "the other lock has nothing
-pushed", "the user pointed me at this one" do **not** override an earlier live lock. That rule is
-exclusive by design and it is the same one, for the same reason, as
-[`docs/issue-workflow.md`](../../../docs/issue-workflow.md) — a criterion that needs judgement
-reintroduces the race the log exists to settle.
-
-### Breaking a stale lock
-
-Sessions die and leave locks behind. Break one **only** on evidence:
-
-- its comment is more than **24 hours** old, **and**
-- `git ls-remote --heads origin <their-branch>` is empty, or that branch's PR is merged or closed.
-
-Then post, before your own `Locking:` line:
-
-```
-Unlocking: String::Utils claude/their-branch (stale: no origin branch after 26h)
-```
-
-Both conditions are checkable by anyone, which is the point. A lock whose branch is simply not
-pushed *yet* is normal — the 24-hour floor is what protects it, so never break a lock on age alone
-or on "looks abandoned".
+Claim the tracking issue exactly as [`docs/issue-workflow.md`](../../../docs/issue-workflow.md)
+says for any issue: a comment whose first line is `Claiming: <branch>`, a re-read of the comments,
+and a yield to a live claim with a lower comment id — the lowest id is the whole tiebreaker. Pick
+the branch name first (`eco/<slug>` or `fix/<issue>-<slug>`), since the claim line carries it. The
+`working` label follows from the comments (`claim-label.yml`); never set it yourself. A claim whose
+session died is released by the same evidence test as any other (older than 24 hours and no such
+branch on `origin`).
 
 ## 5. Do the work (case a)
 
@@ -204,32 +144,26 @@ Three things that belong to this wrapper rather than that one:
   `ecosystem-data` branch, which only the nightly sweep writes. Verify the fix with
   the distribution's own test files (step 3) and the `t/` pin, and report "file X now passes under
   mutsu" in the PR body in place of a record transition.
-- **Mention the lock in the PR body** ("locked on #17702"), so a reviewer can see the run was
-  serialized and can find the release.
-- **Re-read the board at `ecosystem-dist-fix`'s own checkpoints** — before the pre-publication
-  `make test` + `make roast` run, and immediately before opening the PR. Steps 2-4 settle only the
-  locks that existed in the first few seconds; they cannot see an agent who locks later and declines
+- **Close the tracking issue from the PR** (`Closes #N`) when the PR makes every baseline file
+  pass; otherwise name it and say what still fails.
+- **Re-read the issue's comments at `ecosystem-dist-fix`'s own checkpoints** — before the pre-publication
+  `make test` + `make roast` run, and immediately before opening the PR. Step 4 settles only the
+  claims that existed in the first few seconds; they cannot see an agent who claims later and declines
   to yield, nor a PR that lands while your suites run. If you lost at a checkpoint, follow "Losing a
   claim late" in `docs/issue-workflow.md`: read what landed, verify your repro against it, close
   your PR with the comparison written down, and offer the delta rather than pushing it.
 
 ## 6. Release, always
 
-The moment the run ends — merged, filed, blocked, `no_baseline`, or you simply stopped:
-
-```sh
-gh issue comment 17702 --repo tokuhirom/mutsu --body 'Unlocking: String::Utils claude/<branch>
-Merged as #7901. t/03 still needs #7902 (nqp::unipropcode).'
-```
-
-The first line is the machine-readable release; the rest is one line on how it ended (`filed #N`
-for cases b and c). A lock that is never released removes that distribution from every other
-agent's queue for good, and the release note is what makes the board double as the record of what
-has actually been *attempted* — which the ledger cannot show, because a distribution that was tried
-and correctly ended in an issue still reads `red`.
+The moment the run ends — merged, filed, blocked, `no_baseline`, or you simply stopped — post
+`Releasing: <branch>` on the issue you claimed, with one line on how it ended (`filed #N` for cases
+b and c). A claim that is never released keeps that distribution out of every other agent's queue
+until the stale-claim test frees it, and the release note is the record of what was *attempted* —
+which the ledger cannot show, because a distribution that was tried and correctly ended in an issue
+still reads `red`.
 
 Releasing is not optional on a bad outcome. **"I found nothing and stopped" is exactly the case
-where the next agent most needs to see the lock gone**, and to read why.
+where the next agent most needs to see the claim gone**, and to read why.
 
 ### The dead-end case: add it to `ecosystem/exclude.txt`
 
@@ -243,8 +177,8 @@ fine, and the record stays `red` forever, correctly.
 For exactly this case — not for an ordinary `todo:ticket`/`todo:deep` finding that a future PR might
 still close — add one line to `ecosystem/exclude.txt` (format and rules in its own header) citing
 the issue you filed per `ecosystem-dist-fix` step 5. `--queue` reads that file automatically, so
-no later run re-spends an investigation on the same dead end. Do this before releasing the lock,
-and mention the exclude-list entry in the unlock comment.
+no later run re-spends an investigation on the same dead end. Do this before releasing the claim,
+and mention the exclude-list entry in the release comment.
 
 When the dead end is **one test file** rather than the whole distribution (rakudo's pass rests on
 an implementation artefact the project decided not to copy), add a per-file entry to
@@ -253,10 +187,10 @@ graded `accepted` and stops counting as failing, while the rest of the distribut
 
 ## Done means
 
-One distribution: locked, then either worked to `ecosystem-dist-fix`'s finish line (every baseline
+One distribution: claimed through its issue, then either worked to `ecosystem-dist-fix`'s finish line (every baseline
 file passes by direct run, or each one still failing is explained by an open `tokuhirom/mutsu` issue
 named in the PR; the ledger record is *not* touched, see step 5) or routed to a filed issue (case b
-or c), and unlocked with a one-line outcome.
+or c), and released with a one-line outcome.
 
-Then, if you were asked for several: go back to step 1 with a **fresh** read of the board — it has
-moved while you worked — until the stop condition holds.
+Then, if you were asked for several: go back to step 1 with a **fresh** read of the open issues —
+they have moved while you worked — until the stop condition holds.
