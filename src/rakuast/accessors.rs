@@ -308,6 +308,13 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
         let canonical = crate::adverb_name::literal_canonical(&canonical).unwrap_or(canonical);
         return Some(Value::str(canonical));
     }
+    // `::($x)::Foo`: an indirect part spelled as its source (#18976).
+    if method == "canonicalize"
+        && node.class == RakuAstClass::Name
+        && let Some(canonical) = super::name_queries::indirect_canonical(node)
+    {
+        return Some(Value::str(canonical));
+    }
     // `Name.canonicalize`: the `::`-joined spelling of a static identifier name.
     if method == "canonicalize"
         && let Some(name_parts::NameShape::Identifier(s)) = name_parts::name_shape(node)
