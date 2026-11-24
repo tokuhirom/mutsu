@@ -367,6 +367,26 @@ impl Interpreter {
     }
 }
 
+/// The CHECK-time verdict split into what fails now and what waits: rakudo
+/// reports a refuted call after the unit's CHECK phasers ran, so a unit with
+/// a CHECK phase (CHECK phasers, or a BEGIN prologue that may queue check
+/// code) holds it until the phase ends (`RunCheckCode`).
+// Cost: O(s), s = top-level statements.
+pub(crate) fn defer_past_check_phase(
+    verdict: Result<(), RuntimeError>,
+    prologue_len: usize,
+    stmts: &[Stmt],
+) -> (Result<(), RuntimeError>, Option<RuntimeError>) {
+    let check_phase = prologue_len > 0
+        || stmts.iter().any(|stmt| {
+            matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Check, .. })
+        });
+    match verdict {
+        Err(error) if check_phase => (Ok(()), Some(error)),
+        verdict => (verdict, None),
+    }
+}
+
 /// Core traits, which leave the signature as written.
 const CORE_TRAITS: &[&str] = &["DEPRECATED", "test-assertion", "implementation-detail"];
 const CORE_PARAM_TRAITS: &[&str] = &["copy", "rw", "raw", "readonly"];

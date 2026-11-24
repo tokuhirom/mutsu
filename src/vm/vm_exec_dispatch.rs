@@ -7998,6 +7998,11 @@ impl Interpreter {
                 crate::unit_source_text::end_compile_phase();
                 let (sorries, worries) = crate::unit_diagnostics::take();
                 self.report_compile_diagnostics(sorries, worries)?;
+                // A call the CHECK-time pass refuted fails here, after the
+                // CHECK phasers, as rakudo's optimizer reports it (#18874).
+                if let Some(error) = crate::unit_diagnostics::take_deferred_refutation() {
+                    return Err(error);
+                }
                 if let Some(cu) = &rewritten
                     && crate::unit_source_text::request_module_restart(cu)
                 {

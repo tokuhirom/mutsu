@@ -117,6 +117,36 @@ pub(crate) fn add_parse_sorry(exception: &Value, source: &str, at: usize) -> boo
 /// so the report renders its position itself.
 pub(crate) const PARSE_SORRY: &str = "__mutsu_parse_sorry";
 
+thread_local! {
+    /// A refuted call the unit's CHECK-time pass found (#18874), with the
+    /// depth of the unit it belongs to: rakudo's optimizer reports it after
+    /// the unit's CHECK phasers ran, so it waits for the end of the compile
+    /// phase (`RunCheckCode`).
+    static DEFERRED_REFUTATION: std::cell::RefCell<Option<(usize, crate::value::RuntimeError)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Hold `error` until the innermost unit's compile phase ends.
+// Cost: O(1).
+pub(crate) fn defer_refutation(error: crate::value::RuntimeError) {
+    let depth = UNITS.with(|units| units.borrow().len());
+    DEFERRED_REFUTATION.with(|slot| *slot.borrow_mut() = Some((depth, error)));
+}
+
+/// The refutation [`defer_refutation`] held for the innermost unit, if any.
+// Cost: O(1).
+pub(crate) fn take_deferred_refutation() -> Option<crate::value::RuntimeError> {
+    let depth = UNITS.with(|units| units.borrow().len());
+    DEFERRED_REFUTATION.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        if slot.as_ref().is_some_and(|(held, _)| *held == depth) {
+            slot.take().map(|(_, error)| error)
+        } else {
+            None
+        }
+    })
+}
+
 /// The innermost unit's queued `(sorries, worries)`; both queues are emptied.
 // Cost: O(d), d = queued diagnostics.
 pub(crate) fn take() -> (Vec<Value>, Vec<Value>) {
