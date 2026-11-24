@@ -49,6 +49,43 @@ Four components:
   the vendored upstream module ([ADR-11203](docs/adr/11203-nativecall-runs-upstream-via-the-backend-neutral-path.md),
   [#11203](https://github.com/tokuhirom/mutsu/issues/11203)).
 
+### Release cadence and gate
+
+(user decision, 2026-11-24)
+
+- **About one release a month.** A month that does not meet the gate skips its release instead of
+  shipping around it.
+- **The gate:**
+  1. The headline **dist parity in `ecosystem/summary.md` is 100%.** The KPI is defined in
+     [docs/ecosystem-parity.md](docs/ecosystem-parity.md): out-of-scope distributions
+     (`exclude.txt`) and accepted divergences (ADR-0130) stay out of it.
+  2. The ledger's "Regressed since the previous ledger" section is empty.
+  3. No open `release:A` issue.
+- **Release mode.** In the days before a release, only bug fixes, small fixes and localized perf
+  land. New issues are triaged:
+  - `release:A`: must fix before the release.
+  - `release:B`: a small, safe wrong-answer fix.
+  - `release:C`: a localized perf change.
+  - Anything structural waits for the next cycle and gets no label.
+- The mechanics of cutting a release are the
+  [`cut-release`](.agents/skills/cut-release/SKILL.md) skill.
+
+### Next cycle (December 2026)
+
+1. **Ecosystem 100%** — the gate of the next release.
+   - [#19174](https://github.com/tokuhirom/mutsu/issues/19174): `DYNAMIC::` lookup. It covers the
+     last two Red row-security files.
+   - Red's migration tests (t/141, t/152, t/158) pass alone but run 3-3.5x slower than rakudo, and
+     time out under the parallel harness.
+   - Confirm that RedFactory, Red::Driver::Pg and TOML recover with the fixes already merged.
+   - Work each `blocked_load` / `blocked_dep` distribution: make it load, or record why it is out
+     of scope.
+2. **Structural work deferred during release mode.**
+   - Wrong answers: #19126, #19071, #18874, #19157, #19159.
+   - Structural perf: #18267, #18274, #17876, #7565, #11756, #18003, #14774.
+3. **Ecosystem wall time.** Compare whole test-suite run time against rakudo, and fix the slowest
+   distributions first.
+
 ---
 
 ## 0. Architecture projects that must be finished
