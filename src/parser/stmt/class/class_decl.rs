@@ -342,11 +342,13 @@ pub(crate) fn declare_term_decl(input: &str) -> PResult<'_, Stmt> {
         if !anonymous {
             continue;
         }
+        let colons = rest.starts_with("::");
         let (rest, mut stmt) = class_decl_body_opt(rest, is_lexical, true)?;
         if let Some(Stmt::ClassDecl { marks, .. }) =
             crate::ast::package_header::declaration_mut(&mut stmt)
         {
             marks.declarator = Some(kw);
+            marks.colons = colons;
         }
         return Ok((rest, stmt));
     }
@@ -555,7 +557,10 @@ pub(crate) fn class_decl_body_opt(
         (rest, name, None)
     };
     let name_span = if anonymous {
-        crate::ast::SrcSpan::NONE
+        input
+            .strip_prefix("::")
+            .map(|rest| crate::parser::primary::source_span(input, rest))
+            .unwrap_or(crate::ast::SrcSpan::NONE)
     } else {
         crate::parser::primary::source_span(input.strip_prefix("::").unwrap_or(input), rest)
     };
