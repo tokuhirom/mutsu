@@ -2630,6 +2630,9 @@ impl Compiler {
             || name.starts_with(crate::runtime::term_names::TERM_PREFIX)
             || self.for_param_names.iter().any(|p| p == name)
             || self.package_body_lexicals.contains(name)
+            // A class body's `my &t` is a lexical too: `&t = ...` in a later
+            // body statement assigns it, not `&S::t` (#19143).
+            || self.class_body_static_code_vars.contains(name)
             || self
                 .package_runtime_our_names
                 .as_ref()
