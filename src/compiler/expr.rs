@@ -660,8 +660,12 @@ impl Compiler {
                 let rw_arg_callee = self.pending_rw_arg_list_callee.take();
                 let is_root_list = self.expr_depth <= 1;
                 // Elements are stored into the list -> a closure element escapes.
+                let deferred_slips = Self::deferred_slips(elems);
                 self.with_escape(true, |c| {
                     for (elem_idx, elem) in elems.iter().enumerate() {
+                        if c.compile_deferred_slip(&deferred_slips, elem_idx, elem) {
+                            continue;
+                        }
                         // ... and it holds an array/hash ELEMENT's container for
                         // the same reason: rakudo's
                         // `my @a = 1, 2; my (\p, \q) := (@a[0], @a[1]); p = 9`
@@ -757,6 +761,7 @@ impl Compiler {
                         }
                     }
                 });
+                self.emit_deferred_slips(&deferred_slips);
                 self.code.emit(OpCode::MakeArray(elems.len() as u32));
             }
             Expr::BracketArray(elems, trailing_comma) => {

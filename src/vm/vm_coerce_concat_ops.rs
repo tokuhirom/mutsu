@@ -29,6 +29,16 @@ impl Interpreter {
         self.stack.push(Value::real_array(items));
     }
 
+    /// `MakeSlip` on the entry `depth` below the stack top (`MakeSlipAt`).
+    // Cost: O(e + d), e = elements slipped, d = depth.
+    pub(super) fn exec_make_slip_at_op(&mut self, depth: usize) -> Result<(), RuntimeError> {
+        let at = self.stack.len() - 1 - depth;
+        let above = self.stack.split_off(at + 1);
+        self.exec_make_slip_op()?;
+        self.stack.extend(above);
+        Ok(())
+    }
+
     pub(super) fn exec_make_slip_op(&mut self) -> Result<(), RuntimeError> {
         let val = self.stack.pop().unwrap();
         // Slipping (`|EXPR`) always flattens through containers/itemization, e.g.

@@ -1077,6 +1077,7 @@ mod declaration_plan_tests {
 mod adverb_interp;
 mod amp_scope;
 mod attr_aggregate_slot;
+mod deferred_slip;
 mod mu_bind_decl;
 mod unit_hidden_names;
 use unit_hidden_names::routine_may_name;

@@ -545,9 +545,14 @@ impl Compiler {
             let single_with_trailing_comma = trailing_comma && elems.len() == 1;
             if elems.len() == 1 && !single_with_trailing_comma {
                 if let Expr::ArrayLiteral(items) = &elems[0] {
-                    for item in items {
-                        s.compile_expr(item);
+                    // A slip flattens once the elements after it ran (#19135).
+                    let deferred_slips = Self::deferred_slips(items);
+                    for (i, item) in items.iter().enumerate() {
+                        if !s.compile_deferred_slip(&deferred_slips, i, item) {
+                            s.compile_expr(item);
+                        }
                     }
+                    s.emit_deferred_slips(&deferred_slips);
                     s.code.emit(OpCode::MakeRealArray(items.len() as u32));
                 } else {
                     s.compile_expr(&elems[0]);
@@ -563,9 +568,13 @@ impl Compiler {
                     }
                 }
             } else {
-                for elem in elems {
-                    s.compile_expr(elem);
+                let deferred_slips = Self::deferred_slips(elems);
+                for (i, elem) in elems.iter().enumerate() {
+                    if !s.compile_deferred_slip(&deferred_slips, i, elem) {
+                        s.compile_expr(elem);
+                    }
                 }
+                s.emit_deferred_slips(&deferred_slips);
                 if single_with_trailing_comma {
                     s.code
                         .emit(OpCode::MakeRealArrayNoFlatten(elems.len() as u32));

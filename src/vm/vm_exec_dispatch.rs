@@ -3749,6 +3749,12 @@ impl Interpreter {
                 self.exec_make_slip_op()?;
                 *ip += 1;
             }
+            // Cost: O(e + d), e = elements slipped, d = `depth` (the entries
+            // above it move down and back).
+            OpCode::MakeSlipAt(depth) => {
+                self.exec_make_slip_at_op(*depth as usize)?;
+                *ip += 1;
+            }
             // Cost: O(e), e = elements of a multi-item returned Slip (copied into an Array).
             OpCode::NormalizeReturnSlip => {
                 let val = self.stack.pop().unwrap_or(Value::NIL);

@@ -286,7 +286,11 @@ impl Compiler {
             && matches!(&args[1], Expr::Var(n) if !n.contains("::"));
         let immutable_topic_cb = self.method_binds_immutable_topic(target, &mname);
         let positional_indices = Self::arg_positional_indices(args);
+        let deferred_slips = Self::deferred_slips(args);
         for (i, arg) in args.iter().enumerate() {
+            if self.compile_deferred_slip(&deferred_slips, i, arg) {
+                continue;
+            }
             // Only the closure literal itself is escaping (see
             // `is_closure_literal_arg`); the legacy `then`/`tap`/`act`/`start`
             // names keep marking every argument, as they always did.
@@ -338,6 +342,7 @@ impl Compiler {
                 self.emit_wrap_var_ref(n);
             }
         }
+        self.emit_deferred_slips(&deferred_slips);
         let name_idx = self.code.add_constant(Value::str(name.resolve()));
         let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
         // Use CallMethod (non-mut) for read-only special variables like $!
@@ -925,7 +930,11 @@ impl Compiler {
         let esc = Self::method_escapes_closure_args(&mname);
         let immutable_topic_cb = self.method_binds_immutable_topic(target, &mname);
         let positional_indices = Self::arg_positional_indices(args);
+        let deferred_slips = Self::deferred_slips(args);
         for (i, arg) in args.iter().enumerate() {
+            if self.compile_deferred_slip(&deferred_slips, i, arg) {
+                continue;
+            }
             // See the sibling loop in `compile_expr_method_call`.
             let arg_esc = esc
                 && (Self::is_closure_literal_arg(Self::unwrap_named_arg_value(arg))
@@ -969,6 +978,7 @@ impl Compiler {
                 );
             }
         }
+        self.emit_deferred_slips(&deferred_slips);
         let name_idx = self.code.add_constant(Value::str(name.resolve()));
         let modifier_idx = modifier.map(|m| self.code.add_constant(Value::str(m.to_string())));
         self.code.emit(OpCode::CallMethod {

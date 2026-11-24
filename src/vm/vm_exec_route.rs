@@ -68,6 +68,7 @@ impl Interpreter {
             | OpCode::LoadEnterResult
             | OpCode::LoadOutputResult
             | OpCode::MakeSlip
+            | OpCode::MakeSlipAt(..)
             | OpCode::Mod
             | OpCode::Mul
             | OpCode::NativeIntArithmetic { .. }
