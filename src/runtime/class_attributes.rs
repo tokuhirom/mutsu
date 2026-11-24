@@ -90,6 +90,25 @@ impl ClassAttributes {
         }
     }
 
+    /// The attributes declared outside the table, for a write that only
+    /// concerns those: a deferred class answers its pre-table list without
+    /// declaring the table rows, and any other class its whole list.
+    ///
+    /// The one caller hands a role's captured lexical scope to the composed
+    /// copies of the role's attributes (`give_role_captures_to_composed_
+    /// classes`). A table row's default is a literal that needs no scope, so
+    /// leaving the rows undeclared there changes nothing, and declaring them
+    /// would undo the deferral for every `X::Comp` class each time a module
+    /// that declares the role loads.
+    // Cost: O(1).
+    pub(crate) fn without_table_mut(&mut self) -> &mut Vec<ClassAttributeDef> {
+        if self.is_deferred() {
+            &mut self.attrs
+        } else {
+            self
+        }
+    }
+
     /// Whether `name` is a table attribute built from its named argument
     /// although declared private (`X::AdHoc`'s `$!payload`); what an explicit
     /// `is built` records in `ClassDef::attribute_built`.
@@ -160,5 +179,27 @@ impl<'a> IntoIterator for &'a mut ClassAttributes {
     // Cost: O(1).
     fn into_iter(self) -> Self::IntoIter {
         self.iter_mut()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ClassAttributes;
+    use crate::symbol::Symbol;
+
+    /// Writing through `without_table_mut` leaves a deferred class deferred,
+    /// so the table rows are still declared on the next real access
+    /// (#18956: role registration must not force every `X::Comp` class).
+    #[test]
+    fn a_write_outside_the_table_keeps_the_class_deferred() {
+        let mut attrs = ClassAttributes::default();
+        attrs.defer_builtin_exception(Symbol::intern("X::NYI"));
+        assert!(attrs.is_deferred());
+        assert!(attrs.without_table_mut().is_empty());
+        assert!(attrs.is_deferred(), "the pre-table write declared nothing");
+        assert!(attrs.iter().any(|a| a.name == "feature"));
+        assert!(!attrs.is_deferred());
+        // Once declared, the write sees the whole list.
+        assert!(attrs.without_table_mut().iter().any(|a| a.name == "feature"));
     }
 }
