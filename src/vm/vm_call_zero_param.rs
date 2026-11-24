@@ -61,6 +61,17 @@ impl Interpreter {
                 ));
             }
         }
+        // A routine with a TRIR chunk runs it on every call this module
+        // serves, as the name-keyed cache's hit path does, so its calls never
+        // alternate between the two tiers (#18080).
+        if cf.trir.is_some()
+            && !self.any_routine_wrapped()
+            && let Some(result) = self.try_call_trir(cf, self.stack.len(), Some(code), compiled_fns)
+        {
+            self.stack.push(result?);
+            self.drain_and_reconcile_after_cached_call(code);
+            return Ok(());
+        }
         let result = match self.call_compiled_function_fast(cf, name_str, name_sym, compiled_fns) {
             Ok(v) => v,
             Err(e) => {
