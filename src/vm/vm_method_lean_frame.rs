@@ -407,6 +407,7 @@ impl Interpreter {
                 class: Some(class_val),
                 role: None,
             },
+            false,
         );
 
         let let_mark = self.let_saves_len();
