@@ -408,6 +408,12 @@ pub(crate) struct LexicalState {
     /// textually reached, as rakudo's compile-time pad install does.
     pub(crate) hoisted_unreached_decls:
         rustc_hash::FxHashMap<Symbol, crate::runtime::hoist_visibility::HoistedDeclRecord>,
+    /// The holder cells the closures of a running `EVAL`'d unit recorded its
+    /// scalars in for `UNIT::` (#19009), as (`block_scope_depth` at the
+    /// closure's creation, name, holder). The unit fills each with the
+    /// variable's final value when its mainline ends
+    /// (`Interpreter::settle_eval_unit_holders`).
+    pub(crate) eval_unit_holders: Vec<(usize, Symbol, Value)>,
 }
 
 impl LexicalState {
@@ -462,6 +468,7 @@ impl LexicalState {
             block_declared_vars: crate::runtime::ScopeStack::new(),
             constant_var_names_seen: rustc_hash::FxHashSet::default(),
             hoisted_unreached_decls: rustc_hash::FxHashMap::default(),
+            eval_unit_holders: Vec::new(),
         }
     }
 
@@ -534,6 +541,7 @@ impl LexicalState {
             block_declared_vars: crate::runtime::ScopeStack::new(),
             constant_var_names_seen: rustc_hash::FxHashSet::default(),
             hoisted_unreached_decls: rustc_hash::FxHashMap::default(),
+            eval_unit_holders: Vec::new(),
         }
     }
 }
