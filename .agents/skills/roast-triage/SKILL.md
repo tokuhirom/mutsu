@@ -1,39 +1,33 @@
 ---
 name: roast-triage
-description: Choose which roast work to do next and investigate one failing roast test — PLAN.md/BLOCKERS.md-driven task selection, the raku-vs-mutsu comparison order, and the roast-history.sh diagnostic categories. Use when picking the next roast target or debugging a specific failing roast/*.t file.
+description: Investigate one failing roast test — the raku-vs-mutsu comparison order, the roast-history.sh diagnostic categories, and where a non-whitelisted file's reason is recorded. Use when a whitelisted roast/*.t regresses, or when looking at one of the remaining non-whitelisted files.
 metadata:
-  short-description: Pick and investigate roast work
+  short-description: Investigate a failing roast test
 ---
 
 # Roast triage
 
-Two separate questions, in this order: *which* roast work to do, and *why* one specific file
-fails.
+Roast's role today, and how to find *why* one specific file fails.
 
-## Choosing what to work on
+## Roast is a regression guard
 
-**Primary: PLAN.md → BLOCKERS.md → then individual tests.** The project is in its final
-stretch; work is driven by strategic priorities, not random test selection.
+Roast is no longer a work source: 1440 of the 1455 `.t` files are whitelisted, and every one of
+the remaining 15 is a non-goal, has no oracle, or cannot pass. The table in
+`docs/roast-compatibility.md` ("Non-whitelisted roast files and why") gives the reason for each.
+New work comes from `PLAN.md`, the issue queue by lane and the ecosystem (see "Agents and queue
+requests" in `AGENTS.md`). This skill is for the two cases where roast still needs attention:
 
-1. **PLAN.md priorities first.** Check the current quarter's section for high-impact tasks
-   (exception types, performance, module compatibility, ...). They are chosen because they
-   unblock many tests or advance project goals.
-2. **`TODO_roast/BLOCKERS.md` for roast work.** It is the single ledger of all non-whitelisted
-   roast tests, tracked per file and by root cause, with a raku-baseline column, and it groups
-   failing tests by the missing feature. Implement the features that unblock the most tests
-   (e.g. "Exception Types" blocks 22 tests, "Threading" blocks 31).
-3. **Then individual tests**, for features already in progress.
+1. **A whitelisted file fails.** That is a regression: investigate it (below) and fix it. Never
+   remove the file from `roast-whitelist.txt` because of it.
+2. **One of the non-whitelisted files.** Re-measure before trusting its row. If general work
+   moved it, update the row; if it now passes, whitelist it and remove the row. A file whose
+   whitelist entry a roast re-vendor broke for a reason that is not a mutsu bug gets a new row
+   there, with the reason.
 
-**Do NOT cherry-pick easy tests to game the pass count.** The goal is implementing missing
-features with broad impact — and do not skip a task because it looks hard (see "Working on
-complex features" in `AGENTS.md`: a test needing several unrelated features gets them all, in
-one PR if that is what it takes).
+**Do NOT cherry-pick easy tests to game the pass count**, and do not add test-specific hacks to
+whitelist a non-goal file.
 
-When you defer a test, record *why* in its `TODO_roast/BLOCKERS.md` row (or the "Investigation
-notes" section for longer findings). When a test reaches the whitelist, remove its row — the
-details move to `news/`.
-
-### Diagnostic tools (status tracking, not task selection)
+### Diagnostic tools (status tracking)
 
 `./scripts/roast-history.sh` generates per-file category lists under `tmp/`:
 

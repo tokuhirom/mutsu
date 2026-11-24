@@ -14,8 +14,8 @@ process, using the same probe program).
 Regeneration recipe:
     python3 scripts/adr0029-capture-x-exception-data.py
     # writes:
-    #   TODO_roast/x-exception-role-membership.tsv       (Slice 3's input)
-    #   TODO_roast/x-exception-role-membership-diff.tsv  (mutsu vs raku, today)
+    #   docs/data/x-exception-role-membership.tsv       (Slice 3's input)
+    #   docs/data/x-exception-role-membership-diff.tsv  (mutsu vs raku, today)
     # and prints a summary to stdout.
 
 Requires `raku` on PATH and a built `target/debug/mutsu` (or set MUTSU_BIN).
@@ -31,8 +31,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PROBE = REPO_ROOT / "scripts" / "probe-x-exception-shape.raku"
-OUT_DATA = REPO_ROOT / "TODO_roast" / "x-exception-role-membership.tsv"
-OUT_DIFF = REPO_ROOT / "TODO_roast" / "x-exception-role-membership-diff.tsv"
+OUT_DATA = REPO_ROOT / "docs" / "data" / "x-exception-role-membership.tsv"
+OUT_DIFF = REPO_ROOT / "docs" / "data" / "x-exception-role-membership-diff.tsv"
 
 # Hard rule (ADR-0029 Slice 2): the name list comes from what mutsu raises or
 # is tested against -- never an `X::`-prefix enumeration. Two sources:

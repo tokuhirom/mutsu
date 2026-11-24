@@ -1,7 +1,7 @@
 # S17 scheduler / supply drive model
 
 > **Status:** DRAFT (2026-06-28). This document captures the design work needed
-> for the remaining S17 cluster that `TODO_roast/BLOCKERS.md` now splits into
+> for the remaining S17 cluster that the roast blocker ledger then split into
 > shared scalar coherence, scheduler lifecycle, Supply timer-driven operators,
 > and async IO. The unifying question is: **who owns event delivery, and when is
 > user code allowed to run?**

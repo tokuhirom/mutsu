@@ -25,7 +25,7 @@ is f2({ $::($callers)::($callers)::x }), 91, 'indirect CALLERS::CALLERS:: works'
 # frames out (immediate caller does not declare it) is Nil in raku, but mutsu
 # returns 7 here — the plain-name path shares `get_caller_var`, whose flattened
 # caller env over-reaches into inherited dynamics. That is a pre-existing
-# `CALLER::` bug (documented in TODO_roast/BLOCKERS.md), not specific to
+# `CALLER::` bug, not specific to
 # `CALLERS::`, and needs per-frame declared-name data to fix. Not asserted here.
 
 # A `$*`-twigil dynamic name DOES cascade through the caller chain.

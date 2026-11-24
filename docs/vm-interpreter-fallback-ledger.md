@@ -232,7 +232,7 @@ Current state of the visualization: `grep -rn "TODO: compile to bytecode" src/vm
   (requires `register_container_type_metadata` = interpreter-owned type metadata registration) / Instance (`__baggy_data__`, user coercion) /
   Package (type object) receivers stay on the interpreter = behavior-invariant. Measured: Set/Bag/Mix fallback in set-op tests → 0.
   pin `t/native-quanthash-coerce.t`(26). All 29 whitelisted set/bag/mix files green, cargo test 458/0. (The known fails in set.t/bag.t are the
-  pre-existing ones listed in BLOCKERS.md [bag.t 215=BigInt weight, 252=Foo instance union, set.t 226=typed-hash bind], unrelated to this change.)
+  pre-existing ones listed in the roast blocker ledger [bag.t 215=BigInt weight, 252=Foo instance union, set.t 226=typed-hash bind], unrelated to this change.)
   **Next candidates: making the iterator protocol (pull-one/skip-one/push-exactly) VM-native, or native `AT-POS`. The main prize is `new` (③ ctor).**
 
 - **2026-06-09 (③ PR-9, §1 = making the simple array-backed Iterator protocol VM-native)**: started on the iterator protocol, the runner-up in PR-8's spread
@@ -248,7 +248,7 @@ Current state of the visualization: `grep -rn "TODO: compile to bytecode" src/vm
   **Found and fixed 1 gather regression**: the first version also grabbed `is_lazy` iterators, making `gather{...}.iterator.pull-one` return IterationEnd immediately →
   resolved with the `is_lazy` exclusion (after exclusion, interpreter fallthrough = pre-existing behavior). Measured: pull-one fallback of List/Array/finite-Range
   iterators → 0. pin `t/native-iterator.t`(18, including aliases/sub locals/Range). S07-iterationbuffer/*-iterator all green, cargo test 458/0.
-  (gather.t's Failed:1 is the pre-existing take-rw [test 38] listed in BLOCKERS.md, unrelated to this change.)
+  (gather.t's Failed:1 is the pre-existing take-rw [test 38] listed in the roast blocker ledger, unrelated to this change.)
   **Next candidates: native `AT-POS`, broad §1 beyond coercion, or design of the main prize `new` (③ ctor).**
 
 - **2026-06-09 (③ PR-10, §1 catch-all = making plain `@`-array `splice` VM-native)**: as a sister to PR-5's
@@ -354,7 +354,7 @@ Current state of the visualization: `grep -rn "TODO: compile to bytecode" src/vm
   mut path via `CallMethodMut` routing where all 6 siblings uniformly fall back = **exact parity with existing behavior** (a future slice candidate is
   lowering them into the mut path all at once). Behavior-invariant (native==interpreter = same `to_mixhash`). pin `t/native-mixhash-coerce.t`(22,
   PASSing on both raku and mutsu; avoids the `.WHICH` key difference by using Str elements). mix.t 244/244, set.t, categorize green.
-  (bag.t 625 "Foo instance union" is pre-existing per BLOCKERS.md and unrelated to this change.)
+  (bag.t 625 "Foo instance union" is pre-existing per the roast blocker ledger and unrelated to this change.)
 - **2026-06-23 (§1 = making QuantHash coercion VM-native on the mut path too)**: follow-up to the MixHash slice above. **Variable receivers**
   (`@a.Set`/`%h.MixHash`) compile to `CallMethodMut` and never hit the non-mut path's `try_native_quanthash_coerce`, so all 6
   siblings (`.Set`/`.Bag`/`.Mix`/`.SetHash`/`.BagHash`/`.MixHash`) uniformly fell back to the interpreter at the mut catch-all
@@ -437,7 +437,7 @@ Current state of the visualization: `grep -rn "TODO: compile to bytecode" src/vm
   11/10/10 → 2/2/2 (the remaining 2 are `__baggy_data__` Instance / type object = falling through by design). pin
   `t/native-scalar-quanthash-coerce.t`(39: literal/variable receivers × Set/Bag/Mix/SetHash/BagHash/MixHash/Map/Hash; PASSing on both raku and
   mutsu). set.t 248/248, mix.t 244/244, categorize 28/28, hash.t green. (bag.t 252 "Foo instance union" and classify.t 40
-  "junction classify" are pre-existing per BLOCKERS.md [both non-whitelisted], unrelated to this change. The odd-number case of `(a=>1).Map`
+  "junction classify" are pre-existing per the roast blocker ledger [both non-whitelisted], unrelated to this change. The odd-number case of `(a=>1).Map`
   is a separate pre-existing bug of the Pair receiver [already inside the native gate], out of scope for this slice.)
 - **2026-06-23 (§D = making `IO::Path`'s FS `stat`-only file tests / accessors VM-native)**: after the coercion drain was exhausted, the first step
   toward the **main prize** of ③ IO native methods. Of the FS-touching methods that the IO::Path lexical/cwd slices kept on the interpreter with `None`,

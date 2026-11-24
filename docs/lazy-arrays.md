@@ -1,8 +1,8 @@
 # Lazy infinite arrays — `my @a = 1..*` reify-on-demand (design)
 
 > **Status:** IN PROGRESS (2026-06-19). Captures the analysis behind the "lazy
-> infinite sequence" track (PLAN.md §C / BLOCKERS "Real lazy infinite
-> sequences"). The reify-on-demand machinery already works for **scalar-held**
+> infinite sequence" track (PLAN.md §C / the roast blocker ledger's "Real lazy
+> infinite sequences"). The reify-on-demand machinery already works for **scalar-held**
 > and **gather-coroutine** lazy values; the gap is that infinite **ranges and
 > `...` sequences assigned to an `@` array are materialized (capped at 100k)**
 > at assignment, losing laziness. Closing it is a multi-slice campaign because
@@ -315,7 +315,7 @@ finite range is never capped, and always expands in full):
 A preserved `LazyList` does **not** support these — `@a.push` on a preserved
 gather list throws `No such method 'push'`. So **preserving laziness on assign
 without also handling mutation is a regression** (this is the
-"regresses S32-array create/delete-adverb" warning recorded in BLOCKERS).
+"regresses S32-array create/delete-adverb" warning recorded in the roast blocker ledger).
 
 And Raku's mutation is **partial-reify**: `my @a = 1..*; @a[2]=99; say @a[^4]`
 → `(1 2 99 4)` — element 3 is *still* pulled from the lazy source. So

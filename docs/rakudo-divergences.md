@@ -4,8 +4,8 @@ mutsu's oracle is rakudo (`raku`, currently 2026.11) together with roast. This
 page lists every place where mutsu **deliberately** behaves differently and keeps
 doing so. A divergence here is a decision, not a gap:
 
-- A bug mutsu still has, or a feature it lacks, belongs in an issue, `PLAN.md` or
-  `TODO_roast/BLOCKERS.md`, not here.
+- A bug mutsu still has, or a feature it lacks, belongs in an issue or `PLAN.md`,
+  not here.
 - **Add a new deliberate divergence to this page in the PR that makes it.**
   Write a minimal repro with both outputs, the reason, and links to the issue,
   ADR or PR that records the decision. Remove an entry once mutsu changes to match

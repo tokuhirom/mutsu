@@ -109,7 +109,7 @@ modes present.
 
 The constant is therefore bumped in step with the Rakudo version mutsu is
 actually measured against (`ecosystem/dists/**` `measured.raku_version`,
-`TODO_roast/raku-baseline.md`) — backed by a measurement, never raised
+`docs/data/raku-baseline.md`) — backed by a measurement, never raised
 speculatively.
 
 ## Alternatives rejected

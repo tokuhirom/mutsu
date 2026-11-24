@@ -4,7 +4,7 @@ use Test;
 # container in place, preserving its identity so a by-value holder of the same
 # container (an `@a` captured into a list) observes the reassignment — Raku's
 # stable container identity. At the same time `=` still COPIES (`my @b = @a`
-# yields a distinct container). See roast/S32-array/splice.t / BLOCKERS §3.
+# yields a distinct container). See roast/S32-array/splice.t.
 #
 # NB: each block uses distinct variable names — a variable captured by a closure
 # anywhere in the compilation unit switches to a shared-cell representation whose

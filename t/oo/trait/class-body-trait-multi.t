@@ -17,7 +17,7 @@ plan 4;
 #     non-Positional value, out-dispatching the scalar candidate
 #     (`Opt :$spec!`) and dying in the destructure binding.
 # (Actually CALLING the array-form candidate with `[Optional, v1.2]` is a
-# separate, still-open destructure-binding gap — see TODO_roast/BLOCKERS.md.)
+# separate destructure-binding gap, not covered here.)
 
 enum Optionality <Mandatory Optional>;
 

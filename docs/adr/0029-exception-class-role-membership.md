@@ -444,7 +444,7 @@ Only after Slice 3, and framed as measurement rather than payoff:
    R2): the blanket wording was wrong for `X::TooLateForREPR`, rakudo's one
    role-as-superclass pun, where `X::Comp` genuinely is both a real MRO entry
    and a composed role. The criterion is driven off
-   `TODO_roast/x-exception-role-membership.tsv` (real raku `.^mro` output),
+   `docs/data/x-exception-role-membership.tsv` (real raku `.^mro` output),
    not a hardcoded rule — `X::TooLateForREPR` is registered with
    `parent = "X::Comp"` because that is what the captured data says, not as a
    silent carve-out.
@@ -535,7 +535,7 @@ fix in `dispatch_classhow_roles`'s `is_role` gate
 (`src/runtime/methods_classhow_parents.rs`), needed for `.^roles` called on a
 dual-registered marker-role name itself (e.g. `X::Syntax.^roles`) to use role
 semantics rather than falling through to the (empty) class-composed-roles
-path; data in `TODO_roast/x-exception-role-membership.tsv` (+ `-diff.tsv`);
+path; data in `docs/data/x-exception-role-membership.tsv` (+ `-diff.tsv`);
 pins in `t/exception-role-membership.t`.
 
 Measured outcome against the ADR's own §1 baseline:

@@ -329,7 +329,7 @@ Usage:
 - **Not yet production-ready.** mutsu is under active development; expect gaps
   and behaviour changes between releases.
 - **Roast is not complete.** The remaining files and why each one fails are
-  tracked in [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md).
+  listed in [docs/roast-compatibility.md](docs/roast-compatibility.md#non-whitelisted-roast-files-and-why).
 - **Some differences from rakudo are intentional.** Where mutsu deliberately
   behaves differently (for example, it reports itself as `mutsu`, not as MoarVM),
   [docs/rakudo-divergences.md](docs/rakudo-divergences.md) lists the known

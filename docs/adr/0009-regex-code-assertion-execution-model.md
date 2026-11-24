@@ -3,7 +3,7 @@
 - **Status**: Accepted (2026-07-17). Parts A, A2 and B all implemented.
 - **Context**: `roast/integration/advent2013-day18.t` test 10 (the last failure in that
   file) and PLAN §4 ⑤. Supersedes the root-cause analysis recorded in
-  `TODO_roast/BLOCKERS.md` for that file, which attributed the symptom to backtracking
+  the roast blocker ledger (since retired) for that file, which attributed the symptom to backtracking
   (measurement below shows backtracking is not involved).
 
 ## Problem
@@ -54,7 +54,7 @@ builds `Interpreter { env: self.env.clone(), .. Self::new_regex_scratch() }` and
 it), because the matcher below `regex_match_with_captures_core` is `&self`. Run 4 is the
 only one in the real interpreter.
 
-**These four are not backtracking.** The earlier analysis (BLOCKERS.md) measured
+**These four are not backtracking.** The earlier analysis (the roast blocker ledger) measured
 `%seen{k}++` reaching 12 where raku reaches 2 and attributed the whole symptom to
 backtracking. There are in fact *two independent* multipliers, and this ADR is about the
 first:

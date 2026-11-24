@@ -73,7 +73,8 @@ expectations of files that are currently whitelisted. After a roast update:
    (`scripts/update-vendor.sh --check` tells you roast moved; compare
    `git diff --name-only` in the update against `roast-whitelist.txt`).
 2. Any file that no longer passes must be removed from `roast-whitelist.txt` and
-   recorded in `TODO_roast/BLOCKERS.md` with the reason.
+   given a row, with the reason, in the table of
+   [roast-compatibility.md](roast-compatibility.md#non-whitelisted-roast-files-and-why).
 3. New spec features documented in the update may be worth adding to `PLAN.md`.
 
 Because of this test-suite churn, roast updates are done in their own PR,

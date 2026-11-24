@@ -2,7 +2,7 @@
 
 > **Status:** DRAFT (2026-06-28). This document captures the analysis behind
 > the `X::Seq::Consumed` / `+foo` vs `+@foo` track called out from
-> `TODO_roast/BLOCKERS.md`. It is intentionally separate from
+> the roast blocker ledger of the time. It is intentionally separate from
 > [lazy-arrays.md](lazy-arrays.md): the core problem here is **consumption
 > identity**, not infinite reify-on-demand.
 

@@ -145,8 +145,8 @@ scripts/update-vendor.sh old-design-docs
 - **`raku-doc` / `old-design-docs`** are documentation-only; re-vendoring them is
   low-risk. Do them in their own PR (no code impact).
 - **`roast`** has follow-up: a newer roast may add subtests to whitelisted files.
-  After re-vendoring, re-run every whitelisted file upstream changed and drop any
-  that no longer pass to `TODO_roast/BLOCKERS.md`. Because of this churn, **roast
+  After re-vendoring, re-run every whitelisted file upstream changed and give any
+  that no longer pass a row in the table of `docs/roast-compatibility.md`. Because of this churn, **roast
   updates go in their own PR** (see `docs/vendoring.md` §"Updating `roast`").
   Regenerate the roast × raku baseline if needed
   (`scripts/roast-raku-baseline.sh`).
@@ -168,4 +168,4 @@ zef.
 - Each risky change is its own `chore(deps):` PR; CI (`make test` + `make roast`)
   is green before merge.
 - `vendor.lock` committed alongside any re-vendor.
-- Any whitelist removals recorded in `TODO_roast/BLOCKERS.md`.
+- Any whitelist removals recorded in the table of `docs/roast-compatibility.md`.

@@ -53,7 +53,7 @@ impl Interpreter {
     /// Distribute a whole-value assignment through a bound slice's element
     /// cells (`@s := @a[1, 2]; @s = 8, 9, 10`), bounded by the slice's own
     /// (fixed) arity: extra RHS values are discarded and a missing one stores
-    /// `Any`, matching raku's bound-slice semantics (§4 BLOCKERS.md test 15).
+    /// `Any`, matching raku's bound-slice semantics (roast/S09-subscript/slice.t).
     /// A deferred hash-entry token is promoted to a cell on its first write,
     /// in place in `holder`. Returns the stored values as a `List`. The one
     /// implementation behind every assign path that meets a bound slice: the
@@ -1712,8 +1712,8 @@ impl Interpreter {
         let name_sym = code.locals_sym.get(idx).copied();
         // Bound array SLICE write-through (`@slice := @array[1,2]; @slice =
         // ...;` as a statement): the local's OWN elements are shared
-        // `ContainerRef` cells (from the bind-time slice promotion, §4
-        // BLOCKERS.md test 15). A whole-array assignment writes through each
+        // `ContainerRef` cells (from the bind-time slice promotion,
+        // roast/S09-subscript/slice.t). A whole-array assignment writes through each
         // cell instead of replacing the slot, bounded by the slice's own
         // (fixed) arity — extra RHS values are discarded, matching raku's
         // bound-slice semantics. See the mirror-image handling in
@@ -1747,7 +1747,7 @@ impl Interpreter {
         } else {
             None
         };
-        // Container identity (§3, BLOCKERS.md splice.t): a plain whole-array/hash
+        // Container identity (roast/S32-array/splice.t): a plain whole-array/hash
         // *assignment* (`@a = ...`, not `my @a = ...` and not `:=`) mutates the
         // EXISTING container in place, so any other holder of the same backing
         // `Gc` (e.g. `@a` captured by value into a list `(0, @a)` / a `\param`
@@ -2145,7 +2145,7 @@ impl Interpreter {
                 assigned = self.array_assign_nil_container_default(name, &old, assigned);
             }
             // Mark a genuine bound array SLICE (`@slice := @array[1,2]`,
-            // `@s := %h<a b>`, §4 BLOCKERS.md test 15): its OWN elements are
+            // `@s := %h<a b>`, roast/S09-subscript/slice.t): its OWN elements are
             // shared `ContainerRef` cells or entry tokens. The mark lives on
             // the bound value (`ArrayData::bound_slice`, ADR-0097) and is
             // the ONLY trigger for the write-through behavior in

@@ -3,7 +3,8 @@
 The single ledger of **which real fez-ecosystem distributions actually run under
 mutsu, and why the rest fail**, tracked by root cause. Used to decide which
 general mutsu fix would unblock the most real dists at once — the batteries /
-compatibility counterpart of [`TODO_roast/BLOCKERS.md`](../TODO_roast/BLOCKERS.md).
+compatibility counterpart of the roast table in
+[roast-compatibility.md](roast-compatibility.md#non-whitelisted-roast-files-and-why).
 
 ## Why this file exists
 

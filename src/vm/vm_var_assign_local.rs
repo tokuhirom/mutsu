@@ -135,7 +135,7 @@ impl Interpreter {
         self.check_readonly_for_modify(name)?;
         // Bound array SLICE write-through (`@slice := @array[1,2]; @slice =
         // ...`): the local's OWN elements are shared `ContainerRef` cells
-        // (from the bind-time slice promotion, §4 BLOCKERS.md test 15). A
+        // (from the bind-time slice promotion, roast/S09-subscript/slice.t). A
         // whole-array assignment writes through each cell instead of
         // replacing the slot, bounded by the slice's own (fixed) arity —
         // extra RHS values are discarded, matching raku's bound-slice

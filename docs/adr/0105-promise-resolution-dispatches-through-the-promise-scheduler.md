@@ -240,7 +240,7 @@ correctness driver.
   — and D3 is the *smallest* of the four.
 - **Cost.** Every blocking point unwinding and re-entering native Rust frames
   is VM-scale (ADR-0020 §2); there is no measured thread-count trigger
-  (PLAN.md), and roast has none (`TODO_roast/BLOCKERS.md`).
+  (PLAN.md), and roast has none (`docs/roast-compatibility.md`).
 
 ## 5. Alternatives considered
 

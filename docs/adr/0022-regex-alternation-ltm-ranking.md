@@ -47,7 +47,7 @@
 - **Context**: `todo/deep/regex-alternation-ltm-longest-literal-prefix.md`;
   `Cro::HTTP` `t/http-router.rakutest` test 61 (the file's last remaining failure);
   `roast/S05-metasyntax/longest-alternative.t` tests 28/50/54 (the file's only failures,
-  62-test file — the BLOCKERS.md "57/62" row is stale).
+  62-test file — the roast blocker ledger's "57/62" row is stale).
   Builds directly on ADR-0009's `LTM_DECLARATIVE_MODE` machinery.
 - **Scope**: semantics of `|` branch *ranking* in the regex engine. Protoregex dispatch
   already ranks by declarative prefix (ADR-0009, `dispatch.rs::eval_token_call_values_at`)
@@ -415,8 +415,8 @@ evaluates). No new global state; no cross-thread anything.
    whitelisted `S05-*` files, grammar-heavy roast (`S05-grammar/*`, `integration/*`),
    and the JSON/YAML batteries suites (`scripts/battery-testsuite.sh`) — CI covers all;
    fix forward.
-4. **Slice 4 — BLOCKERS.md + ledger update** (done, merged with Slice 5): the
-   `longest-alternative.t` row is removed from `TODO_roast/BLOCKERS.md` (the file is fully
+4. **Slice 4 — roast ledger update** (done, merged with Slice 5): the
+   `longest-alternative.t` row is removed from the roast blocker ledger (the file is fully
    green and whitelisted); the file's remaining line-461 fudge is noted in
    `roast-whitelist.txt`'s neighboring context only, not as a ledger row.
 5. **Slice 5 (done) — non-constant interpolation marking**: the actual general-case

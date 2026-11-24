@@ -7,7 +7,7 @@ so that mutsu work can be prioritised against a real oracle: a test that
 failing `flunk`) is not worth chasing on mutsu.
 
 - **Data:** [`raku-baseline.tsv`](raku-baseline.tsv) — one row per roast `.t` file.
-- **Generator:** [`../scripts/roast-raku-baseline.sh`](../scripts/roast-raku-baseline.sh) — re-run to refresh.
+- **Generator:** [`scripts/roast-raku-baseline.sh`](../../scripts/roast-raku-baseline.sh) — re-run to refresh.
 - **Captured:** 2026-10-24, against `Rakudo v2026.09` (default language **6.d**, MoarVM 2026.09).
   Previous capture: 2026-09-02 against `Rakudo v2026.07` — see "v2026.09 refresh" below
   for the diff; the one before that (2026-07-12, `v2026.06`) is in "v2026.07 refresh".
@@ -127,7 +127,7 @@ accounts for the 1,463 → 1,464 file-count increase.
 ## Regenerating
 
 ```bash
-# ~20-30 min serial (~10 min with RAKU_BASELINE_JOBS=3); writes TODO_roast/raku-baseline.tsv
+# ~20-30 min serial (~10 min with RAKU_BASELINE_JOBS=3); writes docs/data/raku-baseline.tsv
 scripts/roast-raku-baseline.sh
 # Optional overrides:
 RAKU=/path/to/raku RAKU_BASELINE_TIMEOUT=25 scripts/roast-raku-baseline.sh
