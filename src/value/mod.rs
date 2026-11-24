@@ -1922,6 +1922,12 @@ pub(crate) struct ReadonlySnapshot {
     /// an absent name only clears a parameter/loop-alias mark, never an
     /// immutable-kind one. A creation-time snapshot clears any absent mark.
     pub(crate) at_declaration: bool,
+    /// For a block that writes its `$_` (`{ $_ = 0 }`): the readonly kind the
+    /// topic had where the block was created, `Some(None)` when it was
+    /// writable. Called with no argument, the block's `$_` is that scope's
+    /// topic, so its caller's mark on `_` must not decide (#19067). `None`
+    /// when nothing was recorded.
+    pub(crate) topic: Option<Option<crate::ast::ReadonlyKind>>,
 }
 
 /// A code object's parameter names, interned once.
