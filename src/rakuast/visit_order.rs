@@ -7,8 +7,9 @@ use super::{RakuAstClass, RakuAstField, RakuAstNode};
 /// a declaration visits its initializer before its `shape` (`my @a[3] =
 /// 1,2,3`), a substitution its pattern before its `infix` (`s[a] = b`), an
 /// enum its term before its `of` type and traits (`our Str enum E <a>`), a constant
-/// its initializer before its traits (`constant C is export = 1`), and a
-/// statement its labels after everything else (`L: for @a { }`).
+/// its initializer before its traits (`constant C is export = 1`), a typed
+/// `is` trait its argument before its type, and a statement its labels after
+/// everything else (`L: for @a { }`).
 // Cost: O(f), f = fields of `node`.
 pub(crate) fn reorder(node: &RakuAstNode, fields: &mut Vec<&RakuAstField>) {
     // `has R $.r .= new` / `has $.x = 1 + 2`: Rakudo visits the default
@@ -37,6 +38,7 @@ pub(crate) fn reorder(node: &RakuAstNode, fields: &mut Vec<&RakuAstField>) {
         RakuAstClass::VarDeclarationSimple => ("shape", "initializer"),
         RakuAstClass::Substitution => ("infix", "pattern"),
         RakuAstClass::VarDeclarationConstant => ("traits", "initializer"),
+        RakuAstClass::TraitIs => ("type", "argument"),
         _ => return,
     };
     if let Some(at) = fields.iter().position(|f| f.name == Some(moved))
