@@ -25,7 +25,7 @@ impl Compiler {
     /// declarations too (rakudo's pad holds them).
     // Cost: O(p), p = `decls`.
     pub(super) fn note_static_view_plans(&mut self, decls: &[u32]) {
-        if !crate::parser::static_outer_latch::static_outer_observed() {
+        if !super::compile_inputs::static_outer_observed() {
             return;
         }
         let at_unit_top = !self.in_lexical_scope
