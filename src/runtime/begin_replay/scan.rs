@@ -95,6 +95,7 @@ fn op_is_recordable(code: &CompiledCode, op: &OpCode, declared: &[u32]) -> bool 
         | OpCode::SetLocal(_)
         | OpCode::SetLocalDecl { .. }
         | OpCode::CheckReadOnly(_)
+        | OpCode::CheckReadOnlyModify(_)
         | OpCode::Pop
         | OpCode::Jump(_)
         | OpCode::JumpIfFalse(_)
@@ -160,7 +161,10 @@ pub(crate) fn body_slots(code: &CompiledCode, start: usize, end: usize) -> BodyS
                 ..
             } => declared.push(*slot as usize),
             OpCode::ForLoop(spec) => declared.extend(spec.param_local.map(|s| s as usize)),
-            OpCode::GetLocal(slot) | OpCode::SetLocal(slot) | OpCode::CheckReadOnly(slot) => {
+            OpCode::GetLocal(slot)
+            | OpCode::SetLocal(slot)
+            | OpCode::CheckReadOnly(slot)
+            | OpCode::CheckReadOnlyModify(slot) => {
                 used.push(*slot as usize)
             }
             _ => {}

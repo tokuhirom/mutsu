@@ -383,7 +383,7 @@ impl Interpreter {
     /// [`Self::free_var_binding_decision`] for a name that is not a local of
     /// the running chunk.
     // Cost: as `free_var_binding_decision`.
-    fn free_var_nonlocal_decision(
+    pub(super) fn free_var_nonlocal_decision(
         &self,
         name: &str,
         sym: crate::symbol::Symbol,
@@ -421,7 +421,7 @@ impl Interpreter {
 
     /// [`Self::own_slot_rebind_decision`] for the slot already found.
     // Cost: as `own_slot_rebind_decision`.
-    fn slot_rebind_decision(&self, slot: u32) -> Option<FreeVarBinding> {
+    pub(super) fn slot_rebind_decision(&self, slot: u32) -> Option<FreeVarBinding> {
         let binding = self.locals.get(slot as usize)?;
         // The tag test settles the overwhelmingly common plain value without
         // the cell walk.

@@ -108,6 +108,7 @@ pub(super) fn compile_range(code: &CompiledCode, start: usize, end: usize) -> Op
             | OpCode::ConcatAssignLocal(..)
             | OpCode::MarkArrayShareSource(_)
             | OpCode::CheckReadOnly(_)
+            | OpCode::CheckReadOnlyModify(_)
             | OpCode::SetLocalDecl { .. }
             | OpCode::ContainerizePair
             | OpCode::CallFunc { .. }
@@ -533,13 +534,18 @@ fn build(
             }
             // Every whole-variable assignment runs one: a dedicated shim, not a
             // generic `step` (#10955).
-            OpCode::CheckReadOnly(name_idx) => {
+            OpCode::CheckReadOnly(name_idx) | OpCode::CheckReadOnlyModify(name_idx) => {
+                let helper = if matches!(op, OpCode::CheckReadOnlyModify(_)) {
+                    helpers::check_read_only_modify as *const () as usize
+                } else {
+                    helpers::check_read_only as *const () as usize
+                };
                 let opidx = b.ins().iconst(types::I32, i as i64);
                 let namev = b.ins().iconst(types::I32, *name_idx as i64);
                 let status = call_helper(
                     &mut b,
                     sigs.s_code_u32_u32,
-                    helpers::check_read_only as *const () as usize,
+                    helper,
                     &[interp, codep, opidx, namev],
                 )?;
                 check_status(&mut b, status);

@@ -66,8 +66,10 @@ throws-like { my $x := 'abc'; $x = 'd' }, X::AdHoc,
     message => /'Cannot assign to an immutable value'/,
     'assigning to a := -bound Str literal';
 
-throws-like { my $x := 5; $x += 1 }, X::AdHoc,
-    message => /'Cannot assign to an immutable value'/,
+# A read-modify-write has no container to write and names the value, as
+# rakudo does (#18986); a plain `=` keeps the generic wording above.
+throws-like { my $x := 5; $x += 1 }, X::Assignment::RO,
+    message => /'Cannot modify an immutable Int (5)'/,
     'compound-assigning to a := -bound literal';
 
 throws-like { my constant $PI = 3.14; $PI = 5 }, X::AdHoc,

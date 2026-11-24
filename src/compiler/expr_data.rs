@@ -22,6 +22,7 @@ impl Compiler {
         // exactly this assignment. Taken (not read) so a nested assignment inside
         // the right-hand side compiles as an ordinary one.
         let dot_twigil_rmw = std::mem::take(&mut self.dot_twigil_rmw_assign);
+        let modifies = std::mem::take(&mut self.compound_assign_target);
         // Statement assignment has a dedicated marker too, because plain
         // `AssignExpr("self")` would rebind an ordinary object invocant.  The
         // VM accepts this marker only when the implicit invocant is a live
@@ -172,6 +173,13 @@ impl Compiler {
             self.code.emit(OpCode::CheckReadOnly(name_idx));
         }
         self.with_escape(true, |c| c.compile_expr(expr));
+        // A read-modify-write of a plain scalar checks its target after the
+        // right-hand side, as the statement form does, so a name bound to an
+        // immutable value is refused naming that value (#18986).
+        if modifies && !is_bind && !name.starts_with(['@', '%', '&', '\\']) {
+            let name_idx = self.code.add_constant(Value::str(name.to_string()));
+            self.code.emit(Self::read_only_check_op(name_idx, true));
+        }
         // An `@` target whose RHS is a `$` scalar variable itemizes, exactly as
         // the statement-position store does: `(@j = $c)` must be one element,
         // like `@j = $c` written as a statement.

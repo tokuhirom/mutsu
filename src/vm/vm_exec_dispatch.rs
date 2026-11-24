@@ -8465,6 +8465,11 @@ impl Interpreter {
                 self.exec_check_read_only_op(code, *name_idx)?;
                 *ip += 1;
             }
+            // Cost: O(1), as `CheckReadOnly` (the error path is cold).
+            OpCode::CheckReadOnlyModify(name_idx) => {
+                self.exec_check_read_only_modify_op(code, *name_idx)?;
+                *ip += 1;
+            }
             // Cost: O(n), n = elements of the right-hand side when the name is
             // bound to a mutable aggregate (the in-place STORE); otherwise O(1)
             // (a slot read, or one env probe for a non-local name).

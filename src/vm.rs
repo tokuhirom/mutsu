@@ -251,6 +251,7 @@ pub(crate) use vm_backtrace::setting_frame;
 mod vm_backtrace_lazy;
 pub(crate) mod vm_bareword_store;
 mod vm_check_read_only;
+mod vm_check_read_only_modify;
 pub(crate) mod vm_class_body_static_types;
 mod vm_client_code;
 mod vm_closure_build;

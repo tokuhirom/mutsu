@@ -3803,6 +3803,11 @@ pub(crate) enum OpCode {
     AssignReadOnly,
     /// Check if a variable is readonly; throw if so (for assignment to readonly params).
     CheckReadOnly(u32),
+    /// [`OpCode::CheckReadOnly`] for a read-modify-write (`$x OP= v`,
+    /// `$x .= meth`): a name bound to an immutable value reports that value,
+    /// "Cannot modify an immutable Str (a)", where a plain `=` says "Cannot
+    /// assign to an immutable value", as rakudo does (#18986).
+    CheckReadOnlyModify(u32),
     /// `v = rhs` where `v` is a source-level sigilless name (`my \v`,
     /// `-> \v`): when `v` is bound to a mutable `Array`/`Hash`, pop the RHS,
     /// store it into that aggregate in place (`Array.STORE` / `Hash.STORE`)

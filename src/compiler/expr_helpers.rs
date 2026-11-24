@@ -124,7 +124,7 @@ impl Compiler {
         &mut self,
         name: &str,
         expr: &Expr,
-        check_read_only: Option<u32>,
+        check_read_only: Option<(u32, bool)>,
     ) -> bool {
         // A private scalar attribute (`$!buf`, slot `!buf`) fuses too, inside a
         // method (where `self` is a direct local and `compile_expr_var` reads
@@ -175,12 +175,23 @@ impl Compiler {
         // call-arg compile would itemize / escape-box a scalar operand).
         self.compile_expr(right);
         // After the RHS, as for the unfused assignment.
-        if let Some(name_idx) = check_read_only {
-            self.code.emit(OpCode::CheckReadOnly(name_idx));
+        if let Some((name_idx, modifies)) = check_read_only {
+            self.code.emit(Self::read_only_check_op(name_idx, modifies));
         }
         self.emit_lex_import_builtin_op(&OpCode::Concat);
         self.code.emit(OpCode::ConcatAssignLocal(slot, seed));
         true
+    }
+
+    /// The read-only check of an assignment to the name at `name_idx`:
+    /// `CheckReadOnlyModify` for a read-modify-write (#18986).
+    // Cost: O(1).
+    pub(super) fn read_only_check_op(name_idx: u32, modifies: bool) -> OpCode {
+        if modifies {
+            OpCode::CheckReadOnlyModify(name_idx)
+        } else {
+            OpCode::CheckReadOnly(name_idx)
+        }
     }
 
     /// If `expr` is `Var(name) OP rhs` with a fusable base operator and `name`
@@ -197,7 +208,7 @@ impl Compiler {
         &mut self,
         name: &str,
         expr: &Expr,
-        check_read_only: Option<u32>,
+        check_read_only: Option<(u32, bool)>,
     ) -> bool {
         if self.local_map.contains_key(name)
             || self
@@ -240,8 +251,9 @@ impl Compiler {
         // unfused `$x = $x OP rhs` would take); a call-arg compile can itemize /
         // escape-box the operand, which is wrong for a scalar binary operand.
         self.compile_expr(right);
-        if let Some(check_idx) = check_read_only {
-            self.code.emit(OpCode::CheckReadOnly(check_idx));
+        if let Some((check_idx, modifies)) = check_read_only {
+            self.code
+                .emit(Self::read_only_check_op(check_idx, modifies));
         }
         let name_idx = self.code.add_constant(Value::str(name.to_string()));
         self.emit_lex_import_builtin_compound(compound_op);

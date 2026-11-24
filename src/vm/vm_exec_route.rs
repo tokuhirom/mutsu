@@ -414,6 +414,7 @@ impl Interpreter {
             | OpCode::BindCallerVar { .. }
             | OpCode::BoxOuterRef { .. }
             | OpCode::CheckReadOnly(..)
+            | OpCode::CheckReadOnlyModify(..)
             | OpCode::ConcatAssignLocal(..)
             | OpCode::DeclareOurScalar { .. }
             | OpCode::GetCallerOuterVar { .. }
