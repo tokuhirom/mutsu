@@ -198,7 +198,7 @@ impl Interpreter {
         }
 
         let method_callable_id = crate::value::next_instance_id();
-        self.push_method_routine_with_location(
+        self.push_method_routine_on_caller_env(
             owner_sym,
             method_def.lexical_package,
             method_sym,
