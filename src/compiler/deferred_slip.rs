@@ -36,27 +36,23 @@ impl Compiler {
         }
     }
 
+    /// Whether evaluating `arg` changes nothing: a plain term, a pair of
+    /// plain terms, or the slip of one.
     // Cost: O(1).
     fn effect_free_arg(arg: &Expr) -> bool {
         match arg {
-            Expr::Literal(_)
-            | Expr::Var(_)
-            | Expr::ArrayVar(_)
-            | Expr::HashVar(_)
-            | Expr::CodeVar(_)
-            | Expr::BareWord(_) => true,
             Expr::Binary {
                 op: TokenKind::FatArrow,
                 left,
                 right,
                 ..
-            } => Self::effect_free_arg(left) && Self::effect_free_arg(right),
+            } => plain_term(left) && plain_term(right),
             Expr::Unary {
                 op: TokenKind::Pipe,
                 expr,
                 ..
-            } => Self::effect_free_arg(expr),
-            _ => false,
+            } => plain_term(expr),
+            _ => plain_term(arg),
         }
     }
 
@@ -92,6 +88,20 @@ impl Compiler {
             self.code.emit(OpCode::MakeSlipAt((last - i) as u32));
         }
     }
+}
+
+/// A variable, literal or word: reading it changes nothing.
+// Cost: O(1).
+fn plain_term(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Literal(_)
+            | Expr::Var(_)
+            | Expr::ArrayVar(_)
+            | Expr::HashVar(_)
+            | Expr::CodeVar(_)
+            | Expr::BareWord(_)
+    )
 }
 
 /// The operand of a `|EXPR` argument.
