@@ -4,7 +4,7 @@ use Test;
 # compile error: nothing in the unit runs, and the error points at the call.
 # Expected texts are rakudo 2026.11's.
 
-plan 29;
+plan 30;
 
 sub run-code(Str $code) {
     my $p = run $*EXECUTABLE, '-e', $code, :out, :err;
@@ -102,7 +102,10 @@ for q[sub f(Int:D $x) {}; f("a")],
     q[sub f(Int $x) {}; my Str $s; { my $s = 1; f($s) }],
     q[sub f(Int $x) {}; { my &f = -> $x { }; f("a") }],
     q[proto p(|) {*}; multi p(Int $x) {}; sub o(Str $s) {}; BEGIN &p.add_dispatchee(&o); p("a")],
-    q[multi min(Int $a) { "u" }; my $m = min(3, 4)]
+    q[multi min(Int $a) { "u" }; my $m = min(3, 4)],
+    # A trait runs at BEGIN time and can rewrite the signature it is on
+    # (Deps' `is injected` makes every parameter optional).
+    q[use nqp; multi trait_mod:<is>(Parameter $p, :$opt!) { my $f = $p.^attributes.first: *.name eq q"$!flags"; $f.set_value: $p, $f.get_value($p) +| nqp::const::SIG_ELEM_IS_OPTIONAL }; sub g($s is opt) {}; g()]
     -> $tail {
     my ($out, $err, $exit) = run-code("say 1; $tail");
     is $out, "1\n", "runs before the binder decides: $tail";
