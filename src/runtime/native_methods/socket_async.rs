@@ -102,6 +102,8 @@ impl Interpreter {
                         );
                         let ex = Value::make_instance(Symbol::intern("Exception"), attrs);
                         let _ = self.call_sub_value(q, vec![ex]);
+                    } else {
+                        return Err(RuntimeError::new(format!("Failed to resolve '{}'", host)));
                     }
                     return Ok(failed_listen_socket(format!("Failed to resolve '{}'", host)));
                 }
@@ -123,12 +125,18 @@ impl Interpreter {
                                 )
                             }
                         };
-                        if let Some(q) = quit_cb {
-                            let mut attrs = HashMap::new();
-                            attrs.insert("message".to_string(), Value::str(message.clone()));
-                            let ex = Value::make_instance(Symbol::intern("Exception"), attrs);
-                            let _ = self.call_sub_value(q, vec![ex]);
-                        }
+                        // With no `quit` to hand it to (a `whenever` in a
+                        // `react`, a bare `.tap`), the failure is raised, as
+                        // the refused accept thread below is: a silent failure
+                        // let a `react` that went on to keep a "ready" promise
+                        // have its client connect to nothing (#19058).
+                        let Some(q) = quit_cb else {
+                            return Err(RuntimeError::new(message));
+                        };
+                        let mut attrs = HashMap::new();
+                        attrs.insert("message".to_string(), Value::str(message.clone()));
+                        let ex = Value::make_instance(Symbol::intern("Exception"), attrs);
+                        let _ = self.call_sub_value(q, vec![ex]);
                         return Ok(failed_listen_socket(message));
                     }
                 };
