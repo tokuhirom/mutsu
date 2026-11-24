@@ -64,6 +64,19 @@ pub(super) static ROWS: &[MethodRow] = &[
     // reads (maintainer-approved, #15531): `"<file>:<line>"` of the node's
     // origin, `Nil` for a node without one.
     origin_row!("RakuAST::Node", "fileline", 0, fileline),
+    origin_row!("RakuAST::Sinkable", "sunk", 0, sunk),
+    origin_row!(
+        "RakuAST::Statement::For",
+        "is-block-statement",
+        0,
+        block_statement
+    ),
+    origin_row!(
+        "RakuAST::Statement::Loop",
+        "is-block-statement",
+        0,
+        block_statement
+    ),
     MethodRow {
         owner: "RakuAST::Node",
         name: "visit-children",
@@ -159,15 +172,6 @@ pub(super) static ROWS: &[MethodRow] = &[
         flags: RowFlags::OWNER_ONLY,
         named: &[],
     },
-    // An imported routine (`use Test; plan`) and a unit-declared package.
-    MethodRow {
-        owner: "RakuAST::Declaration::Import",
-        name: "compile-time-value",
-        arity: 0,
-        handler: Handler::Interp(external_value),
-        flags: RowFlags::OWNER_ONLY,
-        named: &[],
-    },
     MethodRow {
         owner: "RakuAST::Declaration::LexicalPackage",
         name: "compile-time-value",
@@ -201,6 +205,30 @@ pub(super) static ROWS: &[MethodRow] = &[
         prepost_of_pos
     ),
 ];
+
+// Cost: O(d), d = wrapper depth.
+fn sunk(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if !args.is_empty() {
+        return None;
+    }
+    let native = super::rakuast_visit::native_node(target)?;
+    let ValueView::RakuAst(node) = native.view() else {
+        return None;
+    };
+    crate::rakuast::node_accessor(node, "sunk").map(Ok)
+}
+
+// Cost: O(d), d = wrapper depth.
+fn block_statement(target: &Value, args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if !args.is_empty() {
+        return None;
+    }
+    let native = super::rakuast_visit::native_node(target)?;
+    let ValueView::RakuAst(node) = native.view() else {
+        return None;
+    };
+    crate::rakuast::node_accessor(node, "is-block-statement").map(Ok)
+}
 
 /// `Origin.from` / `Origin.to`: the character range the node occupies.
 // Cost: O(1).
@@ -1034,6 +1062,11 @@ fn rakudo_shaped_children(node: &RakuAstNode) -> Option<Vec<Value>> {
         RakuAstClass::ParameterTargetVar => Some(vec![
             node_value("declaration")
                 .or_else(|| crate::rakuast::annotated_target_declaration(node))
+                .or_else(|| {
+                    (target_declaration(node) == RakuAstClass::VarDeclarationSimple)
+                        .then(|| crate::rakuast::named_target_declaration(node))
+                        .flatten()
+                })
                 .unwrap_or_else(|| rakuast(target_declaration(node), Vec::new(), &node.origin)),
         ]),
         // Rakudo visits a quoted regex's adverbs before its body.

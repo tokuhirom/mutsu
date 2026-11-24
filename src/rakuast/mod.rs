@@ -171,6 +171,7 @@ pub(crate) mod literal_queries;
 pub(crate) mod name_queries;
 pub(crate) mod parameter_queries;
 pub(crate) mod sink_call;
+mod sink_propagation;
 mod type_capture_ctor;
 pub(crate) mod type_queries;
 pub(crate) use infix_func::add_colonpair;
@@ -327,6 +328,7 @@ pub use lower::lower;
 pub(crate) use name_parts::is_name_part;
 pub use subclass::gist as subclass_gist;
 pub(crate) use subclass::is_node_value;
+pub(crate) use thunk::modeled_thunks;
 
 use crate::value::{RuntimeError, Value, ValueView};
 
@@ -361,6 +363,9 @@ pub struct NodeOrigin(
     /// (a slang action at parse time), so every call answers the same object,
     /// as rakudo memoizes it on the node (#17415).
     pub Option<Value>,
+    /// Sink and block-statement context assigned to parsed nodes.
+    pub bool,
+    pub bool,
 );
 
 impl PartialEq for NodeOrigin {
@@ -690,6 +695,8 @@ pub enum RakuAstClass {
     // ADR-0033 Phase 2: a `*` that participates in Whatever-priming
     // (`* + 1`'s left operand) vs a bare Whatever value.
     WhateverCodeArgument,
+    PrimeThunk,
+    BlockThunk,
     // ADR-0033 Phase 2: the `**` hyper-whatever term (read direction only —
     // `**` is out of scope for priming, see the ADR's §1).
     TermHyperWhatever,
@@ -1061,6 +1068,8 @@ impl RakuAstClass {
             TermEmptySet => "RakuAST::Term::EmptySet",
             TermRand => "RakuAST::Term::Rand",
             WhateverCodeArgument => "RakuAST::WhateverCode::Argument",
+            PrimeThunk => "RakuAST::PrimeThunk",
+            BlockThunk => "RakuAST::BlockThunk",
             TermHyperWhatever => "RakuAST::Term::HyperWhatever",
             FatArrow => "RakuAST::FatArrow",
             StatementPrefixDo => "RakuAST::StatementPrefix::Do",
@@ -2034,6 +2043,20 @@ pub(crate) fn annotated_target_declaration(node: &RakuAstNode) -> Option<Value> 
     resolve::target_declaration(node)
 }
 
+/// The declaration a `ParameterTarget::Var` makes, built from its name when
+/// no parameter has embedded one yet (an untyped parameter's target, which
+/// `visit-children` hands out as rakudo does: `VarDeclaration::Simple` named
+/// `$a`, #18333).
+// Cost: O(f + n), f = fields of the target, n = length of its name.
+pub(crate) fn named_target_declaration(node: &RakuAstNode) -> Option<Value> {
+    let mut target = Value::rakuast(Box::new(node.clone()));
+    resolve::embed_declaration(&mut target, None);
+    match target.view() {
+        ValueView::RakuAst(embedded) => resolve::target_declaration(embedded),
+        _ => None,
+    }
+}
+
 /// The parameter a `RakuAST::Parameter` node declares, as the `ParamDef` the
 /// parser builds for it (`Parameter.meta-object` is made from it).
 // Cost: O(size of the parameter node).
@@ -2109,6 +2132,7 @@ fn parse_unit_ast(
     let (code, _) = crate::parser::split_finish_section(source);
     pod_blocks::insert(names, &mut node, code, &stmts);
     named_docs::attach(&mut node, unit_docs);
+    sink_propagation::annotate(&mut node)?;
     Ok(Value::rakuast(Box::new(node)))
 }
 

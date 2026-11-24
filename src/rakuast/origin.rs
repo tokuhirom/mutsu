@@ -233,7 +233,17 @@ pub(super) fn current_line() -> Option<i64> {
 pub(super) fn set_span(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     if node.origin.0.is_none() {
         let span = angle_number(node, span);
-        node.origin.0 = super::unit_source::span_origin_value(span);
+        // The nodes rakudo's grammar attaches as key origins (`<.key-origin>`,
+        // a blockoid): `Node.dump` marks them `𝄞` (#18333).
+        let key = matches!(
+            node.class,
+            super::RakuAstClass::StatementList
+                | super::RakuAstClass::Blockoid
+                | super::RakuAstClass::Sub
+                | super::RakuAstClass::Method
+                | super::RakuAstClass::Submethod
+        );
+        node.origin.0 = super::unit_source::span_origin(span, key);
     }
 }
 
@@ -305,6 +315,20 @@ pub(super) fn quoted_text(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
                 _ => true,
             }
     });
+    if words {
+        let inner = super::unit_source::with_text(span, |written| {
+            let (open, close) = word_brackets(written)?;
+            Some(crate::ast::SrcSpan::new(
+                span.from as usize + open,
+                span.to as usize - close,
+            ))
+        });
+        if let Some(inner) = inner
+            && super::nested_words::place_origins(node, inner)
+        {
+            return;
+        }
+    }
     let Some(field) = node.fields.iter_mut().find(|f| f.name == Some("segments")) else {
         return;
     };
@@ -330,7 +354,10 @@ pub(super) fn quoted_text(node: &mut RakuAstNode, span: crate::ast::SrcSpan) {
     let inside = super::unit_source::with_text(span, |written| {
         if words {
             // A word quote keeps the raw text between its brackets.
-            let (open, close) = word_brackets(written)?;
+            let (open, close) = word_brackets(written).or_else(|| {
+                let (open, end) = super::string_origins::body(written)?;
+                Some((open, written.len() - end))
+            })?;
             let inner = written.get(open..written.len().checked_sub(close)?)?;
             return (super::infix_origins::leaf_text(text)? == inner).then(|| {
                 crate::ast::SrcSpan::new(
@@ -431,8 +458,12 @@ pub(super) fn word_brackets_open(text: &str) -> Option<(usize, &'static str)> {
 /// Give a word quote (`QuotedString` over one `StrLiteral`) and its text the
 /// range `inner` between the brackets, when the text is exactly what is
 /// written there.
-// Cost: O(n), n = length of `inner`.
+// Cost: O(n * d + s log l), n = length of `inner`, d = word quote depth (at most 64), s = segments, l = source lines.
 pub(super) fn word_quote_inner(quote: &mut RakuAstNode, inner: crate::ast::SrcSpan) {
+    if super::nested_words::place_origins(quote, inner) {
+        set_span(quote, inner);
+        return;
+    }
     let written = super::unit_source::with_text(inner, |t| Some(t.to_string()));
     let matches = quote
         .fields

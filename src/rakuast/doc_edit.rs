@@ -52,13 +52,8 @@ pub(crate) fn paragraph_from_text(text: &str) -> Result<Value, RuntimeError> {
     match super::pod_blocks::cell_paragraph(text) {
         Ok(Some(node)) => Ok(Value::rakuast(Box::new(node))),
         Ok(None) => Ok(Value::str(text.to_string())),
-        Err(why) => match why.unterminated_message() {
-            Some(message) => Err(RuntimeError::new(message)),
-            // TODO: a code the reader does not take (an empty `B<>`, and the
-            // other `Declined::Other` shapes) stays the plain text; rakudo
-            // reads it as a code, so the reader should too (#19091).
-            None => Ok(Value::str(text.to_string())),
-        },
+        // A code whose closer never comes dies as on rakudo (#19040).
+        Err(why) => Err(RuntimeError::new(why.message())),
     }
 }
 

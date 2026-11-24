@@ -437,6 +437,7 @@ mod vm_hash_element_cell;
 mod vm_hash_key_user_str;
 mod vm_incdec_index_cells;
 mod vm_incdec_mixin_subscript;
+mod vm_index_zero_chain;
 mod vm_method_value;
 mod vm_mixin_type_new;
 mod vm_multidim_level_read;

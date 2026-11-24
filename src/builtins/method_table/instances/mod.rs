@@ -60,6 +60,7 @@ mod rakuast_declaration_edits;
 mod rakuast_diagnostics;
 mod rakuast_doc_edit;
 mod rakuast_doc_row;
+mod rakuast_dump;
 pub(crate) mod rakuast_fileline;
 mod rakuast_finish;
 mod rakuast_literal_queries;
@@ -78,6 +79,7 @@ mod rakuast_rakudoc;
 mod rakuast_replace_child;
 mod rakuast_set_operands;
 mod rakuast_set_origin;
+mod rakuast_thunk;
 mod rakuast_type_queries;
 mod rakuast_var_queries;
 mod rakuast_visit;
@@ -157,6 +159,8 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
     rakuast_declaration_edits::ROWS,
     rakuast_set_origin::ROWS,
     rakuast_name_queries::ROWS,
+    rakuast_dump::ROWS,
+    rakuast_thunk::ROWS,
     rakuast_name_queries::ONE_ARG_ROWS,
     rakuast_name_queries::PART_ROWS,
     rakuast_type_queries::ROWS,

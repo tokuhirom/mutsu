@@ -668,6 +668,35 @@ impl RuntimeError {
                 .contains(&format!("No such private method '{name}' for"))
     }
 
+    /// Whether the optional method lookup itself missed on this receiver.
+    /// A found method can call a missing method with the same name on a
+    /// different type; that inner failure must still propagate.
+    pub(crate) fn is_method_not_found_for_receiver(&self, name: &str, receiver: &Value) -> bool {
+        if !self.is_method_not_found_for(name) {
+            return false;
+        }
+        let Some(exception) = self.exception.as_deref() else {
+            return true;
+        };
+        let ValueView::Instance { attributes, .. } = exception.view() else {
+            return true;
+        };
+        let attr_map = attributes.as_map();
+        let Some(typename) = attr_map.get("typename") else {
+            return true;
+        };
+        let actual = crate::value::types::what_type_name(receiver);
+        if typename.to_string_value() == actual {
+            return true;
+        }
+        match receiver.view() {
+            ValueView::Mixin(inner, _) => {
+                typename.to_string_value() == crate::value::types::what_type_name(inner)
+            }
+            _ => false,
+        }
+    }
+
     /// Check if this error represents a multi-dispatch no-match
     /// (`X::Multi::NoMatch`). Used by constructor/accessor dispatch to decide
     /// whether to fall back to a default candidate (e.g. `Mu.new`).

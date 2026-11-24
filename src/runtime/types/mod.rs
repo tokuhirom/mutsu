@@ -14,6 +14,7 @@ mod checked_param_copy;
 mod capture_param_containers;
 mod coercion;
 mod coercion_bind;
+pub(crate) mod compound_suffix_index;
 pub(crate) use coercion_bind::CoercionBindError;
 mod meta_parameterized;
 pub(crate) use meta_parameterized::split_parameterization;

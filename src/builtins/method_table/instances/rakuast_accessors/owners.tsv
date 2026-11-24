@@ -1,4 +1,4 @@
-# Generated from Rakudo v2026.09; model, method, declaring owner.
+# Generated from Rakudo v2026.11; model, method, declaring owner.
 # Existing model extensions: Call::BlockMethod.block; Regex::NamedCapture.hash (ADR-10723 section 6.92).
 RakuAST::ApplyDottyInfix	infix	RakuAST::ApplyDottyInfix
 RakuAST::ApplyDottyInfix	left	RakuAST::ApplyDottyInfix
@@ -110,8 +110,8 @@ RakuAST::Contextualizer::Item	sigil	RakuAST::Contextualizer::Item
 RakuAST::Contextualizer::Item	target	RakuAST::Contextualizer
 RakuAST::Contextualizer::List	sigil	RakuAST::Contextualizer::List
 RakuAST::Contextualizer::List	target	RakuAST::Contextualizer
-RakuAST::Declaration::Import	compile-time-value	RakuAST::Declaration::Import
-RakuAST::Declaration::Import	lexical-name	RakuAST::Declaration::Import
+RakuAST::Declaration::Import	compile-time-value	RakuAST::Declaration::External::Constant
+RakuAST::Declaration::Import	lexical-name	RakuAST::Declaration::External
 RakuAST::Declaration::ResolvedConstant	compile-time-value	RakuAST::Declaration::ResolvedConstant
 RakuAST::Doc::Block	Str	RakuAST::Doc::Block
 RakuAST::Doc::Block	abbreviated	RakuAST::Doc::Block
@@ -177,13 +177,13 @@ RakuAST::IntLiteral	value	RakuAST::Literal
 RakuAST::Label	name	RakuAST::Label
 RakuAST::Literal	value	RakuAST::Literal
 RakuAST::MetaInfix::Assign	infix	RakuAST::MetaInfix::Assign
-RakuAST::MetaInfix::Cross	infix	RakuAST::MetaInfix::Cross
+RakuAST::MetaInfix::Cross	infix	RakuAST::MetaInfix::CrossZip
 RakuAST::MetaInfix::Hyper	dwim-left	RakuAST::MetaInfix::Hyper
 RakuAST::MetaInfix::Hyper	dwim-right	RakuAST::MetaInfix::Hyper
 RakuAST::MetaInfix::Hyper	infix	RakuAST::MetaInfix::Hyper
 RakuAST::MetaInfix::Negate	infix	RakuAST::MetaInfix::Negate
 RakuAST::MetaInfix::Reverse	infix	RakuAST::MetaInfix::Reverse
-RakuAST::MetaInfix::Zip	infix	RakuAST::MetaInfix::Zip
+RakuAST::MetaInfix::Zip	infix	RakuAST::MetaInfix::CrossZip
 RakuAST::MetaPostfix::Hyper	postfix	RakuAST::MetaPostfix::Hyper
 RakuAST::MetaPrefix::Hyper	prefix	RakuAST::MetaPrefix::Hyper
 RakuAST::Method	body	RakuAST::Method
@@ -761,8 +761,8 @@ RakuAST::VarDeclaration::Constant	name	RakuAST::VarDeclaration::Constant
 RakuAST::VarDeclaration::Constant	scope	RakuAST::VarDeclaration::Constant
 RakuAST::VarDeclaration::Constant	traits	RakuAST::VarDeclaration::Constant
 RakuAST::VarDeclaration::Constant	type	RakuAST::VarDeclaration::Constant
-RakuAST::VarDeclaration::Implicit::Constant	name	RakuAST::VarDeclaration::Implicit::Constant
-RakuAST::VarDeclaration::Implicit::Constant	scope	RakuAST::VarDeclaration::Implicit::Constant
+RakuAST::VarDeclaration::Implicit::Constant	name	RakuAST::VarDeclaration::Implicit
+RakuAST::VarDeclaration::Implicit::Constant	scope	RakuAST::VarDeclaration::Implicit
 RakuAST::VarDeclaration::Implicit::Constant	value	RakuAST::VarDeclaration::Implicit::Constant
 RakuAST::VarDeclaration::Implicit::Self	name	RakuAST::VarDeclaration::Implicit
 RakuAST::VarDeclaration::Placeholder::Named	lexical-name	RakuAST::VarDeclaration::Placeholder::Named

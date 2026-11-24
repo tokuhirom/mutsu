@@ -258,6 +258,11 @@ pub(crate) struct ParamDef {
     /// therefore only ever the nominal half.
     #[serde(default)]
     pub(crate) type_capture: Option<String>,
+    /// The smiley written on the capture itself (`::T:D $x` -> `'D'`), kept
+    /// for the RakuAST view's `Type::Capture` node. The binder reads the
+    /// definedness from [`ParamDef::type_constraint`] (`Any:D`, #19020).
+    #[serde(default)]
+    pub(crate) type_capture_smiley: Option<char>,
     pub(crate) literal_value: Option<Value>,
     pub(crate) sub_signature: Option<Vec<ParamDef>>,
     pub(crate) where_constraint: Option<Box<Expr>>,
@@ -554,6 +559,7 @@ impl ParamDef {
         ParamDef {
             target: ParamTarget::TypeCapture,
             type_capture: Some(capture.to_string()),
+            type_capture_smiley: None,
             ..Self::blank(format!("{TYPE_CAPTURE_PREFIX}{capture}"))
         }
     }
@@ -583,6 +589,7 @@ impl ParamDef {
             spans: Default::default(),
             trait_meta: Default::default(),
             type_capture: None,
+            type_capture_smiley: None,
             name: name.to_string(),
             default: None,
             multi_invocant: false,
@@ -3893,6 +3900,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                     spans: Default::default(),
                     trait_meta: Default::default(),
                     type_capture: None,
+                    type_capture_smiley: None,
                     name: name.clone(),
                     default: None,
                     multi_invocant: true,
@@ -3952,6 +3960,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                     spans: Default::default(),
                     trait_meta: Default::default(),
                     type_capture: None,
+                    type_capture_smiley: None,
                     name: name.clone(),
                     default: None,
                     multi_invocant: true,
@@ -3987,6 +3996,7 @@ pub(crate) fn make_anon_sub(stmts: Vec<Stmt>) -> Expr {
                 spans: Default::default(),
                 trait_meta: Default::default(),
                 type_capture: None,
+                type_capture_smiley: None,
                 name: "%_".to_string(),
                 default: None,
                 multi_invocant: true,
