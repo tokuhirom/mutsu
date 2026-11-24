@@ -2347,6 +2347,28 @@ impl Interpreter {
                     v
                 }
             }
+            // A positional list slice (`$m[0, 1]`) reads the positional
+            // captures, `Nil` past the end (#19154); `$m{<a b>}` below reads
+            // the named ones.
+            (ValueView::Instance { .. }, ValueView::Array(keys, ..))
+                if is_positional && target.is_match_instance() =>
+            {
+                let list_v = target.match_list();
+                let items = match list_v.as_ref().map(Value::view) {
+                    Some(ValueView::Array(items, ..)) => Some(items),
+                    _ => None,
+                };
+                Value::array(
+                    keys.iter()
+                        .map(|k| {
+                            Self::index_to_usize(k)
+                                .and_then(|i| items.as_ref().and_then(|items| items.get(i)))
+                                .cloned()
+                                .unwrap_or(Value::NIL)
+                        })
+                        .collect(),
+                )
+            }
             (ValueView::Instance { .. }, ValueView::Array(keys, ..))
                 if target.is_match_instance() =>
             {
