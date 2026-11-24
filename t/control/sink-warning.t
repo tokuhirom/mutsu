@@ -2,7 +2,7 @@ use lib 'roast/packages/Test-Helpers/lib';
 use Test;
 use Test::Util;
 
-plan 42;
+plan 49;
 
 # A pure value evaluated in sink (void) context warns.
 is_run 'say "hi"; 42', { :0status, :out("hi\n"), :err(/"Useless use" .* 42/) },
@@ -88,9 +88,10 @@ is_run '?5', { :0status, :err(/"Useless use of ?5 in sink context"/) },
 is_run 'my $x = 1; -$x', { :0status, :err(/'Useless use of -$x in sink context'/) },
     'prefix minus on variable in sink warns';
 
-# A prefix operator on a side-effecting operand never warns.
-is_run 'sub f { 5 }; -f()', { :0status, :err('') },
-    'prefix minus on sub call does not warn';
+# A pure operator is useless in sink context whatever its operand does
+# (rakudo reports it, #18973).
+is_run 'sub f { 5 }; -f()', { :0status, :err(/'Useless use of -f() in sink context'/) },
+    'prefix minus on sub call warns';
 
 # A sink warning preserves the source format the user wrote (radix prefix,
 # scientific notation, Unicode infinity), not the canonical stringification.
@@ -130,3 +131,21 @@ throws-like 'say 1 if 2 if 3 { say 3 }', X::Syntax::Confused,
     reason => { m/'Missing semicolon'/ },
     pre    => { m/'1 if 2'/ },
     post   => { m/'3 { say 3 }'/ };
+
+# A pure operator over a side-effecting operand is still a useless value in
+# sink context (#18973); its own parentheses or a routine's last statement
+# (its return value) are not.
+is_run 'sub f {1}; f() + 1; say 1', { :0status, :out("1\n"), :err(/'Useless use of f() + 1 in sink context'/) },
+    'an infix over a call warns, naming the source';
+is_run 'sub f {1}; !f()', { :0status, :err(/'Useless use of !f() in sink context'/) },
+    'a prefix negation of a call warns';
+is_run 'my $x = 1; $x.abs + 1', { :0status, :err(/'Useless use of $x.abs + 1 in sink context'/) },
+    'an infix over a method call warns';
+is_run 'sub f {1}; f() + 1, 2', { :0status, :err(/'Useless use of f() + 1 in sink context'/) },
+    'an element of a sunk list warns too';
+is_run 'sub f {1}; for ^1 { f() + 1 }', { :0status, :err(/'Useless use of f() + 1 in sink context'/) },
+    'in a loop body';
+is_run 'sub f {1}; (f() + 1)', { :0status, :err('') },
+    'its own parentheses keep it quiet';
+is_run 'sub f {1}; sub g { f() + 1 }; g()', { :0status, :err('') },
+    'a routine\'s last statement is its return value';

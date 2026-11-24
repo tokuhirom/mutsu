@@ -670,6 +670,11 @@ pub(crate) struct ResolutionCaches {
     /// sub, on every method call.
     pub(crate) class_scoped_subs:
         std::cell::RefCell<((usize, u64), rustc_hash::FxHashMap<String, bool>)>,
+    /// Every proper `::`-suffix of a registered class, role, enum or subset
+    /// name, valid for the four tables' key generations it was built from
+    /// (`Interpreter::registered_type_suffix_possible`, #18274).
+    pub(crate) compound_type_suffixes:
+        std::cell::RefCell<Option<crate::runtime::types::compound_suffix_index::CompoundSuffixes>>,
     /// Subscript stores for which the user `postcircumfix` candidates in scope
     /// were run and none delegated to the CORE routine (see
     /// `remap_index_through_user_postcircumfix`); the values keep the

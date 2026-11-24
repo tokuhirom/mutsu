@@ -472,7 +472,7 @@ impl Interpreter {
                 // Header roles compose before the class shell is published.
                 let mut shell = cx.class_def.clone();
                 shell.parents.retain(|p| !registry.roles.contains_key(p.split('[').next().unwrap_or(p)));
-                shell.attributes = added;
+                shell.attributes = added.into();
                 shell.attribute_built.extend(built);
                 registry.classes.insert(cx.name.to_string(), shell.into());
                 unpublished = true;
@@ -566,7 +566,7 @@ impl Interpreter {
         } else if let Some(attrs) = saved_attrs
             && let Some(class) = self.registry_mut().classes.get_mut(cx.name)
         {
-            class.attributes = attrs;
+            class.attributes = attrs.into();
         }
         result
     }
@@ -1329,7 +1329,7 @@ impl Interpreter {
                 }
                 let punned_class = ClassDef {
                     parents: punned_class_parents,
-                    attributes: Vec::new(),
+                    attributes: Default::default(),
                     attribute_types: HashMap::new(),
                     attribute_smileys: HashMap::new(),
                     attribute_built: HashMap::new(),

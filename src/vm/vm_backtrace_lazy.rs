@@ -92,4 +92,16 @@ impl Interpreter {
             }
         }
     }
+
+    /// The `Backtrace` rakudo's `Failure.new` records: the stack without the
+    /// frame that called it (a top-level `Failure.new` has none), #18987.
+    // Cost: O(s), s = routine-stack depth.
+    pub(crate) fn build_backtrace_value_of_caller(&self) -> Value {
+        let attrs = self.capture_backtrace().render_attrs_skipping(&[], 1);
+        let attrs = attrs
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v))
+            .collect::<std::collections::HashMap<_, _>>();
+        Value::make_instance(crate::symbol::Symbol::intern("Backtrace"), attrs)
+    }
 }

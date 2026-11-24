@@ -1101,6 +1101,7 @@ mod control_for;
 mod control_for_tail;
 mod control_if;
 mod control_repeat;
+mod dd_call;
 mod decl_plan;
 mod decl_reset;
 mod destructure_lane;
@@ -1138,6 +1139,7 @@ mod helpers_control_flow;
 mod helpers_do_expr;
 mod helpers_dynamic;
 mod helpers_method_body;
+mod literal_index_assign;
 mod self_reading_container_decl;
 mod short_circuit;
 mod stash_entry_var;
@@ -3936,10 +3938,10 @@ impl Compiler {
     }
 
     /// Record a parameter's declaration (ADR-13757). An untyped, non-aliasing
-    /// parameter is this routine's own unconstrained variable; a typed one is
-    /// its own variable too, whose record the binder writes into the callee
-    /// frame. A sigilless, `is rw` or `is raw` one is the caller's container,
-    /// whose constraint applies: it is not declared here.
+    /// parameter is unconstrained except for `is copy` scalars, whose fresh
+    /// containers have an `Any` constraint. The binder writes constrained
+    /// parameters' records into the callee frame. A sigilless, `is rw` or
+    /// `is raw` parameter uses the caller's container and its constraint.
     pub(super) fn note_param_declaration(&mut self, pd: &crate::ast::ParamDef) {
         let name = pd.storage_name();
         if pd.sigilless || pd.traits.iter().any(|t| t == "rw" || t == "raw") {
@@ -3953,7 +3955,7 @@ impl Compiler {
             }
             return;
         }
-        if pd.type_constraint.is_none() && pd.type_capture.is_none() {
+        if pd.assignment_type_constraint().is_none() && pd.type_capture.is_none() {
             if Self::is_simple_scalar_store_name(&name) {
                 self.code.note_untyped_declaration(&name);
             } else {

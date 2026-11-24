@@ -301,6 +301,7 @@ fn bare_level(name: &str, named: bool, like: &ParamDef) -> ParamDef {
         sigilless: false,
         type_constraint: None,
         type_capture: None,
+        type_capture_smiley: None,
         literal_value: None,
         sub_signature: None,
         where_constraint: None,

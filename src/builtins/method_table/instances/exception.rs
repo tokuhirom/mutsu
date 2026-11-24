@@ -74,6 +74,17 @@ fn attr(target: &Value, name: &str) -> Option<Value> {
     attributes.as_map().get(name).cloned()
 }
 
+/// Whether `target` is an `X::AdHoc` with no message of its own whose payload
+/// is an object or type object: its text is the payload's `Str`, which may be
+/// user code the pure rows cannot run (#19083).
+// Cost: O(1).
+fn adhoc_object_payload(target: &Value) -> bool {
+    class_of(target) == "X::AdHoc"
+        && message_attr(target).is_none()
+        && attr(target, "payload")
+            .is_some_and(|p| matches!(p.view(), ValueView::Instance { .. } | ValueView::Package(_)))
+}
+
 fn class_of(target: &Value) -> String {
     match target.view() {
         ValueView::Instance { class_name, .. } => class_name.resolve(),
@@ -127,7 +138,14 @@ fn message(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError
     if class_of(target) == "X::AdHoc"
         && let Some(payload) = attr(target, "payload")
     {
-        return Some(Ok(payload));
+        // rakudo's `X::AdHoc.message` is `$!payload.Str`: a list payload
+        // renders as its space-joined elements, not its gist (#18984). An
+        // object payload's `Str` may be user code: the interpreter answers it
+        // (#19083).
+        if adhoc_object_payload(target) {
+            return None;
+        }
+        return Some(Ok(Value::str(payload.to_string_value())));
     }
     if class_of(target) == "CX::Warn" {
         return Some(Ok(Value::str(String::new())));
@@ -197,6 +215,9 @@ fn text(target: &Value, unthrown: &str, unexplained: &str) -> String {
 /// `Exception.gist`: the message, then the backtrace when there is one.
 // Cost: O(m + b), m = chars of the message, b = chars of the backtrace.
 fn gist(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if adhoc_object_payload(target) {
+        return None;
+    }
     let msg = text(
         target,
         "Unthrown Exception with no message",
@@ -229,6 +250,9 @@ pub(crate) fn no_message_text(class: &str) -> String {
 /// `Exception.Str`: the message.
 // Cost: O(m), m = chars of the message.
 fn str_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
+    if adhoc_object_payload(target) {
+        return None;
+    }
     if class_of(target) == "CX::Warn" {
         return Some(Ok(
             attr(target, "message").unwrap_or(Value::str(String::new()))

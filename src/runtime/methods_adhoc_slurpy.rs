@@ -23,6 +23,7 @@ use super::*;
 pub(crate) const SLURPY_SENTRY_ROLE: &str = "X::AdHoc::SlurpySentry";
 
 impl Interpreter {
+    // Cost: O(n) `Str` calls, n = number of arguments.
     pub(crate) fn dispatch_adhoc_from_slurpy(
         &mut self,
         args: &[Value],
@@ -30,7 +31,12 @@ impl Interpreter {
         // rakudo replaces a `Failure` argument with the exception it carries,
         // so the message names the underlying error rather than "Failure".
         let items: Vec<Value> = args.iter().map(Self::adhoc_slurpy_unwrap_failure).collect();
-        let message: String = items.iter().map(|v| v.to_string_value()).collect();
+        // `join` stringifies each element through its `Str` method, so an
+        // exception contributes its message (#18984).
+        let mut message = String::new();
+        for item in &items {
+            message.push_str(&self.render_str_value_checked(item)?);
+        }
         let payload = self.eval_does_values(
             Value::capture(items, ValueMap::default()),
             Value::package(Symbol::intern(SLURPY_SENTRY_ROLE)),

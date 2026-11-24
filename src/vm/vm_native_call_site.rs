@@ -57,7 +57,8 @@ impl Interpreter {
     ) -> Option<Result<(), RuntimeError>> {
         let generation = self.registry_write_generation();
         let sites = code.constants.len();
-        code.native_call_sites
+        let route = code
+            .native_call_sites
             .cached(sites, name_idx as usize, generation)?;
         let name_sym = code.const_sym(name_idx);
         if self.in_lvalue_assignment
@@ -95,7 +96,15 @@ impl Interpreter {
         let (mut args, callsite_line) = self.sanitize_call_args_owned(args);
         loan_env!(self, set_pending_callsite_line(callsite_line));
         self.set_pending_call_arg_sources(None);
-        let result = match self.try_native_function(name_sym, &mut args) {
+        // A builtin with no arm of its own in `try_native_function` (see
+        // `ROUTE_PLAIN`), called with defined plain scalars: every arm there
+        // declines for such arguments, so the routine itself answers.
+        let plain = if route == ROUTE_PLAIN && args.iter().all(Self::is_plain_scalar_arg) {
+            crate::builtins::native_function(name_sym, &args)
+        } else {
+            None
+        };
+        let result = match plain.or_else(|| self.try_native_function(name_sym, &mut args)) {
             Some(result) => result,
             None => {
                 // The builtin declined these arguments: go on down the
@@ -165,7 +174,46 @@ impl Interpreter {
         {
             return;
         }
+        let route = if Self::native_name_has_own_arm(name) {
+            ROUTE_NATIVE
+        } else {
+            ROUTE_PLAIN
+        };
         code.native_call_sites
-            .remember(code.constants.len(), name_idx as usize, generation, 1);
+            .remember(code.constants.len(), name_idx as usize, generation, route);
+    }
+
+    /// Whether `try_native_function` has an arm for `name` that may answer
+    /// even for defined plain scalar arguments (`zip`'s streaming, the
+    /// free-function `floor`/`ceiling` of a literal, the `Map` coercer, the
+    /// attribute trait). Every other arm there keys on an argument that is a
+    /// Seq, a LazyList, a shaped array, an Instance or a type object.
+    // Cost: O(1), a constant-table match.
+    fn native_name_has_own_arm(name: &str) -> bool {
+        matches!(
+            name,
+            "zip" | "floor" | "ceiling" | "ceil" | "Map" | "trait_mod:<is>"
+        )
+    }
+
+    /// Whether `arg` is a defined plain scalar: an Int, a Num, a Str, a Bool
+    /// or a Rat, which no special arm of `try_native_function` acts on.
+    // Cost: O(1).
+    fn is_plain_scalar_arg(arg: &Value) -> bool {
+        matches!(
+            arg.view(),
+            ValueView::Int(_)
+                | ValueView::BigInt(_)
+                | ValueView::Num(_)
+                | ValueView::Str(_)
+                | ValueView::Bool(_)
+                | ValueView::Rat(..)
+        )
     }
 }
+
+/// A site's remembered route: the native arm, through `try_native_function`.
+const ROUTE_NATIVE: u32 = 1;
+/// The native arm of a name with no arm of its own in `try_native_function`,
+/// which a call with plain scalar arguments skips.
+const ROUTE_PLAIN: u32 = 2;

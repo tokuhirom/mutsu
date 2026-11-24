@@ -19,8 +19,9 @@ use std::sync::Arc;
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ClassDef {
     pub(crate) parents: Vec<String>,
-    // (name, is_public, default, is_rw, is_required, sigil, where_constraint)
-    pub(crate) attributes: Vec<ClassAttributeDef>,
+    /// The declared attributes; a built-in exception class declares its
+    /// table ones on first access (`class_attributes`).
+    pub(crate) attributes: super::class_attributes::ClassAttributes,
     pub(crate) attribute_types: HashMap<String, String>, // attr_name -> type constraint
     pub(crate) attribute_smileys: HashMap<String, String>, // attr_name -> smiley ("D", "U", "_")
     pub(crate) attribute_built: HashMap<String, crate::ast::BuiltTrait>,

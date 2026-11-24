@@ -143,6 +143,16 @@ impl Interpreter {
         if tc == "UInt" && self.type_matches_value("Int", val) {
             return self.subset_constraint_binding_error(pd, &pd.name, tc, tc, val);
         }
+        // A subset this unit declared under a core name (#19031): a value
+        // of its refinee that the `where` rejected is a constraint failure.
+        if self.core_name_subset_applies(tc) {
+            let refinee = self.registry().subsets.get(tc).map(|def| def.base.clone());
+            if let Some(refinee) = refinee
+                && self.type_matches_value(&refinee, val)
+            {
+                return self.subset_constraint_binding_error(pd, &pd.name, tc, tc, val);
+            }
+        }
         self.typecheck_binding_parameter_failure(
             &crate::runtime::types::param_display_name(pd),
             tc,

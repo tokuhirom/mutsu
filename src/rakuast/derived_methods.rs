@@ -496,19 +496,10 @@ fn name_parts(node: &RakuAstNode) -> Vec<Value> {
 fn is_empty_part(part: &Value) -> bool {
     match part.view() {
         ValueView::RakuAst(n) => {
-            matches!(
-                n.class,
-                RakuAstClass::NamePartEmpty | RakuAstClass::NamePartEmptyEdge
-            )
+            matches!(n.class, RakuAstClass::NamePartEmptyEdge)
         }
-        // A hand-built name may hold the `Name::Part::EmptyEdge` type object
-        // (or the pre-2026.11 `Empty`).
-        ValueView::Package(name) => name.with_str(|n| {
-            matches!(
-                n,
-                "RakuAST::Name::Part::EmptyEdge" | "RakuAST::Name::Part::Empty"
-            )
-        }),
+        // A hand-built name may hold the `Name::Part::EmptyEdge` type object.
+        ValueView::Package(name) => name.with_str(|n| n == "RakuAST::Name::Part::EmptyEdge"),
         _ => false,
     }
 }

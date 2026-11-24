@@ -191,6 +191,7 @@ pub(crate) fn walk_param<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, p: &'ast Para
         sigilless: _,
         type_constraint,
         type_capture,
+        type_capture_smiley: _,
         literal_value,
         sub_signature,
         where_constraint,

@@ -145,7 +145,7 @@ impl Interpreter {
         };
         let class_def = ClassDef {
             parents: inheritance_parents,
-            attributes: Vec::new(),
+            attributes: Default::default(),
             attribute_types: HashMap::new(),
             attribute_smileys: HashMap::new(),
             attribute_built: HashMap::new(),

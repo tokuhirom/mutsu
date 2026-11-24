@@ -894,6 +894,7 @@ impl Interpreter {
             "repl" => self.builtin_repl(&args),
             // Debug
             "dd" => self.builtin_dd(&args),
+            "__mutsu_dd" => self.builtin_dd_rendered(&args),
             // Collection constructors / queries
             "elems" => self.builtin_elems(&args),
             "end" => self.builtin_end(&args),

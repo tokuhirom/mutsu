@@ -284,14 +284,19 @@ fn range_gist_string(value: &Value) -> String {
 }
 
 fn gist_array_wrap(inner: &str, kind: ArrayKind) -> String {
-    // `.gist` never shows the `$` itemization marker — at any nesting level
-    // (only `.raku` does). So an itemized array/list gists exactly like its
-    // non-itemized counterpart: `$[1,2].gist` → `[1 2]`, `$(1,2).gist` → `(1 2)`.
+    let (open, close) = gist_array_brackets(kind);
+    format!("{open}{inner}{close}")
+}
+
+/// The brackets an array of `kind` gists between. `.gist` never shows the `$`
+/// itemization marker -- at any nesting level (only `.raku` does). So an
+/// itemized array/list gists exactly like its non-itemized counterpart:
+/// `$[1,2].gist` -> `[1 2]`, `$(1,2).gist` -> `(1 2)`.
+// Cost: O(1).
+fn gist_array_brackets(kind: ArrayKind) -> (&'static str, &'static str) {
     match kind {
-        ArrayKind::Array | ArrayKind::Shaped | ArrayKind::Lazy | ArrayKind::ItemArray => {
-            format!("[{}]", inner)
-        }
-        ArrayKind::List | ArrayKind::ItemList => format!("({})", inner),
+        ArrayKind::Array | ArrayKind::Shaped | ArrayKind::Lazy | ArrayKind::ItemArray => ("[", "]"),
+        ArrayKind::List | ArrayKind::ItemList => ("(", ")"),
     }
 }
 

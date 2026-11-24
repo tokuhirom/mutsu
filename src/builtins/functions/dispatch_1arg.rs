@@ -6,7 +6,6 @@ use crate::runtime;
 use crate::symbol::Symbol;
 use crate::value::flat::{deitemize_flat_operand, flat_val, is_infinite_range};
 use crate::value::{RuntimeError, Value, ValueView};
-use std::collections::HashMap;
 use unicode_normalization::UnicodeNormalization;
 
 pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Value, RuntimeError>> {
@@ -310,39 +309,10 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 None => Value::NIL,
             },
         ))),
-        "uniname" => {
-            match arg.view() {
-                ValueView::Int(i) => match crate::builtins::unicode::uniname_from_int(i) {
-                    Ok(name) => Some(Ok(Value::str(name))),
-                    Err(e) => Some(Err(e)),
-                },
-                ValueView::Package(name) => {
-                    // Type objects like Str, Int should throw X::Multi::NoMatch
-                    let msg = format!(
-                        "Cannot resolve caller uniname({}); none of these signatures matches:\n    (\\what)",
-                        name
-                    );
-                    let mut attrs = HashMap::new();
-                    attrs.insert("message".to_string(), Value::str(msg.clone()));
-                    let ex = Value::make_instance(Symbol::intern("X::Multi::NoMatch"), attrs);
-                    let mut err = RuntimeError::new(msg);
-                    err.exception = Some(Box::new(ex));
-                    Some(Err(err))
-                }
-                _ => {
-                    let s = arg.to_string_value();
-                    if s.is_empty() {
-                        return Some(Ok(Value::NIL));
-                    }
-                    if let Some(ch) = s.chars().next() {
-                        let name = crate::builtins::unicode::unicode_char_name(ch);
-                        Some(Ok(Value::str(name)))
-                    } else {
-                        Some(Ok(Value::NIL))
-                    }
-                }
-            }
-        }
+        // One implementation with the method form (ADR-0117): a `Bool` is
+        // its numeric codepoint, as rakudo's `uniname` coerces through `Int`
+        // (#19089).
+        "uniname" => crate::builtins::method_table::scalars::unicode::uniname(arg, &[]),
         "uninames" => {
             let s = arg.to_string_value();
             let names: Vec<Value> = s

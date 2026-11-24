@@ -739,6 +739,133 @@ fn raku_value_array(items: &[Value], kind: ArrayKind, v: &Value) -> String {
     raku_array_wrap_counted(&inner, kind, count, single_listy)
 }
 
+thread_local! {
+    // The arrays a `.raku` walk is inside, each with its back-reference name.
+    static SEEN_PTRS: std::cell::RefCell<crate::value::ancestor_stack::AncestorStack<String>> = std::cell::RefCell::new(crate::value::ancestor_stack::AncestorStack::new());
+    static ARRAY_CYCLE_FOUND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Append the `.raku` of `v` to `out`. A nested Array or List appends its
+/// elements into the same buffer, so rendering a structure nested d levels
+/// deep is O(d) bytes copied, not O(d^2) (#12714).
+// Cost: O(t), t = total output length of `v`'s subtree.
+fn raku_value_into(v: &Value, out: &mut String) {
+    if v.pair_identity().is_some() {
+        out.push_str(&raku_value(v));
+    } else {
+        raku_value_node_into(v, out);
+    }
+}
+
+/// [`raku_value_node`], appended to `out`: a non-lazy Array renders in place,
+/// every other value through `raku_value_node`.
+// Cost: O(t), t = total output length of `v`'s subtree.
+fn raku_value_node_into(v: &Value, out: &mut String) {
+    if let Some(rendered) = raku_raw_repr(v) {
+        out.push_str(&rendered);
+        return;
+    }
+    // #11217: stop descending when the native stack runs low.
+    if let Some(rendered) =
+        crate::value::render_guard::render_on_fresh_segment(|| raku_value_node(v))
+    {
+        out.push_str(&rendered);
+        return;
+    }
+    let ValueView::Array(items, kind) = v.view() else {
+        out.push_str(&raku_value_node(v));
+        return;
+    };
+    if kind == crate::value::ArrayKind::Lazy {
+        out.push_str("[...]");
+        return;
+    }
+    let ptr = crate::gc::Gc::as_ptr(&items) as usize;
+    let var_name = format!("@Array_{}", ptr);
+    // Check for cycle
+    if let Some(name) = SEEN_PTRS.with(|seen| seen.borrow().get(ptr).cloned()) {
+        ARRAY_CYCLE_FOUND.with(|f| f.set(true));
+        out.push_str(&name);
+        return;
+    }
+    let is_top = SEEN_PTRS.with(|seen| seen.borrow().is_empty());
+    SEEN_PTRS.with(|seen| seen.borrow_mut().push(ptr, var_name.clone()));
+    if is_top {
+        ARRAY_CYCLE_FOUND.with(|f| f.set(false));
+    }
+    let start = out.len();
+    // A hole renders as the container's `is default(...)` value, not the
+    // `Any` marker the slot holds (`items_with_default`).
+    raku_value_array_into(&items.items_with_default(), kind, v, out);
+    let had_cycle = ARRAY_CYCLE_FOUND.with(|f| f.get());
+    SEEN_PTRS.with(|seen| {
+        seen.borrow_mut().pop(ptr);
+    });
+    if is_top && had_cycle {
+        out.insert_str(start, &format!("((my {}) = ", var_name));
+        out.push(')');
+    }
+}
+
+/// [`raku_value_array`], appended to `out`. The brackets and the trailing
+/// comma depend only on the kind and the element count, so the elements are
+/// rendered straight into `out` between them.
+// Cost: O(t), t = total output length of the elements' subtrees.
+fn raku_value_array_into(items: &[Value], kind: ArrayKind, v: &Value, out: &mut String) {
+    if kind == ArrayKind::Shaped {
+        out.push_str(&raku_value_array(items, kind, v));
+        return;
+    }
+    let count = items.len();
+    let single_listy =
+        count == 1 && kind.is_real_array() && element_needs_trailing_comma(&items[0]);
+    let array_comma = if single_listy { "," } else { "" };
+    let list_comma = if count == 1 { "," } else { "" };
+    let (open, close) = match kind {
+        ArrayKind::List => ("(", ")"),
+        ArrayKind::ItemArray => ("$[", "]"),
+        ArrayKind::ItemList if count == 0 => {
+            out.push_str("$( )");
+            return;
+        }
+        ArrayKind::ItemList => ("$(", ")"),
+        _ => ("[", "]"),
+    };
+    out.push_str(open);
+    for (i, item) in items.iter().enumerate() {
+        if i > 0 {
+            out.push_str(", ");
+        }
+        if kind.is_real_array() {
+            raku_value_as_element_into(item, out);
+        } else {
+            raku_value_into(item, out);
+        }
+    }
+    out.push_str(match kind {
+        ArrayKind::List | ArrayKind::ItemList => list_comma,
+        _ => array_comma,
+    });
+    out.push_str(close);
+}
+
+/// [`raku_value_as_element`], appended to `out`.
+// Cost: O(t), t = total output length of `v`'s subtree.
+fn raku_value_as_element_into(v: &Value, out: &mut String) {
+    match v.view() {
+        ValueView::Array(items, kind) => {
+            let decontainerized = match kind {
+                ArrayKind::ItemArray => ArrayKind::Array,
+                ArrayKind::ItemList => ArrayKind::List,
+                other => other,
+            };
+            raku_value_into(&Value::array_with_kind(items.clone(), decontainerized), out);
+        }
+        ValueView::ContainerRef(cell) => raku_value_as_element_into(&cell.load(), out),
+        _ => out.push_str(&raku_value_as_element(v)),
+    }
+}
+
 // Cycle detection for a recursive HASH structure, shared by this module's
 // `raku_value` and the interpreter-side `dispatch_constrained_hash_raku` (which
 // renders a *typed* hash, because that needs method dispatch for its values).
@@ -838,10 +965,6 @@ fn raku_value_node(v: &Value) -> String {
     // Cycle detection for recursive data structures: track Arc pointers
     // that we're currently rendering. If we encounter the same pointer
     // again, emit a placeholder instead of recursing infinitely.
-    thread_local! {
-        static SEEN_PTRS: std::cell::RefCell<crate::value::ancestor_stack::AncestorStack<String>> = std::cell::RefCell::new(crate::value::ancestor_stack::AncestorStack::new());
-        static ARRAY_CYCLE_FOUND: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    }
     // A leaf the interpreter already rendered for us (see `RAKU_RAW_KEY`).
     if let Some(rendered) = raku_raw_repr(v) {
         return rendered;
@@ -860,36 +983,11 @@ fn raku_value_node(v: &Value) -> String {
         // renders `${...}`/`$[...]` like the itemized value it reads as.
         ValueView::ContainerRef(_) => raku_value(&v.deref_container()),
         ValueView::HashEntryRef { .. } => raku_value(&v.hash_entry_read()),
-        ValueView::Array(items, kind) => {
-            // Lazy arrays should not be materialized
-            if kind == crate::value::ArrayKind::Lazy {
-                return "[...]".to_string();
-            }
-            let ptr = crate::gc::Gc::as_ptr(&items) as usize;
-            let var_name = format!("@Array_{}", ptr);
-            // Check for cycle
-            let cycle_var = SEEN_PTRS.with(|seen| seen.borrow().get(ptr).cloned());
-            if let Some(name) = cycle_var {
-                ARRAY_CYCLE_FOUND.with(|f| f.set(true));
-                return name;
-            }
-            let is_top = SEEN_PTRS.with(|seen| seen.borrow().is_empty());
-            SEEN_PTRS.with(|seen| seen.borrow_mut().push(ptr, var_name.clone()));
-            if is_top {
-                ARRAY_CYCLE_FOUND.with(|f| f.set(false));
-            }
-            // A hole renders as the container's `is default(...)` value, not
-            // the `Any` marker the slot holds (`items_with_default`).
-            let result = raku_value_array(&items.items_with_default(), kind, v);
-            let had_cycle = ARRAY_CYCLE_FOUND.with(|f| f.get());
-            SEEN_PTRS.with(|seen| {
-                seen.borrow_mut().pop(ptr);
-            });
-            if is_top && had_cycle {
-                format!("((my {}) = {})", var_name, result)
-            } else {
-                result
-            }
+        ValueView::Array(_, crate::value::ArrayKind::Lazy) => "[...]".to_string(),
+        ValueView::Array(..) => {
+            let mut out = String::new();
+            raku_value_node_into(v, &mut out);
+            out
         }
         // A hyper / race sequence renders its configuration, not its
         // elements (#18690).

@@ -61,12 +61,17 @@ impl Interpreter {
     }
 
     fn build_builtin_registry() -> Registry {
-        let mut classes = rustc_hash::FxHashMap::default();
+        // Sized for the ~450 built-in classes, so the table is not rehashed
+        // (and every `ClassDef` moved) as it grows.
+        let mut classes = rustc_hash::FxHashMap::with_capacity_and_hasher(
+            BUILTIN_CLASS_CAPACITY,
+            Default::default(),
+        );
         classes.insert(
             "Mu".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Mu"]),
                 attribute_types: HashMap::new(),
@@ -82,7 +87,7 @@ impl Interpreter {
             "Any".to_string(),
             ClassDef {
                 parents: vec!["Mu".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Any", "Mu"]),
                 attribute_types: HashMap::new(),
@@ -98,7 +103,7 @@ impl Interpreter {
             "IterationBuffer".to_string(),
             ClassDef {
                 parents: vec!["Any".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["IterationBuffer", "Any", "Mu"]),
                 attribute_types: HashMap::new(),
@@ -114,7 +119,7 @@ impl Interpreter {
             "Promise".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: ["keep", "result", "status", "then"]
                     .iter()
                     .map(|s| s.to_string())
@@ -133,7 +138,7 @@ impl Interpreter {
             "Promise::Vow".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: ["keep", "break"].iter().map(|s| s.to_string()).collect(),
                 mro: sym_mro(&["Promise::Vow"]),
                 attribute_types: HashMap::new(),
@@ -149,7 +154,7 @@ impl Interpreter {
             "Channel".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: ["send", "receive", "close", "closed"]
                     .iter()
                     .map(|s| s.to_string())
@@ -168,7 +173,7 @@ impl Interpreter {
             "Collation".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Collation"]),
                 attribute_types: HashMap::new(),
@@ -184,7 +189,7 @@ impl Interpreter {
             "Thread".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: ["finish", "id"].iter().map(|s| s.to_string()).collect(),
                 mro: sym_mro(&["Thread"]),
                 attribute_types: HashMap::new(),
@@ -200,7 +205,7 @@ impl Interpreter {
             "Supply".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: [
                     "emit",
                     "share",
@@ -251,7 +256,7 @@ impl Interpreter {
             crate::value::supply_class::PROC_ASYNC_PIPE.to_string(),
             ClassDef {
                 parents: vec!["Supply".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&[crate::value::supply_class::PROC_ASYNC_PIPE, "Supply"]),
                 attribute_types: HashMap::new(),
@@ -267,7 +272,7 @@ impl Interpreter {
             "utf8".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["utf8"]),
                 attribute_types: HashMap::new(),
@@ -283,7 +288,7 @@ impl Interpreter {
             "utf16".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["utf16"]),
                 attribute_types: HashMap::new(),
@@ -299,7 +304,7 @@ impl Interpreter {
             "Blob".to_string(),
             ClassDef {
                 parents: vec!["Any".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Blob", "Any", "Mu"]),
                 attribute_types: HashMap::new(),
@@ -315,7 +320,7 @@ impl Interpreter {
             "Buf".to_string(),
             ClassDef {
                 parents: vec!["Blob".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Buf", "Blob", "Any", "Mu"]),
                 attribute_types: HashMap::new(),
@@ -331,7 +336,7 @@ impl Interpreter {
             "Supplier".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: [
                     "emit",
                     "done",
@@ -357,7 +362,7 @@ impl Interpreter {
             "Supplier::Preserving".to_string(),
             ClassDef {
                 parents: vec!["Supplier".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Supplier::Preserving", "Supplier"]),
                 attribute_types: HashMap::new(),
@@ -373,7 +378,7 @@ impl Interpreter {
             "Proc::Async".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 // `new` is Proc::Async's own constructor (`new(*@args)`), so it
                 // is a local method in rakudo's `.^method_table` -- Test::Mock
                 // walks that table to decide what it may override (#9340).
@@ -444,7 +449,7 @@ impl Interpreter {
             attribute_types.insert("os-error".to_string(), "Str".to_string());
             ClassDef {
                 parents: Vec::new(),
-                attributes: vec![
+                attributes: From::from(vec![
                     proc_attr("in", '$', None),
                     proc_attr("out", '$', None),
                     proc_attr("err", '$', None),
@@ -453,7 +458,7 @@ impl Interpreter {
                     proc_attr("signal", '$', None),
                     proc_attr("pid", '$', nil_default()),
                     proc_attr("command", '@', None),
-                ],
+                ]),
                 // `Str`/`gist` are NOT native: Rakudo's Proc has no stringifier
                 // of its own, so the default instance repr applies (`Proc.new`),
                 // not the exitcode number the old native arm rendered.
@@ -474,7 +479,7 @@ impl Interpreter {
             "Tap".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: crate::builtins::method_table::handle_names("Tap")
                     .map(str::to_string)
                     .collect(),
@@ -493,7 +498,7 @@ impl Interpreter {
             "IO::Socket::Async::ListenSocket".to_string(),
             ClassDef {
                 parents: vec!["Tap".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: crate::builtins::method_table::handle_names("IO::Socket::Async::ListenSocket")
                     .map(str::to_string)
                     .collect(),
@@ -511,7 +516,7 @@ impl Interpreter {
             "__ScheduledTapPump".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 // ADR-0028 Slice 1: the callback-shim target `Supply.
                 // schedule-on()` taps invoke instead of the real tap/done/
                 // quit callback — see `native_methods::scheduled_tap_pump`.
@@ -538,7 +543,7 @@ impl Interpreter {
             "__SupplyCollector".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 // ADR-0031 Decision B (Slice 2): the emit/done/quit shim
                 // `Interpreter::supply_collect_values` taps a Supply with,
                 // instead of the old synchronous-replay helpers — see
@@ -565,7 +570,7 @@ impl Interpreter {
             "__SupplyQuitForwarder".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 // The `quit =>` callback a `whenever` on a chained on-demand
                 // source hands to the inner tap, so an unhandled source quit
                 // terminates the enclosing supply block (ADR-0031 Decision A)
@@ -588,7 +593,7 @@ impl Interpreter {
             "__ChannelSupply".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 // The per-tap producer of a `Channel.Supply`, and the closer
                 // that detaches the tap -- see `native_methods::channel_supply`.
                 native_methods: [
@@ -612,7 +617,7 @@ impl Interpreter {
             "__PromiseSupply".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 // The per-tap producer of a `Promise.Supply`, and its `.then`
                 // settler -- see `native_methods::promise_supply`.
                 native_methods: [
@@ -636,7 +641,7 @@ impl Interpreter {
             "__SupplyDeriveMulti".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 // The producer and forwarders of a live `merge` / `zip` /
                 // `zip-latest` recipe — see `native_methods::supply_derive_multi`.
                 native_methods: [
@@ -663,7 +668,7 @@ impl Interpreter {
             "__SupplyDerive".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 // The producer and forwarders of a `Supply.grep`/`.map` over an
                 // on-demand source — see `native_methods::supply_derive`.
                 native_methods: [
@@ -695,7 +700,7 @@ impl Interpreter {
             "Scheduler".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 // `Scheduler` is a composable role (`class Test::Scheduler does
                 // Scheduler {...}`) with NO native implementation of its own --
                 // only the concrete schedulers below have one, and each lists
@@ -718,7 +723,7 @@ impl Interpreter {
             "ThreadPoolScheduler".to_string(),
             ClassDef {
                 parents: vec!["Scheduler".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: ["cue", "uncaught_handler", "loads", "max_threads", "usage"]
                     .iter()
                     .map(|s| s.to_string())
@@ -737,7 +742,7 @@ impl Interpreter {
             "CurrentThreadScheduler".to_string(),
             ClassDef {
                 parents: vec!["Scheduler".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: ["cue", "uncaught_handler", "loads"]
                     .iter()
                     .map(|s| s.to_string())
@@ -756,7 +761,7 @@ impl Interpreter {
             "FakeScheduler".to_string(),
             ClassDef {
                 parents: vec!["Scheduler".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: ["cue", "progress-by", "time"]
                     .iter()
                     .map(|s| s.to_string())
@@ -775,7 +780,7 @@ impl Interpreter {
             "Cancellation".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: crate::builtins::method_table::handle_names("Cancellation")
                     .map(str::to_string)
                     .collect(),
@@ -793,7 +798,7 @@ impl Interpreter {
             "Lock".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 // `new` is Lock's own constructor in rakudo (#9340).
                 native_methods: std::iter::once("new")
                     .chain(crate::builtins::method_table::handle_names("Lock"))
@@ -813,7 +818,7 @@ impl Interpreter {
             "Lock::Async".to_string(),
             ClassDef {
                 parents: vec!["Lock".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: crate::builtins::method_table::handle_names("Lock::Async")
                     .map(str::to_string)
                     .collect(),
@@ -831,7 +836,7 @@ impl Interpreter {
             "Lock::Soft".to_string(),
             ClassDef {
                 parents: vec!["Lock".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Lock::Soft", "Lock"]),
                 attribute_types: HashMap::new(),
@@ -847,7 +852,7 @@ impl Interpreter {
             "Lock::ConditionVariable".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: crate::builtins::method_table::handle_names("Lock::ConditionVariable")
                     .map(str::to_string)
                     .collect(),
@@ -865,7 +870,7 @@ impl Interpreter {
             "Semaphore".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: ["acquire", "try_acquire", "release"]
                     .iter()
                     .map(|s| s.to_string())
@@ -894,7 +899,7 @@ impl Interpreter {
                 // and cache the correct `[IO::Path, Cool, Any, Mu]` chain the
                 // same way every other class gets its MRO.
                 parents: vec!["Cool".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 // `new` is IO::Path's own constructor in rakudo (#9340).
                 native_methods: [
                     "new",
@@ -984,7 +989,7 @@ impl Interpreter {
                 // Rakudo seeds $!path with the IO type object. Keeping this as
                 // an attribute default also covers IO::Handle.bless and derived
                 // classes, instead of only patching the rendered gist.
-                attributes: vec![ClassAttributeDef {
+                attributes: From::from(vec![ClassAttributeDef {
                     name: "path".to_string(),
                     is_public: true,
                     default: Some(crate::opcode::DeclTraitArg::Ast(Box::new(Expr::Literal(
@@ -1003,7 +1008,7 @@ impl Interpreter {
                     source_file: None,
                     default_is_seed: false,
                     default_is_trait: false,
-                }],
+                }]),
                 native_methods: [
                     "path",
                     "IO",
@@ -1062,7 +1067,7 @@ impl Interpreter {
                 // `IO::CatHandle is IO::Handle` (rakudo): a cat satisfies
                 // `IO::Handle` constraints and smartmatches (#17754).
                 parents: vec!["IO::Handle".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: [
                     "get",
                     "getc",
@@ -1139,7 +1144,7 @@ impl Interpreter {
             "Backtrace".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Backtrace"]),
                 attribute_types: HashMap::new(),
@@ -1155,7 +1160,7 @@ impl Interpreter {
             "CompUnit::Repository::FileSystem".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["CompUnit::Repository::FileSystem"]),
                 attribute_types: HashMap::new(),
@@ -1173,7 +1178,7 @@ impl Interpreter {
                 // `IO::Pipe is IO::Handle`: a pipe satisfies `IO::Handle` constraints and
                 // `slurp($proc.err)` reads it instead of opening a path.
                 parents: vec!["IO::Handle".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: ["slurp", "slurp-rest", "Str", "gist", "print", "close"]
                     .iter()
                     .map(|s| s.to_string())
@@ -1192,7 +1197,7 @@ impl Interpreter {
             "IO::Socket::INET".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: crate::builtins::method_table::handle_names("IO::Socket::INET")
                     .map(str::to_string)
                     .collect(),
@@ -1210,7 +1215,7 @@ impl Interpreter {
             "IO::Socket::Async".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: crate::builtins::method_table::handle_names("IO::Socket::Async")
                     .map(str::to_string)
                     .collect(),
@@ -1228,7 +1233,7 @@ impl Interpreter {
             "IO::Socket::Async::Listener".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: ["tap", "act"].iter().map(|s| s.to_string()).collect(),
                 // Real raku's `IO::Socket::Async.listen(...)` literally IS a
                 // `Supply` (built from a `supply { ... }` block in CORE.setting) --
@@ -1384,7 +1389,7 @@ impl Interpreter {
             "Encoding::Encoder::Builtin".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: crate::builtins::method_table::encoding_names("Encoding::Encoder::Builtin")
                     .map(str::to_string)
                     .collect(),
@@ -1402,7 +1407,7 @@ impl Interpreter {
             "Encoding::Decoder::Builtin".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: crate::builtins::method_table::encoding_names(
                     "Encoding::Decoder::Builtin",
                 )
@@ -1422,7 +1427,7 @@ impl Interpreter {
             "Encoding::Registry".to_string(),
             ClassDef {
                 parents: Vec::new(),
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: ["find", "register"].iter().map(|s| s.to_string()).collect(),
                 mro: sym_mro(&["Encoding::Registry"]),
                 attribute_types: HashMap::new(),
@@ -1569,7 +1574,7 @@ impl Interpreter {
             "Exception".to_string(),
             ClassDef {
                 parents: vec![],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["Exception"]),
                 attribute_types: HashMap::new(),
@@ -1585,7 +1590,7 @@ impl Interpreter {
             "X::AdHoc".to_string(),
             ClassDef {
                 parents: vec!["Exception".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::AdHoc", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1601,7 +1606,7 @@ impl Interpreter {
             "X::TypeCheck".to_string(),
             ClassDef {
                 parents: vec!["Exception".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::TypeCheck", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1617,7 +1622,7 @@ impl Interpreter {
             "X::TypeCheck::Binding".to_string(),
             ClassDef {
                 parents: vec!["X::TypeCheck".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::TypeCheck::Binding", "X::TypeCheck", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1633,7 +1638,7 @@ impl Interpreter {
             "X::TypeCheck::Binding::Parameter".to_string(),
             ClassDef {
                 parents: vec!["X::TypeCheck::Binding".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&[
                     "X::TypeCheck::Binding::Parameter",
@@ -1654,7 +1659,7 @@ impl Interpreter {
             "X::Parameter".to_string(),
             ClassDef {
                 parents: vec!["Exception".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::Parameter", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1673,7 +1678,7 @@ impl Interpreter {
                 // rakudo (`.^parents(:local)` is `Exception` directly;
                 // `X::Parameter` is a bare package, not a class -- ADR-0029).
                 parents: vec!["Exception".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::Parameter::InvalidConcreteness", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1689,7 +1694,7 @@ impl Interpreter {
             "X::Supply::Combinator".to_string(),
             ClassDef {
                 parents: vec!["Exception".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::Supply::Combinator", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1705,7 +1710,7 @@ impl Interpreter {
             "X::TypeCheck::Argument".to_string(),
             ClassDef {
                 parents: vec!["X::TypeCheck".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::TypeCheck::Argument", "X::TypeCheck", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1721,7 +1726,7 @@ impl Interpreter {
             "X::TypeCheck::Assignment".to_string(),
             ClassDef {
                 parents: vec!["X::TypeCheck".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::TypeCheck::Assignment", "X::TypeCheck", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1739,7 +1744,7 @@ impl Interpreter {
                 // Real superclass is `X::Numeric::CannotConvert`, not
                 // `Exception` directly (ADR-0029, verified against raku).
                 parents: vec!["X::Numeric::CannotConvert".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::Numeric::Real", "X::Numeric::CannotConvert", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1759,7 +1764,7 @@ impl Interpreter {
                 // `::Assignment` / `::Binding` above, this one was missing
                 // the intermediate ancestor.
                 parents: vec!["X::TypeCheck".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::TypeCheck::Return", "X::TypeCheck", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1778,7 +1783,7 @@ impl Interpreter {
                 // raku; `X::Coerce` itself is registered below via
                 // `register_x`).
                 parents: vec!["X::Coerce".to_string()],
-                attributes: Vec::new(),
+                attributes: Default::default(),
                 native_methods: HashSet::new(),
                 mro: sym_mro(&["X::Coerce::Impossible", "X::Coerce", "Exception"]),
                 attribute_types: HashMap::new(),
@@ -1800,14 +1805,19 @@ impl Interpreter {
         // registries below, once `registry` (and its `role_parents`, for
         // transitive flattening) exists.
         let mut register_x_does: Vec<(String, Vec<String>)> = Vec::new();
+        // The MRO is collected in one reused buffer, as symbols, so a class
+        // costs no scratch allocation (#18956).
+        let exception_sym = Symbol::intern("Exception");
+        let mut mro_buf: Vec<Symbol> = Vec::new();
         let mut register_x = |name: &str, parent: &str, does: &[&str]| {
             // Walk up through existing classes to build full MRO, borrowing
             // each name from the class table rather than cloning it per step
             // (this closure runs for every built-in `X::` class at startup).
-            let mut mro: Vec<&str> = vec![name];
+            mro_buf.clear();
+            mro_buf.push(Symbol::intern(name));
             let mut cur = parent;
             loop {
-                mro.push(cur);
+                mro_buf.push(Symbol::intern(cur));
                 if let Some(cls) = classes.get(cur)
                     && let Some(p) = cls.parents.first()
                     && p != cur
@@ -1817,15 +1827,15 @@ impl Interpreter {
                 }
                 break;
             }
-            if !mro.contains(&"Exception") {
-                mro.push("Exception");
+            if !mro_buf.contains(&exception_sym) {
+                mro_buf.push(exception_sym);
             }
-            let mro: std::sync::Arc<[Symbol]> = mro.iter().map(|s| Symbol::intern(s)).collect();
+            let mro: std::sync::Arc<[Symbol]> = std::sync::Arc::from(mro_buf.as_slice());
             classes.insert(
                 name.to_string(),
                 ClassDef {
                     parents: vec![parent.to_string()],
-                    attributes: Vec::new(),
+                    attributes: Default::default(),
                     native_methods: HashSet::new(),
                     mro,
                     attribute_types: HashMap::new(),
@@ -2578,49 +2588,18 @@ impl Interpreter {
         }
         // Every built-in exception class declares the attributes rakudo's does
         // (`builtin_exception_attrs`), so `.^attributes`, the accessors and
-        // construction see them (#18654). The few private `is built` ones
-        // (`X::TypeCheck`'s `$!got`/`$!expected`, `X::Coerce::Role`'s
-        // `$!exception`, ...) each have an explicit reader method in rakudo,
-        // so they are declared with their accessor. An attribute a built-in
-        // method row already reads (`X::AdHoc.payload`, which falls back to
-        // the message an internal error carries) is built from its named
-        // argument but gets no generated accessor, so the row answers.
-        for (name, rows) in super::builtin_exception_attrs::all() {
-            let Some(cls) = classes.get_mut(name) else {
-                continue;
-            };
-            for row in rows {
-                if cls.attributes.iter().any(|a| a.name == row.name) {
-                    continue;
-                }
-                let build = row.build_default();
-                let row_reads_it =
-                    crate::builtins::method_table::owner_has_row(name, row.name);
-                if row_reads_it {
-                    cls.attribute_built
-                        .insert(row.name.to_string(), crate::ast::BuiltTrait::Yes);
-                }
-                cls.attributes.push(ClassAttributeDef {
-                    name: row.name.to_string(),
-                    is_public: !row_reads_it,
-                    default: build
-                        .clone()
-                        .or_else(|| row.unset_seed())
-                        .map(crate::opcode::DeclTraitArg::Literal),
-                    captured_env: None,
-                    captured_unit: None,
-                    declaring_package: None,
-                    is_rw: false,
-                    is_required: None,
-                    sigil: row.sigil(),
-                    type_constraint: None,
-                    where_constraint: None,
-                    declared_shape: None,
-                    source_line: None,
-                    source_file: None,
-                    default_is_seed: build.is_none(),
-                    default_is_trait: false,
-                });
+        // construction see them (#18654). They are declared on the class's
+        // first attribute access, not here: declaring all of them doubled the
+        // startup of every program (#18956).
+        for (name, cls) in classes.iter_mut() {
+            if super::builtin_exception_attrs::may_declare(name) {
+                let class = cls
+                    .mro
+                    .first()
+                    .copied()
+                    .filter(|own| own.as_str() == name)
+                    .unwrap_or_else(|| Symbol::intern(name));
+                cls.attributes.defer_builtin_exception(class);
             }
         }
 
@@ -3152,13 +3131,18 @@ impl Interpreter {
         // Only a class with attributes has accessor rows to add, and a fresh
         // registry has none to clear, so attribute-less classes (most of the
         // built-in `X::` tree) are skipped rather than interned for a no-op
-        // sync (#10961). The rest are interned straight from the borrowed
-        // keys, with no `String` copy of each name.
+        // sync (#10961). So are the built-in exception classes, whose
+        // attributes are declared on first access (#18956):
+        // `Registry::accessor_is_public_sym` answers their accessors from the
+        // class. The rest are interned straight from the borrowed keys, with
+        // no `String` copy of each name.
         debug_assert!(registry.owner_accessor_names.is_empty());
         let class_syms: Vec<Symbol> = registry
             .classes
             .iter()
-            .filter(|(_, class_def)| !class_def.attributes.is_empty())
+            .filter(|(_, class_def)| {
+                !class_def.attributes.is_deferred() && !class_def.attributes.is_empty()
+            })
             .map(|(name, _)| Symbol::intern(name))
             .collect();
         for class_sym in class_syms {
@@ -3362,7 +3346,11 @@ impl Interpreter {
 /// in Rakudo's order, so `Mu.raku` renders them as Rakudo does
 /// (`Distro.new(release => "24.04", ...)`); the methods that read them are
 /// rows (ADR-11276 §9.155).
-fn systemic_attributes(names: &[&str]) -> Vec<ClassAttributeDef> {
+/// Room for the built-in class table `build_builtin_registry` fills (about
+/// 450 classes); a few more only rehash once.
+const BUILTIN_CLASS_CAPACITY: usize = 512;
+
+fn systemic_attributes(names: &[&str]) -> super::class_attributes::ClassAttributes {
     names
         .iter()
         .map(|name| ClassAttributeDef {
@@ -3383,5 +3371,6 @@ fn systemic_attributes(names: &[&str]) -> Vec<ClassAttributeDef> {
             default_is_seed: false,
             default_is_trait: false,
         })
-        .collect()
+        .collect::<Vec<_>>()
+        .into()
 }

@@ -8,7 +8,7 @@
 //! $::($n) = 5     ApplyInfix(Var::Package(…), Assignment(:item), 5)
 //! ::($n) = 5      ApplyInfix(Term::Name(Name(Part::EmptyEdge, Part::Expression($n))), Assignment, 5)
 //! &::($n)::f     Var::Package(Name(Part::EmptyEdge, Part::Expression($n), Part::Simple("f")), "&")
-//! &CALLER::($n)::f has Part::Simple("CALLER") in place of Part::Empty.
+//! &CALLER::($n)::f has Part::Simple("CALLER") in place of Part::EmptyEdge.
 //! ```
 //!
 //! The parser keeps the variable forms as [`Expr::SymbolicDeref`] /
@@ -147,14 +147,7 @@ pub(super) fn lower_indirect_code(
         return None;
     };
     let caller = match first.view() {
-        ValueView::RakuAst(part)
-            if matches!(
-                part.class,
-                RakuAstClass::NamePartEmpty | RakuAstClass::NamePartEmptyEdge
-            ) =>
-        {
-            false
-        }
+        ValueView::RakuAst(part) if matches!(part.class, RakuAstClass::NamePartEmptyEdge) => false,
         ValueView::RakuAst(part)
             if part.class == RakuAstClass::NamePartSimple
                 && name_parts::part_identifier(first).as_deref() == Some("CALLER") =>

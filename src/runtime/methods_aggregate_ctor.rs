@@ -566,7 +566,7 @@ impl Interpreter {
             name.to_string(),
             super::ClassDef {
                 parents: vec![base.to_string()],
-                attributes: vec![],
+                attributes: Default::default(),
                 attribute_types: HashMap::new(),
                 attribute_smileys: HashMap::new(),
                 attribute_built: HashMap::new(),

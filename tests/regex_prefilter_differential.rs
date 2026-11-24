@@ -217,7 +217,7 @@ for <aaa bbb ccc> -> $s { say "{A::scan(qq{zz $s})} {B::scan(qq{zz $s})}" }
 differential_case!(
     subrule_reached_through_another_subrule,
     r#"
-grammar G { token outer { <inner> } token inner { <[xy]> \d } }
+grammar G { token outer { <inner> }; token inner { <[xy]> \d } }
 say ("ab x7 cd" ~~ / <G::outer> /).Str;
 say ("ab z7 cd" ~~ / <G::outer> /).defined;
 "#

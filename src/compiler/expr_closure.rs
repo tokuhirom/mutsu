@@ -292,6 +292,7 @@ impl Compiler {
                 spans: Default::default(),
                 trait_meta: Default::default(),
                 type_capture: None,
+                type_capture_smiley: None,
                 name: "_".to_string(),
                 default: None,
                 multi_invocant: true,
@@ -748,7 +749,9 @@ impl Compiler {
         if self.emit_lexical_stash_bind(target, index, value) {
             return;
         }
-        if self.compile_nested_index_bind_source(target, index, value, outer_positional) {
+        if self.compile_nested_index_bind_source(target, index, value, outer_positional)
+            || self.compile_literal_index_assign(target, index, value, outer_positional)
+        {
             return;
         }
         if matches!(value, Expr::IndexBindValue(_))

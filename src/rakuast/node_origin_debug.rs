@@ -34,6 +34,8 @@ mod tests {
             Some(Value::str("RESOLUTION-VALUE".to_string())),
             None,
             Some(Value::str("META-VALUE".to_string())),
+            false,
+            false,
         );
         let rendered = format!("{origin:?}");
         assert!(!rendered.contains("VALUE"), "{rendered}");

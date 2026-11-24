@@ -175,7 +175,7 @@ pub(super) fn regex_node(names: &NameScope, node: &RegexNode) -> Result<RakuAstN
             fields.push(node_field(Some("assertion"), interpolated));
             (RakuAstClass::RegexAssertionLookahead, fields)
         }
-        // `<::(EXPR)>` -> `Assertion::Named` over `Name(Part::Empty,
+        // `<::(EXPR)>` -> `Assertion::Named` over `Name(Part::EmptyEdge,
         // Part::Expression(EXPR))` (measured on 2026.09).
         RegexNode::SymbolicSubrule {
             expr, capturing, ..

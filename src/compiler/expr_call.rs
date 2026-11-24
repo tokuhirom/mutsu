@@ -504,6 +504,9 @@ impl Compiler {
             });
             return;
         }
+        if name == "dd" && self.try_compile_dd_call(name, args) {
+            return;
+        }
         // A `my &f` binding visible right here SHADOWS any package/registry
         // routine of the same name, so the bare-name call must reach the
         // binding — exactly as `&f(...)` does. Without this, `my &f = ...; f(1)`

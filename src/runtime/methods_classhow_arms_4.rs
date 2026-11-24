@@ -290,7 +290,7 @@ impl Interpreter {
                     class_name.clone(),
                     ClassDef {
                         parents: vec![],
-                        attributes: vec![],
+                        attributes: Default::default(),
                         attribute_types: HashMap::new(),
                         attribute_smileys: HashMap::new(),
                         attribute_built: HashMap::new(),

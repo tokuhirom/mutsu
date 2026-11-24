@@ -2743,7 +2743,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             caller,
         } => super::symbolic_deref::view_indirect_code(names, package, name, *caller),
         // `::("x")` / `::($name)` ->
-        // `Term::Name(Name(Part::Empty.new, Part::Expression(EXPR)))`, the
+        // `Term::Name(Name(Part::EmptyEdge.new, Part::Expression(EXPR)))`, the
         // leading `::` being an empty name edge (measured on 2026.09). The
         // parser keeps this as an IndirectTypeLookup, so preserving the
         // expression part is necessary for `.AST` and for a later EVAL round
@@ -2765,7 +2765,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             })
         }
         // `::(EXPR)::A::B` / `::(EXPR)::` -> the indirect name above followed
-        // by its static parts and, for a trailing `::`, the `Part::Empty` type
+        // by its static parts and, for a trailing `::`, the `Part::EmptyEdge` type
         // object (measured on 2026.09).
         Expr::IndirectTypeLookupTail {
             head,
@@ -2789,7 +2789,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             })
         }
         // A stash lookup `Foo::` / `MY::` / `::` -> a `Name` ending in the
-        // `Part::Empty` type object. Rakudo wraps it in a `Term::Name` when the
+        // `Part::EmptyEdge` type object. Rakudo wraps it in a `Term::Name` when the
         // package resolves at parse time and in an argument-less `Call::Name`
         // otherwise (measured: `class F {}; F::` vs. an undeclared `F::`).
         Expr::PseudoStash(stash) => {
@@ -3389,8 +3389,9 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             operands.push(right);
             let infix = super::decl_tail::list_infix_operator(op, operands[0]);
             let mut nodes = Vec::with_capacity(operands.len());
-            for e in operands {
-                nodes.push(Value::rakuast(Box::new(view_expr(names, e)?)));
+            for (index, e) in operands.into_iter().enumerate() {
+                let viewed = super::thunk::lazy_operand(view_expr(names, e)?, index, op);
+                nodes.push(Value::rakuast(Box::new(viewed)));
             }
             Ok(RakuAstNode {
                 origin: Default::default(),
@@ -4612,6 +4613,8 @@ fn parameter(
     pd: &ParamDef,
     type_setting: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
+    let unsmiled = super::type_capture_ctor::param_without_capture_smiley_type(pd);
+    let pd = unsmiled.as_ref().unwrap_or(pd);
     // The parser records an invocant (`$self:`, `Foo:D:`) as `is_invocant`
     // plus an `invocant` trait, and a synthesized one (no variable) with the
     // `implicit-invocant` trait as well; RakuAST has the one `invocant` flag.
@@ -4652,7 +4655,7 @@ fn parameter(
         return node;
     }
     let type_capture = match type_capture_name(pd) {
-        Some(name) => Some(type_capture_node(names, name)?),
+        Some(name) => Some(super::type_capture_ctor::capture_of(names, name, pd)?),
         None => None,
     };
     // A bare `::T` is represented internally by a synthetic parameter name,

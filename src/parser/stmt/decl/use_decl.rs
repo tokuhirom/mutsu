@@ -315,6 +315,13 @@ pub(in crate::parser::stmt) fn use_stmt(input: &str) -> PResult<'_, Stmt> {
         };
     let (rest, _) = ws(rest)?;
     let (rest, _) = opt_char(rest, ';');
+    // `use experimental :macros` (removed in Rakudo 2026.09) or any other
+    // unknown tag dies at compile time, as rakudo's import does (#18983).
+    if module == "experimental"
+        && let Some(message) = super::use_experimental::unknown_experimental_tag_error(&use_tags)
+    {
+        return Err(PError::fatal_at(message, input));
+    }
     // `use experimental :cached` lets the rest of this scope say `is cached`.
     if module == "experimental" && use_tags.iter().any(|t| t == "cached") {
         crate::parser::stmt::simple::enable_experimental_cached();

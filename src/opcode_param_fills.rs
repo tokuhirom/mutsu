@@ -204,6 +204,7 @@ mod param_fill_tests {
             spans: Default::default(),
             trait_meta: Default::default(),
             type_capture: None,
+            type_capture_smiley: None,
             name: name.to_string(),
             default: None,
             multi_invocant: false,

@@ -14,6 +14,7 @@ mod checked_param_copy;
 mod capture_param_containers;
 mod coercion;
 mod coercion_bind;
+pub(crate) mod compound_suffix_index;
 pub(crate) use coercion_bind::CoercionBindError;
 mod meta_parameterized;
 pub(crate) use meta_parameterized::split_parameterization;
@@ -338,7 +339,7 @@ impl Interpreter {
 
     /// Check if a variable is readonly.
     pub(crate) fn is_readonly(&self, name: &str) -> bool {
-        self.is_readonly_sym(Symbol::intern(name))
+        self.is_readonly_sym(readonly_name_sym(name))
     }
 
     /// Check if an already-interned name is readonly.
@@ -350,7 +351,7 @@ impl Interpreter {
     /// Why `name` is readonly, or `None` when it is writable.
     #[inline]
     pub(crate) fn readonly_kind(&self, name: &str) -> Option<ReadonlyKind> {
-        self.readonly_kind_sym(Symbol::intern(name))
+        self.readonly_kind_sym(readonly_name_sym(name))
     }
 
     /// [`Self::readonly_kind`] for an already-interned name.
@@ -386,7 +387,7 @@ impl Interpreter {
 
     /// Mark a variable as readonly, recording *why*.
     pub(crate) fn mark_readonly_with(&mut self, name: &str, kind: ReadonlyKind) {
-        self.mark_readonly_sym_with(Symbol::intern(name), kind);
+        self.mark_readonly_sym_with(readonly_name_sym(name), kind);
     }
 
     /// Put a name back into the state a previous [`Self::readonly_kind`] read
@@ -450,7 +451,7 @@ impl Interpreter {
 
     /// Remove a variable from the readonly set.
     pub(crate) fn unmark_readonly(&mut self, name: &str) {
-        self.unmark_readonly_sym(Symbol::intern(name));
+        self.unmark_readonly_sym(readonly_name_sym(name));
     }
 
     /// Clear a readonly mark on the topic `_`, if there is one.
@@ -1685,6 +1686,21 @@ pub(crate) fn binds_as_code_variable(value: &Value) -> bool {
     }
 }
 
+/// The symbol of a name the `&str` readonly-set accessors are asked about.
+/// Topicalizers (`given`, `with`, `for`, smartmatch, `s///`) save, mark and
+/// restore the topic's readonly state by its name `_` several times per
+/// execution, so it is answered from the well-known symbol instead of an
+/// intern probe each time (#18274).
+// Cost: O(1) for the topic; one intern otherwise.
+#[inline]
+fn readonly_name_sym(name: &str) -> Symbol {
+    if name == "_" {
+        crate::symbol::wk::topic()
+    } else {
+        Symbol::intern(name)
+    }
+}
+
 #[cfg(test)]
 mod value_is_defined_tests {
     use super::*;
@@ -1705,3 +1721,4 @@ mod value_is_defined_tests {
         assert!(value_is_defined(&cell_val));
     }
 }
+

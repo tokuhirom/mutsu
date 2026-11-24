@@ -1,0 +1,1 @@
+An untyped scalar parameter declared `is copy` now enforces the `Any` constraint of its fresh container on later assignments. Assigning `Mu` raises the same type error as on Rakudo; ordinary writes to the copy remain independent of the caller.

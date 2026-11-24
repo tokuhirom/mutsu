@@ -259,12 +259,101 @@ pub(crate) fn gist_head(v: &Value) -> Value {
     }
 }
 
+thread_local! {
+    static SEEN_PTRS: std::cell::RefCell<crate::value::ancestor_stack::AncestorStack<bool>> = std::cell::RefCell::new(crate::value::ancestor_stack::AncestorStack::new());
+}
+/// Mark `ptr` as being rendered. Returns true when `ptr` is already an
+/// ancestor — a cycle — flagging that ancestor so its exit emits the
+/// binding preamble.
+fn check_and_push(
+    ptrs: &std::cell::RefCell<crate::value::ancestor_stack::AncestorStack<bool>>,
+    ptr: usize,
+) -> bool {
+    let mut s = ptrs.borrow_mut();
+    if let Some(looped_back_to) = s.get_mut(ptr) {
+        *looped_back_to = true;
+        return true; // cycle detected
+    }
+    s.push(ptr, false);
+    false
+}
+/// Pop `ptr`, reporting whether the walk under it looped back to it.
+fn pop_ptr(
+    ptrs: &std::cell::RefCell<crate::value::ancestor_stack::AncestorStack<bool>>,
+    ptr: usize,
+) -> bool {
+    ptrs.borrow_mut().pop(ptr).unwrap_or(false)
+}
+/// `(\Array_140… = [42 Array_140…])` — the binding preamble Rakudo emits on
+/// the node a cycle loops back to.
+fn cycle_binding(name: &str, ptr: usize, rendered: &str) -> String {
+    format!("(\\{}_{} = {})", name, ptr, rendered)
+}
+/// Append the gist of the non-lazy Array or List `value` (whose node is
+/// `items`) to `out`: its elements go into the same buffer, and a cycle that
+/// loops back to it is named by a `(\\Name = ...)` preamble inserted in
+/// front of what it rendered.
+// Cost: O(t), t = rendered size of at most the first 100 elements (the gist
+// head, as in Rakudo), plus O(t) once for the preamble of a node a cycle
+// loops back to.
+fn gist_array_into(
+    value: &Value,
+    items: &crate::value::ArrayData,
+    kind: crate::value::ArrayKind,
+    out: &mut String,
+) {
+    let ptr = items as *const crate::value::ArrayData as usize;
+    // The `$id` Rakudo's `gistseen` names the node with is its type.
+    let cycle_name = match kind {
+        crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList => "List",
+        _ => "Array",
+    };
+    if SEEN_PTRS.with(|seen| check_and_push(seen, ptr)) {
+        out.push_str(&format!("{}_{}", cycle_name, ptr));
+        return;
+    }
+    // A real array's (`@`-sigiled) elements are Scalar containers, so a cell
+    // never holds `Nil` (ADR-0049 decays a stored `Nil` to the container's
+    // default at the STORE); plain element gists are correct for every
+    // element. Shaped arrays join their rows with a newline (`say my @a[2,2]`
+    // prints one row per line), matching the fast-path gist.
+    let sep = if kind == crate::value::ArrayKind::Shaped
+        && crate::value::shaped_array::shaped_array_has_rows(value)
+    {
+        "\n "
+    } else {
+        " "
+    };
+    // .gist does NOT show the `$` prefix -- only .raku does.
+    let (open, close) = match kind {
+        crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList => ("(", ")"),
+        _ => ("[", "]"),
+    };
+    let start = out.len();
+    out.push_str(open);
+    // A hole gists as the container's `is default(...)` value, not the `Any`
+    // marker the slot holds (`items_with_default`).
+    gist_elements_into(items.items_with_default().iter(), sep, out);
+    out.push_str(close);
+    if SEEN_PTRS.with(|seen| pop_ptr(seen, ptr)) {
+        out.insert_str(start, &format!("(\\{}_{} = ", cycle_name, ptr));
+        out.push(')');
+    }
+}
+
 /// Gist every element of `items`, joined by `sep`, stopping after
 /// [`GIST_ELEM_CAP`] elements with a trailing ` ...`.
 ///
 /// Cost: O(t), t = rendered size of at most the first 100 elements.
 fn gist_elements<'a>(items: impl Iterator<Item = &'a Value>, sep: &str) -> String {
     let mut out = String::new();
+    gist_elements_into(items, sep, &mut out);
+    out
+}
+
+/// [`gist_elements`], appended to `out`.
+// Cost: as `gist_elements`.
+fn gist_elements_into<'a>(items: impl Iterator<Item = &'a Value>, sep: &str, out: &mut String) {
     for (i, item) in items.enumerate() {
         if i > 0 {
             out.push_str(sep);
@@ -273,18 +362,40 @@ fn gist_elements<'a>(items: impl Iterator<Item = &'a Value>, sep: &str) -> Strin
             out.push_str("...");
             break;
         }
-        out.push_str(&gist_value(item));
+        gist_into(item, out);
     }
-    out
 }
 
 pub(crate) fn gist_value(value: &Value) -> String {
+    let mut out = String::new();
+    gist_into(value, &mut out);
+    out
+}
+
+/// Append the gist of `value` to `out`. A nested Array or List appends its
+/// elements into the same buffer, so rendering a structure nested d levels
+/// deep is O(d) bytes copied, not O(d^2) (#12714).
+// Cost: O(t), t = rendered size (of at most the gist head of each list).
+fn gist_into(value: &Value, out: &mut String) {
     // #11217: stop descending when the native stack runs low.
     if let Some(rendered) =
         crate::value::render_guard::render_on_fresh_segment(|| gist_value(value))
     {
-        return rendered;
+        out.push_str(&rendered);
+        return;
     }
+    match value.view() {
+        ValueView::Array(_, crate::value::ArrayKind::Lazy) => out.push_str(&gist_value_node(value)),
+        ValueView::Array(items, kind) => gist_array_into(value, &items, kind, out),
+        ValueView::ContainerRef(cell) => gist_into(&cell.load(), out),
+        _ => out.push_str(&gist_value_node(value)),
+    }
+}
+
+/// The gist of one value that is not a non-lazy Array or a cell; the arms
+/// that hold elements render them through [`gist_value`].
+// Cost: O(t), t = rendered size.
+fn gist_value_node(value: &Value) -> String {
     // Cycle detection for recursive data structures (shared hash/array Gcs).
     //
     // Rakudo renders a cycle the way `Mu.gistseen` does: the node the walk
@@ -300,36 +411,6 @@ pub(crate) fn gist_value(value: &Value) -> String {
     // non-nested paths — is rendered in full both times by Rakudo, with no
     // back-reference. Each entry carries a "was looped back to" flag that the
     // revisit sets and the exit reads.
-    thread_local! {
-        static SEEN_PTRS: std::cell::RefCell<crate::value::ancestor_stack::AncestorStack<bool>> = std::cell::RefCell::new(crate::value::ancestor_stack::AncestorStack::new());
-    }
-    /// Mark `ptr` as being rendered. Returns true when `ptr` is already an
-    /// ancestor — a cycle — flagging that ancestor so its exit emits the
-    /// binding preamble.
-    fn check_and_push(
-        ptrs: &std::cell::RefCell<crate::value::ancestor_stack::AncestorStack<bool>>,
-        ptr: usize,
-    ) -> bool {
-        let mut s = ptrs.borrow_mut();
-        if let Some(looped_back_to) = s.get_mut(ptr) {
-            *looped_back_to = true;
-            return true; // cycle detected
-        }
-        s.push(ptr, false);
-        false
-    }
-    /// Pop `ptr`, reporting whether the walk under it looped back to it.
-    fn pop_ptr(
-        ptrs: &std::cell::RefCell<crate::value::ancestor_stack::AncestorStack<bool>>,
-        ptr: usize,
-    ) -> bool {
-        ptrs.borrow_mut().pop(ptr).unwrap_or(false)
-    }
-    /// `(\Array_140… = [42 Array_140…])` — the binding preamble Rakudo emits on
-    /// the node a cycle loops back to.
-    fn cycle_binding(name: &str, ptr: usize, rendered: &str) -> String {
-        format!("(\\{}_{} = {})", name, ptr, rendered)
-    }
     match value.view() {
         // A Capture gists as its call shape; its string form (`.Str`, which
         // `to_string_value` answers) joins the arguments instead.
@@ -410,59 +491,11 @@ pub(crate) fn gist_value(value: &Value) -> String {
             };
             format!("{open}{}{close}", gist_elements(items.iter(), " "))
         }
-        // Cost: O(t), t = rendered size of at most the first 100 elements (the
-        // gist head, as in Rakudo).
-        ValueView::Array(items, kind) => {
-            let ptr = crate::gc::Gc::as_ptr(&items) as usize;
-            // The `$id` Rakudo's `gistseen` names the node with is its type.
-            let cycle_name = match kind {
-                crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList => "List",
-                _ => "Array",
-            };
-            let is_cycle = SEEN_PTRS.with(|seen| check_and_push(seen, ptr));
-            if is_cycle {
-                return format!("{}_{}", cycle_name, ptr);
-            }
-            // A real array's (`@`-sigiled) elements are Scalar containers, so a
-            // cell can never hold `Nil` -- ADR-0049 decays a stored `Nil` to
-            // the container's own default (`Any` for untyped) at the element
-            // STORE, everywhere a value is written into a real array. This
-            // used to compensate for that here at gist time instead (the
-            // render-side half of the "Nil is a hole sentinel" collision the
-            // ADR retires); it is unreachable now that the invariant holds at
-            // the store, so plain `gist_value` is correct for every element,
-            // real-array or not. A List/Seq keeps a genuine Nil (its own arm
-            // in `gist_value` handles that directly).
-            // Shaped arrays join their rows with a newline (`say my @a[2,2]`
-            // prints one row per line), matching the fast-path gist.
-            let sep = if kind == crate::value::ArrayKind::Shaped
-                && crate::value::shaped_array::shaped_array_has_rows(value)
-            {
-                "\n "
-            } else {
-                " "
-            };
-            // A hole gists as the container's `is default(...)` value, not the
-            // `Any` marker the slot holds (`items_with_default`).
-            let inner = gist_elements(items.items_with_default().iter(), sep);
-            let looped = SEEN_PTRS.with(|seen| pop_ptr(seen, ptr));
-            let rendered = match kind {
-                crate::value::ArrayKind::Array
-                | crate::value::ArrayKind::Shaped
-                | crate::value::ArrayKind::Lazy
-                | crate::value::ArrayKind::ItemArray => {
-                    // .gist does NOT show the `$` prefix — only .raku does.
-                    format!("[{}]", inner)
-                }
-                crate::value::ArrayKind::List | crate::value::ArrayKind::ItemList => {
-                    format!("({})", inner)
-                }
-            };
-            if looped {
-                cycle_binding(cycle_name, ptr, &rendered)
-            } else {
-                rendered
-            }
+        // Reached for a non-lazy Array only through `gist_into`.
+        ValueView::Array(..) => {
+            let mut out = String::new();
+            gist_into(value, &mut out);
+            out
         }
         ValueView::Hash(items) => {
             let ptr = crate::gc::Gc::as_ptr(&items) as usize;
