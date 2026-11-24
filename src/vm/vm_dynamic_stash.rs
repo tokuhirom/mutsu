@@ -56,11 +56,21 @@ impl Interpreter {
             return None;
         }
         let sym = Symbol::intern(env_key);
-        // A dynamic's binding is its env entry, written when its `my $*d`
-        // runs; the slot is seeded from the callers' binding at the frame's
-        // entry, so before the declaration runs only the env tells the frame's
-        // own (still unset) variable from the caller's.
-        let dynamic = env_key.trim_start_matches(['@', '%', '&']).starts_with('*');
+        // A dynamic resolves as a `$*d` read does: through the env chain, the
+        // running frame's tiers over its callers'. A scope binds its `my $*d`
+        // from its entry (`Compiler::hoist_pending_dynamic_decls`), so the
+        // chain already holds a pending declaration and never a dormant
+        // nested block's. A nested run (the closure `map` calls) starts a
+        // `call_frames` of its own; the frames it hides are still on the
+        // caller env stack. The base tier (the process-level dynamics) is in
+        // no frame.
+        if env_key.trim_start_matches(['@', '%', '&']).starts_with('*') {
+            return self
+                .env()
+                .get_sym_in_tiers(sym)
+                .or_else(|| self.caller_frame_binding(sym))
+                .cloned();
+        }
         let any = || Value::package(Symbol::intern("Any"));
         let from_slot = |value: &Value| {
             // A declared scalar no store reached yet is `Any`, as an unset
@@ -71,18 +81,10 @@ impl Interpreter {
                 value.clone()
             }
         };
-        if let Some(i) = code.locals.iter().position(|name| name == env_key) {
-            if dynamic {
-                return Some(
-                    self.env()
-                        .get_sym_in_frame(sym)
-                        .cloned()
-                        .unwrap_or_else(any),
-                );
-            }
-            if let Some(value) = self.locals.get(i) {
-                return Some(from_slot(value));
-            }
+        if let Some(i) = code.locals.iter().position(|name| name == env_key)
+            && let Some(value) = self.locals.get(i)
+        {
+            return Some(from_slot(value));
         }
         if let Some(value) = self.env().get_sym_in_frame(sym) {
             return Some(value.clone());
@@ -106,34 +108,15 @@ impl Interpreter {
                 // caller is suspended until the frame pops, so its code is
                 // alive while the frame is on `call_frames`.
                 let caller = unsafe { &*(frame.caller_code as *const CompiledCode) };
-                if let Some(i) = caller.locals.iter().position(|name| name == env_key) {
-                    if dynamic {
-                        return Some(
-                            frame
-                                .saved_env
-                                .get_sym_in_frame(sym)
-                                .cloned()
-                                .unwrap_or_else(any),
-                        );
-                    }
-                    if let Some(value) = region.get(i) {
-                        return Some(from_slot(value));
-                    }
+                if let Some(i) = caller.locals.iter().position(|name| name == env_key)
+                    && let Some(value) = region.get(i)
+                {
+                    return Some(from_slot(value));
                 }
             }
             if let Some(value) = frame.saved_env.get_sym_in_frame(sym) {
                 return Some(value.clone());
             }
-        }
-        // A nested run (the closure `map` calls) starts a `call_frames` of
-        // its own; the frames it hides are still on the caller env stack.
-        // A light call pushes no frame: its env chains over the caller's.
-        if dynamic {
-            return self
-                .env()
-                .get_sym_in_tiers(sym)
-                .or_else(|| self.caller_frame_binding(sym))
-                .cloned();
         }
         None
     }
