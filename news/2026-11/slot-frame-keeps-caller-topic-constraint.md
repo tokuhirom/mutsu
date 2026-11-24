@@ -11,7 +11,7 @@ therefore accepted the `Str` assignment, where rakudo throws
 env-unchanged assertion instead. PDF's `t/write-ast.t` hit that panic through
 `multi method write(Any:U $_) { $.write-null($_) }` (#19146).
 
-The slot frame now pushes its routine frame without the drop. Its body never
+The slot frame now pushes its routine frame without the drop (an `on_caller_env` flag on the method-frame push). Its body never
 names `$_`, and it has no env of its own to drop the constraint from. The
 method-frame push moved out of `accessors_stack.rs` into
 `method_routine_frame.rs`.

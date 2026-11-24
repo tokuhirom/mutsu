@@ -95,6 +95,7 @@ impl Interpreter {
                 class: None,
                 role: None,
             },
+            false,
         );
         let saved_line = self.cur_source_line;
         if let Some(line) = cc.source_line {

@@ -13,6 +13,8 @@ impl Interpreter {
     /// `callable_id` is the per-invocation `__mutsu_callable_id` the method
     /// body runs under (see `RoutineFrame::callable_id`). `fixtures` is the
     /// frame's invocant / `?CLASS` / `?ROLE` record (ADR-14633).
+    /// `on_caller_env` marks a method that runs on its caller's env handle.
+    // Cost: O(1) amortized.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn push_method_routine_with_location(
         &mut self,
@@ -26,42 +28,15 @@ impl Interpreter {
         is_hidden_from_backtrace: bool,
         callable_id: u64,
         fixtures: super::routine_stack::FrameFixtures,
+        on_caller_env: bool,
     ) {
-        self.drop_inherited_topic_constraint();
-        self.push_method_routine_on_caller_env(
-            package,
-            lexical_package,
-            name,
-            line,
-            file,
-            def_file,
-            is_submethod,
-            is_hidden_from_backtrace,
-            callable_id,
-            fixtures,
-        );
-    }
-
-    /// [`Self::push_method_routine_with_location`] for a method that runs on
-    /// its caller's env handle (the slot method frame, ADR-18393): the
-    /// caller's typed-`$_` constraint is left alone. The callee has no env of
-    /// its own to drop it from, and its body never names `$_`; dropping it
-    /// would strip the constraint from the caller (#19146).
-    // Cost: O(1) amortized.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn push_method_routine_on_caller_env(
-        &mut self,
-        package: Symbol,
-        lexical_package: Symbol,
-        name: Symbol,
-        line: Option<u32>,
-        file: Option<Symbol>,
-        def_file: Option<Symbol>,
-        is_submethod: bool,
-        is_hidden_from_backtrace: bool,
-        callable_id: u64,
-        fixtures: super::routine_stack::FrameFixtures,
-    ) {
+        // A method that runs on its caller's env handle (the slot method
+        // frame, ADR-18393) has no env of its own to drop the caller's
+        // typed-`$_` constraint from, and its body never names `$_`:
+        // dropping it would strip the constraint from the caller (#19146).
+        if !on_caller_env {
+            self.drop_inherited_topic_constraint();
+        }
         let invocation_id = self.take_invocation_id();
         let frame = super::RoutineFrame {
             package,
