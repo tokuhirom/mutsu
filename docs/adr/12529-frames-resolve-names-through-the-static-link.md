@@ -2277,20 +2277,24 @@ or a measured necessity:
   such closures instead. That put the scope around the `EVAL` into the
   capture, where the by-name lookups of the routines the closure calls (which
   still walk their callers, §1.3) found a caller's shadowing lexical: Red's
-  `t/124-compiler-callables` test 59 failed. Each recorded value is the
-  local's cell, boxed in place, so a later write is seen (#19009). A name a
-  nested block redeclares is the variable of its first slot, since `UNIT::`
-  names the unit's outermost scope. The env is rebound only while that slot
-  is the visible binding. Boxing the shadow that was visible where the
-  closure was created had handed it to the by-name readers of the outer
-  variable, which is what failed Red's test the first time. Only scalars
-  are boxed. An `@`/`%`/`&` slot holds its aggregate or code object, which
-  in-place writes already share, so it is recorded as itself: wrapping it in
-  a scalar cell itemized it under the unit's own readers, and the
-  `EVAL(slurp($file).AST)` check of every `t/` file caught that. A boxed
-  scalar of the code calling `Perl6::Compiler.eval` is handed to the unit as
-  a run-time binding for its callbacks (#16977), so the unit's
-  undeclared-variable check does not count it as a declaration.
+  `t/124-compiler-callables` test 59 failed. Each recorded variable is the
+  one of the name's first slot, since `UNIT::` names the unit's outermost scope. An
+  `@`/`%`/`&` slot is recorded as its object, which in-place writes share; a
+  scalar slot that already is a shared cell as that cell. Any other scalar
+  gets a holder cell of its own, which the unit fills with the variable's
+  final value when its mainline ends (returned or died), so a write the unit
+  makes after creating the closure is seen (#19009). The unit's slots are
+  never boxed for this. Boxing them in place was tried twice and failed:
+  boxing the shadow visible where the closure was created handed it to the
+  by-name readers of the outer variable (Red's test 59), and boxing every
+  unit scalar broke code paths that still treat a cell local differently
+  from a plain one (accessor objects, `Signature.ACCEPTS`, raw closure
+  parameters), which the `EVAL(slurp($file).AST)` check of every `t/` file
+  caught. A closure called while the unit is still running sees a holder's
+  value from when it was created. Boxing a scalar also exposed that
+  `Perl6::Compiler.eval` hands its unit the caller's shared cells as
+  run-time bindings for its callbacks (#16977): the unit's
+  undeclared-variable check no longer counts them as declarations.
 - **The caller-frame entry's flushed-slot overlay is a block tier**, not a
   frame root, so `Env::enclosing_scopes` of the entry starts at the calling
   frame's own root and link. A frame flattened into the bottom of its chain

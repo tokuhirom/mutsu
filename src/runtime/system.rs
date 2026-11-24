@@ -726,7 +726,10 @@ impl Interpreter {
         // the next line of a REPL session (runtime::repl_compiler); the
         // snapshot has to be taken before the cleanup below drops it.
         self.begin_unit_capture();
+        let unit_depth = self.block_scope_depth;
         let mut outcome = self.eval_unit_value(&stmts, &mut free_var_writes);
+        // The closures the unit created see its final values through `UNIT::`.
+        self.settle_eval_unit_holders(unit_depth);
         self.end_unit_capture();
         // The free variables this snippet WROTE (`EVAL '$a = 32'`). They are
         // assignments to the caller's lexicals, not the snippet's own `my`,
