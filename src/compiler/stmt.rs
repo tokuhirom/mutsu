@@ -2667,6 +2667,7 @@ impl Compiler {
                     && !self.local_map.contains_key(name.as_str())
                     && !self.enclosing_local_names.contains(name.as_str())
                     && !self.class_body_static_code_vars.contains(name)
+                    && !self.class_body_our_code_vars.contains(name)
                     && !name.starts_with("&!")
                 {
                     self.code.emit(OpCode::AssignReadOnly);

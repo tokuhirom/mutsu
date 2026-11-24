@@ -1509,6 +1509,17 @@ pub(crate) struct Compiler {
     /// must still target the class package's static store, while an
     /// undeclared routine assignment remains readonly.
     pub(crate) class_body_static_code_vars: HashSet<String>,
+    /// Code-variable names a class body declares `our` (`our &t`). A later
+    /// body statement's `&t = ...` assigns the package variable `&S::t`, so
+    /// it is not a routine-name assignment either; unlike
+    /// [`Self::class_body_static_code_vars`] the name stays package-qualified
+    /// (#19152). Set only for the body's own statement chunks: a method or
+    /// sub body does not reach a bare `our &t` through the package cell.
+    // TODO: a bodiless `our &t` keeps the two-store sequence (no cell shared
+    // with `&S::t`), so a method's `&t = ...` and a later body statement's
+    // `t()` cannot see the package value yet; once it shares the cell as
+    // `our &t = ...` does, inherit this set into method and sub bodies too.
+    pub(crate) class_body_our_code_vars: HashSet<String>,
     /// While a class declaration's methods compile (`add_class_decl_plan`):
     /// the outer names they write, and those they rebind, which the class
     /// body's own declaration of the name gives a shared cell
@@ -2323,6 +2334,7 @@ impl Compiler {
             current_package: "GLOBAL".to_string(),
             in_unit_package: false,
             class_body_static_code_vars: HashSet::new(),
+            class_body_our_code_vars: HashSet::new(),
             type_body_method_writes: None,
             package_body_lexicals: HashSet::new(),
             package_runtime_our_names: None,
