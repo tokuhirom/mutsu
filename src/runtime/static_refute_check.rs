@@ -367,6 +367,30 @@ impl Interpreter {
     }
 }
 
+/// The CHECK-time verdict split into what fails now and what waits: rakudo
+/// reports a refuted call after the unit's CHECK phasers ran, so a unit with
+/// a CHECK phase (CHECK phasers, or a BEGIN prologue that may queue check
+/// code) holds it until the phase ends (`RunCheckCode`).
+// Cost: O(s), s = top-level statements.
+pub(crate) fn defer_past_check_phase(
+    verdict: Result<(), RuntimeError>,
+    prologue_len: usize,
+    stmts: &[Stmt],
+) -> (Result<(), RuntimeError>, Option<RuntimeError>) {
+    let check_phase = prologue_len > 0
+        || stmts.iter().any(|stmt| {
+            matches!(stmt, Stmt::Phaser { kind: crate::ast::PhaserKind::Check, .. })
+        });
+    match verdict {
+        Err(error) if check_phase => (Ok(()), Some(error)),
+        verdict => (verdict, None),
+    }
+}
+
+/// Core traits, which leave the signature as written.
+const CORE_TRAITS: &[&str] = &["DEPRECATED", "test-assertion", "implementation-detail"];
+const CORE_PARAM_TRAITS: &[&str] = &["copy", "rw", "raw", "readonly"];
+
 /// The callees the pass judges, by name: an `only` sub declared once at the
 /// unit's top level, or the unit's top-level `multi` candidates (with their
 /// `proto`, if any) when the name is declared nowhere else; never a name
@@ -378,6 +402,7 @@ fn callees<'ast>(
 ) -> HashMap<&'ast str, (Rules, Vec<&'ast [ParamDef]>)> {
     let mut found: HashMap<&str, (Rules, Vec<&[ParamDef]>)> = HashMap::new();
     let mut protos: HashMap<&str, usize> = HashMap::new();
+    let mut traited: HashSet<&str> = HashSet::new();
     for stmt in stmts {
         match stmt {
             Stmt::SubDecl {
@@ -386,8 +411,18 @@ fn callees<'ast>(
                 param_defs,
                 signature_alternates,
                 multi,
+                custom_traits,
                 ..
             } if signature_alternates.is_empty() => {
+                // A user trait runs at BEGIN time and can rewrite the signature
+                // (Deps' `is injected` makes every parameter optional); `__`
+                // traits are mutsu's internal markers.
+                let core = |t: &String, core: &[&str]| core.contains(&t.as_str());
+                if !custom_traits.iter().all(|(t, _)| t.starts_with("__") || core(t, CORE_TRAITS))
+                    || !param_defs.iter().flat_map(|p| &p.traits).all(|t| core(t, CORE_PARAM_TRAITS))
+                {
+                    traited.insert(name.as_str());
+                }
                 let rules = if *multi { Rules::Multi } else { Rules::Only };
                 let entry = found.entry(name.as_str()).or_insert((rules, Vec::new()));
                 if entry.0 != rules {
@@ -402,6 +437,9 @@ fn callees<'ast>(
         }
     }
     found.retain(|name, (rules, candidates)| {
+        if traited.contains(name) {
+            return false;
+        }
         let protos = protos.get(name).copied().unwrap_or(0);
         let declared = survey.decls.get(*name).copied().unwrap_or(0);
         // A `multi` adds to the candidates a core routine of the same name

@@ -4,7 +4,7 @@ use Test;
 # compile error: nothing in the unit runs, and the error points at the call.
 # Expected texts are rakudo 2026.11's.
 
-plan 35;
+plan 38;
 
 sub run-code(Str $code) {
     my $p = run $*EXECUTABLE, '-e', $code, :out, :err;
@@ -117,7 +117,10 @@ for q[sub f(Int:D $x) {}; f("a")],
     q[proto p(|) {*}; multi p(Int $x) {}; sub o(Str $s) {}; BEGIN &p.add_dispatchee(&o); p("a")],
     q[multi min(Int $a) { "u" }; my $m = min(3, 4)],
     q[sub f(Int $x) {}; sub g(Cool $s) { f($s) }],
-    q[sub f(Int $x) {}; sub g(Str() $s) { f($s) }]
+    q[sub f(Int $x) {}; sub g(Str() $s) { f($s) }],
+    # A trait runs at BEGIN time and can rewrite the signature it is on
+    # (Deps' `is injected` makes every parameter optional).
+    q[use nqp; multi trait_mod:<is>(Parameter $p, :$opt!) { my $f = $p.^attributes.first: *.name eq q"$!flags"; $f.set_value: $p, $f.get_value($p) +| nqp::const::SIG_ELEM_IS_OPTIONAL }; sub g($s is opt) {}; g()]
     -> $tail {
     my ($out, $err, $exit) = run-code("say 1; $tail");
     is $out, "1\n", "runs before the binder decides: $tail";
@@ -125,3 +128,13 @@ for q[sub f(Int:D $x) {}; f("a")],
 
 my ($out, $err, $exit) = run-code(q[sub f(Cool $x) {}; f(1); say "ok"]);
 is $out, "ok\n", 'a call that binds is not refuted';
+
+# rakudo's optimizer reports the refutation after the unit's CHECK phasers
+# ran (the `static` distribution reports its own verdict from one), and a
+# CHECK phaser that exits ends the run before it.
+($out, $err, $exit) = run-code(q[CHECK { say "check" }; sub f(Int $x) {}; f("a")]);
+is-deeply ($out, $err.lines[1], $exit),
+    ("check\n", 'Calling f(Str) will never work with declared signature (Int $x)', 1),
+    'a CHECK phaser runs before the refutation is reported';
+($out, $err, $exit) = run-code(q[CHECK { say "check"; exit 3 }; sub f(Int $x) {}; f("a")]);
+is-deeply ($out, $err, $exit), ("check\n", '', 3), 'a CHECK phaser that exits ends the run first';

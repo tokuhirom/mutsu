@@ -784,6 +784,8 @@ impl Interpreter {
         self.premerge_top_level_uses(crate::runtime::main_unit(), &body_main);
         // An undeclared bareword term is the same CHECK-time failure
         // ("Undeclared name", #9768).
+        let (static_refuted, deferred_refutation) =
+            super::static_refute_check::defer_past_check_phase(static_refuted, prologue_len, &body_main);
         let checked = self
             .check_undeclared_routines_with_guards(&body_main)
             .and_then(|guards| {
@@ -796,6 +798,9 @@ impl Interpreter {
             });
         let (begin_prologue, head_len) = match checked {
             Ok(guards) => {
+                if let Some(error) = deferred_refutation {
+                    crate::unit_diagnostics::defer_refutation(error);
+                }
                 let end = prologue_len + guards.len();
                 body_main.splice(prologue_len..prologue_len, guards);
                 // Everything before this marker runs at BEGIN time in rakudo,
