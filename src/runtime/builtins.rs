@@ -184,7 +184,7 @@ impl Interpreter {
         // array: the element still has a container (#19080).
         let autoviv_parent = container
             .as_ref()
-            .is_some_and(|c| matches!(c.view(), ValueView::Package(name) if *name == crate::symbol::wk::any()));
+            .is_some_and(|c| matches!(c.view(), ValueView::Package(name) if name == crate::symbol::wk::any()));
         if let Some(c) = container.as_ref().filter(|_| !autoviv_parent) {
             // A producer Seq can be a flat stream whose value cells occur at
             // selected positions (`.kv`) or inside Pair values (`.pairs`).
@@ -329,7 +329,7 @@ impl Interpreter {
             (ValueView::Package(name), ValueView::Int(i)) if name == crate::symbol::wk::any() => {
                 (i >= 0).then(|| format!("[{i}]"))
             }
-            (ValueView::Hash(map), ValueView::Str(_)) if map.key_type.is_none() => {
+            (ValueView::Hash(map), ValueView::Str(_) | ValueView::Int(_)) if map.key_type.is_none() => {
                 let key = subscript.to_string_value();
                 (!map.contains_key(key.as_str())).then(|| format!("{{'{key}'}}"))
             }
