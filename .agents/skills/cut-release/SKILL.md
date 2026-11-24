@@ -25,6 +25,27 @@ Translate them with the mapping table in
 `enable_pr_auto_merge` for the bump PR, `actions_list` / `get_job_logs` to follow the run,
 `get_release_by_tag` to verify the Release. Every `git` command is the same in both environments.
 
+## 0. Check the release gate
+
+Releases come about once a month, and only when the gate in
+[PLAN.md](../../../PLAN.md) "Release cadence and gate" holds:
+
+1. **Ecosystem dist parity is 100%.** Read the headline in `ecosystem/summary.md` on the
+   `ecosystem-data` branch:
+
+   ```bash
+   git fetch origin ecosystem-data
+   git show origin/ecosystem-data:ecosystem/summary.md | sed -n 1,35p
+   ```
+
+   The ledger must have been measured at or after the commit you will release, or at a commit
+   whose later merges you have checked cannot change the result.
+2. **"Regressed since the previous ledger" is `_None._`** in the same file.
+3. **No open `release:A` issue.**
+
+If any check fails, do not cut the release. Report which check fails to the user. A month that
+misses the gate skips its release.
+
 ## 1. Pick the version by hand
 
 There is no label-driven *version* automation. Use semver judgment over what actually merged
