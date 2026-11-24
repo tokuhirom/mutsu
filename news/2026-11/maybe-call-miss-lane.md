@@ -22,5 +22,6 @@ reaches it:
 - `FALLBACK`, `handles` and a user `^find_method` answer the call, so it is
   never recorded.
 
-10000 `.?missing` calls on a user-class instance go from about 141,000 to
-about 2,000 instructions each.
+A `.?missing` call on a user-class instance goes from 143,386 to 2,302
+instructions. 10000 of them take about 3.5 ms, down from about 0.15 s;
+rakudo takes about 2 ms.
