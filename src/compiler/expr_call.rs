@@ -2299,6 +2299,19 @@ impl Compiler {
                     // before; other calls mark only a closure literal.
                     let value_expr = Self::unwrap_named_arg_value(arg);
                     let escaping_args = is_start || Self::is_closure_literal_arg(value_expr);
+                    // The parser's callsite-line marker (`f()`) stays an
+                    // in-band constant Pair, as on the `&code()` path: as an
+                    // out-of-band named entry it turned every parenthesized
+                    // zero-argument call into `CallFuncNamed`, which shuts the
+                    // positional light and TRIR doors (#18080). Those doors
+                    // read the line off the in-band marker and pop it.
+                    if lex_import_chain.is_none()
+                        && let Some(marker) = Self::callsite_line_marker_const(arg)
+                    {
+                        let idx = self.code.add_constant(marker);
+                        self.code.emit(OpCode::LoadConst(idx));
+                        continue;
+                    }
                     if let Expr::Binary {
                         op: TokenKind::FatArrow,
                         left,

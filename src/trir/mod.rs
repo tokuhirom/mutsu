@@ -164,6 +164,13 @@ pub(crate) struct TrInnerCall {
     pub(crate) native_args: u32,
     /// The kind the call leaves on a bank.
     pub(crate) result: TrKind,
+    /// The source line of the statement the call is written in, adopted as
+    /// the current line before the call runs (0: none recorded), as the VM
+    /// adopts its per-instruction line at a call (`sync_source_line`). A
+    /// `die` the callee raises, and a caller frame a backtrace lists, then
+    /// report the line in this body, not the line of whatever called it
+    /// (#18080).
+    pub(crate) line: u32,
 }
 
 /// One pre-resolved outer lexical (ADR-0110 §3.1).
@@ -228,6 +235,8 @@ pub(crate) struct TrMethodCall {
     pub(crate) name: Symbol,
     /// Positional arguments after the receiver.
     pub(crate) arity: u8,
+    /// The call's source line, as [`TrInnerCall::line`].
+    pub(crate) line: u32,
 }
 
 /// A compile-time-resolved call to a TRIR routine (ADR-0110 §3.3).

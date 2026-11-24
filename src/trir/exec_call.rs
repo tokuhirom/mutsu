@@ -65,6 +65,16 @@ impl Interpreter {
     /// Execute a `CallTr` site. `Ok(None)` means the callee could not be
     /// served after all (it has been replaced, or wrapped), which bails the
     /// whole chunk.
+    /// Adopt a call site's recorded source line as the current line
+    /// (`TrInnerCall::line`); a site with none leaves it as it is.
+    // Cost: O(1).
+    #[inline(always)]
+    fn trir_adopt_call_line(&mut self, line: u32) {
+        if line != 0 {
+            self.cur_source_line = i64::from(line);
+        }
+    }
+
     pub(super) fn exec_trir_inner_call(
         &mut self,
         chunk: &TrChunk,
@@ -76,6 +86,7 @@ impl Interpreter {
         let TrCallee::Trir(link) = &call.callee else {
             return Ok(None);
         };
+        self.trir_adopt_call_line(call.line);
         self.trir_explode_fatal_args(call, frame, chunk.captured_fatal_mode)?;
         // ADR-0110 §3.3's run-time guard, as on the outermost door.
         if self.any_routine_wrapped() && self.routine_is_wrapped(&call.name.resolve()) {
@@ -200,6 +211,7 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
     ) -> Result<Option<()>, RuntimeError> {
         let call = &chunk.calls[site as usize];
+        self.trir_adopt_call_line(call.line);
         self.trir_explode_fatal_args(call, frame, chunk.captured_fatal_mode)?;
         match self.try_trir_gen_link(chunk, site, call, frame, compiled_fns)? {
             super::gen_link::GenOutcome::Done => return Ok(Some(())),
@@ -360,6 +372,7 @@ impl Interpreter {
         site: u32,
     ) -> Result<(), RuntimeError> {
         let m = &chunk.methods[site as usize];
+        self.trir_adopt_call_line(m.line);
         let n = m.arity as usize;
         let base = self.trir.os.len().saturating_sub(n);
         // `use fatal`: the method-call arms' argument check (the receiver

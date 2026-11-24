@@ -4407,15 +4407,22 @@ impl Compiler {
             // refuse a named argument without losing rw-source tracking. A
             // bare `FALSE` means named-without-a-source; an array beginning
             // with `FALSE` carries the ordinary source descriptor in slot 1.
-            entries.push(if Self::is_named_arg_expr(arg) {
-                if source.is_nil() {
-                    Value::FALSE
+            // The parser's callsite-line marker (`f()`) is no argument at all:
+            // every call path strips it before binding, so it does not make
+            // the call a named one, which would shut the positional light
+            // and TRIR doors for every parenthesized zero-argument call
+            // (#18080).
+            entries.push(
+                if Self::is_named_arg_expr(arg) && Self::callsite_line_marker_const(arg).is_none() {
+                    if source.is_nil() {
+                        Value::FALSE
+                    } else {
+                        Value::array(vec![Value::FALSE, source])
+                    }
                 } else {
-                    Value::array(vec![Value::FALSE, source])
-                }
-            } else {
-                source
-            });
+                    source
+                },
+            );
         }
         if entries.iter().all(|v| v.is_nil()) {
             None

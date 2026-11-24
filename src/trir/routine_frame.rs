@@ -62,7 +62,11 @@ impl Interpreter {
             let unit = self.unit_of_source_sym(Some(file));
             std::mem::replace(&mut self.current_unit, unit)
         });
+        // The body's call sites adopt their own lines (`TrInnerCall::line`);
+        // the caller's line is its own again once the body is done.
+        let saved_line = self.cur_source_line;
         let outcome = self.run_trir_chunk(chunk, frame, compiled_fns);
+        self.cur_source_line = saved_line;
         if let Some(saved_unit) = saved_unit {
             self.current_unit = saved_unit;
         }
@@ -85,7 +89,9 @@ impl Interpreter {
             return self.run_trir_routine(chunk, frame, compiled_fns);
         }
         self.trir_defer_routine(chunk);
+        let saved_line = self.cur_source_line;
         let outcome = self.run_trir_chunk(chunk, frame, compiled_fns);
+        self.cur_source_line = saved_line;
         self.trir_finish_deferred_routine();
         self.finish_trir_routine(chunk, outcome)
     }

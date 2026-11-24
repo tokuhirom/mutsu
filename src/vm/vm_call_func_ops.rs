@@ -808,6 +808,9 @@ impl Interpreter {
                         // touches nothing, so the light chain below is
                         // reached exactly as it was.
                         if cf.trir.is_some()
+                            // A parameterless routine runs TRIR only when
+                            // `zero_param_trir_ok` says so (#18080).
+                            && (!cf.param_defs.is_empty() || Self::zero_param_trir_ok(cf))
                             // ADR-0110 §3.3's run-time guard, as on the
                             // statically linked door: a wrapped routine must
                             // reach its wrapper.
@@ -815,9 +818,23 @@ impl Interpreter {
                             && !has_junction
                             && !call_has_slip
                             && !call_has_named
-                            && cl.is_none()
+                            && (cl.is_none()
+                                || Self::is_callsite_line_marker(&self.stack[self.stack.len() - 1]))
                         {
-                            let start = self.stack.len() - arity_usize;
+                            // A parenthesized zero-argument call (`f()`)
+                            // carries the parser's callsite-line marker last:
+                            // record its line as the light path does, and
+                            // hand TRIR the arguments without it (#18080).
+                            // Restored on a decline, so the chain below sees
+                            // the stack exactly as it was.
+                            let marker = if cl.is_some() {
+                                loan_env!(self, set_pending_callsite_line(cl));
+                                self.stack.pop()
+                            } else {
+                                None
+                            };
+                            let start =
+                                self.stack.len() - (arity_usize - marker.is_some() as usize);
                             if let Some(result) =
                                 self.try_call_trir(cf, start, Some(code), compiled_fns)
                             {
@@ -825,8 +842,32 @@ impl Interpreter {
                                 self.drain_and_reconcile_after_cached_call(code);
                                 return Ok(());
                             }
+                            if let Some(marker) = marker {
+                                self.stack.push(marker);
+                            }
                         }
-                        if !has_junction
+                        // A parameterless routine (#18080) is served as the
+                        // general path's resolution-cache hit serves it, never
+                        // by the positional-light bind below, whose gate admits
+                        // only a non-empty signature.
+                        let zero_param = cf.param_defs.is_empty();
+                        if zero_param
+                            && !has_junction
+                            && !call_has_slip
+                            && !call_has_named
+                            && Self::is_cached_zero_param_routine(cf, name_str)
+                        {
+                            return self.call_zero_param_routine(
+                                code,
+                                cf,
+                                name_str,
+                                name_sym,
+                                arity_usize,
+                                compiled_fns,
+                            );
+                        }
+                        if !zero_param
+                            && !has_junction
                             && !call_has_slip
                             && !call_has_named
                             // This cache is keyed by NAME, so one entry serves
@@ -1471,70 +1512,32 @@ impl Interpreter {
                 && Self::is_fast_call_eligible(cf, name_str)
                 && !cf.is_raw
             {
-                // Pop the callsite pair arg(s) from the stack and extract callsite line
-                let arity = arity as usize;
-                if self.stack.len() >= arity && arity > 0 {
-                    let start = self.stack.len() - arity;
-                    let popped: Vec<Value> = self.stack.drain(start..).collect();
-                    let cl = crate::runtime::Interpreter::peek_callsite_line(&popped);
-                    if cl.is_some() {
-                        loan_env!(self, set_pending_callsite_line(cl));
-                    } else {
-                        // `is_fast_call_eligible` requires a completely empty
-                        // signature (`cf.params.is_empty() && cf.param_defs.is_empty()`),
-                        // so any popped value that is NOT the synthetic
-                        // callsite-line marker is a genuine over-supplied
-                        // positional argument (`todo/tickets/fast-binder-skips-too-many-positionals-check.md`).
-                        // Raise the same "Too many positionals passed"
-                        // wording the general binder produces
-                        // (binding_signature.rs) -- several call sites
-                        // pattern-match on this exact message.
-                        return Err(RuntimeError::typed(
-                            "X::TypeCheck::Argument",
-                            Self::type_check_argument_attrs(
-                                name_str,
-                                &cf.param_defs,
-                                &popped,
-                                format!(
-                                    "Too many positionals passed; expected 0 arguments but got {}",
-                                    popped.len()
-                                ),
-                            ),
-                        ));
+                // Name the routine in the name-keyed light cache, whose hit
+                // path serves it ahead of this whole preamble (#18080): TRIR
+                // first, then `call_zero_param_routine`, as here.
+                if !skip_name_caches {
+                    let cur_pkg_sym = self.current_package_sym();
+                    if self
+                        .caches
+                        .pos_light_call_cache
+                        .get(self.caches.fn_resolve_gen, &(name_sym, cur_pkg_sym))
+                        .is_none()
+                    {
+                        let target = crate::runtime::PosLightTarget::Compiled {
+                            key: *cached_key,
+                            fingerprint: cf.fingerprint,
+                        };
+                        self.pos_light_cache_insert(name_sym, cur_pkg_sym, target);
                     }
                 }
-                let result =
-                    match self.call_compiled_function_fast(cf, name_str, name_sym, compiled_fns) {
-                        Ok(v) => v,
-                        Err(e) => {
-                            // Slice F (exception-escape coherence): an exceptional exit
-                            // (`die`/`fail`) still ran the callee's UNDO/LEAVE phasers,
-                            // which can mutate a captured-outer variable (e.g. `UNDO {
-                            // $ng ~= "U" }`). The body recorded those writes into
-                            // `pending_rw_writeback_sources`; drain them to this caller's
-                            // local slots *before* propagating the error, exactly as the
-                            // Ok path does, so the reverse `sync_locals_from_env` pull is
-                            // not required for coherence.
-                            self.apply_pending_rw_writeback(code);
-                            return Err(e);
-                        }
-                    };
-                self.stack.push(result);
-                // Slice F: write any captured-outer variables the callee mutated
-                // straight through to this caller's local slots, so they stay
-                // coherent without the reverse `sync_locals_from_env` pull. The
-                // env_dirty-gated reconcile additionally catches a *nested*
-                // callee's captured-outer write (`via()` -> `bump-outer()` ->
-                // `$acc`), which the single-frame drain discards one frame too
-                // deep, so `via(); via()` accumulates correctly.
-                self.drain_and_reconcile_after_cached_call(code);
-                // Slice 6.3 step 2: no blanket env_dirty here. call_compiled_function_fast
-                // now signals env_dirty precisely: for a function WITH locals via its
-                // scoped-overlay / clone merge (captured-outer write only), and for a
-                // 0-local function via the compile-time `has_env_writes` gate. A pure
-                // 0-arg call (`sub f { 42 }`) no longer forces a per-call
-                // O(caller-locals) locals pull.
-                return Ok(());
+                return self.call_zero_param_routine(
+                    code,
+                    cf,
+                    name_str,
+                    name_sym,
+                    arity as usize,
+                    compiled_fns,
+                );
             }
         }
         let name = Self::const_str(code, name_idx).to_string();

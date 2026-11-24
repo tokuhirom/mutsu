@@ -64,6 +64,7 @@ impl TrirCompiler<'_> {
         self.methods.push(TrMethodCall {
             name: crate::symbol::Symbol::intern(name),
             arity: args.len() as u8,
+            line: self.cur_line,
         });
         self.ops.push(TrOp::MethodGen(idx));
         Some(TrKind::Obj)

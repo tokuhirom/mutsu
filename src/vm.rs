@@ -148,6 +148,7 @@ mod vm_call_light;
 mod vm_call_light_runtime_names;
 mod vm_call_light_sigilless;
 mod vm_call_site_ops;
+mod vm_call_zero_param;
 mod vm_core_routine_autothread;
 mod vm_eval_unit_capture;
 mod vm_frame_lexical;

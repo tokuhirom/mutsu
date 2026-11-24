@@ -124,6 +124,7 @@ impl TrirCompiler<'_> {
             args: plan,
             native_args,
             result: kind,
+            line: self.cur_line,
         });
         self.ops.push(if resolved {
             TrOp::CallTr(idx)
