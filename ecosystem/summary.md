@@ -7,9 +7,9 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **99.7%** (1336/1340) |
-| file parity | 98.4% (5071/5152) |
-| assertion parity | 99.6% |
+| **dist parity** (published headline) | **99.8%** (1336/1339) |
+| file parity | 99.9% (5157/5164) |
+| assertion parity | 99.9% |
 | accepted divergences (out of the KPI, ADR-0130) | 13 file(s) |
 | out-of-scope distributions (`exclude.txt`, out of the KPI) | 14 |
 
@@ -18,8 +18,8 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | `blocked_dep` | 3 |
 | `blocked_load` | 3 |
 | `green` | 1336 |
-| `no_baseline` | 328 |
-| `partial` | 4 |
+| `no_baseline` | 329 |
+| `partial` | 3 |
 | out of scope (`exclude.txt`, any status) | 14 |
 
 ## Regressed since the previous ledger
@@ -28,7 +28,8 @@ Distributions measured at the same version in the ledger commit this
 rollup replaces that got a worse status, or a baseline file that
 lost parity (a file rakudo now fails is not counted).
 
-_None._
+- `EEL` 0.3: green → partial (5 files lost parity: `t/10-examples.t`, `t/17-subpattern-captures.t`, `t/19-proto.t`, …)
+- `ParaSeq` 0.2.7: green → partial (1 file lost parity: `t/09-map.rakutest`)
 
 ## Distributions
 
@@ -82,7 +83,7 @@ _None._
 | `Algorithm::XGBoost` | 0.0.6 | no_baseline | — |
 | `Algorithm::ZobristHashing` | 0.03 | green | 1/1 |
 | `AlgorithmsIT` | 0.0.4 | green | 6/6 |
-| `Alien::Libduckdb` | 1.1.0 | green | 1/1 |
+| `Alien::Libduckdb` | 1.2.1 | green | 1/1 |
 | `allow-no` | 0.0.1 | green | 1/1 |
 | `annotations` | 0.1.0 | green | 2/2 |
 | `Anolis` | 1.0.0 | no_baseline | — |
@@ -130,7 +131,7 @@ _None._
 | `App::RakuCron` | 0.0.1 | no_baseline | — |
 | `App::RakuDocToPDF` | 0.0.3 | green | 2/2 |
 | `App::Rakus` | 0.0.2 | green | 1/1 |
-| `App::samaki` | 0.0.35 | green | 6/6 |
+| `App::samaki` | 0.0.35 | green | 5/5 |
 | `App::SerializerPerf` | 0.0.5 | no_baseline | — |
 | `App::ShowPath` | 0.0.2 | green | 1/1 |
 | `App::Stouch` | 0.3.2 | green | 2/2 |
@@ -164,7 +165,7 @@ _None._
 | `Array::Sorted::Util` | 0.0.11 | green | 5/5 |
 | `Array::Sparse` | 0.0.13 | green | 1/1 |
 | `Array::Unsorted::Map` | 0.0.4 | green | 1/1 |
-| `Arrow::IPC` | 0.1.0 | green | 1/1 |
+| `Arrow::IPC` | 0.1.2 | green | 1/1 |
 | `as-cli-arguments` | 0.0.10 | green | 2/2 |
 | `ASCII::To::Uni` | 0.1.1 | green | 1/1 |
 | `Ask` | 0.0.3 | no_baseline | — |
@@ -223,7 +224,7 @@ _None._
 | `Business::CreditCard` | 0.2 | green | 2/2 |
 | `BusyIndicator` | 0.6.2 | green | 1/1 |
 | `C::Parser` | 0.3.3 | green | 9/9 |
-| `Cache::Async` | 0.3.4 | green | 7/7 |
+| `Cache::Async` | 0.3.4 | green | 8/8 |
 | `caelum` | 0.1.1 | no_baseline | — |
 | `Calendar` | 0.0.4 | no_baseline | — |
 | `CBOR::Simple` | 0.1.4 | green | 7/7 |
@@ -271,7 +272,7 @@ _None._
 | `Compress::Zlib` | 2.0.0 | green | 4/4 |
 | `Compress::Zlib::Raw` | 2.0.0 | green | 2/2 |
 | `CompUnit::Util` | 0.7.0 | green | 8/8 |
-| `Concurrent::BoundedChannel` | 0.4.1 | green | 1/1 |
+| `Concurrent::BoundedChannel` | 0.4.1 | no_baseline | — |
 | `Concurrent::Iterator` | 1.1 | green | 3/3 |
 | `Concurrent::PChannel` | 0.0.4 | no_baseline | — |
 | `Concurrent::PriorityQueue` | 0.0.2 | green | 2/2 |
@@ -409,7 +410,7 @@ _None._
 | `DateTime::US` | 0.1.6 | green | 8/8 |
 | `Dawa` | 0.0.11 | green | 5/5 |
 | `DAWG` | 0.1.6 | green | 6/6 |
-| `DB::DuckDB` | 1.0.1 | no_baseline | — |
+| `DB::DuckDB` | 1.2.2 | no_baseline | — |
 | `DB::Migration::Declare` | 0.1.3 | green | 2/2 |
 | `DB::Migration::Simple` | 1.1 | green | 1/1 |
 | `DB::MySQL` | 0.8 | no_baseline | — |
@@ -485,7 +486,7 @@ _None._
 | `DSL::Translators` | 0.1.2 | no_baseline | — |
 | `Duck::CSV` | 0.0.2 | green | 1/1 |
 | `Duckie` | 0.0.16 | green | 1/1 |
-| `Duckula` | 0.32.0 | blocked_load | — |
+| `Duckula` | 0.35.5 | blocked_load | — |
 | `EBNF::Grammar` | 0.1.6 | green | 5/5 |
 | `EC` | 0.6.6 | green | 4/4 |
 | `ECMA262Regex` | 1.2 | green | 3/3 |
@@ -495,7 +496,7 @@ _None._
 | `Ecosystem::Cache` | 0.0.6 | no_baseline | — |
 | `EcosystemMakerFaker` | 0.1.1 | no_baseline | — |
 | `Edit::Files` | 0.0.7 | green | 1/1 |
-| `EEL` | 0.3 | green | 36/36 |
+| `EEL` | 0.3 | partial | 31/36 |
 | `EERPG` | 0.0.2 | green | 11/11 |
 | `eigenstates` | 0.0.12 | green | 1/1 |
 | `Elucid8::Build` | 0.13.5 | no_baseline | — |
@@ -698,14 +699,14 @@ _None._
 | `HTML::Strip` | 0.1.3 | green | 1/1 |
 | `HTML::Tag` | 0.1.2 | green | 4/4 |
 | `HTML::Template` | 0.0.1 | green | 3/3 |
-| `HTTP::Core` | 0.1.0 | green | 2/2 |
+| `HTTP::Core` | 0.1.0 | green | 1/1 |
 | `HTTP::Easy` | 1.3 | green | 1/1 |
 | `HTTP::HPACK` | 1.0.3 | green | 2/2 |
 | `HTTP::RequestTarget::Raw` | 0.1.0 | green | 1/1 |
 | `HTTP::Roles` | 0.2.3 | green | 1/1 |
 | `HTTP::Server::Async` | 0.2 | green | 8/8 |
 | `HTTP::Server::Async::Plugins::Router::Simple` | 0.1.2 | green | 1/1 |
-| `HTTP::Server::Logger` | 0.1.4 | green | 1/1 |
+| `HTTP::Server::Logger` | 0.1.4 | green | 2/2 |
 | `HTTP::Server::Middleware::JSON` | 0.0.3 | green | 1/1 |
 | `HTTP::Server::Router` | 0.1.7 | no_baseline | — |
 | `HTTP::Server::Router::YAML` | 0.0.1 | no_baseline | — |
@@ -879,7 +880,7 @@ _None._
 | `Linux::Cpuinfo` | 0.1.2 | green | 5/5 |
 | `Linux::Fuser` | 0.0.16 | green | 2/2 |
 | `Linux::Joystick` | 0.0.3 | green | 1/1 |
-| `Linux::NFTables` | 0.0.3 | green | 4/4 |
+| `Linux::NFTables` | 0.0.3 | green | 3/3 |
 | `List::Agnostic` | 0.0.7 | green | 1/1 |
 | `List::Allmax` | 0.0.1 | no_baseline | — |
 | `List::AllUtils` | 0.0.6 | green | 2/2 |
@@ -1117,7 +1118,7 @@ _None._
 | `Number::Denominate` | 2.002002 | green | 5/5 |
 | `Number::More` | 0.2.12 | green | 11/11 |
 | `NYI` | 0.0.2 | green | 1/1 |
-| `Object::Delayed` | 0.0.13 | green | 3/3 |
+| `Object::Delayed` | 0.0.13 | green | 4/4 |
 | `Object::Permission` | 0.0.7 | green | 6/6 |
 | `Object::Permission::Group` | 0.0.7 | green | 3/3 |
 | `Object::Trampoline` | 0.0.12 | green | 3/3 |
@@ -1183,7 +1184,7 @@ _None._
 | `P5unlink` | 0.0.1 | green | 1/1 |
 | `Pakku` | chou.5 | green | 4/4 |
 | `Parameterizable` | 0.0.4 | green | 2/2 |
-| `ParaSeq` | 0.2.7 | green | 47/47 |
+| `ParaSeq` | 0.2.7 | partial | 47/48 |
 | `Parse::Paths` | 0.1.3 | green | 1/1 |
 | `Pastebin::Gist` | 1.004002 | no_baseline | — |
 | `Pastebin::Shadowcat` | 2.001003 | no_baseline | — |
@@ -1202,7 +1203,7 @@ _None._
 | `PDF::Document` | 0.0.10 | no_baseline | — |
 | `PDF::Extract` | 0.0.4 | no_baseline | — |
 | `PDF::Font::Loader` | 0.8.15 | green | 4/4 |
-| `PDF::Font::Loader::CSS` | 0.0.1 | green | 1/1 |
+| `PDF::Font::Loader::CSS` | 0.0.1 | no_baseline | — |
 | `PDF::Font::Loader::HarfBuzz` | 0.0.2 | no_baseline | — |
 | `PDF::Grammar` | 0.3.6 | green | 10/10 |
 | `PDF::ISO_32000` | 0.0.13 | green | 2/2 |
@@ -1304,7 +1305,7 @@ _None._
 | `RakudoContainerfileBuilder` | 1.0.0 | no_baseline | — |
 | `RakudoPrereq` | 1.001005 | green | 2/2 |
 | `Rakuest` | 0.8.2 | green | 5/5 |
-| `Rakuish` | 0.106.2 | green | 22/22 |
+| `Rakuish` | 0.121.1 | partial | 25/26 |
 | `RakuPM` | 1.1.6 | green | 27/27 |
 | `RakuPMVerifyTmp` | 0.1.1 | green | 1/1 |
 | `RakupodObject` | 0.0.7 | no_baseline | — |
@@ -1321,11 +1322,11 @@ _None._
 | `ReadWriteLock` | 0.3.3 | green | 2/2 |
 | `RealDentalCosts::API` | 0.1.0 | no_baseline | — |
 | `Recipe::Parser` | 0.0.1 | green | 19/19 |
-| `Red` | 0.2.17 | partial | 62/137 |
+| `Red` | 0.2.17 | green | 137/137 |
 | `Red::Driver::DuckDB` | 0.0.6 | green | 1/1 |
 | `Red::Driver::MySQL` | 0.0.5 | green | 9/9 |
-| `Red::Driver::Pg` | 0.0.3 | partial | 3/4 |
-| `RedFactory` | 0.0.3 | partial | 1/3 |
+| `Red::Driver::Pg` | 0.0.3 | green | 4/4 |
+| `RedFactory` | 0.0.3 | green | 3/3 |
 | `Redis` | 0.1.6 | green | 17/17 |
 | `RedX::HashedPassword` | 0.0.8 | green | 3/3 |
 | `RegexUtils` | 0.1.5 | green | 3/3 |
@@ -1428,7 +1429,7 @@ _None._
 | `static` | 0.0.1 | green | 14/14 |
 | `Staticish` | 0.0.9 | green | 4/4 |
 | `Statistics` | 0.0.6 | no_baseline | — |
-| `Statistics::Distributions` | 0.1.8 | green | 3/3 |
+| `Statistics::Distributions` | 0.1.8 | green | 4/4 |
 | `Statistics::LinearRegression` | 1.1.2 | green | 1/1 |
 | `Stomp` | 0.1.0 | green | 4/4 |
 | `Storable::Lite` | 0.0.2 | green | 2/2 |
@@ -1474,7 +1475,7 @@ _None._
 | `Template::Mojo` | 0.2.2 | green | 5/5 |
 | `Template::Mustache` | 1.2.7 | green | 13/13 |
 | `Template::Nest::Fast` | 0.3.0 | green | 10/10 |
-| `Template::Nest::XS` | 0.1.10 | no_baseline | — |
+| `Template::Nest::XS` | 0.1.10 | green | 8/8 |
 | `Template::Protone` | 0.1.4 | green | 3/3 |
 | `Term::Choose` | 2.0.7 | green | 5/5 |
 | `Term::Choose::Util` | 1.4.8 | green | 3/3 |
@@ -1583,7 +1584,7 @@ _None._
 | `TinyID` | 1.0.6 | green | 1/1 |
 | `Today` | 0.0.8 | green | 1/1 |
 | `Tokenizers` | 0.3.0 | no_baseline | — |
-| `TOML` | 3 | partial | 2/5 |
+| `TOML` | 3 | green | 5/5 |
 | `TOML::Thumb` | 0.2 | green | 2/2 |
 | `Tomtit` | 0.1.37 | green | 1/1 |
 | `Tomtit::Profile::Python` | 0.0.2 | green | 1/1 |
@@ -1591,7 +1592,7 @@ _None._
 | `TooLoo` | 2.0.2 | no_baseline | — |
 | `TOP` | 0.0.7 | no_baseline | — |
 | `Touch` | 0.7.0 | blocked_load | — |
-| `Trait::Env` | 1.1.2 | green | 12/12 |
+| `Trait::Env` | 1.2 | green | 12/12 |
 | `Trait::IO` | 1.001001 | green | 2/2 |
 | `Trap` | 0.0.5 | green | 2/2 |
 | `Tree::Binary` | 0.0.8 | green | 3/3 |

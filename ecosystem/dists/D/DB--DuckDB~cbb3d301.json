@@ -31,7 +31,7 @@
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 1.25,
+        "secs": 1.56,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -45,7 +45,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.65,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -59,7 +59,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 6,
-        "secs": 1.31,
+        "secs": 1.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -73,7 +73,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.03,
+        "secs": 3.69,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -87,7 +87,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 51,
-        "secs": 1.7,
+        "secs": 1.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -101,7 +101,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.14,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -115,7 +115,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.11,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -129,7 +129,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.9,
+        "secs": 1.22,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -143,7 +143,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.02,
+        "secs": 1.0,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -157,7 +157,7 @@
         "nok": 0,
         "ok": 5,
         "plan": null,
-        "secs": 1.5,
+        "secs": 1.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -171,7 +171,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.12,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -185,7 +185,7 @@
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 1.32,
+        "secs": 1.38,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -199,7 +199,7 @@
         "nok": 0,
         "ok": 2,
         "plan": null,
-        "secs": 1.28,
+        "secs": 1.32,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -209,11 +209,11 @@
       "cmp": "no_baseline",
       "path": "t/14-parquet.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/dkd-parquet-2-1795493398' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/dkd-parquet-2-1795543581' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.45,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -223,11 +223,11 @@
       "cmp": "no_baseline",
       "path": "t/15-shim-cache.rakutest",
       "raku": {
-        "first_failure": "X::IO::Dir: Failed to get the directory contents of '/tmp/dkd-shimcache-2-1795493401': Failed to open dir: no such file or directory",
+        "first_failure": "X::IO::Dir: Failed to get the directory contents of '/tmp/dkd-shimcache-2-1795543583': Failed to open dir: no such file or directory",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.55,
+        "secs": 0.54,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -236,6 +236,48 @@
     {
       "cmp": "no_baseline",
       "path": "t/16-text-column.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library 'duckdb': duckdb: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/17-arrow-schema.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library 'duckdb': duckdb: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/18-parser.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library 'duckdb': duckdb: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 0.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/19-pointer-normalize.rakutest",
       "raku": {
         "first_failure": "Cannot locate native library 'duckdb': duckdb: cannot open shared object file: No such file or directory",
         "nok": 0,
@@ -262,6 +304,7 @@
     "DB::DuckDB::Error": "ok",
     "DB::DuckDB::Native": "ok",
     "DB::DuckDB::Parquet": "ok",
+    "DB::DuckDB::Parser": "ok",
     "DB::DuckDB::Result": "ok",
     "DB::DuckDB::ShimCache": "ok",
     "DB::DuckDB::Statement": "ok",
@@ -274,7 +317,7 @@
     "date": "2026-11-24",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a52740b2",
+    "mutsu_commit": "42f9c212",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -283,7 +326,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/D/B_/DB_DUCKDB/68edb89be44b796392325687a17aa4545afa6d98.tar.gz"
+    "url": "https://360.zef.pm/D/B_/DB_DUCKDB/8af48a50a5e10be4a2afe07c39d82df7d08ba6ef.tar.gz"
   },
   "status": "no_baseline",
   "totals": {
@@ -293,5 +336,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "1.0.1"
+  "version": "1.2.2"
 }

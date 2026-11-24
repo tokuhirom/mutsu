@@ -17,7 +17,7 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 0.16,
+        "secs": 0.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -27,30 +27,29 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 0.87,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "accepted",
+      "cmp": "parity",
       "mutsu": {
-        "first_failure": "did we get something else than Foo yet again",
-        "nok": 1,
-        "ok": 14,
+        "nok": 0,
+        "ok": 15,
         "plan": 15,
         "secs": 1.06,
         "skip": 0,
         "todo": 0,
-        "verdict": "fail"
+        "verdict": "pass"
       },
       "path": "t/02-basic.rakutest",
       "raku": {
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 1.67,
+        "secs": 1.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,7 +61,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.05,
+        "secs": 0.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -72,7 +71,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 0.7,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -84,7 +83,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.07,
+        "secs": 0.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,7 +93,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.63,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -109,7 +108,7 @@
     "date": "2026-11-24",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a52740b2",
+    "mutsu_commit": "42f9c212",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -122,10 +121,10 @@
   },
   "status": "green",
   "totals": {
-    "baseline_assertions": 36,
-    "baseline_files": 3,
-    "mutsu_assertions": 36,
-    "parity_files": 3,
+    "baseline_assertions": 51,
+    "baseline_files": 4,
+    "mutsu_assertions": 51,
+    "parity_files": 4,
     "regressed_files": 0
   },
   "version": "0.0.13"

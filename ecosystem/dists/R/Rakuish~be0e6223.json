@@ -4,13 +4,28 @@
     "bundled_would_supply": [],
     "mode": "flat-closure",
     "resolved": [
+      "Alien::Libduckdb",
+      "Arrow::IPC",
+      "Concurrent::Stack",
+      "DB",
+      "DB::DuckDB",
+      "JSON::Class",
       "JSON::Fast",
+      "JSON::Marshal",
+      "JSON::Name",
+      "JSON::OptIn",
+      "JSON::Unmarshal",
+      "License::SPDX",
+      "META6",
       "Terminal-API",
       "Terminal::ANSIColor",
       "Terminal::ANSIParser",
       "Terminal::Capabilities",
       "Terminal::LineEditor",
-      "Text::MiscUtils"
+      "Test::META",
+      "Test::When",
+      "Text::MiscUtils",
+      "URI"
     ],
     "unresolved": []
   },
@@ -24,7 +39,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.65,
+        "secs": 1.8,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -38,7 +53,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.12,
+        "secs": 0.94,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -52,7 +67,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.19,
+        "secs": 1.24,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -66,7 +81,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.46,
+        "secs": 1.45,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -80,7 +95,7 @@
         "nok": 0,
         "ok": 14,
         "plan": null,
-        "secs": 2.56,
+        "secs": 2.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -94,7 +109,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.87,
+        "secs": 1.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -106,7 +121,7 @@
         "nok": 0,
         "ok": 59,
         "plan": 59,
-        "secs": 0.22,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -116,7 +131,7 @@
         "nok": 0,
         "ok": 59,
         "plan": 59,
-        "secs": 0.87,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -130,7 +145,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.76,
+        "secs": 1.46,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -144,7 +159,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.59,
+        "secs": 2.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -158,7 +173,21 @@
         "nok": 0,
         "ok": 33,
         "plan": null,
-        "secs": 0.9,
+        "secs": 1.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/12-data-engine.t",
+      "raku": {
+        "first_failure": "/home/runner/.cache/mutsu-ecosystem/deps/DB__DuckDB/resources/duckdb-result-shim.c:20:10: fatal error: duckdb.h: No such file or directory",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 31.29,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -168,31 +197,9 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 0.08,
-        "skip": 11,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/12-data-engine.t",
-      "raku": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 0.65,
-        "skip": 11,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 0.41,
+        "secs": 0.4,
         "skip": 17,
         "todo": 0,
         "verdict": "pass"
@@ -202,7 +209,7 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 0.72,
+        "secs": 0.91,
         "skip": 17,
         "todo": 0,
         "verdict": "pass"
@@ -216,7 +223,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.67,
+        "secs": 1.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -228,7 +235,7 @@
         "nok": 0,
         "ok": 51,
         "plan": 51,
-        "secs": 0.81,
+        "secs": 0.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -238,32 +245,24 @@
         "nok": 0,
         "ok": 51,
         "plan": 51,
-        "secs": 1.02,
+        "secs": 1.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 18,
-        "plan": 18,
-        "secs": 0.36,
-        "skip": 18,
-        "todo": 0,
-        "verdict": "pass"
-      },
+      "cmp": "no_baseline",
       "path": "t/17-data-parquet.t",
       "raku": {
+        "first_failure": "DuckDB execute 失败: Cannot locate native library 'duckdb': duckdb: cannot open shared object file: No such file or directory",
         "nok": 0,
-        "ok": 18,
-        "plan": 18,
-        "secs": 0.78,
-        "skip": 18,
+        "ok": 0,
+        "plan": null,
+        "secs": 1.54,
+        "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       }
     },
     {
@@ -274,7 +273,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.03,
+        "secs": 1.67,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -288,7 +287,35 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.05,
+        "secs": 1.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/20-data-cursor.t",
+      "raku": {
+        "first_failure": "DuckDB execute 失败: Cannot locate native library 'duckdb': duckdb: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 35,
+        "plan": null,
+        "secs": 1.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/22-data-csv.t",
+      "raku": {
+        "first_failure": "DuckDB query 失败: Cannot locate native library 'duckdb': duckdb: cannot open shared object file: No such file or directory",
+        "nok": 0,
+        "ok": 7,
+        "plan": null,
+        "secs": 1.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -298,54 +325,10 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 55,
-        "plan": 55,
-        "secs": 0.17,
-        "skip": 20,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/20-data-cursor.t",
-      "raku": {
-        "nok": 0,
-        "ok": 55,
-        "plan": 55,
-        "secs": 1.08,
-        "skip": 20,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 33,
-        "plan": 33,
-        "secs": 0.36,
-        "skip": 33,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/22-data-csv.t",
-      "raku": {
-        "nok": 0,
-        "ok": 33,
-        "plan": 33,
-        "secs": 0.82,
-        "skip": 33,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
         "ok": 57,
         "plan": 57,
-        "secs": 0.85,
-        "skip": 2,
+        "secs": 2.71,
+        "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
@@ -354,54 +337,38 @@
         "nok": 0,
         "ok": 57,
         "plan": 57,
-        "secs": 1.12,
-        "skip": 2,
+        "secs": 2.0,
+        "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 54,
-        "plan": 54,
-        "secs": 0.77,
-        "skip": 19,
-        "todo": 0,
-        "verdict": "pass"
-      },
+      "cmp": "no_baseline",
       "path": "t/24-csv-dialect.t",
       "raku": {
+        "first_failure": "DuckDB query 失败: Cannot locate native library 'duckdb': duckdb: cannot open shared object file: No such file or directory",
         "nok": 0,
-        "ok": 54,
-        "plan": 54,
-        "secs": 1.08,
-        "skip": 19,
+        "ok": 35,
+        "plan": null,
+        "secs": 2.21,
+        "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       }
     },
     {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 69,
-        "plan": 69,
-        "secs": 0.9,
-        "skip": 9,
-        "todo": 0,
-        "verdict": "pass"
-      },
+      "cmp": "no_baseline",
       "path": "t/25-describe-complete.t",
       "raku": {
-        "nok": 0,
-        "ok": 69,
-        "plan": 69,
-        "secs": 1.44,
-        "skip": 9,
+        "first_failure": "DuckDB execute 失败: Cannot locate native library 'duckdb': duckdb: cannot open shared object file: No such file or directory",
+        "nok": 4,
+        "ok": 60,
+        "plan": null,
+        "secs": 2.65,
+        "skip": 0,
         "todo": 0,
-        "verdict": "pass"
+        "verdict": "die"
       }
     },
     {
@@ -412,7 +379,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.01,
+        "secs": 1.96,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -426,7 +393,7 @@
         "nok": 7,
         "ok": 8,
         "plan": 15,
-        "secs": 45.91,
+        "secs": 46.1,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -440,7 +407,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.7,
+        "secs": 0.96,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -454,7 +421,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 0.8,
+        "secs": 0.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -468,7 +435,7 @@
         "nok": 10,
         "ok": 0,
         "plan": 10,
-        "secs": 1.08,
+        "secs": 1.29,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -482,7 +449,7 @@
         "nok": 9,
         "ok": 4,
         "plan": 13,
-        "secs": 1.18,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -496,7 +463,7 @@
         "nok": 9,
         "ok": 2,
         "plan": 11,
-        "secs": 65.8,
+        "secs": 65.94,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -510,7 +477,7 @@
         "nok": 0,
         "ok": 69,
         "plan": null,
-        "secs": 1.47,
+        "secs": 2.4,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -524,7 +491,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.29,
+        "secs": 2.13,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -534,9 +501,9 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 52,
-        "plan": 52,
-        "secs": 1.31,
+        "ok": 64,
+        "plan": 64,
+        "secs": 1.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -544,9 +511,9 @@
       "path": "t/35-kernel.t",
       "raku": {
         "nok": 0,
-        "ok": 52,
-        "plan": 52,
-        "secs": 1.81,
+        "ok": 64,
+        "plan": 64,
+        "secs": 3.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -560,7 +527,7 @@
         "nok": 0,
         "ok": 15,
         "plan": null,
-        "secs": 1.06,
+        "secs": 1.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -574,7 +541,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.76,
+        "secs": 2.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -588,7 +555,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.24,
+        "secs": 2.65,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -602,7 +569,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.29,
+        "secs": 2.39,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -616,7 +583,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 6.02,
+        "secs": 7.07,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -630,7 +597,7 @@
         "nok": 0,
         "ok": 48,
         "plan": null,
-        "secs": 6.35,
+        "secs": 7.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -644,7 +611,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 5.46,
+        "secs": 6.49,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -658,7 +625,7 @@
         "nok": 0,
         "ok": 25,
         "plan": null,
-        "secs": 9.15,
+        "secs": 9.92,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -672,7 +639,7 @@
         "nok": 0,
         "ok": 41,
         "plan": null,
-        "secs": 6.44,
+        "secs": 7.83,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -684,7 +651,7 @@
         "nok": 0,
         "ok": 64,
         "plan": 64,
-        "secs": 1.15,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -694,7 +661,7 @@
         "nok": 0,
         "ok": 64,
         "plan": 64,
-        "secs": 2.8,
+        "secs": 2.96,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -706,7 +673,7 @@
         "nok": 0,
         "ok": 41,
         "plan": 41,
-        "secs": 0.09,
+        "secs": 0.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -716,7 +683,7 @@
         "nok": 0,
         "ok": 41,
         "plan": 41,
-        "secs": 1.28,
+        "secs": 1.38,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -728,7 +695,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 2.5,
+        "secs": 2.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -738,7 +705,7 @@
         "nok": 0,
         "ok": 24,
         "plan": 24,
-        "secs": 4.78,
+        "secs": 5.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -752,7 +719,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.17,
+        "secs": 1.59,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -766,7 +733,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.31,
+        "secs": 1.38,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -776,9 +743,9 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 0.06,
+        "ok": 5,
+        "plan": 5,
+        "secs": 0.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -786,9 +753,9 @@
       "path": "t/51-meta-provides.t",
       "raku": {
         "nok": 0,
-        "ok": 4,
-        "plan": 4,
-        "secs": 1.02,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -798,9 +765,9 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 41,
-        "plan": 41,
-        "secs": 1.31,
+        "ok": 46,
+        "plan": 46,
+        "secs": 1.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -808,9 +775,9 @@
       "path": "t/52-load-all-modules.t",
       "raku": {
         "nok": 0,
-        "ok": 41,
-        "plan": 41,
-        "secs": 1.11,
+        "ok": 46,
+        "plan": 46,
+        "secs": 2.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -822,7 +789,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.18,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -832,7 +799,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.87,
+        "secs": 1.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -846,7 +813,7 @@
         "nok": 21,
         "ok": 0,
         "plan": 21,
-        "secs": 4.39,
+        "secs": 4.04,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -860,7 +827,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.3,
+        "secs": 1.99,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -874,7 +841,7 @@
         "nok": 10,
         "ok": 0,
         "plan": 10,
-        "secs": 1.09,
+        "secs": 1.37,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -886,7 +853,7 @@
         "nok": 0,
         "ok": 58,
         "plan": 58,
-        "secs": 0.71,
+        "secs": 0.68,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -896,7 +863,7 @@
         "nok": 0,
         "ok": 58,
         "plan": 58,
-        "secs": 1.65,
+        "secs": 2.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -908,7 +875,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 1.05,
+        "secs": 1.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -918,7 +885,7 @@
         "nok": 0,
         "ok": 33,
         "plan": 33,
-        "secs": 1.48,
+        "secs": 2.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -932,7 +899,7 @@
         "nok": 7,
         "ok": 0,
         "plan": 7,
-        "secs": 1.14,
+        "secs": 1.19,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -944,7 +911,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 1.08,
+        "secs": 1.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -954,7 +921,7 @@
         "nok": 0,
         "ok": 15,
         "plan": 15,
-        "secs": 1.22,
+        "secs": 2.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -966,7 +933,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 0.94,
+        "secs": 0.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -976,7 +943,7 @@
         "nok": 0,
         "ok": 20,
         "plan": 20,
-        "secs": 0.92,
+        "secs": 2.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -988,7 +955,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 1.12,
+        "secs": 1.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -998,7 +965,298 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 3.25,
+        "secs": 3.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 41,
+        "plan": 41,
+        "secs": 1.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/63-method-complete.t",
+      "raku": {
+        "nok": 0,
+        "ok": 41,
+        "plan": 41,
+        "secs": 2.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 63,
+        "plan": 63,
+        "secs": 1.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/64-who-rerun.t",
+      "raku": {
+        "nok": 0,
+        "ok": 63,
+        "plan": 63,
+        "secs": 2.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/65-notebook-frontend.t",
+      "raku": {
+        "first_failure": "Could not find JSON::Fast in:",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 6.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 33,
+        "plan": 33,
+        "secs": 0.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/66-jupyter-wrapper.t",
+      "raku": {
+        "nok": 0,
+        "ok": 33,
+        "plan": 33,
+        "secs": 1.42,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 1.01,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/67-audit-command.t",
+      "raku": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 2.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/68-source.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rakuish-src-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/69-export.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rakuish-export-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 68,
+        "plan": 68,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/70-arrow-ipc.t",
+      "raku": {
+        "nok": 0,
+        "ok": 68,
+        "plan": 68,
+        "secs": 2.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 0.2,
+        "skip": 17,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/71-win-job.t",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 1.2,
+        "skip": 17,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/72-main-dispatch.t",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/rk-main-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 1,
+        "plan": null,
+        "secs": 2.51,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 1.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/73-buf-render.t",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 2.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "regression",
+      "mutsu": {
+        "first_failure": "Cannot resolve caller Numeric(Rakuish::Data::Table:D: ); none of these signatures matches:",
+        "nok": 0,
+        "ok": 29,
+        "plan": 42,
+        "secs": 1.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      },
+      "path": "t/74-arrow-read.t",
+      "raku": {
+        "nok": 0,
+        "ok": 42,
+        "plan": 42,
+        "secs": 14.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 0.27,
+        "skip": 2,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/75-ctrl-c-child.t",
+      "raku": {
+        "nok": 0,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.02,
+        "skip": 2,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/76-duck-sql.t",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/rakuish-duck-2-1795546820347-0-552601.arrow.part: Read-only file system",
+        "nok": 0,
+        "ok": 43,
+        "plan": 43,
+        "secs": 1.74,
+        "skip": 43,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 46,
+        "plan": 46,
+        "secs": 13.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/77-arrow-write-batches.t",
+      "raku": {
+        "nok": 0,
+        "ok": 46,
+        "plan": 46,
+        "secs": 4.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1011,8 +1269,10 @@
     "Rakuish::Command": "ok",
     "Rakuish::DSL": "ok",
     "Rakuish::Data": "ok",
+    "Rakuish::Data::Arrow": "ok",
     "Rakuish::Data::CsvOptions": "ok",
     "Rakuish::Data::Cursor": "ok",
+    "Rakuish::Data::Duck": "ok",
     "Rakuish::Data::Engine": "ok",
     "Rakuish::Data::Engine::DuckDB": "ok",
     "Rakuish::Data::Engine::SQLite": "ok",
@@ -1026,12 +1286,14 @@
     "Rakuish::Incomplete": "ok",
     "Rakuish::Kernel": "ok",
     "Rakuish::Kernel::Factory": "ok",
+    "Rakuish::Kernel::Notebook": "ok",
     "Rakuish::REPL::Chrome": "ok",
     "Rakuish::REPL::Complete": "ok",
     "Rakuish::REPL::Highlight": "ok",
     "Rakuish::REPL::Hints": "ok",
     "Rakuish::REPL::Introspect": "ok",
     "Rakuish::REPL::Keymap": "ok",
+    "Rakuish::REPL::Methods": "ok",
     "Rakuish::REPL::Plugins": "ok",
     "Rakuish::REPL::Session": "ok",
     "Rakuish::REPL::Shell": "ok",
@@ -1045,14 +1307,15 @@
     "Rakuish::Sys::JobTable": "ok",
     "Rakuish::Sys::PosixSpawn": "ok",
     "Rakuish::Sys::Proc": "ok",
-    "Rakuish::Sys::Term": "ok"
+    "Rakuish::Sys::Term": "ok",
+    "Rakuish::Sys::WinJob": "ok"
   },
   "measured": {
     "attempts": 3,
     "date": "2026-11-24",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "a52740b2",
+    "mutsu_commit": "42f9c212",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -1061,15 +1324,15 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/R/AK/RAKUISH/61acabff5665b5be8305363b676fc22f26322cc6.tar.gz"
+    "url": "https://360.zef.pm/R/AK/RAKUISH/2b35c502201394c7ea5e743b1890aaaad419a163.tar.gz"
   },
-  "status": "green",
+  "status": "partial",
   "totals": {
-    "baseline_assertions": 805,
-    "baseline_files": 22,
-    "mutsu_assertions": 805,
-    "parity_files": 22,
-    "regressed_files": 0
+    "baseline_assertions": 931,
+    "baseline_files": 26,
+    "mutsu_assertions": 918,
+    "parity_files": 25,
+    "regressed_files": 1
   },
-  "version": "0.106.2"
+  "version": "0.121.1"
 }
