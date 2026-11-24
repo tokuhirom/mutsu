@@ -32,6 +32,16 @@ impl Interpreter {
         name: &str,
         container: &Value,
     ) -> Value {
+        // A captured or `:=`-bound `@a`/`%h` is held in a shared cell
+        // (`ContainerRef`); its defaults live on the aggregate inside, so look
+        // through the cell or every check below misses (#19109).
+        let derefed;
+        let container = if matches!(container.view(), ValueView::ContainerRef(_)) {
+            derefed = container.deref_container();
+            &derefed
+        } else {
+            container
+        };
         if let Some(def) = self.container_default(container) {
             return def;
         }
