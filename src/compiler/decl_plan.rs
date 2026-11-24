@@ -153,6 +153,7 @@ impl Compiler {
         chunk_compiler.static_class = static_class.map(|(name, _)| name.to_string());
         chunk_compiler.static_class_hidden = static_class.is_some_and(|(_, hidden)| hidden);
         chunk_compiler.class_body_static_code_vars = class_body_static_code_vars.clone();
+        chunk_compiler.class_body_our_code_vars = self.class_body_our_code_vars.clone();
         chunk_compiler.package_body_lexicals = package_body_lexicals.clone();
         chunk_compiler
             .type_aliases
@@ -378,8 +379,14 @@ impl Compiler {
         let method_writes =
             std::mem::replace(&mut self.type_body_method_writes, saved_method_writes)
                 .unwrap_or_default();
+        // A body `our &t` is assignable from the body's own later statements
+        // (`&t = sub { ... }`), each compiled as a chunk of its own (#19152).
+        let saved_our_code_vars = self.class_body_our_code_vars.clone();
+        self.class_body_our_code_vars
+            .extend(Self::body_our_code_var_names(body));
         let body_plan =
             self.compile_class_body_plan(body, package_name.as_deref(), *is_hidden, &method_writes);
+        self.class_body_our_code_vars = saved_our_code_vars;
         self.code.add_class_decl_plan(
             stmt,
             name_expr.is_none() && self.decl_name_is_prequalified(),
@@ -786,6 +793,18 @@ impl Compiler {
         }
         self.class_body_static_code_vars = saved_static_code_vars;
         keys
+    }
+
+    /// The code variables a type body declares `our` (`our &t`), by their
+    /// `VarDecl` name.
+    // Cost: O(s), s = the body's top-level statements.
+    fn body_our_code_var_names(body: &[Stmt]) -> impl Iterator<Item = String> + '_ {
+        crate::ast::scope_members(body).filter_map(|s| match s {
+            Stmt::VarDecl {
+                name, is_our: true, ..
+            } if name.starts_with('&') => Some(name.clone()),
+            _ => None,
+        })
     }
 
     /// Lower each parent/role bracket argument list to declaration-trait-arg
