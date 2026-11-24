@@ -1,12 +1,12 @@
 # Lexical-scope shadow slots — §1.4/§1.5/§1.3 campaign
 
 Status: **superseded/complete** (started 2026-07-02; closed out by
-[ADR-0018](adr/0018-slot-addressed-lexical-capture-and-env-sync.md), Accepted and
+[ADR-0018](../adr/0018-slot-addressed-lexical-capture-and-env-sync.md), Accepted and
 implemented). Shadow slots are default-ON since 2026-07-12; the whole-`locals`
 per-block clone/restore this document's §1.3 plan targeted for removal is gone
 under that default path (`exec_block_scope_op`, `src/vm/vm_misc_scope.rs`) —
-confirmed live in the tree 2026-08-21. This file is kept as the historical record
-of how the campaign got there; do not restart it or treat its still-open-looking
+confirmed live in the tree 2026-08-21. This file is kept, under `docs/archive/`, as the
+historical record of how the campaign got there; do not restart it or treat its still-open-looking
 checklist items below as live work without first checking ADR-0018 and
 `docs/archive/analysis-2026-09.md` §1.3/§2.4.
 
@@ -371,7 +371,7 @@ three of these were missed until now — re-run the FULL survey periodically.
 ## §1.3 is an ARCHITECTURE slice, not a perf slice (measured 2026-07-14)
 
 Two things were established by measurement while chasing the call-path profile
-(see [docs/perf-callpath-scouting.md](perf-callpath-scouting.md) §4). Both matter
+(see [docs/perf-callpath-scouting.md](../perf-callpath-scouting.md) §4). Both matter
 for how this step is scoped:
 
 1. **The clone is not where the time is.** `exec_block_scope_op`'s

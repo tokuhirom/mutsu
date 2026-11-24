@@ -332,7 +332,7 @@ impl Interpreter {
         // repeated runs / loop iterations). Resetting to `Nil` is therefore
         // identical to restoring a snapshotted pre-branch value, at O(declared)
         // instead of an O(locals) clone. This is the lexical-slot endgame's
-        // targeted-reset technique (docs/lexical-scope-slot-campaign.md §1.3).
+        // targeted-reset technique (docs/archive/lexical-scope-slot-campaign.md §1.3).
         //
         // That snapshot is no longer a copy of every visible key (O(v), #9170):
         // the branch runs over a block tier of its own, so "had before" is asked

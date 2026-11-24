@@ -1,6 +1,7 @@
 # GC Level 1 Detailed Design Notes
 
-Status: Draft  
+Status: Implemented. Level 1 (layer 3a, the cycle collector) shipped and is default on (ADR-0003); `src/gc/` cites this document's sections as its design. Later work is in [gc-post-3a-roadmap.md](gc-post-3a-roadmap.md).
+
 Related: [ADR-0001](adr/0001-gc-strategy-and-phasing.md), [PLAN.md](../PLAN.md), [analysis-2026-09.md](archive/analysis-2026-09.md)
 
 This document is a set of detailed notes for turning ADR-0001's "level 1 = cycle collector on Arc" into an implementable design.

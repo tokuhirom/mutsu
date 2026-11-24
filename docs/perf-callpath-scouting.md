@@ -238,7 +238,7 @@ campaign. Three experiments (2026-07-14) say otherwise:
 
 ### What this means for the lexical-scope slot campaign
 
-[docs/lexical-scope-slot-campaign.md](lexical-scope-slot-campaign.md)'s remaining
+[docs/archive/lexical-scope-slot-campaign.md](archive/lexical-scope-slot-campaign.md)'s remaining
 step (§1.3: drop the `exec_block_scope_op` whole-`locals` clone) should be
 motivated as **architecture, not perf**. The coupling was measured precisely:
 

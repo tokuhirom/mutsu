@@ -1,7 +1,7 @@
 use Test;
 
 # Pin for the (B) per-store env-write gate block-exit clobber fix
-# (docs/lexical-scope-slot-campaign.md, "(B) per-store env-write gate — burndown").
+# (docs/archive/lexical-scope-slot-campaign.md, "(B) per-store env-write gate — burndown").
 #
 # A scope-isolating do-block / string-interpolation block (`"{ $obj.a }"`) exits
 # through `exec_do_block_expr_op` (and a bare `{ ... }` through

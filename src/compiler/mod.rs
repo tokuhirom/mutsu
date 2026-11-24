@@ -23,7 +23,7 @@ use crate::value::ValueMap;
 /// 2026-07-10 container-identity/cell work drove the §1.3 class-1 (name-keyed
 /// env dual-store) breakage to zero. `MUTSU_NO_SHADOW_SLOTS` is a temporary
 /// opt-out escape hatch (reverts to the old shared-slot + env-restore behavior).
-/// See docs/lexical-scope-slot-campaign.md and docs/archive/analysis-2026-09.md §1.4.
+/// See docs/archive/lexical-scope-slot-campaign.md and docs/archive/analysis-2026-09.md §1.4.
 pub(crate) fn shadow_slots_active() -> bool {
     use std::sync::OnceLock;
     static ACTIVE: OnceLock<bool> = OnceLock::new();

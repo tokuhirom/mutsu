@@ -325,7 +325,7 @@ pub(crate) enum SmartMatchLhs {
     /// `slot` is the compile-time-resolved local slot when the name is a
     /// current-scope local (§1.5: bakes the scope-correct slot so the
     /// writeback does not re-resolve the name at run time — see
-    /// docs/lexical-scope-slot-campaign.md); `None` keeps the env-by-name path.
+    /// docs/archive/lexical-scope-slot-campaign.md); `None` keeps the env-by-name path.
     /// `implicit_topic` marks the LHS the compiler SYNTHESIZED for a bare
     /// regex (`/a/`, `if /a/`, `so /a/`) rather than one the source wrote.
     /// Rakudo coerces that subject quietly, while an explicit `$_ ~~ /a/`
@@ -3540,7 +3540,7 @@ pub(crate) enum OpCode {
     ///
     /// The first operand is the constant-pool index of the variable name;
     /// the second is its compile-time-resolved local slot (§1.5,
-    /// `docs/lexical-scope-slot-campaign.md`), or `None` for a non-local
+    /// `docs/archive/lexical-scope-slot-campaign.md`), or `None` for a non-local
     /// target (global, `our`, dynamic, a temp value), which is stepped in
     /// `env` by name.
     ///

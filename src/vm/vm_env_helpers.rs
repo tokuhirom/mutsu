@@ -3385,7 +3385,7 @@ impl Interpreter {
     /// Resolve a local slot for `name`, preferring the compile-time-baked `slot`
     /// (scope-correct even once a name occupies several `code.locals` slots) and
     /// falling back to the by-name search when the caller has no baked slot.
-    /// §1.5 helper — see docs/lexical-scope-slot-campaign.md.
+    /// §1.5 helper — see docs/archive/lexical-scope-slot-campaign.md.
     pub(super) fn resolve_local_slot(
         &self,
         code: &CompiledCode,

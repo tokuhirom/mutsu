@@ -798,7 +798,7 @@ different containers, which a by-name read papered over:
 - The first bullet is **not independently landable**, and not because it is
   large — it is three lines. It is blocked on the *store* lane, which is the
   actual content of slice 2.
-- The blocking dependency is **§1.3 of `docs/lexical-scope-slot-campaign.md`**
+- The blocking dependency is **§1.3 of `docs/archive/lexical-scope-slot-campaign.md`**
   (slot-indexed locals / retiring the by-name resolvers), not something internal
   to this ADR: cause 1 is `local_map`'s monotonicity, cause 2 is duplicate
   `code.locals` names, and both are exactly what §1.3 exists to remove. Slice 2
@@ -817,7 +817,7 @@ different containers, which a by-name read papered over:
 
 §9 measured §4.2's first bullet (container reads emit `GetLocal(slot)`), found 7
 `t/` files / 12 assertions of fallout, withdrew it, and concluded the blocker was
-§1.3 of `docs/lexical-scope-slot-campaign.md` — the *store* lane. That diagnosis
+§1.3 of `docs/archive/lexical-scope-slot-campaign.md` — the *store* lane. That diagnosis
 was **half right**. Re-doing it end-to-end shows the store lane is a short,
 concrete list that can be fixed; what actually blocks the flip is a different
 lane the ADR had not enumerated.
@@ -971,7 +971,7 @@ them from scratch.
    change — none of them is separately pinnable.
 3. `HyperMethodCall` needs a baked target slot in that same change (the hyper.t
    rows above), joining the S1-S17 slot-bake series in
-   `docs/lexical-scope-slot-campaign.md`.
+   `docs/archive/lexical-scope-slot-campaign.md`.
 4. §4.2's third bullet (`is_plain_lexical_name`'s `@%&` exclusion) stays
    independent and still open.
 

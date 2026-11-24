@@ -1,7 +1,7 @@
 use Test;
 
 # Pin for the (B) per-store env-write gate mechanism #3 fix
-# (docs/lexical-scope-slot-campaign.md, "Root-cause drill-down").
+# (docs/archive/lexical-scope-slot-campaign.md, "Root-cause drill-down").
 #
 # A scalar local holding an aggregate must survive a Test-fn call that follows
 # it. Under the MUTSU_GATE_LOCAL_ENV_WRITE gate the plain-lexical store skips its

@@ -5,7 +5,7 @@ use Test;
 # undefine rewrite now prefers the compile-time-baked local slot
 # (AssignExprLocal) like the general assignment path. Passes with the shadow-slot
 # gate off (shadow shares the outer slot) AND on (distinct slots). Mirrors
-# roast/S32-scalar/defined.t #31. See docs/lexical-scope-slot-campaign.md.
+# roast/S32-scalar/defined.t #31. See docs/archive/lexical-scope-slot-campaign.md.
 
 plan 4;
 

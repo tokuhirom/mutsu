@@ -1,7 +1,7 @@
 use Test;
 
 # Pin for the (B) per-store env-write gate closure-capture cluster fix
-# (docs/lexical-scope-slot-campaign.md, "(B) per-store env-write gate — burndown",
+# (docs/archive/lexical-scope-slot-campaign.md, "(B) per-store env-write gate — burndown",
 # closure-capture cluster).
 #
 # Three roots, all surfacing only when MUTSU_GATE_LOCAL_ENV_WRITE skips a plain

@@ -607,7 +607,7 @@ impl Compiler {
                 // runtime topic writeback (`$x ~~ s///`) writes the exact slot
                 // instead of re-resolving the name against `code.locals` (which is
                 // ambiguous once shadow slots exist). See
-                // docs/lexical-scope-slot-campaign.md.
+                // docs/archive/lexical-scope-slot-campaign.md.
                 // `(my $y = $x) ~~ s///`: the declaration-assignment yields its
                 // container, which the substitution rewrites. Run the declaration
                 // first, then substitute on the variable itself.
