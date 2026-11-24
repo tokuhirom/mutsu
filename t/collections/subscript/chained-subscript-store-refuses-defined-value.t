@@ -44,11 +44,13 @@ plan 29;
 # --- the same rule one level deeper ----------------------------------------
 
 {
+    # Every `[0]` over the defined element is its container again (#18960).
     my @a = 1, 2;
-    throws-like { @a[0][0][0] = 9 }, X::Assignment::RO,
-        message => 'Cannot modify an immutable Int (1)',
-        'the 3+ level walk refuses a defined value at the first step';
-    is @a[0], 1, 'and leaves it alone';
+    @a[0][0][0] = 9;
+    is-deeply @a, [9, 2], 'the 3+ level walk assigns through a [0] tail';
+    throws-like { @a[0][0][1] = 9 }, X::OutOfRange,
+        message => 'Index out of range. Is: 1, should be in 0..0',
+        'and is out of range past index 0';
 }
 
 # --- through a hash root ----------------------------------------------------

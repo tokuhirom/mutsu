@@ -4,6 +4,11 @@ use super::*;
 
 // Cost: O(f + c + b), f = fields inspected, c = child values copied, b = text bytes produced. Rakudo: O(c + b) -- see #16130.
 pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
+    if method == "sunk"
+        && super::hierarchy::does(node.class.printed_name(), "RakuAST::Sinkable") == Some(true)
+    {
+        return Some(Value::truth(node.origin.5));
+    }
     if let Some(child) = regex_extension::nested_accessor(node, method) {
         return Some(child);
     }
@@ -72,10 +77,18 @@ pub fn node_accessor(node: &RakuAstNode, method: &str) -> Option<Value> {
     if node.class == RakuAstClass::StatementPrefixPhaserPre && method == "blorst" {
         return phaser_condition::wrapped_blorst(node);
     }
+    if method == "is-block-statement"
+        && super::hierarchy::isa(node.class.printed_name(), "RakuAST::Statement::Loop")
+            == Some(true)
+    {
+        return Some(Value::truth(node.origin.6));
+    }
     if method == "is-block-statement" {
         match node.class {
             // A statement ends where its block does, or at a semicolon.
-            RakuAstClass::StatementExpression => return Some(Value::TRUE),
+            RakuAstClass::StatementExpression
+            | RakuAstClass::StatementFor
+            | RakuAstClass::StatementLoop => return Some(Value::truth(node.origin.6)),
             // A block is a block statement when it is a statement itself.
             RakuAstClass::Block | RakuAstClass::PointyBlock => {
                 return Some(Value::truth(node.origin.2.as_ref().is_some_and(|mark| {

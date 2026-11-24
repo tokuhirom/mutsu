@@ -119,7 +119,7 @@ pub(super) fn segments(
 /// `text`: after the opening delimiter, before the closing one. Heredocs and
 /// quotes with other adverbs are not handled.
 // Cost: O(n), n = length of `text`.
-fn body(text: &str) -> Option<(usize, usize)> {
+pub(super) fn body(text: &str) -> Option<(usize, usize)> {
     // `«a $x b»` / `<<a $x b>>`: an interpolating word quote, kept raw.
     for (open, close) in [("«", "»"), ("<<", ">>")] {
         if let Some(inner) = text.strip_prefix(open) {
@@ -142,7 +142,16 @@ fn body(text: &str) -> Option<(usize, usize)> {
         // (`:!s`, `:to`) are not read here.
         if !matches!(
             &after[..len],
-            "s" | "a" | "h" | "f" | "b" | "scalar" | "array" | "hash" | "function" | "backslash"
+            "s" | "a"
+                | "h"
+                | "f"
+                | "b"
+                | "w"
+                | "scalar"
+                | "array"
+                | "hash"
+                | "function"
+                | "backslash"
         ) {
             return None;
         }

@@ -100,6 +100,8 @@ pub(super) fn empty_node(node: &RakuAstNode, field: &str, class: RakuAstClass) -
             None,
             None,
             None,
+            false,
+            false,
         ),
     }))
 }

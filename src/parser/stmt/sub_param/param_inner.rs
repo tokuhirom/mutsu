@@ -597,6 +597,8 @@ fn parse_single_param_inner(input: &str) -> PResult<'_, ParamDef> {
             p.type_constraint = Some(format!("Any{smiley}"));
         }
         p.type_capture = Some(capture_name);
+        // The RakuAST view puts the smiley back on the `Type::Capture` node.
+        p.type_capture_smiley = capture_smiley.and_then(|s| s.chars().nth(1));
         p.named |= named;
         p.slurpy |= slurpy;
         return Ok((r, p));

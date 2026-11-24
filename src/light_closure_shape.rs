@@ -167,6 +167,7 @@ pub(crate) fn def_is_plain_positional(pd: &ParamDef) -> bool {
         sigilless,
         type_constraint,
         type_capture,
+        type_capture_smiley: _,
         literal_value,
         sub_signature,
         where_constraint,

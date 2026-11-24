@@ -105,6 +105,9 @@ pub(super) const fn opaque(
             "RakuAST::Node",
             &[
                 "RakuAST::Node",
+                "RakuAST::Expression",
+                "RakuAST::PrimeThunk",
+                "RakuAST::BlockThunk",
                 "RakuAST::StatementList",
                 "RakuAST::CompUnit",
                 "RakuAST::Statement::Expression",
@@ -133,15 +136,27 @@ pub(super) const fn opaque(
         S::RakuAstOriginMatch => ("RakuAST::Origin::Match", &["RakuAST::Origin::Match"]),
         S::RakuAstDeclarationExternalSetting => (
             "RakuAST::Declaration::External::Setting",
-            &["RakuAST::Declaration::External::Setting"],
+            &[
+                "RakuAST::Declaration::External::Setting",
+                "RakuAST::Declaration::External",
+            ],
         ),
         S::RakuAstDeclarationExternalConstant => (
             "RakuAST::Declaration::External::Constant",
-            &["RakuAST::Declaration::External::Constant"],
+            &[
+                "RakuAST::Declaration::External::Constant",
+                "RakuAST::Declaration::External",
+            ],
         ),
+        // Rakudo 2026.11's MRO: `Import` inherits `compile-time-value` from
+        // `External::Constant` and `lexical-name` from `External` (#19059).
         S::RakuAstDeclarationImport => (
             "RakuAST::Declaration::Import",
-            &["RakuAST::Declaration::Import"],
+            &[
+                "RakuAST::Declaration::Import",
+                "RakuAST::Declaration::External::Constant",
+                "RakuAST::Declaration::External",
+            ],
         ),
         S::RakuAstDeclarationLexicalPackage => (
             "RakuAST::Declaration::LexicalPackage",

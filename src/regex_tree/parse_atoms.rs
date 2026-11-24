@@ -94,7 +94,7 @@ impl Parser {
                 ))
             }
             '$' if self.chars.get(self.pos + 1).is_none_or(|next| {
-                next.is_whitespace() || stops.contains(next) || *next == '|'
+                next.is_whitespace() || stops.contains(next) || matches!(*next, '|' | '{')
             }) =>
             {
                 self.pos += 1;

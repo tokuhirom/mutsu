@@ -8,6 +8,7 @@
 //! lowering joins the segments back into the text.
 
 use super::{RakuAstClass, RakuAstField, RakuAstFieldValue, RakuAstNode};
+use crate::ast::SrcSpan;
 use crate::value::{Value, ValueView};
 
 /// Nesting deeper than this stays one literal run.
@@ -86,6 +87,75 @@ pub(super) fn joined(segments: &[Value]) -> Option<String> {
     let mut out = String::new();
     join_into(segments, &mut out, 0)?;
     Some(out)
+}
+
+/// Place the pieces of a nested word quote only when they reconstruct the
+/// exact source text between its delimiters. A preceding literal includes the
+/// opening `<`; the following one includes the closing `>`.
+// Cost: O(n * d + s log l), n = source text length, d = nesting depth (at most 64), s = segments, l = source lines.
+pub(super) fn place_origins(quote: &mut RakuAstNode, inner: SrcSpan) -> bool {
+    if quote.class != RakuAstClass::QuotedString {
+        return false;
+    }
+    let Some(field) = quote.fields.iter_mut().find(|f| f.name == Some("segments")) else {
+        return false;
+    };
+    let RakuAstFieldValue::List(items) = &mut field.value else {
+        return false;
+    };
+    let Some(text) = joined(items) else {
+        return false;
+    };
+    if super::unit_source::with_text(inner, |written| (written == text).then_some(())).is_none() {
+        return false;
+    }
+    let mut at = inner.from as usize;
+    for item in items {
+        let ValueView::RakuAst(node) = item.view() else {
+            return false;
+        };
+        let mut node = RakuAstNode::clone(node);
+        let len = match node.class {
+            RakuAstClass::StrLiteral => {
+                super::infix_origins::leaf_text(&node).map(|text| text.len())
+            }
+            RakuAstClass::QuotedString => node
+                .fields
+                .iter()
+                .find(|f| f.name == Some("segments"))
+                .and_then(|f| match &f.value {
+                    RakuAstFieldValue::List(parts) => source_text(parts),
+                    _ => None,
+                })
+                .map(|text| text.len()),
+            _ => None,
+        };
+        let Some(len) = len else {
+            return false;
+        };
+        let span = SrcSpan::new(at, at + len);
+        if node.class == RakuAstClass::StrLiteral {
+            super::origin::set_span(&mut node, span);
+        } else {
+            super::origin::word_quote_inner(&mut node, span);
+        }
+        *item = Value::rakuast(Box::new(node));
+        at += len;
+    }
+    at == inner.to as usize
+}
+
+// Cost: O(n), n = size of the segments.
+fn source_text(parts: &[Value]) -> Option<String> {
+    if let [only] = parts {
+        let ValueView::RakuAst(node) = only.view() else {
+            return None;
+        };
+        return (node.class == RakuAstClass::StrLiteral)
+            .then(|| super::infix_origins::leaf_text(node))
+            .flatten();
+    }
+    joined(parts)
 }
 
 // Cost: O(n), as `joined`.

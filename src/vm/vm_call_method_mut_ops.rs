@@ -2154,6 +2154,7 @@ impl Interpreter {
                     self.stack.push(produced);
                     return Ok(());
                 }
+                let optional_receiver = (modifier == Some("?")).then(|| target.clone());
                 let call_result = if !skip_native {
                     if let Some(native_result) = self.try_native_method(&target, method_sym, &args)
                     {
@@ -2195,7 +2196,11 @@ impl Interpreter {
                         Ok(val) => {
                             self.stack.push(val);
                         }
-                        Err(e) if Self::is_method_not_found_error(&e) => {
+                        Err(e)
+                            if optional_receiver.as_ref().is_some_and(|receiver| {
+                                e.is_method_not_found_for_receiver(method, receiver)
+                            }) =>
+                        {
                             crate::vm::vm_stats::record_dispatch_entry_outcome(
                                 "callmethodmut",
                                 "notfound",

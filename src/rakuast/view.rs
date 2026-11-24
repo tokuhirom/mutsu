@@ -3389,8 +3389,9 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             operands.push(right);
             let infix = super::decl_tail::list_infix_operator(op, operands[0]);
             let mut nodes = Vec::with_capacity(operands.len());
-            for e in operands {
-                nodes.push(Value::rakuast(Box::new(view_expr(names, e)?)));
+            for (index, e) in operands.into_iter().enumerate() {
+                let viewed = super::thunk::lazy_operand(view_expr(names, e)?, index, op);
+                nodes.push(Value::rakuast(Box::new(viewed)));
             }
             Ok(RakuAstNode {
                 origin: Default::default(),
@@ -4612,6 +4613,8 @@ fn parameter(
     pd: &ParamDef,
     type_setting: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
+    let unsmiled = super::type_capture_ctor::param_without_capture_smiley_type(pd);
+    let pd = unsmiled.as_ref().unwrap_or(pd);
     // The parser records an invocant (`$self:`, `Foo:D:`) as `is_invocant`
     // plus an `invocant` trait, and a synthesized one (no variable) with the
     // `implicit-invocant` trait as well; RakuAST has the one `invocant` flag.
@@ -4652,7 +4655,7 @@ fn parameter(
         return node;
     }
     let type_capture = match type_capture_name(pd) {
-        Some(name) => Some(type_capture_node(names, name)?),
+        Some(name) => Some(super::type_capture_ctor::capture_of(names, name, pd)?),
         None => None,
     };
     // A bare `::T` is represented internally by a synthetic parameter name,
