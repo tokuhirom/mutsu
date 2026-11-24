@@ -328,6 +328,11 @@ pub(super) fn postcircumfix(node: &mut RakuAstNode) {
     // not part of it either.
     let from = super::unit_source::with_text(SrcSpan::new(operand_end, to), |text| {
         let rest = text.trim_start_matches(|c: char| c == ')' || c.is_whitespace());
+        // `my @a\  .[0]`: unspace and its blanks precede the dotted bracket.
+        let rest = rest
+            .strip_prefix('\\')
+            .and_then(|after| (after.len() > after.trim_start().len()).then(|| after.trim_start()))
+            .unwrap_or(rest);
         let rest = rest
             .strip_prefix('.')
             .filter(|r| r.starts_with(['[', '{', '<', '«']))
