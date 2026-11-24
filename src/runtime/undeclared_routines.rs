@@ -27,6 +27,8 @@ use super::Interpreter;
 mod conditional;
 
 mod names;
+mod package_scope;
+mod resolve;
 use names::{COMPILER_SPECIAL_CALL_NAMES, NATIVE_TYPE_NAMES};
 pub(crate) use names::{CORE_TERM_CONSTANTS, PHASER_SUGGESTION_NAMES};
 
@@ -387,7 +389,8 @@ struct PrematureTerm {
 
 impl PrematureTerm {
     fn into_error(self) -> RuntimeError {
-        let suggestions = Interpreter::static_routine_suggestions(&self.name, &self.declared_routines);
+        let suggestions =
+            Interpreter::static_routine_suggestions(&self.name, &self.declared_routines);
         Interpreter::undeclared_routine_error(&self.name, self.line, suggestions)
     }
 }
@@ -438,7 +441,10 @@ impl Interpreter {
     /// [`check_terms_in_source_order`] for an `EVAL`'d unit: a routine the
     /// caller (or the registry) has under that name explains the bareword.
     // Cost: O(n + r), n = size of the unit's AST, r = cost of one registry lookup.
-    pub(crate) fn check_eval_terms_in_source_order(&self, stmts: &[Stmt]) -> Result<(), RuntimeError> {
+    pub(crate) fn check_eval_terms_in_source_order(
+        &self,
+        stmts: &[Stmt],
+    ) -> Result<(), RuntimeError> {
         let Some(found) = premature_term_use(stmts) else {
             return Ok(());
         };
