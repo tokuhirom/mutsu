@@ -808,6 +808,9 @@ impl Interpreter {
                         // touches nothing, so the light chain below is
                         // reached exactly as it was.
                         if cf.trir.is_some()
+                            // A parameterless routine runs TRIR only when
+                            // `zero_param_trir_ok` says so (#18080).
+                            && (!cf.param_defs.is_empty() || Self::zero_param_trir_ok(cf))
                             // ADR-0110 §3.3's run-time guard, as on the
                             // statically linked door: a wrapped routine must
                             // reach its wrapper.

@@ -21,6 +21,23 @@ impl Interpreter {
         cf.param_defs.is_empty() && !cf.is_raw && Self::is_fast_call_eligible(cf, name)
     }
 
+    /// Whether a parameterless routine runs its TRIR chunk from the call
+    /// cache: only a self-contained body declared at program scope. A body
+    /// reading a free variable resolves it through TRIR's per-chunk memo,
+    /// which identical bodies share (`nested-sub-identical-body-own-scalar.t`
+    /// under EVAL), and a block- or routine-declared one resolves its names
+    /// through an activation the cached call does not hand TRIR. Those keep
+    /// `call_compiled_function_fast`, exactly as before #18080.
+    // Cost: O(1).
+    #[inline]
+    pub(super) fn zero_param_trir_ok(cf: &CompiledFunction) -> bool {
+        cf.trir.is_some()
+            && cf.code.free_var_syms.is_empty()
+            && cf.code.lexsub_refs.is_empty()
+            && !cf.code.declared_in_block
+            && !cf.code.declared_in_routine
+    }
+
     /// Call the parameterless routine `cf` with the `arity` values on top of
     /// the stack. A parenthesized call carries only the parser's callsite-line
     /// marker, whose line is recorded; any other value is a surplus positional
@@ -64,7 +81,7 @@ impl Interpreter {
         // A routine with a TRIR chunk runs it on every call this module
         // serves, as the name-keyed cache's hit path does, so its calls never
         // alternate between the two tiers (#18080).
-        if cf.trir.is_some()
+        if Self::zero_param_trir_ok(cf)
             && !self.any_routine_wrapped()
             && let Some(result) = self.try_call_trir(cf, self.stack.len(), Some(code), compiled_fns)
         {
