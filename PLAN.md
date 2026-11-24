@@ -236,7 +236,8 @@ work; see `docs/mzef-install-pipeline.md`. The **REPL** (`--repl`,
       is the "Regressed since the previous ledger" section of `ecosystem/summary.md`). Prefer a root cause when one covers several distributions; working the whole queue
       in order, never skipping an entry for looking hard, is what keeps the published figure honest.
       Method: [docs/ecosystem-parity.md](docs/ecosystem-parity.md);
-      decisions: [ADR-0085](docs/adr/0085-ecosystem-testsuite-parity-measurement.md). The sweep is a measurement, not a gate, so it does **not** close B1's
+      decisions: [ADR-0085](docs/adr/0085-ecosystem-testsuite-parity-measurement.md). The sweep is
+      the **release gate** ("Release cadence and gate" above) but not a per-PR CI gate, so it does **not** close B1's
       "working-module regression CI" — that stays a separate item.
 - [ ] **★Real-dist compatibility sweep** — run real fez dists under mutsu and fix the general bugs
       they surface. Ledger: [docs/dist-compat-sweep.md](docs/dist-compat-sweep.md). **The `--run-tests`
@@ -380,6 +381,7 @@ signal "mutsu differs from raku **and** from the documented expectation" over a 
 | Bundled libraries | **40 vendored**, upstream suites gated at release | 10+ bundled, all documented |
 | mzef | install / fetch / resolution / test phase all work E2E | Full pipeline on the real fez index |
 | Binary distribution | 4 release targets + GHCR image + mise ✅ | Achieved |
+| Ecosystem dist parity (release gate) | **99.7%** (1336/1340, ledger 2026-11-24) | 100% at every release |
 | roast whitelist | **1440 / 1455** | Achieved; every remaining file is non-goal, no oracle or unpassable |
 | GC / JIT | **default on** ✅ | Achieved |
 | RakuAST frontend round trip (§0) | tracked in [#7564](https://github.com/tokuhirom/mutsu/issues/7564) | parity with the ordinary frontend, then default flip |
