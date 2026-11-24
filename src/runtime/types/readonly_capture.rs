@@ -54,9 +54,18 @@ static NO_READONLY_AT_DECLARATION: LazyLock<CapturedReadonly> =
     LazyLock::new(|| snapshot(Vec::new(), true));
 
 fn snapshot(marks: Vec<(Symbol, ReadonlyKind)>, at_declaration: bool) -> CapturedReadonly {
+    snapshot_with_topic(marks, at_declaration, None)
+}
+
+fn snapshot_with_topic(
+    marks: Vec<(Symbol, ReadonlyKind)>,
+    at_declaration: bool,
+    topic: Option<Option<ReadonlyKind>>,
+) -> CapturedReadonly {
     Arc::new(ReadonlySnapshot {
         marks: marks.into_boxed_slice(),
         at_declaration,
+        topic,
     })
 }
 
@@ -92,14 +101,21 @@ impl Interpreter {
     /// the code writes no free variable, so there is nothing to reconcile later.
     // Cost: O(w), w = scalar free variables `code` writes; O(1) when nothing is readonly.
     pub(crate) fn capture_readonly_state(&self, code: &CompiledCode) -> Option<CapturedReadonly> {
+        // A block that writes `$_` and is called with no argument writes the
+        // topic of the scope it was created in (#19067).
+        let topic = (code.writes_topic && !code.is_routine)
+            .then(|| self.readonly_kind_sym(crate::symbol::wk::topic()));
         if code.free_var_writes.is_empty()
             && code.free_var_container_writes.is_empty()
             && code.nested_sub_written_free.is_empty()
         {
-            return None;
+            return topic.map(|topic| snapshot_with_topic(Vec::new(), false, Some(topic)));
         }
         if self.no_readonly_vars() {
-            return Some(Arc::clone(&NO_READONLY_CAPTURES));
+            return Some(match topic {
+                Some(topic) => snapshot_with_topic(Vec::new(), false, Some(topic)),
+                None => Arc::clone(&NO_READONLY_CAPTURES),
+            });
         }
         let mut record: Vec<(Symbol, ReadonlyKind)> = Vec::new();
         for sym in written_free_vars(code) {
@@ -109,10 +125,10 @@ impl Interpreter {
                 record.push((sym, kind));
             }
         }
-        Some(if record.is_empty() {
+        Some(if record.is_empty() && topic.is_none() {
             Arc::clone(&NO_READONLY_CAPTURES)
         } else {
-            snapshot(record, false)
+            snapshot_with_topic(record, false, topic)
         })
     }
 
@@ -175,6 +191,17 @@ impl Interpreter {
         let Some(record) = record else {
             return;
         };
+        // The topic a block writes is its creation scope's (#19067). A call
+        // with an argument rebinds `$_` and sets its mark again afterwards.
+        if let Some(wanted) = record.topic {
+            let topic = crate::symbol::wk::topic();
+            if self.readonly_kind_sym(topic) != wanted {
+                match wanted {
+                    Some(kind) => self.mark_readonly_sym_with(topic, kind),
+                    None => self.unmark_readonly_sym(topic),
+                }
+            }
+        }
         // Nothing written (and, without `include_reads`, nothing to read back): the
         // loop below would walk an empty list after building it.
         if !include_reads
