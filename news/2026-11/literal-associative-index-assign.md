@@ -1,0 +1,1 @@
+Assigning through an associative subscript on an Int, Str, Rat, or Bool literal now raises the same indexing error as reading that subscript. The right-hand side is evaluated before the error, matching Rakudo.

@@ -12,7 +12,8 @@
 //! - the callee is a plain `sub` declared once in the whole unit, at its top
 //!   level, or the unit's top-level `multi` candidates (with at most one
 //!   `proto`): no other declaration of the name at any depth, and no `&name`
-//!   anywhere (a rebinding or wrap could replace it). A multi is judged only
+//!   variable or parameter anywhere (it would shadow the routine; a plain
+//!   `&name` reference or `.wrap` does not stop rakudo refuting the call). A multi is judged only
 //!   when nothing else can add candidates: its name is no core or `Test`
 //!   routine, and the unit imports no module. It is refuted when every
 //!   candidate is, by the dispatcher's rules: a default, a `:D` smiley and an
@@ -48,10 +49,10 @@ use super::Interpreter;
 mod report;
 use report::{call_offset, refutation_error, written_with_word_quote};
 
-/// One call to a candidate callee, with literal arguments only.
+/// One call whose arguments are all static-shaped (see [`static_arg`]).
 struct Site<'ast> {
     name: &'ast str,
-    args: Vec<Value>,
+    args: Vec<&'ast Expr>,
     /// The innermost statement holding the call.
     span: SrcSpan,
 }
@@ -62,14 +63,24 @@ struct Survey<'ast> {
     /// How often each name is declared, at any depth (a `sub`, a method, a
     /// package or type, a token).
     decls: HashMap<String, usize>,
-    /// Names that appear as `&name` or as a declared `&name` variable.
+    /// Names declared as a `&name` variable or parameter, which shadows a
+    /// routine of the name where it is in scope. A plain `&name` reference
+    /// (taken, passed, `.wrap`ped) does not: rakudo refutes the call all the
+    /// same.
     code_vars: HashSet<String>,
+    /// Names written as a plain `&name` reference anywhere. A `multi` written
+    /// so is not judged: the reference can add candidates
+    /// (`&p.add_dispatchee(&other)` at BEGIN time).
+    code_refs: HashSet<String>,
     /// Whether the unit imports names from a module (`use`, `need`,
     /// `import`), whose `multi` candidates it cannot see. `Test` exports only
     /// its own functions, which are never judged.
     imports: bool,
     /// Names declared as a type anywhere in the unit.
     type_decls: HashSet<String>,
+    /// How often each variable name (without its sigil) is declared, at any
+    /// depth: a `my`/`our`/`state`, a parameter, a block or loop parameter.
+    var_decls: HashMap<String, usize>,
     /// Every by-name call whose arguments are all literals, in source order.
     sites: Vec<Site<'ast>>,
     /// The span of the statement the walk is in.
@@ -87,7 +98,7 @@ impl<'ast> Visit<'ast> for Survey<'ast> {
         match stmt {
             Stmt::SetLine(_, span) if *span != SrcSpan::NONE => self.span = *span,
             Stmt::Call { name, args, .. } => {
-                if let Some(args) = literal_call_args(args) {
+                if let Some(args) = static_call_args(args) {
                     self.sites.push(Site {
                         name: name.as_str(),
                         args,
@@ -102,7 +113,7 @@ impl<'ast> Visit<'ast> for Survey<'ast> {
 
     fn visit_expr(&mut self, expr: &'ast Expr) {
         if let Expr::Call { name, args, .. } = expr
-            && let Some(args) = literal_expr_args(args)
+            && let Some(args) = static_expr_args(args)
         {
             self.sites.push(Site {
                 name: name.as_str(),
@@ -127,21 +138,28 @@ impl<'ast> Visit<'ast> for Survey<'ast> {
             {
                 self.imports = true;
             }
-            NameKind::CodeVar | NameKind::VarDecl | NameKind::Param | NameKind::BlockParam
-                if kind == NameKind::CodeVar || name.starts_with('&') =>
-            {
-                self.code_vars
-                    .insert(name.trim_start_matches('&').to_string());
+            NameKind::CodeVar => {
+                self.code_refs.insert(name.trim_start_matches('&').to_string());
+            }
+            NameKind::VarDecl | NameKind::Param | NameKind::BlockParam => {
+                if let Some(code) = name.strip_prefix('&') {
+                    self.code_vars.insert(code.to_string());
+                }
+                let bare = name.trim_start_matches(['$', '@', '%', '&']);
+                *self.var_decls.entry(bare.to_string()).or_insert(0) += 1;
             }
             _ => {}
         }
     }
 }
 
-/// The literal value of a call argument, when it is one a refutation can be
-/// judged on (`None` for anything else, a named argument included).
+/// The static value of a call argument, when it is one a refutation can be
+/// judged on: a literal (`Int`, `Num`, `Rat`, `Str`, `Bool`, `Nil`), a core
+/// type object, or a variable `typed_vars` gives a declared core type, which
+/// stands for its type object (every value it can hold is of that type).
+/// `None` for anything else.
 // Cost: O(1).
-fn literal_arg(arg: &Expr) -> Option<Value> {
+fn static_arg(arg: &Expr, typed_vars: &HashMap<&str, &str>) -> Option<Value> {
     match arg {
         Expr::Literal(value)
             if matches!(
@@ -158,15 +176,26 @@ fn literal_arg(arg: &Expr) -> Option<Value> {
             Some(value.clone())
         }
         // A core type object (`f(Str)`); a smiley (`Int:D`) is a run-time check.
-        Expr::BareWord(name)
-            if !name.contains(':')
-                && crate::known_types::is_known_type_constraint(name)
-                && !crate::native_types::is_native_type_name(name) =>
-        {
-            Some(Value::package(crate::symbol::Symbol::intern(name)))
-        }
+        Expr::BareWord(name) => core_type_object(name),
+        Expr::Var(name) => typed_vars.get(name.as_str()).and_then(|ty| core_type_object(ty)),
         _ => None,
     }
+}
+
+/// The type object of the core type `name`, unless it is a smiley or native.
+// Cost: O(1).
+fn core_type_object(name: &str) -> Option<Value> {
+    (!name.contains(':')
+        && crate::known_types::is_known_type_constraint(name)
+        && !crate::native_types::is_native_type_name(name))
+    .then(|| Value::package(crate::symbol::Symbol::intern(name)))
+}
+
+/// Whether `arg` can be a static argument at all (its value or type is
+/// decided once the unit's declarations are known).
+// Cost: O(1).
+fn static_shaped(arg: &Expr) -> bool {
+    matches!(arg, Expr::Literal(_) | Expr::BareWord(_) | Expr::Var(_))
 }
 
 /// Whether `arg` is the line marker the parser adds to a call (not an argument).
@@ -179,21 +208,44 @@ fn is_callsite_marker(arg: &Expr) -> bool {
 }
 
 // Cost: O(a), a = arguments.
-fn literal_expr_args(args: &[Expr]) -> Option<Vec<Value>> {
+fn static_expr_args(args: &[Expr]) -> Option<Vec<&Expr>> {
     args.iter()
         .filter(|arg| !is_callsite_marker(arg))
-        .map(literal_arg)
+        .map(|arg| static_shaped(arg).then_some(arg))
         .collect()
 }
 
 // Cost: O(a), a = arguments.
-fn literal_call_args(args: &[CallArg]) -> Option<Vec<Value>> {
+fn static_call_args(args: &[CallArg]) -> Option<Vec<&Expr>> {
     args.iter()
         .filter_map(|arg| match arg {
             CallArg::Named { name, .. } if name == crate::parser::TEST_CALLSITE_LINE_KEY => None,
             CallArg::Positional(expr) if is_callsite_marker(expr) => None,
-            CallArg::Positional(expr) => Some(literal_arg(expr)),
+            CallArg::Positional(expr) => Some(static_shaped(expr).then_some(expr)),
             _ => Some(None),
+        })
+        .collect()
+}
+
+/// The unit's top-level scalars declared with a core type (`my Str $s`), by
+/// name, when the name is declared nowhere else in the unit: every use of
+/// it then reads that variable.
+// Cost: O(s), s = top-level statements.
+fn typed_vars<'ast>(stmts: &'ast [Stmt], survey: &Survey<'_>) -> HashMap<&'ast str, &'ast str> {
+    stmts
+        .iter()
+        .filter_map(|stmt| match stmt {
+            Stmt::VarDecl {
+                name,
+                type_constraint: Some(ty),
+                ..
+            } if !name.starts_with(['@', '%', '&'])
+                && survey.var_decls.get(name.as_str()) == Some(&1) =>
+            {
+                // `Str:D` holds only `Str`s too.
+                Some((name.as_str(), ty.strip_suffix(":D").unwrap_or(ty)))
+            }
+            _ => None,
         })
         .collect()
 }
@@ -263,13 +315,22 @@ impl Interpreter {
             return Ok(());
         }
         let callees = callees(stmts, &survey);
+        let typed_vars = typed_vars(stmts, &survey);
         for (index, site) in survey.sites.iter().enumerate() {
             let Some((rules, candidates)) = callees.get(site.name) else {
                 continue;
             };
+            let Some(args) = site
+                .args
+                .iter()
+                .map(|arg| static_arg(arg, &typed_vars))
+                .collect::<Option<Vec<Value>>>()
+            else {
+                continue;
+            };
             // A type object the unit redeclares (a class, a sub of the name)
             // is not the core one.
-            let redeclared = site.args.iter().any(|arg| {
+            let redeclared = args.iter().any(|arg| {
                 matches!(arg.view(), ValueView::Package(name)
                     if survey.decls.contains_key(name.resolve().as_str()))
             });
@@ -278,7 +339,7 @@ impl Interpreter {
             }
             let refuted = candidates
                 .iter()
-                .all(|params| self.refutes(params, &site.args, &survey.type_decls, *rules));
+                .all(|params| self.refutes(params, &args, &survey.type_decls, *rules));
             if !refuted {
                 continue;
             }
@@ -288,7 +349,7 @@ impl Interpreter {
             if written_with_word_quote(source, at + site.name.len(), site.span) {
                 continue;
             }
-            return Err(refutation_error(site.name, *rules, candidates, &site.args, source, at));
+            return Err(refutation_error(site.name, *rules, candidates, &args, source, at));
         }
         Ok(())
     }
@@ -410,6 +471,7 @@ fn callees<'ast>(
                 !candidates.is_empty()
                     && protos <= 1
                     && !survey.imports
+                    && !survey.code_refs.contains(*name)
                     && !Interpreter::is_builtin_function(name)
                     && !Interpreter::is_test_function_name(name)
             }

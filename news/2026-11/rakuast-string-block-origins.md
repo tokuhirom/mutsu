@@ -1,0 +1,1 @@
+RakuAST now records the source range of a word quote's `StrLiteral` for `qq:w` and `q:w` delimiter forms. Statements inside interpolated string blocks also carry key origins, matching Rakudo's `Node.dump` markers.

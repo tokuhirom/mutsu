@@ -1,0 +1,1 @@
+Optional method calls now return `Nil` only when the requested method is missing on their receiver. An `X::Method::NotFound` raised inside a method that was found propagates through both scalar `.?` and hyper `».?` calls.

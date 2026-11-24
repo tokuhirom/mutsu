@@ -121,7 +121,8 @@ pub(super) fn modified_statement(list: &mut RakuAstNode, inside: SrcSpan) {
 }
 
 /// `$x = $y = 1` / `10 R+= ($a ||= 42)`: an infix or postfix application
-/// or a parenthesized term on the right of another infix, which the parser
+/// or a parenthesized term or substitution on the right of another infix,
+/// which the parser
 /// left unplaced, runs from after the operator
 /// (ending at byte `op_end`) and its blanks to the end of the outer
 /// application, and its parts are derived from that range.
@@ -140,6 +141,7 @@ pub(super) fn right_after_operator(node: &mut RakuAstNode, op_end: usize) {
                 RakuAstClass::ApplyInfix
                     | RakuAstClass::ApplyPostfix
                     | RakuAstClass::CircumfixParentheses
+                    | RakuAstClass::Substitution
             )
         })
     else {

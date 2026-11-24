@@ -787,7 +787,7 @@ pub(crate) fn derived_char_name(cp: u32) -> Option<String> {
     DERIVED_NAME_RANGES
         .iter()
         .find(|(lo, hi, _)| (*lo..=*hi).contains(&cp))
-        .map(|(_, _, prefix)| format!("{}-{:04X}", prefix, cp))
+        .map(|(_, _, prefix)| hex_name(prefix, "-", cp, ""))
 }
 
 /// Name prefixes Rakudo parses *algorithmically* in the `uniparse` direction:
@@ -832,19 +832,44 @@ fn is_private_use(cp: u32) -> bool {
 /// Return the Unicode character name for a codepoint (u32).
 /// Handles all special categories: control, noncharacter, surrogate,
 /// private-use, algorithmically-derived names, reserved, etc.
+/// `prefix` followed by `cp` as at least four uppercase hex digits and `>`:
+/// the `<reserved-0378>`-style name of a codepoint without one.
+// Cost: O(|prefix|).
+fn hex_sentinel(prefix: &str, cp: u32) -> String {
+    hex_name(prefix, "", cp, ">")
+}
+
+/// `prefix`, `sep`, `cp` as at least four uppercase hex digits, `suffix`.
+/// Written out by hand because `format!` cost ~700 instructions per call,
+/// which made it most of `uniname` over the mostly derived or unnamed
+/// codepoint range (#18028).
+// Cost: O(|prefix| + |suffix|).
+fn hex_name(prefix: &str, sep: &str, cp: u32, suffix: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut out = String::with_capacity(prefix.len() + sep.len() + 6 + suffix.len());
+    out.push_str(prefix);
+    out.push_str(sep);
+    let digits = (32 - cp.leading_zeros()).div_ceil(4).max(4);
+    for shift in (0..digits).rev() {
+        out.push(HEX[((cp >> (shift * 4)) & 0xF) as usize] as char);
+    }
+    out.push_str(suffix);
+    out
+}
+
 pub(crate) fn unicode_char_name_by_codepoint(cp: u32) -> String {
     // Noncharacters
     if is_noncharacter(cp) {
-        return format!("<noncharacter-{:04X}>", cp);
+        return hex_sentinel("<noncharacter-", cp);
     }
     // Surrogates have their own sentinel. This must precede the `char::from_u32`
     // branch below, which rejects them (Rust chars cannot be surrogates) and
     // would otherwise send them to the `<reserved-…>` fallback.
     if (0xD800..=0xDFFF).contains(&cp) {
-        return format!("<surrogate-{:04X}>", cp);
+        return hex_sentinel("<surrogate-", cp);
     }
     if is_private_use(cp) {
-        return format!("<private-use-{:04X}>", cp);
+        return hex_sentinel("<private-use-", cp);
     }
     // Try to convert to char
     if let Some(ch) = char::from_u32(cp) {
@@ -858,13 +883,13 @@ pub(crate) fn unicode_char_name_by_codepoint(cp: u32) -> String {
         }
         // Control characters without a name
         if is_control_char(cp) {
-            return format!("<control-{:04X}>", cp);
+            return hex_sentinel("<control-", cp);
         }
         // Has a char but no name and not control -> reserved/unassigned
-        format!("<reserved-{:04X}>", cp)
+        hex_sentinel("<reserved-", cp)
     } else {
         // Invalid char (out of range)
-        format!("<reserved-{:04X}>", cp)
+        hex_sentinel("<reserved-", cp)
     }
 }
 

@@ -370,7 +370,7 @@ pub(super) fn postcircumfix(node: &mut RakuAstNode) {
 /// `%h<a b>` / `%h<<a>>` / `%h«a»`: the subscript runs from the operand's end
 /// to the application's (its adverbs included), and its word quote is the text
 /// between the brackets, kept raw.
-// Cost: O(n), n = length of the subscript's source.
+// Cost: O(n * d + s log l), n = length of the subscript's source, d = word quote depth (at most 64), s = segments, l = source lines.
 fn literal_hash_index(node: &mut RakuAstNode, from: usize, to: usize, scan_to: usize) {
     let Some(subscript) = child(node, "postfix") else {
         return;
@@ -378,19 +378,20 @@ fn literal_hash_index(node: &mut RakuAstNode, from: usize, to: usize, scan_to: u
     if subscript.origin.0.is_some() {
         return;
     }
-    let inner = super::unit_source::with_text(SrcSpan::new(from, scan_to), |text| {
-        let (open, close) = super::origin::word_brackets_open(text)?;
-        let end = open + text.get(open..)?.find(close)?;
-        Some((from + open, from + end, close.to_string()))
-    });
-    let Some((inner_from, inner_to, close)) = inner else {
+    let Some((open, close)) = super::unit_source::with_text(SrcSpan::new(from, scan_to), |text| {
+        super::origin::word_brackets_open(text)
+    }) else {
         return;
     };
     // What follows the closing bracket is the subscript's adverbs.
-    let Some((close_end, adverbs)) = super::adverb_origins::split(from, scan_to, &close) else {
+    let Some((close_end, adverbs)) = super::adverb_origins::split(from, scan_to, close) else {
         return;
     };
-    if close_end != inner_to + close.len() {
+    let inner_from = from + open;
+    let Some(inner_to) = close_end.checked_sub(close.len()) else {
+        return;
+    };
+    if inner_to < inner_from {
         return;
     }
     with_child(node, "postfix", |subscript| {

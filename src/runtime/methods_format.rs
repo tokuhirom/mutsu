@@ -20,6 +20,7 @@ pub(super) fn positional_param(name: &str) -> ParamDef {
         does_target: Default::default(),
         target: Default::default(),
         type_capture: None,
+        type_capture_smiley: None,
         name: name.to_string(),
         default: None,
         multi_invocant: true,

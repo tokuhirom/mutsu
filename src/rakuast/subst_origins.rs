@@ -10,9 +10,10 @@
 //! Each part is placed only where the text spells it: exact or absent.
 
 use super::infix_origins::{byte_range, child, leaf_text, with_child};
-use super::{RakuAstClass, RakuAstNode};
+use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::SrcSpan;
 use crate::scope::NameScope;
+use crate::value::{Value, ValueView};
 
 /// Place the adverbs, pattern, operator and replacement of `node`, a
 /// `Substitution` with a range.
@@ -62,9 +63,70 @@ pub(super) fn derive(names: &NameScope, node: &mut RakuAstNode) {
                     super::origin::quoted_text(replacement, span(value));
                     super::infix_origins::derive(names, replacement);
                 }
+                assigned_literal_quote(replacement, &text[value.0..value.1], from + value.0);
             });
         }
     }
+}
+
+/// A literal quote used as an assigned replacement is represented by its
+/// contents in Rakudo: the `QuotedString` has the body range, while its lone
+/// `StrLiteral` has no range. Keep other replacement expressions untouched.
+// Cost: O(n), n = length of the replacement text.
+fn assigned_literal_quote(replacement: &mut RakuAstNode, written: &str, from: usize) {
+    if replacement.class != RakuAstClass::QuotedString {
+        return;
+    }
+    let prefix = if written.starts_with("qq") {
+        2
+    } else if written.starts_with(['q', 'Q']) {
+        1
+    } else {
+        0
+    };
+    let Some(open) = written[prefix..].chars().next() else {
+        return;
+    };
+    if prefix == 0 && !matches!(open, '\'' | '"') {
+        return;
+    }
+    if open.is_alphanumeric() || open.is_whitespace() || open == ':' {
+        return;
+    }
+    let close = crate::source_comments::matching_bracket(open).unwrap_or(open);
+    let start = prefix + open.len_utf8();
+    let Some(end) = written.len().checked_sub(close.len_utf8()) else {
+        return;
+    };
+    if end < start || !written.ends_with(close) {
+        return;
+    }
+    let Some(field) = replacement
+        .fields
+        .iter_mut()
+        .find(|field| field.name == Some("segments"))
+    else {
+        return;
+    };
+    let RakuAstFieldValue::List(segments) = &mut field.value else {
+        return;
+    };
+    let [only] = segments.as_mut_slice() else {
+        return;
+    };
+    let ValueView::RakuAst(segment) = only.view() else {
+        return;
+    };
+    if segment.class != RakuAstClass::StrLiteral
+        || leaf_text(segment).as_deref() != Some(&written[start..end])
+    {
+        return;
+    }
+    let mut segment = RakuAstNode::clone(segment);
+    segment.origin.0 = None;
+    *only = Value::rakuast(Box::new(segment));
+    replacement.origin.0 = None;
+    super::origin::set_span(replacement, SrcSpan::new(from + start, from + end));
 }
 
 /// Where a substitution's parts are written, as offsets into its text.

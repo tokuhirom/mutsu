@@ -26,6 +26,10 @@ pub(crate) const LINE_STARTS_ATTR: &str = "line-starts";
 /// began on: what lowering turns back into a line marker.
 pub(crate) const LINE_ATTR: &str = "line";
 
+/// The hidden attribute of an `Origin` instance that marks a statement-level
+/// origin, rakudo's `Origin.is-key` (what `Node.dump` prints as `𝄞`).
+pub(crate) const KEY_ATTR: &str = "key";
+
 /// One unit's source as the conversion sees it.
 pub(super) struct UnitSource {
     /// The shared `RakuAST::Origin::Source` instance.
@@ -151,6 +155,7 @@ pub(super) fn origin_value(line: i64, span: SrcSpan) -> Value {
     let unit = CURRENT.with(|c| c.borrow().clone());
     let mut attrs = HashMap::new();
     attrs.insert(LINE_ATTR.to_string(), Value::int(line));
+    attrs.insert(KEY_ATTR.to_string(), Value::TRUE);
     match unit {
         Some(unit) => {
             let (from, to) = if span.is_some() {
@@ -176,6 +181,13 @@ pub(super) fn origin_value(line: i64, span: SrcSpan) -> Value {
 /// read through `.origin`, and a round trip that has no source never asks.
 // Cost: O(log n), n = lines (plus characters for non-ASCII text) of the unit.
 pub(super) fn span_origin_value(span: SrcSpan) -> Option<Value> {
+    span_origin(span, false)
+}
+
+/// [`span_origin_value`] that also says whether the origin is a key
+/// (statement-level) one.
+// Cost: O(log n), n = lines (plus characters for non-ASCII text) of the unit.
+pub(super) fn span_origin(span: SrcSpan, key: bool) -> Option<Value> {
     if !span.is_some() {
         return None;
     }
@@ -188,6 +200,9 @@ pub(super) fn span_origin_value(span: SrcSpan) -> Option<Value> {
     attrs.insert("from".to_string(), Value::int(from));
     attrs.insert("to".to_string(), Value::int(to));
     attrs.insert("source".to_string(), unit.source.clone());
+    if key {
+        attrs.insert(KEY_ATTR.to_string(), Value::TRUE);
+    }
     Some(Value::make_instance(
         Symbol::intern("RakuAST::Origin"),
         attrs,
