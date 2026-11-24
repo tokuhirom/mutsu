@@ -42,6 +42,9 @@ impl Compiler {
             {
                 hoisted.push(name);
                 self.compile_stmt(&Self::pending_dynamic_decl(stmt));
+                // Reads before the declaration still count for its
+                // X::Dynamic::Postdeclaration check.
+                self.hoisted_dynamic_decls.insert(name.clone());
             }
             code_ran = code_ran || !Self::stmt_is_inert_prefix(stmt);
         }
