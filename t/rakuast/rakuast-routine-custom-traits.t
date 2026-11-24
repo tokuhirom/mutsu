@@ -3,7 +3,7 @@ use MONKEY-SEE-NO-EVAL;
 use experimental :rakuast;
 use Test;
 
-plan 14;
+plan 15;
 
 class TraitFixture::Tag { }
 my %seen;
@@ -23,6 +23,11 @@ is $typed-trait.^name, 'RakuAST::Trait::Is', 'a qualified custom trait is Trait:
 is $typed-trait.type.^name, 'RakuAST::Type::Simple', 'a qualified custom trait stores a type node';
 is $typed-trait.argument.^name, 'RakuAST::Circumfix::Parentheses',
     'a qualified custom trait keeps its parenthesized argument';
+my @typed-children;
+$typed-trait.visit-children(-> $child { @typed-children.push: $child.^name });
+is @typed-children.join(', '),
+    'RakuAST::Circumfix::Parentheses, RakuAST::Type::Simple',
+    'a typed trait visits its argument before its type';
 
 my $hidden-trait = Q[sub measured() is hidden-from-backtrace { 1 }]
     .AST.statements.head.expression.traits.head;
