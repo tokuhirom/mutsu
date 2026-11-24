@@ -2447,7 +2447,7 @@ impl Interpreter {
                         }
                         Err(e)
                             if optional_receiver.as_ref().is_some_and(|receiver| {
-                                e.is_method_not_found_for_receiver(method, receiver)
+                                self.optional_call_missed_receiver(&e, method, receiver)
                             }) =>
                         {
                             crate::vm::vm_stats::record_dispatch_entry_outcome(

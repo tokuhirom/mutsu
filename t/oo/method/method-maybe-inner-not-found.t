@@ -1,6 +1,6 @@
 use Test;
 
-plan 18;
+plan 22;
 
 my $runs = 0;
 class F {
@@ -51,3 +51,14 @@ is "s".?absent, Nil, 'a Str answers Nil';
 throws-like { my $y = F.new; $y.VAR; $y.?inner }, X::Method::NotFound,
     message => /'no-such-thing'/,
     'an inner miss through a scalar container still propagates';
+
+# A user class inheriting from a core type misses under the parent's name.
+class SubArray is Array { method probe { self.?absent } }
+is SubArray.new.probe, Nil, 'an Array subclass answers Nil from inside its own method';
+my $sa = SubArray.new;
+is $sa.?absent, Nil, 'an Array subclass answers Nil on its own miss';
+class SubHash is Hash { method probe { self.?absent } }
+is SubHash.new.probe, Nil, 'a Hash subclass answers Nil';
+class Inner is Array { method probe { F.new.?inner } }
+throws-like { Inner.new.probe }, X::Method::NotFound, message => /'no-such-thing'/,
+    'an inner miss inside a subclass method still propagates';
