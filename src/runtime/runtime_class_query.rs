@@ -434,13 +434,22 @@ impl Interpreter {
     /// calling frame — visible here only because the env is flattened — must never
     /// shadow them.
     pub(crate) fn inject_class_body_statics(&mut self, class_name: &str) {
+        self.inject_class_body_statics_sym(Symbol::intern(class_name));
+    }
+
+    /// [`Self::inject_class_body_statics`] for a caller that holds the class
+    /// name's symbol (a method call's owner), so the plan lookup does not
+    /// intern it again on every call.
+    // Cost: O(s), s = the statics injected, or O(1) when a fresh frame
+    // adopts the plan's tier.
+    pub(crate) fn inject_class_body_statics_sym(&mut self, class: Symbol) {
         // A program with no class-body statics anywhere has nothing to
         // inject; every compiled method call comes here, so skip the
         // ancestor walk and its allocation (#17331).
         if self.lexicals.package_lexicals.read().is_empty() {
             return;
         }
-        let plan = self.class_body_statics_plan(class_name);
+        let plan = self.class_body_statics_plan_sym(class);
         if plan.writes.is_empty() {
             return;
         }

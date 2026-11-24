@@ -712,6 +712,15 @@ impl Interpreter {
     }
 
     pub(crate) fn package_scope_lexical(&self, name: &str) -> Option<Value> {
+        // An unqualified name is looked up under itself: when no package holds
+        // it at all (the table's key union says so), skip the key derivation
+        // and its interns -- the common answer for a routine's free variable
+        // (#18274). A qualified name's key is derived, so it takes the full path.
+        if !crate::qualified::is_qualified_str(name)
+            && !self.lexicals.package_lexicals.read().contains_name(name)
+        {
+            return None;
+        }
         let (cur, key) = self.package_scope_lexical_key(name)?;
         self.lexicals
             .package_lexicals
