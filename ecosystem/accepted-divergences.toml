@@ -202,6 +202,16 @@ reproduced on raku 2026.11 with an injected delay (maintainer decision 2026-11-1
 
 [[divergence]]
 dist = "ParaSeq"
+file = "t/09-map.rakutest"
+shape = { verdict = "timeout", ok = 0, nok = 0, first_failure = "SWEEP-TIMEOUT" }
+issue = 17723
+reason = """same race as t/08-grep.rakutest: `.map` schedules through ParaSeq 0.2.7's `sub fast()`. \
+On raku 2026.11, a `sleep 0.05` before `$result.close-queues` hangs 5 runs of 5 right after test 20 \
+(3 of 3 pass unmodified). A mutsu release build passes 5 of 5 alone and hangs 1 of 18 with three \
+copies running at once, in the degree-3 `.map` (maintainer decision 2026-11-24, #17723)."""
+
+[[divergence]]
+dist = "ParaSeq"
 file = "t/27-batch.t"
 shape = { verdict = "timeout", ok = 0, nok = 0, first_failure = "SWEEP-TIMEOUT" }
 issue = 19144
