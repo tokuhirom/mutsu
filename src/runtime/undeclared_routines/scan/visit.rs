@@ -83,7 +83,7 @@ impl<'ast> Visit<'ast> for Scan {
                 name, decl, body, ..
             } => match self.package_frames.body_frame(*decl, *name) {
                 Some(frame) => {
-                    let saved = std::mem::replace(&mut self.current, Some(frame));
+                    let saved = self.current.replace(frame);
                     self.visit_stmts(body);
                     self.current = saved;
                 }
