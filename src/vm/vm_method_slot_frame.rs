@@ -213,6 +213,7 @@ impl Interpreter {
                 class: Some(class_val),
                 role: None,
             },
+            true,
         );
         let saved_lexical_fatal_mode =
             std::mem::replace(&mut self.module.lexical_fatal_mode, cc.method_fatal_pragma);

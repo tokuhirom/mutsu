@@ -705,6 +705,7 @@ impl Interpreter {
                 ),
                 role: role_context.as_deref().map(crate::symbol::Symbol::intern),
             },
+            false,
         );
 
         // Bind method parameters
@@ -2532,6 +2533,7 @@ impl Interpreter {
                 class: Some(class_val),
                 role: role_context,
             },
+            false,
         );
 
         // Execute bytecode (same as slow path)

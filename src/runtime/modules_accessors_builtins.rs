@@ -4,6 +4,7 @@ mod accessors_misc;
 mod accessors_resolve;
 mod enclosing_routine;
 mod accessors_stack;
+mod method_routine_frame;
 mod accessors_stash;
 mod accessors_stash_core;
 mod accessors_stash_keyed;
