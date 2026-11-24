@@ -23,14 +23,15 @@ is placed(Q[s:g/a/b/]),
 is placed(Q[s[\d] = 5]),
     'Substitution@0-9 Regex::CharClass::Digit@2-4 Assignment@6-7 IntLiteral@8-9',
     'a bracketed pattern and an assignment';
+# Assigned literal quotes include their delimiters in Rakudo 2026.11.
 is placed(Q[s{a}="b"]),
-    'Substitution@0-8 Regex::Literal@2-3 Assignment@4-5 QuotedString@6-7',
+    'Substitution@0-8 Regex::Literal@2-3 Assignment@4-5 QuotedString@5-8 StrLiteral@6-7',
     'a quoted replacement after `=`';
 is placed(Q[s[\d] += 5]),
     'Substitution@0-10 Regex::CharClass::Digit@2-4 MetaInfix::Assign@6-8 Infix@6-7 IntLiteral@9-10',
     'a compound assignment';
 is placed(Q[s:i:g{ a } = 'c']),
-    'Substitution@0-16 ColonPair::True@1-3 ColonPair::True@3-5 Regex::WithWhitespace@7-9 Regex::Literal@7-8 Assignment@11-12 QuotedString@14-15',
+    'Substitution@0-16 ColonPair::True@1-3 ColonPair::True@3-5 Regex::WithWhitespace@7-9 Regex::Literal@7-8 Assignment@11-12 QuotedString@13-16 StrLiteral@14-15',
     'adverbs and a blank-padded pattern';
 is placed(Q[S/a/$0/]),
     'Substitution@0-7 Regex::Literal@2-3 QuotedString@4-6 Var::PositionalCapture@4-6',

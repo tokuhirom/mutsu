@@ -1,1 +1,1 @@
-Literal substitution replacements now expose the same RakuAST source range as Rakudo: the quoted contents belong to the replacement node, while its single literal segment has no independent range.
+Literal substitution replacements expose the Rakudo 2026.11 RakuAST ranges: the replacement quote spans its delimiters, while its single literal segment spans the contents.
