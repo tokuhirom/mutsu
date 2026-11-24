@@ -258,11 +258,15 @@ impl Value {
     // one level, O(c), c = the node's captures.
     pub(crate) fn lazy_match_positional_capture(&self, i: usize) -> Option<Value> {
         let node = self.0.as_match_node()?;
-        let list = node.attr("list");
-        Some(match list.as_ref().map(Value::view) {
-            Some(ValueView::Array(items, ..)) => items.get(i).cloned().unwrap_or(Value::NIL),
-            _ => Value::NIL,
-        })
+        // `list` is structural, so `attr("list")` would force the node too; read
+        // it in place rather than cloning the list's handle out and back.
+        let attrs = node.force_attrs().as_map();
+        Some(
+            match attrs.get(crate::symbol::wk::match_list()).map(Value::view) {
+                Some(ValueView::Array(items, ..)) => items.get(i).cloned().unwrap_or(Value::NIL),
+                _ => Value::NIL,
+            },
+        )
     }
 
     /// The positional-capture list as `.list` presents it to Raku code.
