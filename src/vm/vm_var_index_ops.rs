@@ -878,7 +878,9 @@ impl Interpreter {
         // `%h{...}` obeys different rules (no index numification, key
         // encoding), so it has its own twin below.
         let elem = if is_positional {
-            Self::plain_positional_element(&self.stack[n - 2], &self.stack[n - 1])
+            Self::plain_positional_element(&self.stack[n - 2], &self.stack[n - 1]).or_else(|| {
+                self.lazy_match_positional_element(&self.stack[n - 2], &self.stack[n - 1])
+            })
         } else {
             Self::hash_fast_path_element(&self.stack[n - 2], &self.stack[n - 1])
         }?;
