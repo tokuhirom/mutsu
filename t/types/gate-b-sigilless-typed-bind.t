@@ -1,7 +1,7 @@
 use Test;
 
 # Pin for the (B) per-store env-write gate sigilless typed-bind fix
-# (docs/lexical-scope-slot-campaign.md, "(B) per-store env-write gate — burndown",
+# (docs/archive/lexical-scope-slot-campaign.md, "(B) per-store env-write gate — burndown",
 # sigilless cluster #1).
 #
 # A *typed* sigilless declaration (`my Int \d := 7`) used to compile as a bare

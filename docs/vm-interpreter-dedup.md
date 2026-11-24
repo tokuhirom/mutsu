@@ -282,4 +282,4 @@ All Category C duplication is removed: Phase 1a/1b (arith/coercion), Phase 2
 (reduction operator bodies), Phase 3 (sort wrapper, `.first` binding) and the
 item ② placement audit (comb relocated, substr 4→1, split confirmed correct). The
 only remaining function/method-level duplicate flagged in PLAN.md is the regex
-validator/matcher double-implementation (ANALYSIS §3.1), tracked separately.
+validator/matcher double-implementation (the 2026-09 analysis §3.1), tracked separately.

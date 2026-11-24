@@ -1,7 +1,7 @@
 use Test;
 
 # Pin for the (B) per-store env-write gate method-lvalue self-writeback fix
-# (docs/lexical-scope-slot-campaign.md, "(B) per-store env-write gate — burndown",
+# (docs/archive/lexical-scope-slot-campaign.md, "(B) per-store env-write gate — burndown",
 # method-lvalue cluster).
 #
 # After an `__mutsu_assign_method_lvalue` call (`$x.attr = v`), the call site pulls

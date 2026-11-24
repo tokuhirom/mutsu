@@ -111,7 +111,7 @@ pub(crate) struct TopicState {
     /// which run BEFORE the enclosing op's writeback can read it, and a
     /// scalar pointy param's live value has NO other home by then (a plain
     /// scalar lexical skips its env mirror under the `(B)` per-store
-    /// env-write gate, see `docs/lexical-scope-slot-campaign.md`). So
+    /// env-write gate, see `docs/archive/lexical-scope-slot-campaign.md`). So
     /// `exec_block_local_scope_op` captures each protected slot's live value
     /// into `given_pointy_captured` unconditionally, right after body
     /// execution finishes and before either of those two exit paths can

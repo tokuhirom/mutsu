@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-# §1.3 S17 pin (docs/lexical-scope-slot-campaign.md): a parenthesized
+# §1.3 S17 pin (docs/archive/lexical-scope-slot-campaign.md): a parenthesized
 # aggregate declaration lvalue (`(my @x) = ...` / `(my %h) = ...`) must stay
 # on the by-name in-place assignment even under MUTSU_SHADOW_SLOTS=1.
 # `AssignExprLocal` REPLACES the slot for `@`/`%` targets, which detaches the

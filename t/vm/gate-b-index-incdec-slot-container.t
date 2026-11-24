@@ -1,7 +1,7 @@
 use Test;
 
 # Pin for the (B) per-store env-write gate index inc/dec container-read fix
-# (docs/lexical-scope-slot-campaign.md, "(B) per-store env-write gate — burndown").
+# (docs/archive/lexical-scope-slot-campaign.md, "(B) per-store env-write gate — burndown").
 #
 # `$c[i]++` / `$h<k>++` (OpCode::PostIncrementIndex / PreIncrementIndex) read the
 # base container from `env` by name (`get_env_with_main_alias`) and mutate it in

@@ -1,7 +1,7 @@
 use Test;
 
 # Pin for the (B) per-store env-write gate `let`/`temp` cluster fix
-# (docs/lexical-scope-slot-campaign.md, "(B) per-store env-write gate — burndown").
+# (docs/archive/lexical-scope-slot-campaign.md, "(B) per-store env-write gate — burndown").
 #
 # `exec_let_save_op` snapshots the pre-scope value of the temporized variable.
 # It used to read that value from `env` by name, falling back to the slot. Under

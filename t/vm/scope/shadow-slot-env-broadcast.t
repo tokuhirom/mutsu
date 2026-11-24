@@ -2,7 +2,7 @@ use Test;
 
 plan 8;
 
-# §1.4 shadow slots (docs/lexical-scope-slot-campaign.md, S12): a shadowing
+# §1.4 shadow slots (docs/archive/lexical-scope-slot-campaign.md, S12): a shadowing
 # inner-block `my @a`/`my %h` occupies its own locals slot under
 # MUTSU_SHADOW_SLOTS, so the whole-locals env broadcast that `say` (and the
 # regex-interpolation sync) runs must NOT push an uninitialized same-named

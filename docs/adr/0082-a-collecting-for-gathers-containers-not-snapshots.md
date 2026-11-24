@@ -89,7 +89,7 @@ uses, and nothing here has measured what raku does with them in this position.
 `deferred_container_refs` now carries the tag's compile-time-baked local slot
 alongside the name, and the end-of-loop re-read goes through
 `gate_local_slot_at` before falling back to `get_env_with_main_alias`. That is
-the §1.5 order of `docs/lexical-scope-slot-campaign.md`: a plain `my $g` keeps
+the §1.5 order of `docs/archive/lexical-scope-slot-campaign.md`: a plain `my $g` keeps
 its live value in its slot and its env mirror is suppressed, so the env-only
 read this mechanism shipped with saw `Any` for every `my` lexical. It went
 unnoticed because the only shape that reached it — a tail assignment — happens

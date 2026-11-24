@@ -16,7 +16,7 @@
   representation gaps the parser desugars away, advanced parameter construction, and the
   lowering constructs blocked on representation mismatches). Note for planning: no roast
   file and no bundled battery consumes this layer, so its remaining work has no downstream
-  dependency (ANALYSIS §7-9).
+  dependency (the 2026-09 analysis §7-9).
 - **Context**: The user asked to implement RakuAST. RakuAST is Raku's user-facing AST
   representation (`RakuAST::*` classes, `Q|...|.AST`, `.DEPARSE`, `EVAL(ast)`, and the
   macro/`quasi` machinery built on top). It has essentially **zero roast payoff today**

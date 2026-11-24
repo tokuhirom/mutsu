@@ -1583,7 +1583,7 @@ impl Interpreter {
     /// in `REGEX_PARSE_CACHE`, so a repeat call (the hot match loop re-fetches
     /// the same pattern on every step / iteration) is a refcount bump rather
     /// than a deep clone of the whole token tree (the previous owned-`RegexPattern`
-    /// cache cloned the tree on every hit — ANALYSIS §8.4).
+    /// cache cloned the tree on every hit — analysis-2026-09 §8.4).
     pub(super) fn parse_regex(&self, pattern: &str) -> Option<std::sync::Arc<RegexPattern>> {
         // A regex parsed (and cached) on its own, even when a `<$var>` splice
         // asks for it in the middle of another pattern's parse.

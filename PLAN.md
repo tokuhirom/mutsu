@@ -270,7 +270,7 @@ cost. Compare warm before asserting a win.
 Do not re-plan these — they are done: the
 [shared worker pool](docs/adr/0020-shared-worker-pool.md) (ADR-0020), the whole-`locals`
 clone/restore in `BlockScope` ([ADR-0018](docs/adr/0018-slot-addressed-lexical-capture-and-env-sync.md);
-`docs/lexical-scope-slot-campaign.md` is a historical record now), and `.^methods`/`.can` deriving
+`docs/archive/lexical-scope-slot-campaign.md` is a historical record now), and `.^methods`/`.can` deriving
 from the real dispatch table (ADR-0019 F1/F2).
 
 - [ ] **Non-blocking `await` — ADR-0020's rejected alternative (b), kept as a standing axis.**

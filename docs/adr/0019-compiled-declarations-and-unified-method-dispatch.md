@@ -5,7 +5,7 @@
   [ADR-11276](11276-built-in-methods-are-handler-rows.md) (2026-10-03)
 - **Date**: 2026-08-03
 - **Related**: [ADR-0018](0018-slot-addressed-lexical-capture-and-env-sync.md),
-  [ANALYSIS.md §1.1, §3.3, §4-1](../../ANALYSIS.md)
+  [analysis-2026-09.md §1.1, §3.3, §4-1](../archive/analysis-2026-09.md)
 
 ## Context
 
@@ -52,7 +52,7 @@ path and is not an exception.
 `RegisterSub`/`RegisterClass`/`RegisterRole` remain temporarily while their individual plans are
 migrated, then are removed together with declaration-shaped entries in `stmt_pool`. Enum and subset
 registration can adopt the same representation later; they do not block retiring the three
-tree-walking paths named in ANALYSIS §1.1. Three more declaration opcodes are outside the three
+tree-walking paths named in the 2026-09 analysis §1.1. Three more declaration opcodes are outside the three
 named paths but inside this decision's end state: `RegisterProtoSub` and `RegisterProtoToken`
 still index `stmt_pool` and are migrated by slice C8; the top-level `RegisterToken` opcode is
 migrated by F7 (its own `CompiledTokenDeclPlan` keeps the *regex* body as an opaque payload — that
@@ -129,7 +129,7 @@ permanent-exception carve-out — see its entry). Of the completion gates, G1 is
 by the `main` branch ruleset's required status checks, after closing a `jit-stress`
 required-check gap found while verifying it), G2 is closed (all four architectural-guard clauses
 now have permanent tests), G3 is closed (no regression traced to any of its four named
-mechanisms — see its entry), and G4 is closed (this status line and ANALYSIS.md §1.1/§3.3/§4-1
+mechanisms — see its entry), and G4 is closed (this status line and `docs/archive/analysis-2026-09.md` §1.1/§3.3/§4-1
 were updated as G4's own action). See
 each
 box's entry below for its
@@ -1015,7 +1015,7 @@ architectural outcome.
   already removed `METHOD_UNIVERSE` and runtime probing from the runtime path (both are
   `#[cfg(test)]`-only now); the live work is the fourteen per-type `&[&str]` name slices
   (~350 slots in `builtin_type_methods.rs`) that still feed `builtin_method_entries`. This is the
-  explicit retirement of ANALYSIS §4-1's hand tables; retain only the generated native entry
+  explicit retirement of the 2026-09 analysis §4-1's hand tables; retain only the generated native entry
   catalog that dispatch itself consumes.
   **Scoping (2026-08-14):** this box's "generated native entry catalog" target
   (`native_method_row.rs`'s `RAW_ROWS`) turns out to have drifted from the 14 arrays since its
@@ -1151,7 +1151,7 @@ architectural outcome.
   drift.t` (193 assertions), the full `t/` suite (3167 files, release), and every `S12-introspection`/
   `S02-types/{hash,array,list,range}.t`/`S09-typed-arrays/hashes.t`/`S32-{str,num}/*`/`S32-container/
   buf.t`/`S03-operators/buf.t` roast file stayed green. **F3 is now closed** -- the per-type name
-  lists ANALYSIS §4-1 called out are gone; `RAW_ROWS` (already the dispatch-admission source since
+  lists the 2026-09 analysis §4-1 called out are gone; `RAW_ROWS` (already the dispatch-admission source since
   E4b) is also the sole `.^methods` source.
 - [x] **F4 — Remove `ClassDef::methods` as a dispatch/registration mirror.** Leave type structure
   metadata beside the canonical method table and update snapshots/rollback to copy one source.
@@ -3179,8 +3179,8 @@ architectural outcome.
   to be tracked as ordinary perf work outside the ADR's scope
   (`todo/perf/bench-ctor-construction-parity.md`), to be picked up opportunistically rather than
   gating ADR-0019's closure. **This closes G3.**
-- [x] **G4 — Close the ADR and ANALYSIS items.** Mark ADR-0019 Accepted/Implemented and update
-  ANALYSIS §1.1, §3.3, and §4-1 only after G1–G3 and all required slices above are complete.
+- [x] **G4 — Close the ADR and analysis items.** Mark ADR-0019 Accepted/Implemented and update
+  the 2026-09 analysis §1.1, §3.3, and §4-1 only after G1–G3 and all required slices above are complete.
 
   **Progress (2026-08-17).** G1-G3 closed (see their own entries). "All required slices above"
   means every top-level box except the ones explicitly marked optional/no-longer-gating in this
@@ -3189,7 +3189,7 @@ architectural outcome.
   slice (deliberately parked, user-method half already done) — none of those block closure by the
   ADR's own wording. Filed the one previously-untracked leftover
   (`todo/tickets/adr0019-d2c5-collapse-default-eval-env-setup.md`) so it survives the ADR no
-  longer being actively read. Status set to Accepted/Implemented above; ANALYSIS.md §1.1, §3.3,
+  longer being actively read. Status set to Accepted/Implemented above; `docs/archive/analysis-2026-09.md` §1.1, §3.3,
   and §4 item 1 rewritten to describe the closed architecture and point at the surviving tickets
   instead of describing an in-progress migration, and its §7 roadmap/§8 ADR-ledger rows updated
   to match (user decision, 2026-08-17: close now, pick up any remaining detail via separate

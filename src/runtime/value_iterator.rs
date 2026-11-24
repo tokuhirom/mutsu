@@ -5,7 +5,7 @@
 //! the `IterationEnd` sentinel). mutsu historically grew ~7 ad-hoc iteration
 //! mechanisms with inconsistent guards, so an infinite `Range` (`1..Inf`, stored
 //! as a `Range(1, i64::MAX)`) reaching an unguarded `(a..=b).collect()`
-//! panics the whole process with `capacity overflow` (ANALYSIS §8.2).
+//! panics the whole process with `capacity overflow` (analysis-2026-09 §8.2).
 //!
 //! `ValueIterator` is the single place where a `Value` is turned into a stream of
 //! elements pulled one at a time. PR-1 implements the *pure* sources (those that

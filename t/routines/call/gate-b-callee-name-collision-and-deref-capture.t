@@ -1,7 +1,7 @@
 use Test;
 
 # Pin for two (B) per-store env-write gate fixes
-# (docs/lexical-scope-slot-campaign.md, "(B) per-store env-write gate — burndown").
+# (docs/archive/lexical-scope-slot-campaign.md, "(B) per-store env-write gate — burndown").
 #
 # 1. Bare call vs. same-named local ("e.t"): a scalar `$e` is stored under the
 #    bare name `e`, so `my $e = e; e()` collides — the function-call fallback

@@ -5,7 +5,7 @@ use Test;
 # the outer (first) same-name slot. The IndexAssignExprNamed target store now
 # prefers the compile-time-baked local slot. Passes with the shadow-slot gate off
 # (shared slot) AND on (distinct slots). Mirrors roast/S13-overloading/
-# metaoperators.t #14-16. See docs/lexical-scope-slot-campaign.md.
+# metaoperators.t #14-16. See docs/archive/lexical-scope-slot-campaign.md.
 
 plan 6;
 

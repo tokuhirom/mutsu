@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-# §1.5 S16 pin (docs/lexical-scope-slot-campaign.md): ApplyVarTrait must
+# §1.5 S16 pin (docs/archive/lexical-scope-slot-campaign.md): ApplyVarTrait must
 # resolve the DECLARED variable's slot from the compile-time-baked slot, not
 # a by-name `position` search. Under MUTSU_SHADOW_SLOTS=1 the by-name search
 # hits the OUTER same-named slot, so `my @a is default(42)` inside a block

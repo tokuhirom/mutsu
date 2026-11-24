@@ -1,7 +1,7 @@
 # VM decoupling progress
 
 Goal: make the bytecode VM execute everything natively and remove its remaining
-dependence on the tree-walking `Interpreter` (see `ANALYSIS.md` section 1).
+dependence on the tree-walking `Interpreter` (see `docs/archive/analysis-2026-09.md` section 1).
 
 We take a **strangler-fig** approach: keep the interpreter fallback paths working,
 but measure how often they are hit and shrink that number one change at a time.
@@ -79,7 +79,7 @@ function dispatch (strangler step 2):
 
 So the two biggest decoupling levers are:
 1. the shared runtime **state** the VM borrows from the interpreter (~480
-   `env()`/`env_mut()` calls; `ANALYSIS.md` §1.1–1.2), and
+   `env()`/`env_mut()` calls; `docs/archive/analysis-2026-09.md` §1.1–1.2), and
 2. **function** dispatch — moving hot builtins/`Test` functions into the VM's
    native dispatch so they stop routing through `call_function`.
 
@@ -181,7 +181,7 @@ Both OO benchmarks now have **zero** method-call interpreter fallback. The
 residual `.new` fallback that remains in the wild is for classes with custom
 constructors / BUILD / TWEAK / typed attributes, whose construction genuinely
 runs user code — the next, larger step is moving the class registry + BUILD/
-TWEAK execution to VM-owned data (`ANALYSIS.md` §1.1).
+TWEAK execution to VM-owned data (`docs/archive/analysis-2026-09.md` §1.1).
 
 ## Step 6 — native `.map` over an array with a simple block (2026-06)
 
@@ -292,6 +292,6 @@ owned by the `Interpreter` struct) is explicitly a lever B concern.
 3. `Test` functions: would need the TAP `TestState` reachable from the VM rather
    than only the interpreter — large, defer.
 4. Begin the state-ownership work (collapse the `locals`↔`env` dual store,
-   `ANALYSIS.md` §1.2) so the VM stops borrowing the interpreter's env.
+   `docs/archive/analysis-2026-09.md` §1.2) so the VM stops borrowing the interpreter's env.
 
 Record each step's before/after numbers in this file so the trend is visible.

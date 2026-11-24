@@ -3703,7 +3703,7 @@ impl Interpreter {
         }
         // `(B)` per-store env-write: a slot-authoritative plain lexical skips its
         // env mirror — the slot is the single source of truth, so env-COW drops
-        // the write (docs/lexical-scope-slot-campaign.md). Excludes binds/constants
+        // the write (docs/archive/lexical-scope-slot-campaign.md). Excludes binds/constants
         // (env-shape carriers), captured/reflective frames (read the caller's env
         // by name), and names still in `needs_env_sync` (a mechanism consumer). The
         // term-symbol block and `:=` alias chain below stay unconditional.

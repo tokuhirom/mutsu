@@ -1,7 +1,7 @@
 use Test;
 
 # Pin for the (B) per-store env-write gate class/role-method captured-outer fix
-# (docs/lexical-scope-slot-campaign.md, "(B) per-store env-write gate — burndown").
+# (docs/archive/lexical-scope-slot-campaign.md, "(B) per-store env-write gate — burndown").
 #
 # A class/role METHOD body is compiled lazily off its `RegisterClass`/`RegisterRole`
 # op, so the defining frame's `compute_needs_env_sync` cannot see which enclosing

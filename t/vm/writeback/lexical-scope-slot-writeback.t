@@ -1,11 +1,11 @@
 use Test;
 
-# Lexical shadowing correctness guard (ANALYSIS §1.4). An inner-block `my $x`
+# Lexical shadowing correctness guard (analysis-2026-09 §1.4). An inner-block `my $x`
 # must not corrupt the outer `$x`, and name-based writebacks (undefine, s///, ++)
 # must land on the variable that is live at that source point even when the same
 # name is shadowed elsewhere in the routine. (Correctness is currently provided by
 # the runtime env restore; the compiler-slot rework is deferred — see the note in
-# ANALYSIS.md §1.4. These cases guard against regressing the observable behavior.)
+# docs/archive/analysis-2026-09.md §1.4. These cases guard against regressing the observable behavior.)
 
 plan 12;
 

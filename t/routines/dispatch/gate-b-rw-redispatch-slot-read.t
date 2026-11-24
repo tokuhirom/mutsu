@@ -1,7 +1,7 @@
 use Test;
 
 # Pin for the (B) per-store env-write gate rw-redispatch slot-read fix
-# (docs/lexical-scope-slot-campaign.md, "(B) per-store env-write gate — burndown").
+# (docs/archive/lexical-scope-slot-campaign.md, "(B) per-store env-write gate — burndown").
 #
 # A nextsame/callsame (multi sub or multi method) or a proto `{*}` redispatch must
 # forward the FIRST candidate's / proto body's CURRENT (body-mutated) rw parameter

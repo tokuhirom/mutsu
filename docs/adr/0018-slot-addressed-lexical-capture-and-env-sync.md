@@ -3,7 +3,7 @@
 - **Status**: Accepted
 - **Date**: 2026-08-03
 - **Deciders**: tokuhirom, Codex
-- **Related**: [ADR-0001](0001-gc-strategy-and-phasing.md), [ADR-0010](0010-cross-thread-lexical-sharing-scope.md), [ADR-0013](0013-container-interior-mutability-cellvalue.md), [ANALYSIS.md](../../ANALYSIS.md) §1.2/§1.3/§2.4, [lexical-scope-slot campaign](../lexical-scope-slot-campaign.md)
+- **Related**: [ADR-0001](0001-gc-strategy-and-phasing.md), [ADR-0010](0010-cross-thread-lexical-sharing-scope.md), [ADR-0013](0013-container-interior-mutability-cellvalue.md), [analysis-2026-09.md](../archive/analysis-2026-09.md) §1.2/§1.3/§2.4, [lexical-scope-slot campaign](../archive/lexical-scope-slot-campaign.md)
 
 ## Context
 

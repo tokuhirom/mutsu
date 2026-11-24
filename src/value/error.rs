@@ -38,7 +38,7 @@ impl RuntimeErrorCode {
 /// exceptions that unwind the Rust call stack via `Result::Err`. Historically
 /// each was a separate `bool` on `RuntimeError`; they are mutually exclusive (an
 /// error carries at most one control signal), so they are being consolidated
-/// into this single enum (ANALYSIS §2.2 / §7-4). Migration is incremental — only
+/// into this single enum (analysis-2026-09 §2.2 / §7-4). Migration is incremental — only
 /// the variants below have moved off their `bool` fields so far; the rest remain
 /// `is_*: bool` on `RuntimeError` until later slices.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,7 +85,7 @@ pub enum Control {
 /// inline. Keeping these out of `RuntimeError` shrinks it below Clippy's
 /// `result_large_err` threshold (was 272 B), so the ~1280 `Result<_,
 /// RuntimeError>` signatures no longer need `#[allow(clippy::result_large_err)]`
-/// (ANALYSIS §2.2 / §7-4). Every field is accessed through the getter/setter
+/// (analysis-2026-09 §2.2 / §7-4). Every field is accessed through the getter/setter
 /// methods on `RuntimeError`; the box is allocated lazily on first write.
 /// ADR-0072: what an inline-run `CATCH` handler decided, carried on the error
 /// back to the region that owns the handler so it applies the outcome without

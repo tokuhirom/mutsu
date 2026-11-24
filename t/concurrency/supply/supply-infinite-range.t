@@ -1,7 +1,7 @@
 use Test;
 
 # Regression: `(1..Inf).Supply` used to `capacity overflow`-panic because the
-# Supply coercion expanded the infinite Range to a Vec eagerly (ANALYSIS §8.7).
+# Supply coercion expanded the infinite Range to a Vec eagerly (analysis-2026-09 §8.7).
 # It must now coerce without crashing (capped at MAX_RANGE_EXPAND), and a `done`
 # inside the tap callback must terminate the tap cleanly rather than surfacing as
 # a runtime error.

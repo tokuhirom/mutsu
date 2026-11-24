@@ -4,7 +4,7 @@ use Test;
 # via the runtime BlockScope restore) AND under MUTSU_SHADOW_SLOTS=1 (distinct
 # compile-time slots). They pin the shadow-slot activation machinery in
 # src/compiler/mod.rs (declare_local / pop_local_scope). See
-# docs/lexical-scope-slot-campaign.md.
+# docs/archive/lexical-scope-slot-campaign.md.
 
 plan 9;
 

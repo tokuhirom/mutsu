@@ -2,7 +2,7 @@ use Test;
 
 # grep over an infinite Range (1..Inf == Range(1, i64::MAX)) must stay lazy
 # enough to be subscripted/headed without panicking with `capacity overflow`
-# (ANALYSIS §8.2 / PLAN.md §8.1 pull-model unification).
+# (analysis-2026-09 §8.2 / PLAN.md §8.1 pull-model unification).
 
 plan 10;
 
