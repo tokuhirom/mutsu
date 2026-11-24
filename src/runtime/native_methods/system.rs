@@ -141,7 +141,7 @@ impl Interpreter {
     ///
     /// Bump this together with the Rakudo version the ecosystem sweep and the
     /// roast baseline are run against (`ecosystem/dists/**` `measured.raku_version`,
-    /// `TODO_roast/raku-baseline.md`) — it is a claim about compatibility, so it
+    /// `docs/data/raku-baseline.md`) — it is a claim about compatibility, so it
     /// must be backed by a measurement, not raised speculatively.
     pub(in crate::runtime) const RAKUDO_COMPAT_VERSION: &'static str = "2026.09";
 

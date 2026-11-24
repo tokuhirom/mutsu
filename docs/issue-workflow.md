@@ -82,9 +82,9 @@ the blocking file changes.
 ### `roast` — the issue moves a roast test
 
 Like `ecosystem`, an **independent** label added on top of the kind/tier labels: put `roast` on
-every issue whose fix makes a `roast/*.t` file pass more subtests or stop aborting — a blocker
-named in `TODO_roast/BLOCKERS.md`, a regression found by re-measuring that ledger, a finding
-filed while running the `roast-triage` skill (user decision, 2026-10-14). The test is "would
+every issue whose fix makes a `roast/*.t` file pass more subtests or stop aborting — a file
+in the non-whitelisted table of `docs/roast-compatibility.md`, a regression found by re-measuring
+that table, a finding filed while running the `roast-triage` skill (user decision, 2026-10-14). The test is "would
 closing this move a roast file?", and the issue body names the file. It is how the roast work is
 listed (`label:roast`); it never replaces `todo:*`. The filer sets it; anyone may add it later to
 an older issue that turns out to qualify.
@@ -384,8 +384,8 @@ costs one tool call and is always worth it.
 `PLAN.md` stays for planned strategic/campaign work; ad-hoc discovered findings
 go to issues.
 
-Roast per-test pass/fail status stays in its own ledger,
-`TODO_roast/BLOCKERS.md` — do not duplicate roast tracking in issues. (There is
+Roast per-file status stays in its own table, the non-whitelisted list in
+[roast-compatibility.md](roast-compatibility.md#non-whitelisted-roast-files-and-why) — do not duplicate roast tracking in issues. (There is
 no special rule for roast: a genuinely deep, non-roast-specific problem you
 happen to hit via a roast test still gets a `todo:deep` issue.)
 

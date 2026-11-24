@@ -1857,7 +1857,7 @@ impl Interpreter {
 
         // Names raku itself does not recognise as real Exception
         // subtypes (kept for now, unchanged -- out of ADR-0029's scope,
-        // see TODO_roast/x-exception-role-membership.tsv's generation
+        // see docs/data/x-exception-role-membership.tsv's generation
         // script for how this was determined).
         //
         // ADR-0029 residue R4 (dual registration, deliberately kept): `X::Comp`
@@ -1900,7 +1900,7 @@ impl Interpreter {
         register_x("X::TooLateForREPR", "X::Comp", &["X::Comp"]);
 
         // ADR-0029 Slice 3: every row below is mechanically generated from
-        // TODO_roast/x-exception-role-membership.tsv (real raku .^mro /
+        // docs/data/x-exception-role-membership.tsv (real raku .^mro /
         // .^roles(:!transitive) output, captured by
         // scripts/adr0029-capture-x-exception-data.py) and sorted by real
         // mro depth so a parent always registers before its child. Do not

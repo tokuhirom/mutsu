@@ -21,7 +21,7 @@
   representation (`RakuAST::*` classes, `Q|...|.AST`, `.DEPARSE`, `EVAL(ast)`, and the
   macro/`quasi` machinery built on top). It has essentially **zero roast payoff today**
   (a single skipped `isa-ok` in `roast/S32-str/format.t` is the only roast reference), so
-  this is a deliberate *new capability* direction, not a BLOCKERS-driven slice. Because it
+  this is a deliberate *new capability* direction, not a roast-ledger-driven slice. Because it
   is large and costly to reverse, the end-state design and phasing are fixed here before
   any implementation.
 

@@ -3,7 +3,7 @@
 Tracked ledger of every `raku-doc` example where **mutsu** diverges from reference
 **raku**, produced by the doc-diff harness. This is the "ranked backlog of minimal
 repros" that [PLAN.md](../PLAN.md) §6 calls for — the QA-campaign analogue of
-[TODO_roast/BLOCKERS.md](../TODO_roast/BLOCKERS.md).
+the roast table in [roast-compatibility.md](roast-compatibility.md#non-whitelisted-roast-files-and-why).
 
 - Harness + method: [docs/qa-doc-diff-harness.md](qa-doc-diff-harness.md)
 - Tools: `scripts/doc-diff-harness.raku` (one run), `scripts/doc-diff-sweep.sh` (whole corpus, parallel)

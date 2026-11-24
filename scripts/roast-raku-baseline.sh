@@ -2,10 +2,10 @@
 # Record how the reference `raku` interpreter fares on every roast test,
 # as an oracle baseline for prioritising mutsu work.
 #
-# Output: TODO_roast/raku-baseline.tsv
+# Output: docs/data/raku-baseline.tsv
 #   columns: path, plan, ok, notok, todo, sorry, exit, raku_status, whitelisted
 #
-# IMPORTANT CAVEATS (see TODO_roast/raku-baseline.md for the full writeup):
+# IMPORTANT CAVEATS (see docs/data/raku-baseline.md for the full writeup):
 #   * This runs `raku` DIRECTLY on the raw .t file (UNFUDGED). Roast fudge
 #     directives (#?rakudo skip/todo, #?v6, ...) are NOT applied, because
 #     applying them via roast/fudge writes rewritten files under roast/, which
@@ -28,7 +28,7 @@ cd "$(dirname "$0")/.." || exit 1
 
 RAKU="${RAKU:-raku}"
 TIMEOUT="${RAKU_BASELINE_TIMEOUT:-25}"
-OUT=TODO_roast/raku-baseline.tsv
+OUT=docs/data/raku-baseline.tsv
 TMP="$OUT.partial"
 
 printf 'path\tplan\tok\tnotok\ttodo\tsorry\texit\traku_status\twhitelisted\n' > "$TMP"

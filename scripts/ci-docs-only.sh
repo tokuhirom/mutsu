@@ -46,7 +46,7 @@ set -u
 #
 # Deliberately NOT `**/*.md`: a README under modules/ or site/ sits next
 # to files the build reads, and the blast radius of guessing wrong there is a
-# silently-untested merge. Top-level *.md (PLAN, README, AGENTS, ANALYSIS,
+# silently-untested merge. Top-level *.md (PLAN, README, AGENTS,
 # BATTERIES) is safe and covers the common case. Top-level
 # *.tsv / *.svg is the same case in a different extension: HISTORY.tsv and
 # HISTORY-pass.svg are the roast-history record and its chart, appended by
@@ -96,7 +96,7 @@ is_doc_path() {
     # `make check-next-issue` (a `make checks` step) runs scripts/next-issue,
     # which reads its lane order from this table. Before `docs/*`: order decides.
     docs/lanes.md) return 1 ;;
-    docs/*|news/*|TODO_roast/*|old-design-docs/*|raku-doc/*) return 0 ;;
+    docs/*|news/*|old-design-docs/*|raku-doc/*) return 0 ;;
     .claude/*|.agents/*) return 0 ;;
     ecosystem/*) return 0 ;;
     # Before `.github/*`: order decides, and this one must lose.
@@ -194,7 +194,7 @@ check_inputs() {
     fi
   done <<EOF
 $(sed -E 's/^[[:space:]]*#.*$//' $CI_INPUT_SOURCES \
-    | grep -ohE '(\.agents|\.claude|\.github|TODO_roast|benchmarks|crates|docs|ecosystem|modules|news|old-design-docs|raku-doc|roast|scripts|site|src|t|tests|tools|vendor)/[A-Za-z0-9_./-]+' \
+    | grep -ohE '(\.agents|\.claude|\.github|benchmarks|crates|docs|ecosystem|modules|news|old-design-docs|raku-doc|roast|scripts|site|src|t|tests|tools|vendor)/[A-Za-z0-9_./-]+' \
     | sed -E 's/[.,:;)]+$//' | sort -u)
 EOF
 
@@ -354,7 +354,7 @@ self_test() {
   check true  'adr + news entry'        docs/adr/0016-x.md news/2026-07/y.md
   check false 'retired todo directory'  todo/tickets/z.md
   check true  'top-level plan'          PLAN.md
-  check true  'roast ledger'            TODO_roast/BLOCKERS.md
+  check true  'roast data under docs/'  docs/data/raku-baseline.tsv
   check true  'vendored docs'           raku-doc/doc/Type/Str.rakudoc
   check true  'non-md under docs/'      docs/probes/pool-spawn.raku
   check true  'agent skill'             .claude/skills/rustc-too-old/SKILL.md

@@ -79,7 +79,7 @@ permissions:
 jobs:
   # Classifies the change as documentation-only so the build jobs below
   # can skip themselves. Roughly one commit in six touches only prose and
-  # records -- docs/, news/, TODO_roast/, .agents/, ecosystem/, a top-level
+  # records -- docs/, news/, .agents/, ecosystem/, a top-level
   # *.md -- and each one was paying for two full cargo builds plus three roast
   # sweeps. scripts/ci-docs-only.sh holds the allowlist and the reasoning for
   # every entry on it.

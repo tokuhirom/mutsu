@@ -4,7 +4,7 @@ use Test;
 # element/slice assignment, hash key writes, :delete, ++/--) mutate the
 # variable's container IN PLACE, so every by-value holder of the same
 # container — an `@a` captured into a list `(0, @a)`, an element, a scalar —
-# observes the mutation (Raku container identity, BLOCKERS §3.2 item 1).
+# observes the mutation (Raku container identity).
 # Copies (`my @b = @a`, `is copy` params, `.clone`) stay detached: `=` copy
 # semantics are enforced at copy time, not by copy-on-write at mutation time.
 

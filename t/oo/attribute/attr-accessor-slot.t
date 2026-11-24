@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-# Attribute accessors are slot-based (BLOCKERS §3.2 item 2):
+# Attribute accessors are slot-based:
 # - `my $ref := $obj.attr` binds the attribute's container (bidirectional)
 # - `$obj.attr.VAR does Role` mixes into the attribute container; the mixin
 #   attribute is readable and rw-writable through `.VAR.name`
