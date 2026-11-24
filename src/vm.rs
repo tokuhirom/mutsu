@@ -161,6 +161,7 @@ mod vm_lexsub_aliases;
 mod vm_lexsub_capture;
 mod vm_lexsub_free_cache;
 mod vm_light_aggregate_params;
+mod vm_maybe_call_miss_lane;
 mod vm_module_own_type;
 mod vm_sequence_role_delegate;
 mod vm_static_view_call;

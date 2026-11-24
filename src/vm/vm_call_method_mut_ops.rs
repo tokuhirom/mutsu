@@ -405,6 +405,10 @@ impl Interpreter {
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
+        // A recorded argument-less `.?name` miss (#17987).
+        if self.try_maybe_call_miss_lane(code, name.sym, arity, modifier_idx) {
+            return Ok(());
+        }
         // A bare-word call of a routine imported at run time (`errno.symbol`
         // for an `is raw` sub returning a `Proxy`): the receiver is the
         // routine's result, not a variable, so a read of it FETCHes exactly as
@@ -1786,6 +1790,11 @@ impl Interpreter {
                 }
             }
             _ => {
+                // The class an argument-less `.?` miss is recorded for
+                // (`vm_maybe_call_miss_lane`).
+                let miss_class = (modifier == Some("?") && args.is_empty())
+                    .then(|| Self::maybe_miss_class(&target))
+                    .flatten();
                 // A receiver-mutating built-in method answered from its row
                 // (ADR-11276 §9.23): `BagHash.add`/`remove`, the QuantHash
                 // mutators, `Hash.push`/`append` and `Str`'s
@@ -2196,6 +2205,9 @@ impl Interpreter {
                                 "callmethodmut",
                                 "notfound",
                             );
+                            if let Some(class) = miss_class {
+                                self.note_maybe_call_miss(class, method, method_sym, &e);
+                            }
                             self.stack.push(Value::NIL);
                         }
                         Err(e) => return Err(e),
