@@ -2,7 +2,7 @@
 //!
 //! The bytecode Interpreter is intended to execute everything natively, but today it
 //! still delegates a large fraction of method dispatch to the tree-walking
-//! `Interpreter` (see `ANALYSIS.md` section 1). This module counts how often
+//! `Interpreter` (see `docs/archive/analysis-2026-09.md` section 1). This module counts how often
 //! that delegation happens so progress on decoupling the Interpreter can be measured
 //! per change instead of guessed at.
 //!

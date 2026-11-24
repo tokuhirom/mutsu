@@ -7,7 +7,7 @@ impl Compiler {
     /// compile-time-baked `AssignExprLocal(slot)` when the name resolves to a local
     /// — mirroring the general assignment path in `compile_expr_assign` — so a
     /// shadowing inner-block `my $x` writes to its own slot instead of the by-name
-    /// `AssignExpr` resolving to the outer (first) `code.locals` slot (ANALYSIS.md
+    /// `AssignExpr` resolving to the outer (first) `code.locals` slot (docs/archive/analysis-2026-09.md
     /// §1.4). Used by the `undefine($scalar)` rewrite (`roast/S32-scalar/defined.t`
     /// #31) and the list-assignment / lvalue target stores (`($a, $b) = …`,
     /// `roast/S03-operators/assign.t`). `name` is the full sigil'd local key (`$x`

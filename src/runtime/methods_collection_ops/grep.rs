@@ -214,7 +214,7 @@ impl Interpreter {
                 // Route integer ranges through the unified pull iterator so an
                 // open-ended range (`1..Inf` == `Range(1, i64::MAX)`) is
                 // truncated at the cap instead of panicking with
-                // `capacity overflow` (ANALYSIS §8.2). This matches the cap the
+                // `capacity overflow` (analysis-2026-09 §8.2). This matches the cap the
                 // `GenericRange` arm already uses via `value_to_list`.
                 let items = crate::runtime::value_iterator::materialize_capped(
                     &target,

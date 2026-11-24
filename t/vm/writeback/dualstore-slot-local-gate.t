@@ -1,6 +1,6 @@
 use Test;
 
-# Decoupling pin (docs/vm-dual-store.md Slice 5, ANALYSIS.md §1.2): the VM no
+# Decoupling pin (docs/vm-dual-store.md Slice 5, docs/archive/analysis-2026-09.md §1.2): the VM no
 # longer mirrors a frame's slot-only locals (those read via GetLocal, not
 # referenced by name and not captured by a closure) into the interpreter's
 # name-keyed `env`. This shrinks the VM<->Interpreter shared-state surface.

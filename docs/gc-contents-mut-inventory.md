@@ -1,7 +1,7 @@
 # Inventory: `gc_contents_mut` aliased-write call sites
 
 *(Step 1 of PLAN §2.1 — GC soundness tail. Generated 2026-07-20 by a close read of every
-production call site. Companion to ANALYSIS §2.1 and ADR-0001.)*
+production call site. Companion to the 2026-09 analysis §2.1 and ADR-0001.)*
 
 `gc::gc_contents_mut(&Gc<T>) -> &mut T` (def: `src/gc/gc_ptr.rs:660`) performs a deliberate
 aliased in-place mutation through `Gc::as_ptr(gc) as *mut T`, used to preserve Raku

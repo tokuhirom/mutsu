@@ -8,7 +8,7 @@ under that default path (`exec_block_scope_op`, `src/vm/vm_misc_scope.rs`) —
 confirmed live in the tree 2026-08-21. This file is kept as the historical record
 of how the campaign got there; do not restart it or treat its still-open-looking
 checklist items below as live work without first checking ADR-0018 and
-ANALYSIS.md §1.3/§2.4.
+`docs/archive/analysis-2026-09.md` §1.3/§2.4.
 
 ## Goal
 
@@ -1010,7 +1010,7 @@ colliding, and (b) every remaining leaf writeback carries a compile-time slot
 fatal, so **§1.3 is the load-bearing prerequisite** — it must come before, or fused
 with, the default flip. The per-variable opcode leaf slices (S1–S9) are done; the
 remaining leaf sites are multi-var / runtime-derived and do not reduce class-1
-breakage. See the ANALYSIS.md §1.4 investigation memo.
+breakage. See the `docs/archive/analysis-2026-09.md` §1.4 investigation memo.
 
 ## §1.4 shadow-slot activation, gated (2026-07-03, branch `refactor/lexical-scope-1.4-shadow`)
 
@@ -1165,7 +1165,7 @@ done). Each remaining genuine regression is one of:
   `write_back_hyper_target_var` (`find_local_slot`/`locals_set_by_name` by name);
   needs a baked `target_slot` on the hyper opcode. Same shape as above.
 - **`my @a := EVAL "my $t @"`** (`native-str.t` #8): `:=` bind + EVAL carrier —
-  ANALYSIS §1.4 addendum case (3), genuinely hard (EVAL is a separate scope).
+  the 2026-09 analysis §1.4 addendum case (3), genuinely hard (EVAL is a separate scope).
 - **class-1 / §1.3 (roast:0's sibling half):** `hash.t`, `Channel.t`, `wrap.t`
   (closure captures the wrong-slot lexical), `reverse.t` (`@a`/`$b`/`.=` aggregate
   coherence) — the name-keyed env can't hold two live bindings.
@@ -1239,4 +1239,4 @@ Concrete first slices (each behavior-preserving with the gate OFF; roast is the 
 **ADR note:** §1.3 slot-indexed locals is a large architectural call and its closure
 half overlaps ADR-0001 (Track B container cells fused with GC). Per AGENTS.md, land it
 as coordinated slices with roast as the safety net, and do NOT eagerly box scalar
-locals (the flaky-capture trap, ANALYSIS §1.3). A dedicated session per slice.
+locals (the flaky-capture trap, the 2026-09 analysis §1.3). A dedicated session per slice.

@@ -1,4 +1,10 @@
-# mutsu codebase analysis
+# mutsu codebase analysis (2026-09 snapshot)
+
+> **Frozen historical snapshot.** This is the codebase analysis formerly kept at the top
+> level as `ANALYSIS.md`, verified against `main` on 2026-09-12 and archived on 2026-11-24.
+> It is not maintained: its findings, file:line citations and numbers describe the tree of
+> September 2026, and many have since been fixed. Current architecture is in
+> [architecture.md](../architecture.md); open work is in GitHub issues and `PLAN.md`.
 
 This document is an **architecture and soundness review** of the mutsu codebase —
 "how much of the design is in order, and what debt remains" — not a bug tracker.
@@ -12,19 +18,19 @@ Where the moving parts are tracked:
 
 | what | where |
 |---|---|
-| open findings | GitHub issues on `tokuhirom/mutsu`, labelled `todo:ticket` / `todo:deep` / `todo:perf` — [docs/issue-workflow.md](docs/issue-workflow.md) |
+| open findings | GitHub issues on `tokuhirom/mutsu`, labelled `todo:ticket` / `todo:deep` / `todo:perf` — [docs/issue-workflow.md](../issue-workflow.md) |
 | which finding to pick up next | the `tier:*` labels on the issues themselves — `tier:S` first, then `tier:B`, `tier:N`, with `tier:icebox` out of the queue |
-| architectural decisions | [docs/adr/](docs/adr/) — 95 ADRs |
-| completed work | [news/](news/) — one file per accomplishment |
-| roast failure analysis | [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) |
-| ecosystem compatibility | the nightly parity sweep (ADR-0085), [docs/ecosystem-parity.md](docs/ecosystem-parity.md) |
+| architectural decisions | [docs/adr/](../adr/) — 95 ADRs |
+| completed work | [news/](../../news/) — one file per accomplishment |
+| roast failure analysis | the `TODO_roast/BLOCKERS.md` ledger of the time (since retired; see [roast-compatibility.md](../roast-compatibility.md)) |
+| ecosystem compatibility | the nightly parity sweep (ADR-0085), [docs/ecosystem-parity.md](../ecosystem-parity.md) |
 
 Findings are cited here **by GitHub issue number**. The in-repo `todo/` directory this
 document used to cite was migrated to GitHub issues on 2026-09-08 and deleted; a file path
 stopped resolving the moment a finding was fixed and `git mv`d into `news/` (108 of the 122
 `todo/` paths cited from `src/` were already dangling at migration time), whereas an issue
 number keeps resolving after the issue closes.
-[docs/todo-issue-map.md](docs/todo-issue-map.md) is the frozen path→issue map for the 57
+[docs/todo-issue-map.md](../todo-issue-map.md) is the frozen path→issue map for the 57
 files that moved, and citations of the old paths are left as they are (§6 says why).
 
 ---
@@ -50,7 +56,7 @@ mutsu is a Rust implementation of a minimal Raku-compatible interpreter. The ass
   [#7560](https://github.com/tokuhirom/mutsu/issues/7560)) and the native `JSON::Fast` provider
   — a last-resort provider for a module mutsu does not ship, consulted only after the
   resolution ladder comes up empty. The module-name-keyed *interception* it used to be was the
-  exception [ADR-0096](docs/adr/0096-batteries-adoption-policy.md) §E2 scheduled for retirement,
+  exception [ADR-0096](../adr/0096-batteries-adoption-policy.md) §E2 scheduled for retirement,
   and it was retired on 2026-09-12 ([#8183](https://github.com/tokuhirom/mutsu/issues/8183)),
   taking `JSON::Tiny` out of the mechanism entirely: a measured performance gap is a reason to
   optimize, not to substitute a semantically divergent implementation under the module's own
@@ -240,7 +246,7 @@ in the code, and the exception list has shrunk to two entries:
 - **The native `JSON::Fast` provider** (`runtime/json.rs`, 759 lines, plus
   `vm/vm_native_json.rs`) — a last-resort provider for the one JSON module mutsu does not
   ship. The module-name-keyed *interception* this entry used to describe was the exception
-  [ADR-0096](docs/adr/0096-batteries-adoption-policy.md) §D4/E2 scheduled for retirement, and it
+  [ADR-0096](../adr/0096-batteries-adoption-policy.md) §D4/E2 scheduled for retirement, and it
   was retired on 2026-09-12 ([#8183](https://github.com/tokuhirom/mutsu/issues/8183)); what is
   left is narrower on every axis:
 
@@ -285,7 +291,7 @@ committed number — per-distribution test-suite parity against rakudo, measured
 corpus of ~1,600 distributions, currently ≈41% dist / ≈53% file / ≈63% assertion. That metric,
 not roast, is now what should choose interpreter work. The native-provider exception list is a
 first-class piece of the architecture and should shrink monotonically or be justified in
-writing — the discipline [ADR-0096](docs/adr/0096-batteries-adoption-policy.md) §D4 now states.
+writing — the discipline [ADR-0096](../adr/0096-batteries-adoption-policy.md) §D4 now states.
 
 ### 1.9 Metaobject protocol
 
@@ -552,12 +558,12 @@ Ordering rule, stated so it can be argued with:
 
 | # | Item | Kind | Why here |
 |---|------|------|----------|
-| 1 | **Follow the parity frontier** (§1.8) — the adoption-policy ADR half of this row is **done**: [ADR-0096](docs/adr/0096-batteries-adoption-policy.md), [#8184](https://github.com/tokuhirom/mutsu/issues/8184) | policy / product architecture | The project's main goal rests on "vendor upstream verbatim; grow mutsu; no new native providers," which is now a decision document rather than prose in `BATTERIES.md`/`AGENTS.md`: the rejected alternative, the two named exceptions, the retirement precedent, and the corrected `nqp::` framing all live in ADR-0096. What remains of this row is the follow-on work, and with ADR-0085 shipping a nightly parity number it can be chosen by measurement instead of by anecdote. |
+| 1 | **Follow the parity frontier** (§1.8) — the adoption-policy ADR half of this row is **done**: [ADR-0096](../adr/0096-batteries-adoption-policy.md), [#8184](https://github.com/tokuhirom/mutsu/issues/8184) | policy / product architecture | The project's main goal rests on "vendor upstream verbatim; grow mutsu; no new native providers," which is now a decision document rather than prose in `BATTERIES.md`/`AGENTS.md`: the rejected alternative, the two named exceptions, the retirement precedent, and the corrected `nqp::` framing all live in ADR-0096. What remains of this row is the follow-on work, and with ADR-0085 shipping a nightly parity number it can be chosen by measurement instead of by anecdote. |
 | ~~1b~~ | ~~**Retire the JSON `use`-time interception**~~ (§1.8, §4, [#8183](https://github.com/tokuhirom/mutsu/issues/8183)) | design cleanup | **Done 2026-09-12** (ADR-0096 §E2 closed). `JSON::Tiny` left the mechanism entirely (it is a vendored battery and now loads like any other module); the exception-shape guess keyed on the set of loaded module names is deleted; the dispatch sites no longer beat a resolved def; and the surviving `JSON::Fast` name is a last-resort provider consulted only when the ladder resolves nothing, so `-I`/`MUTSULIB`/site-repo copies win. The remaining bill — mutsu's grammar engine is ~15x rakudo on the real module, down from the >1000x that had made this look permanent — stands on its own. |
 | 2 | **Supply panic propagation ([#8185](https://github.com/tokuhirom/mutsu/issues/8185)), and a mechanism against the panic-surface trend ([#8186](https://github.com/tokuhirom/mutsu/issues/8186))** (§2.4, §5) | correctness debt | Detached-worker panics are silently swallowed instead of reaching QUIT. Separately, the panic-family count rises at every measurement against an explicit "never Rust-panic" goal — a goal with no enforcement mechanism is a wish, so either add one (a budget test, a lint) or amend the goal. |
 | 3 | **Finish the call-path thread: ADR-0084** (§1.3, [#7817](https://github.com/tokuhirom/mutsu/issues/7817)) | design cleanup | ADR-0066/0077/0078/0086/0092/0094 all landed; ADR-0084 ("the frame `Env` is not the program's symbol table") is the one piece still design-only, and it is what the others' remaining overhead funnels into. |
 | 4 | **Pay hygiene debt through the work above** (§6) | completion discipline | 138 files over 1000 lines, `opcode.rs` approaching 10k, `runtime/mod.rs` at 4,802 and growing at every review. Split when a campaign opens the file and the ownership boundary is visible; a standalone line-moving campaign is not proposed, and neither is a bulk rewrite of the surviving `todo/` citations (§6 says why). This row is therefore a discipline, not a queue item — deliberately the one row with no issue behind it. |
-| 5 | **RakuAST, now demand-driven** (§1.7, [#7564](https://github.com/tokuhirom/mutsu/issues/7564)) | demand-driven feature | ADR-0088's shared regex tree gives this layer its first real execution-side consumer, so the remaining slices can be chosen by what that migration needs rather than by inventory completeness. Phase 6 macros are withdrawn ([ADR-9885](docs/adr/9885-experimental-macros-not-planned.md): Rakudo removed them). |
+| 5 | **RakuAST, now demand-driven** (§1.7, [#7564](https://github.com/tokuhirom/mutsu/issues/7564)) | demand-driven feature | ADR-0088's shared regex tree gives this layer its first real execution-side consumer, so the remaining slices can be chosen by what that migration needs rather than by inventory completeness. Phase 6 macros are withdrawn ([ADR-9885](../adr/9885-experimental-macros-not-planned.md): Rakudo removed them). |
 
 Explicitly **not** ranked as current architecture work: the completed ADR-0013/0015-P3b/0016/
 0018/0019/0020/0029/0058/0085 campaigns; optional ADR-0015 P3c; ADR-0016's deliberately
@@ -619,7 +625,7 @@ Reading 95 ADRs as a list is not useful; they fall into a small number of campai
 
 **The batteries adoption policy** was the one load-bearing decision this review found recorded
 nowhere but in `BATTERIES.md` and `AGENTS.md` prose. It is now
-[ADR-0096](docs/adr/0096-batteries-adoption-policy.md) ([#8184](https://github.com/tokuhirom/mutsu/issues/8184)),
+[ADR-0096](../adr/0096-batteries-adoption-policy.md) ([#8184](https://github.com/tokuhirom/mutsu/issues/8184)),
 carrying the five things the prose could not: the rejected alternative (native reimplementation,
 and what it costs — the compatibility signal, silent divergence, a maintenance tail, the
 resolution ladder); the exception list as an auditable two-entry list with the discipline that

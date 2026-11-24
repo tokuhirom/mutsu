@@ -1,6 +1,6 @@
 use Test;
 
-# A single lazy/infinite source bound to a `*@` slurpy stays lazy (ANALYSIS §F
+# A single lazy/infinite source bound to a `*@` slurpy stays lazy (analysis-2026-09 §F
 # lazy-seq ④ / lazy-arrays.md L4). Previously `flatten_into_slurpy` dropped a
 # `Value::LazyList` (a `.map` pipeline) in as ONE element, so `@x[0]` returned the
 # whole Seq gist instead of the first element.

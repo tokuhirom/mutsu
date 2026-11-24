@@ -1,6 +1,6 @@
 use Test;
 
-# Reify-on-mutation for lazy `@`-arrays (ANALYSIS §F lazy-seq ④ / lazy-arrays.md L3).
+# Reify-on-mutation for lazy `@`-arrays (analysis-2026-09 §F lazy-seq ④ / lazy-arrays.md L3).
 # An element assignment / delete on a lazy array must materialize its backing
 # first, so the other elements survive — previously a bare elem-assign
 # autovivified a fresh empty Array and lost them.

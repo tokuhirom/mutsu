@@ -23,7 +23,7 @@ use crate::value::ValueMap;
 /// 2026-07-10 container-identity/cell work drove the §1.3 class-1 (name-keyed
 /// env dual-store) breakage to zero. `MUTSU_NO_SHADOW_SLOTS` is a temporary
 /// opt-out escape hatch (reverts to the old shared-slot + env-restore behavior).
-/// See docs/lexical-scope-slot-campaign.md and ANALYSIS.md §1.4.
+/// See docs/lexical-scope-slot-campaign.md and docs/archive/analysis-2026-09.md §1.4.
 pub(crate) fn shadow_slots_active() -> bool {
     use std::sync::OnceLock;
     static ACTIVE: OnceLock<bool> = OnceLock::new();
@@ -1290,7 +1290,7 @@ pub(crate) struct Compiler {
     /// Giving a shadow its own fresh slot — the actual collision fix — is deferred
     /// because it breaks the VM's by-name runtime slot resolution and env↔slot
     /// coherence, and must be done as one campaign with §1.5 (remove name-based
-    /// slot resolution) and §1.3 (collapse the dual store). See ANALYSIS.md §1.4.
+    /// slot resolution) and §1.3 (collapse the dual store). See docs/archive/analysis-2026-09.md §1.4.
     /// Frame 0 is the compilation-unit / routine top level and is never popped.
     local_scopes: Vec<lex_scope::ScopeFrame>,
     /// The `local_scopes` depths (frame index + 1) of the frames that hold a
@@ -3470,7 +3470,7 @@ impl Compiler {
     /// soundly requires removing name-based runtime slot resolution (§1.5) together
     /// with the env↔slot dual store (§1.3). This scaffolding — the per-block
     /// push/pop plumbing and the single declaration entry point — is the substrate
-    /// that campaign builds on. See ANALYSIS.md §1.4.
+    /// that campaign builds on. See docs/archive/analysis-2026-09.md §1.4.
     fn declare_local(&mut self, name: &str) -> u32 {
         if !shadow_slots_active() {
             // DEFAULT build: behavior-preserving. Resolve like `alloc_local`

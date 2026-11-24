@@ -1,7 +1,7 @@
 # GC Level 1 Detailed Design Notes
 
 Status: Draft  
-Related: [ADR-0001](adr/0001-gc-strategy-and-phasing.md), [PLAN.md](../PLAN.md), [ANALYSIS.md](../ANALYSIS.md)
+Related: [ADR-0001](adr/0001-gc-strategy-and-phasing.md), [PLAN.md](../PLAN.md), [analysis-2026-09.md](archive/analysis-2026-09.md)
 
 This document is a set of detailed notes for turning ADR-0001's "level 1 = cycle collector on Arc" into an implementable design.
 It does not change the ADR itself; it concretizes what was previously undecided: the **activation mechanism / root boundary / interface with Track B**.

@@ -564,7 +564,7 @@ impl ForLoopSpec {
 /// A typed mirror of `Stmt::MethodDecl` (ADR-0019 D3-2), built once by
 /// [`CompiledMethodDecl::from_stmt`] instead of being re-destructured with a
 /// 19-field pattern at each of the class-body, role-body, and augment
-/// `method`/`submethod`-registration sites (`ANALYSIS §1.1`'s drift between
+/// `method`/`submethod`-registration sites (`analysis-2026-09 §1.1`'s drift between
 /// those three walkers is exactly what independently-drifted destructuring
 /// produces — see the D3 scoping note above). `params: Vec<String>` is
 /// dropped: every existing site already ignores it (the parameter names are

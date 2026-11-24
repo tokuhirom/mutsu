@@ -3,7 +3,7 @@
 - **Status**: Accepted (2026-06-27 — level 1 adopted). **Outcome recorded in §7 (2026-08-02): layers 3a / 3b / 4 have all shipped and are default on; §4.2 was decided by [ADR-0003](0003-default-on-gc-trigger.md); the "Track B is fused with GC, do not start it standalone" rule is superseded by [ADR-0013](0013-container-interior-mutability-cellvalue.md) §7. Only §4.3 (A' scope) and layer 3c remain open.**
 - **Date**: 2026-06-27
 - **Deciders**: tokuhirom, Claude
-- **Related**: [ANALYSIS.md](../../ANALYSIS.md) §2.1 / §1.3 / §5, [PLAN.md](../../PLAN.md) §G(perf) / §I(Track C)
+- **Related**: [analysis-2026-09.md](../archive/analysis-2026-09.md) §2.1 / §1.3 / §5, [PLAN.md](../../PLAN.md) §G(perf) / §I(Track C)
 
 > This file records the design judgment around "when, and with which mechanism, to introduce GC into mutsu".
 > Points where the final decision is not yet fixed are separated into the "Open questions" section, distinct from the agreed direction.
@@ -34,7 +34,7 @@
 
 - **mutsu already executes multi-threaded**: `start{}` / `Promise` / `hyper` / `race`.
   `Value` is `Arc`-based and assumes **Send + Sync**. The substance of cross-thread sharing is `clone_for_thread` →
-  `shared_vars: RwLock<HashMap>` (`runtime/mod.rs`, ANALYSIS §2.1).
+  `shared_vars: RwLock<HashMap>` (`runtime/mod.rs`, the 2026-09 analysis §2.1).
 - **mutsu sits on top of Rust's ownership model**: `Value` is a Rust enum and lives **raw** all over Rust stacks, local variables,
   temporaries, and `Vec<Value>`s. The VM does not know the location of every Value.
 
@@ -112,7 +112,7 @@ touched through handles (level 2, described below).
    | **3b** | NaN-boxing (Value 48→8B) | **Groundwork for the JIT** (fixed 8B, simple tags, fits in a register). After GC, before JIT. Order 3a→3b→4 |
    | **3c** | Biased reference counting (operations from the owning thread are non-atomic) | Independent perf work after GC. **Priority drops once the JIT natively compiles int loops** (refcounting disappears from the hot path) |
 
-   - **Why 3a is inseparable**: Track B and GC both touch the same `Arc<ArrayData>` / `Arc<HashData>` family (ANALYSIS §2.1,
+   - **Why 3a is inseparable**: Track B and GC both touch the same `Arc<ArrayData>` / `Arc<HashData>` family (the 2026-09 analysis §2.1,
      79 sites). Doing them separately means touching those 79 sites twice, each round reworking the other. Furthermore, Track B's biggest
      landmine — "VM re-entry deadlock while holding an `arc_contents_mut` borrow" — and the cycle collector's "when to run
      collection (safepoint)" question are **the same re-entry-boundary problem**; designed together, they can be unified.
@@ -171,7 +171,7 @@ The deciding factor is that as long as the env HashMap remains on the root path,
 ## 5. Consequences
 
 - **Do not start on the GC proper until Phase A is complete.** GC stays in PLAN.md's "future" section.
-- **Do not start Track B standalone ahead of time.** Change the premise to integrating it with GC (layer 3a). Add to ANALYSIS §2.1 / §7-6
+- **Do not start Track B standalone ahead of time.** Change the premise to integrating it with GC (layer 3a). Add to the 2026-09 analysis §2.1 / §7-6
   that "Track B is one with GC (one-shot Arc→Gc replacement)".
 - **perf Lever 2 (NaN-boxing) is not mandatory simultaneously with GC** (layer 3b, fine after GC) — reflect this in PLAN.md §G.
 - **Add biased refcounting as a new perf work item (layer 3c) to PLAN.md §G** (a box alongside NaN-boxing and JIT).
@@ -182,7 +182,7 @@ The deciding factor is that as long as the env HashMap remains on the root path,
 - **Add agent-facing rules to CLAUDE.md**: the ADR convention (`docs/adr/`) and a summary of this ADR's GC/JIT
   roadmap (phase ordering, moving rejected, cycle collector, type filter, Track B integration, level-1/2 open).
 
-> Note: this ADR is a record of direction; propagating the above into PLAN.md / ANALYSIS.md (document reorganization) is
+> Note: this ADR is a record of direction; propagating the above into PLAN.md / `docs/archive/analysis-2026-09.md` (document reorganization) is
 > carried out as separate work (this session chose "settle the discussion first", so it is not yet reflected). The rule
 > additions to CLAUDE.md were done in this PR.
 
@@ -210,7 +210,7 @@ their state is reported here.
 | Layer | State |
 |---|---|
 | **A. Catch up** (compat + single-thread speed) | ✅ Done — gate assessed in [ADR-0002](0002-phase-a-gate-reassessment.md) (2026-07-03). |
-| **A'. Root consolidation** (§4.3) | ◐ Partly. Shadow slots are default on and the whole-`locals` per-block clones are gone, but env is still on the root path — the `captures_env_by_name` blanket (`opcode.rs:2608`) keeps every local mirrored by name for any frame containing a loop/block/gather/whenever op. This is the open remainder of §4.3, tracked as ANALYSIS §1.3 / §7-3. |
+| **A'. Root consolidation** (§4.3) | ◐ Partly. Shadow slots are default on and the whole-`locals` per-block clones are gone, but env is still on the root path — the `captures_env_by_name` blanket (`opcode.rs:2608`) keeps every local mirrored by name for any frame containing a loop/block/gather/whenever op. This is the open remainder of §4.3, tracked as the 2026-09 analysis §1.3 / §7-3. |
 | **3a. Cycle collector on `Arc`, type-filtered** | ✅ Done, default on (2026-07-05). Trigger mechanism = [ADR-0003](0003-default-on-gc-trigger.md) — **this closes open question §4.2**. |
 | **3a (element cells / Track B half)** | ✅ Resolved differently — see below. |
 | **3b. NaN-boxing** (`size_of::<Value>()` 48→8B) | ✅ Done (2026-07-12), encoding fixed by [ADR-0005](0005-nanbox-representation-encoding.md). |

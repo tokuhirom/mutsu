@@ -7,7 +7,7 @@
 > Kept because PLAN.md links here for the "what was tried" history.
 
 Tracking design for the highest-leverage VM-decoupling task
-(`ANALYSIS.md` §1.2, `PLAN.md` "🔴 top priority"). This is a high-blast-radius change,
+(`docs/archive/analysis-2026-09.md` §1.2, `PLAN.md` "🔴 top priority"). This is a high-blast-radius change,
 so it is staged into small, individually-shippable slices. This file is the
 map; record each slice's before/after here.
 
@@ -118,7 +118,7 @@ need a name-keyed, scope-shared view. Each is a constraint on the migration:
 1. **Interpreter execution fallbacks** — `call_function` / `call_method_with_values`
    read args and globals from `env` by name (the bulk of the ~1300 refs).
 2. **Closures** — captured as `GetGlobal`/`GetArrayVar`/`GetHashVar` against `env`
-   (no upvalues; `ANALYSIS.md` §1.3). `compute_needs_env_sync` conservatively
+   (no upvalues; `docs/archive/analysis-2026-09.md` §1.3). `compute_needs_env_sync` conservatively
    forces whole-frame env writeback when any closure exists.
 3. **Bare-word / class-name resolution** — consults `env` for `my`-declared names.
 4. **Dynamic variables** (`$*foo`) and `$CALLER::`/`$OUTER::` — dynamic scope via env.
@@ -146,7 +146,7 @@ shared cell (`ContainerRef` / shared-var store) so they need no per-call sync.
 
 Reaching that requires, roughly in order:
 1. Give closures real upvalues so they stop reading parent `env` (removes the
-   `compute_needs_env_sync` whole-frame writeback — `ANALYSIS.md` §1.3).
+   `compute_needs_env_sync` whole-frame writeback — `docs/archive/analysis-2026-09.md` §1.3).
 2. Make interpreter fallbacks take locals by slot (or a thin view) instead of a
    cloned `env`.
 3. Replace the per-call `clone_env()` with copy-on-write / frame-local overlay.
@@ -557,7 +557,7 @@ Reaching that requires, roughly in order:
 - [~] **Slice 5 — stop mirroring slot-only locals into `env` (shrink the
       shared-state surface).** First step landed. This is *decoupling* work, not a
       perf optimization: the goal is to reduce how much of a frame's state the VM
-      mirrors into the interpreter's name-keyed `env` (ANALYSIS.md §1.2), moving
+      mirrors into the interpreter's name-keyed `env` (`docs/archive/analysis-2026-09.md` §1.2), moving
       toward "locals are authoritative; `env` holds only what a name-based reader
       needs."
 

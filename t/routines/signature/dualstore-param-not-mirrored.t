@@ -1,6 +1,6 @@
 use Test;
 
-# Decoupling pin (docs/vm-dual-store.md Slice 5 step 2, ANALYSIS.md §1.2): the
+# Decoupling pin (docs/vm-dual-store.md Slice 5 step 2, docs/archive/analysis-2026-09.md §1.2): the
 # compiled-function light call path no longer writes a *slot-only* positional
 # param (one read via GetLocal, not in needs_env_sync, with no program-wide
 # reflective by-name access) into the interpreter's shared `env`. The param
