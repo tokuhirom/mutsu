@@ -47,6 +47,7 @@ mod run_prelude_x_comp;
 mod run_roast_preprocess;
 mod caller_implicit_bind;
 mod runtime_caller_env;
+mod runtime_callers_var;
 mod caller_outer_lookup;
 mod caller_scope_routines;
 mod runtime_class_query;

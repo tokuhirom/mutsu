@@ -816,7 +816,7 @@ impl Compiler {
             // the `OUTERS::` walk — reliable slot reads instead of a runtime
             // caller-frame snapshot that the immediate block never populated.
             if depth == 1 && self.in_immediate_block() {
-                self.emit_outers_var_access(bare_name);
+                self.emit_block_callers_var_access(bare_name);
                 return;
             }
             let cascade = Self::callers_name_cascades(&bare_name);

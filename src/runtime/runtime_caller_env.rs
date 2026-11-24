@@ -49,9 +49,7 @@ impl Interpreter {
             // `self`, `?CLASS`, `$_`, `$!`, `$/` and the internal keys are the
             // frame's own state, and an env key by their name would mislead the
             // readers that look those up env-first (ADR-14792).
-            if !sym.with_str(|name| {
-                name != "self" && crate::opcode::is_plain_user_var_name(name)
-            }) {
+            if !sym.with_str(|name| name != "self" && crate::opcode::is_plain_user_var_name(name)) {
                 continue;
             }
             flushed.push((*sym, value.clone()));
@@ -296,31 +294,58 @@ impl Interpreter {
     /// caller's `$_` is refused as not dynamic (`CALLER::`, #18988) rather
     /// than read (`CALLERS::` reads it).
     // Cost: O(t), t = the frame's tiers.
-    fn caller_var_lookup(
+    pub(super) fn caller_var_lookup(
         &self,
         name: &str,
         depth: usize,
         caller_topic_strict: bool,
     ) -> Result<Value, RuntimeError> {
+        // A name the target frame does not have resolves to Nil quietly
+        // (rakudo's runtime pad lookup misses; only a *present* non-dynamic
+        // symbol throws X::Caller::NotDynamic). Walking past the top of the
+        // call stack is not an error either.
+        Ok(self
+            .caller_frame_var(name, depth, caller_topic_strict, false)?
+            .unwrap_or(Value::NIL))
+    }
+
+    /// [`Self::caller_var_lookup`], `None` when the frame at `depth` (or a
+    /// frame there at all) does not have the name.
+    // Cost: O(t), t = the frame's tiers.
+    /// `own_frame` looks only in that frame's own tiers, not through the
+    /// frames that called it (a cascading search visits those itself, and
+    /// reads each one's flushed slots there).
+    pub(super) fn caller_frame_var(
+        &self,
+        name: &str,
+        depth: usize,
+        caller_topic_strict: bool,
+        own_frame: bool,
+    ) -> Result<Option<Value>, RuntimeError> {
         let stack_len = self.caller_env_stack.len();
         if depth == 0 || depth > stack_len {
-            // Walking past the top of the call stack is not an error in Raku:
-            // the lookup just misses and yields Nil.
-            return Ok(Value::NIL);
+            return Ok(None);
         }
         // `CALLER::OUTER::x` / `CALLER::UNIT::x`: the caller's lexical scopes.
         if let Some(found) = self.caller_lexical_chain_var(name, depth) {
-            return Ok(found);
+            return Ok(Some(found));
         }
         let env = &self.caller_env_stack[stack_len - depth];
         // A sigil-less key is looked up as a term (a constant's term key,
         // #9962) first, then as itself (a lexical type), #17846.
         // A sigil-less key is reported as spelled, without a `$`.
         let reported = name;
-        let (name, found) = match env.get_through_callers(name) {
+        let lookup = |key: &str| {
+            if own_frame {
+                env.get_sym_in_frame(Symbol::intern(key))
+            } else {
+                env.get_through_callers(key)
+            }
+        };
+        let (name, found) = match lookup(name) {
             Some(val) => (name, Some(val)),
             None => match name.strip_prefix(crate::runtime::term_names::TERM_PREFIX) {
-                Some(bare) => (bare, env.get_through_callers(bare)),
+                Some(bare) => (bare, lookup(bare)),
                 None => (name, None),
             },
         };
@@ -331,12 +356,9 @@ impl Interpreter {
             {
                 return Err(crate::runtime::utils::caller_not_dynamic_error(reported));
             }
-            Ok(val.clone())
+            Ok(Some(val.clone()))
         } else {
-            // A name the target frame does not have resolves to Nil quietly
-            // (rakudo's runtime pad lookup misses; only a *present* non-dynamic
-            // symbol throws X::Caller::NotDynamic).
-            Ok(Value::NIL)
+            Ok(None)
         }
     }
 
@@ -375,82 +397,6 @@ impl Interpreter {
         // snapshot (#17733).
         self.add_caller_scope_routines(&mut entries, depth);
         entries
-    }
-
-    /// Look up a variable through the `$CALLERS::` chain — "any caller scope".
-    ///
-    /// `cascade` (a `$*`-twigil dynamic name) walks the caller frames from the
-    /// one at `depth` outward to the oldest, returning the first that holds the
-    /// dynamic var; this is the only way `CALLERS::` reaches past the immediate
-    /// caller. A plain name (`cascade == false`) is delegated straight to
-    /// [`Self::get_caller_var`] — raku does not cascade a non-twigil `is dynamic`
-    /// lexical, so `CALLERS::` and `CALLER::` agree there.
-    pub(crate) fn get_callers_var(
-        &self,
-        name: &str,
-        depth: usize,
-        cascade: bool,
-    ) -> Result<Value, RuntimeError> {
-        if !cascade {
-            // 6.e: a found symbol that is not dynamic is a Failure of
-            // `X::Symbol::NotDynamic` through `CALLERS::` (`CALLER::` still
-            // throws `X::Caller::NotDynamic`).
-            return match self.caller_var_lookup(name, depth, false) {
-                Err(err)
-                    if crate::parser::current_language_version_starts_with("6.e")
-                        && err.exception.as_deref().is_some_and(|ex| {
-                            matches!(ex.view(), ValueView::Instance { class_name, .. }
-                                if class_name.as_str() == "X::Caller::NotDynamic")
-                        }) =>
-                {
-                    Ok(Self::symbol_not_dynamic_failure(&format!("${name}")))
-                }
-                found => found,
-            };
-        }
-        let stack_len = self.caller_env_stack.len();
-        if depth == 0 || depth > stack_len {
-            // The program's mainline has no caller pad to walk, but its scope
-            // still holds the routines it declares and imports.
-            if depth > 0 && name.starts_with('&') {
-                return Ok(self
-                    .caller_scope_routine(&name[1..], false)
-                    .unwrap_or(Value::NIL));
-            }
-            return Ok(Value::NIL);
-        }
-        // caller_env_stack[stack_len - depth] is the depth-th caller (depth 1 =
-        // the immediate caller at the top); older callers are at lower indices.
-        // Cascade from there toward index 0.
-        // A lexical routine (`&name`) needs no `is dynamic`: the caller pads
-        // are searched for the routine itself, and a routine declared in a
-        // caller's compilation unit (not bound in its env) resolves by name.
-        let is_routine = name.starts_with('&');
-        for env in self.caller_env_stack[..=stack_len - depth].iter().rev() {
-            // A routine is a lexical: it is found where the caller's own scope
-            // binds it, following that frame's static link, not through the
-            // frames that called it (an import bound in the importer's env is
-            // not in the scope of a module routine that imported nothing).
-            let found = if is_routine {
-                env.get(name)
-            } else {
-                env.get_through_callers(name)
-            };
-            if let Some(val) = found
-                && (is_routine || self.is_var_dynamic(name))
-            {
-                return Ok(val.clone());
-            }
-        }
-        if is_routine {
-            // A routine in a caller's lexical scope: declared by its file or
-            // package, or bound in its unit's import sets rather than its pad.
-            if let Some(found) = self.caller_scope_routine(&name[1..], false) {
-                return Ok(found);
-            }
-            return Ok(self.resolve_code_var(&name[1..]));
-        }
-        Ok(Value::NIL)
     }
 
     /// Set a variable through the $CALLER:: chain.
@@ -727,7 +673,12 @@ impl Interpreter {
     // Cost: O(1), one revision-table probe.
     pub(crate) fn unit_revision_letter(file: Option<Symbol>) -> Option<char> {
         file.and_then(crate::parser::unit_revisions::unit_language_revision)
-            .and_then(|version| version.as_str().strip_prefix("6.").and_then(|r| r.chars().next()))
+            .and_then(|version| {
+                version
+                    .as_str()
+                    .strip_prefix("6.")
+                    .and_then(|r| r.chars().next())
+            })
     }
 
     /// The letter of the language revision the running code is under.
