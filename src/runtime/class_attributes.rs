@@ -181,3 +181,25 @@ impl<'a> IntoIterator for &'a mut ClassAttributes {
         self.iter_mut()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ClassAttributes;
+    use crate::symbol::Symbol;
+
+    /// Writing through `without_table_mut` leaves a deferred class deferred,
+    /// so the table rows are still declared on the next real access
+    /// (#18956: role registration must not force every `X::Comp` class).
+    #[test]
+    fn a_write_outside_the_table_keeps_the_class_deferred() {
+        let mut attrs = ClassAttributes::default();
+        attrs.defer_builtin_exception(Symbol::intern("X::NYI"));
+        assert!(attrs.is_deferred());
+        assert!(attrs.without_table_mut().is_empty());
+        assert!(attrs.is_deferred(), "the pre-table write declared nothing");
+        assert!(attrs.iter().any(|a| a.name == "feature"));
+        assert!(!attrs.is_deferred());
+        // Once declared, the write sees the whole list.
+        assert!(attrs.without_table_mut().iter().any(|a| a.name == "feature"));
+    }
+}
