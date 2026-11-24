@@ -37,6 +37,12 @@ pub(crate) enum InputKey {
     /// (`Compiler::const_fold_enabled`), so the folded and the unfolded
     /// compile of the same module differ.
     NoUserInfixDecls,
+    /// Whether the static-outer latch is set
+    /// (`parser::static_outer_latch::static_outer_observed`): a sub declared
+    /// below its unit's top level carries a static view only under it
+    /// (`Compiler::note_static_view_plans`), and the latch is process-global,
+    /// set by whichever unit a process read first (#19166).
+    StaticOuterObserved,
     /// The variables, constants and types a `use` of `module` with `tags`
     /// binds in its block, by the parse-time scan of `module`
     /// (`Compiler::block_imported_vars_fingerprint`).
@@ -192,6 +198,9 @@ fn ask(key: &InputKey) -> InputValue {
         InputKey::NoUserInfixDecls => InputValue::Bool(
             crate::vm::vm_jit::USER_INFIX_DECLS.load(std::sync::atomic::Ordering::Relaxed) == 0,
         ),
+        InputKey::StaticOuterObserved => {
+            InputValue::Bool(crate::parser::static_outer_latch::static_outer_observed())
+        }
         InputKey::BlockImportedVars { module, tags } => InputValue::Text(
             super::Compiler::block_imported_vars_fingerprint(module, tags),
         ),
@@ -249,6 +258,15 @@ pub(crate) fn current_language_version_starts_with(prefix: &str) -> bool {
 pub(crate) fn no_user_infix_decls() -> bool {
     matches!(
         ask_and_record(InputKey::NoUserInfixDecls),
+        InputValue::Bool(true)
+    )
+}
+
+/// Recorded `parser::static_outer_latch::static_outer_observed`.
+// Cost: O(1) plus the recording probe.
+pub(crate) fn static_outer_observed() -> bool {
+    matches!(
+        ask_and_record(InputKey::StaticOuterObserved),
         InputValue::Bool(true)
     )
 }

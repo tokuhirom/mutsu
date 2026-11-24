@@ -166,7 +166,9 @@ pub(crate) fn interpreter_version() -> String {
     // and `SerValue::RegexWithAdverbs` lost `repeat`/`nth` (#18833).
     // 72: `CompiledCode` gained `declared_in_block` (#18083).
     // 73: TRIR's `TrInnerCall` / `TrMethodCall` gained `line` (#18080).
-    const CACHE_FORMAT_VERSION: u32 = 73;
+    // 74: compile inputs record the static-outer latch (#19166); an older
+    // entry compiled unlatched lacks the question and must not be served.
+    const CACHE_FORMAT_VERSION: u32 = 74;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();
