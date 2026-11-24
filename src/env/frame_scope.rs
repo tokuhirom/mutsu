@@ -102,6 +102,20 @@ impl Env {
         }
     }
 
+    /// `key`'s binding in a tier above the running call frame: skip the
+    /// frame's own tiers (down to and including its frame root), then search
+    /// every tier of the callers' chain, as [`Self::get_sym_in_tiers`] does.
+    /// `None` when no tier is a frame root (the program scope has no caller
+    /// above it) or no caller binds `key`.
+    // Cost: O(d), d = chain tiers.
+    pub(crate) fn get_sym_above_frame(&self, key: Symbol) -> Option<&Value> {
+        let mut cur = self;
+        while !cur.frame_root {
+            cur = cur.parent.as_deref()?;
+        }
+        cur.parent.as_deref()?.get_sym_in_tiers(key)
+    }
+
     /// `key` as the CALLER sees it: skip the running call frame's tiers (down
     /// to and including its frame root), then look the name up from the
     /// caller's env, through the caller's own frame and its static link (the

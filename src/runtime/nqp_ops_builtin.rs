@@ -320,12 +320,30 @@ impl Interpreter {
             // name: NQP code reaches for it to read a dynamic whose name it
             // only has as a string, `%*COMPILING` (Rakudo::Options, issue
             // #8572) chief among them in the wild.
-            // Cost: O(m + s), m = chars of $name, s = scope-chain depth walked by get_env_with_main_alias.
+            //
+            // MoarVM starts the search at the *caller* of the running frame,
+            // so `nqp::getlexdyn('$*x')` ahead of the frame's own `my $*x`
+            // reads the caller's binding, not the frame's still-unset one
+            // (bound from the scope's entry since #19174). When the running
+            // frame binds the name, the search resumes above the frame: the
+            // callers' tiers of the env chain, then the recorded caller frames
+            // (as `vm_dynamic_stash` resolves `DYNAMIC::<$*x>`), else null (#19184).
+            // Cost: O(m + s), m = chars of $name, s = scope-chain depth walked by get_env_with_main_alias
+            // (or the chain tiers and caller frames walked above the frame).
             "getlexdyn" => {
                 let name = args
                     .first()
                     .map(|v| v.to_string_value())
                     .unwrap_or_default();
+                let sym = crate::symbol::Symbol::intern(&name);
+                if self.env().get_sym_in_frame(sym).is_some() {
+                    let env = self.env();
+                    let above = env
+                        .get_sym_above_frame(sym)
+                        .or_else(|| self.caller_frame_binding(sym))
+                        .map(Value::deref_container);
+                    return Some(Ok(above.unwrap_or(Value::NIL)));
+                }
                 // An unbound name answers null, as on MoarVM: NQP code tests a
                 // dynamic for presence with `nqp::isnull(nqp::getlexdyn(...))`
                 // (`RakuAST::Deparse` reads `@*HEREDOCS` that way).
