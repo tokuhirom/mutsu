@@ -1591,6 +1591,10 @@ pub(crate) enum OpCode {
     /// array, range or hash is turned into a `Slip` of its elements. Emitted
     /// for prefix `|EXPR` and for the `name |capture` listop form.
     MakeSlip,
+    /// `MakeSlip` on the value `depth` entries below the stack top, in place:
+    /// a `|EXPR` argument flattened once the arguments after it are on the
+    /// stack, as rakudo builds the capture (#19135).
+    MakeSlipAt(u32),
     /// Demote a top-level `Slip` VALUE to a `Seq`, so a `**@`-slurpy
     /// consumer (`say`, `put`, `print`, `note`) does not flatten it. Stack:
     /// `[v] → [v']`; anything that is not a `Slip` passes through.

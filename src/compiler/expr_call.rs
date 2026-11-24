@@ -2215,7 +2215,12 @@ impl Compiler {
                 let arg_sources_idx = self.add_arg_sources_constant(args);
                 let positional_indices = Self::arg_positional_indices(args);
                 let callee_name = name.resolve();
+                // A slip flattens once the arguments after it ran (#19135).
+                let deferred_slips = Self::deferred_slips(args);
                 for (i, arg) in args.iter().enumerate() {
+                    if self.compile_deferred_slip(&deferred_slips, i, arg) {
+                        continue;
+                    }
                     if let Expr::Unary {
                         op: TokenKind::Pipe,
                         expr,
@@ -2233,6 +2238,7 @@ impl Compiler {
                         );
                     }
                 }
+                self.emit_deferred_slips(&deferred_slips);
                 let name_idx = self.code.add_constant(Value::str(name.resolve()));
                 if let Some(chain_idx) = self.lexical_import_chain_idx(*name) {
                     self.code.emit(OpCode::LexImportCall { chain_idx });

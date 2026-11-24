@@ -1539,7 +1539,12 @@ impl Compiler {
             // so the VM resolves it exactly as `CallOnCodeVar` does.
             let code_var_idx = self.code.add_constant(Value::str(name.clone()));
             let positional_indices = Self::arg_positional_indices(args);
+            // A slip flattens once the arguments after it ran (#19135).
+            let deferred_slips = Self::deferred_slips(args);
             for (i, arg) in args.iter().enumerate() {
+                if self.compile_deferred_slip(&deferred_slips, i, arg) {
+                    continue;
+                }
                 // The parser's callsite-line marker (`c()`) is a constant
                 // named Pair: load it whole instead of building it with
                 // `MakeNamedArg` on every call (ADR-15737 D1).
@@ -1595,6 +1600,7 @@ impl Compiler {
                     self.code.emit(OpCode::ContainerizePair);
                 }
             }
+            self.emit_deferred_slips(&deferred_slips);
             let name_idx = self.code.add_constant(Value::str(name.clone()));
             // A `&name` local in scope here is the callee's home, read through
             // ITS slot (see `OpCode::CallOnCodeVar::local_slot`).
@@ -1616,7 +1622,11 @@ impl Compiler {
             self.compile_expr(target);
             let arg_sources_idx = self.add_arg_sources_constant(&source_args);
             let positional_indices = Self::arg_positional_indices(args);
+            let deferred_slips = Self::deferred_slips(args);
             for (i, arg) in args.iter().enumerate() {
+                if self.compile_deferred_slip(&deferred_slips, i, arg) {
+                    continue;
+                }
                 if matches!(arg, Expr::Binary { op, .. } if *op == crate::token_kind::TokenKind::FatArrow)
                 {
                     self.mint_named_pair = true;
@@ -1656,6 +1666,7 @@ impl Compiler {
                     self.code.emit(OpCode::ContainerizePair);
                 }
             }
+            self.emit_deferred_slips(&deferred_slips);
             self.code.emit(OpCode::CallOnValue {
                 arity: args.len() as u32,
                 arg_sources_idx,
