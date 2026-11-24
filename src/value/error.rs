@@ -668,6 +668,17 @@ impl RuntimeError {
                 .contains(&format!("No such private method '{name}' for"))
     }
 
+    /// The type an `X::Method::NotFound` names (its `typename`), if the error
+    /// carries the exception object.
+    // Cost: O(1).
+    pub(crate) fn method_not_found_typename(&self) -> Option<String> {
+        let exception = self.exception.as_deref()?;
+        let ValueView::Instance { attributes, .. } = exception.view() else {
+            return None;
+        };
+        attributes.as_map().get("typename").map(Value::to_string_value)
+    }
+
     /// Whether the optional method lookup itself missed on this receiver.
     /// A found method can call a missing method with the same name on a
     /// different type; that inner failure must still propagate.

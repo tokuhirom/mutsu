@@ -869,7 +869,7 @@ impl Interpreter {
                             match native_result {
                                 Ok(value) => value,
                                 Err(error)
-                                    if error.is_method_not_found_for_receiver(&method, item) =>
+                                    if self.optional_call_missed_receiver(&error, &method, item) =>
                                 {
                                     Value::package(crate::symbol::wk::any())
                                 }
@@ -888,7 +888,7 @@ impl Interpreter {
                                     v
                                 }
                                 Err(error)
-                                    if error.is_method_not_found_for_receiver(&method, item) =>
+                                    if self.optional_call_missed_receiver(&error, &method, item) =>
                                 {
                                     Value::package(crate::symbol::wk::any())
                                 }
@@ -905,7 +905,7 @@ impl Interpreter {
                                 *item = updated;
                                 v
                             }
-                            Err(error) if error.is_method_not_found_for_receiver(&method, item) => {
+                            Err(error) if self.optional_call_missed_receiver(&error, &method, item) => {
                                 Value::package(crate::symbol::wk::any())
                             }
                             Err(error) => return Err(error),

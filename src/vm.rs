@@ -297,6 +297,7 @@ mod vm_helpers_lazy_window;
 mod vm_hoist_capture_cells;
 pub(crate) mod vm_hyper_func;
 mod vm_hyper_method_ops;
+mod vm_optional_miss;
 pub(crate) mod vm_hyper_ops;
 pub(crate) mod vm_hyper_quanthash;
 mod vm_hyper_race_parallel;
