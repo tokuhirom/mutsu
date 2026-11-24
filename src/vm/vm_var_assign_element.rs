@@ -1469,14 +1469,16 @@ impl Interpreter {
         // leftover of a closure-captured environment (an attribute's `compose`
         // closure) and written into the slot it would replace the invocant
         // for the rest of the method.
+        // Only the running frame's own binding is the store's result: past
+        // the frame root the chain reaches the callers' tiers, and a caller's
+        // same-named variable (the mainline's `my $b`, while a sub stores into
+        // its own `my Buf $b`) would overwrite the slot (#19186).
         if result.is_ok()
             && save_var_sym != crate::symbol::wk::self_()
-            && matches!(
-                self.env().get_sym(save_var_sym).map(Value::view),
-                Some(ValueView::Instance { .. }) | Some(ValueView::Mixin(..))
-            )
-            && let Some(v) = self.env().get_sym(save_var_sym).cloned()
+            && let Some(v) = self.env().get_sym_in_frame(save_var_sym)
+            && matches!(v.view(), ValueView::Instance { .. } | ValueView::Mixin(..))
         {
+            let v = v.clone();
             self.locals_set_by_name(code, save_var_name, v);
         }
         result
