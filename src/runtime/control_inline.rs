@@ -71,6 +71,8 @@ impl Interpreter {
                 installing_base: self.locals.base(),
                 installing_call_depth: self.call_frames.len(),
                 installing_fixtures: self.capture_fixtures(),
+                installing_unit: self.current_unit,
+                installing_package: self.current_package_sym(),
             });
     }
 
@@ -100,6 +102,8 @@ impl Interpreter {
             let fns = entry.handler.compiled_fns.clone();
             let installing = (entry.installing_base, entry.installing_call_depth);
             let fixtures = entry.installing_fixtures.clone();
+            let installing_unit = entry.installing_unit;
+            let installing_package = entry.installing_package;
             // The handler runs with only the handlers outside it registered, so
             // a `warn` inside it goes outward rather than back into itself.
             // `control_handler_depth` deliberately stays put: the run loop
@@ -110,6 +114,11 @@ impl Interpreter {
             // the end of this function.
             let inner = self.control.control_handlers.split_off(idx);
             let mark = fixtures.map(|f| self.push_scoped_fixtures(f));
+            // The handler is code of the installing unit and package: its
+            // routine names resolve there, not at the raise site (#19176).
+            let saved_unit = std::mem::replace(&mut self.current_unit, installing_unit);
+            let saved_package = self.current_package_sym();
+            self.set_current_package_sym(installing_package);
             let outcome = self.run_control_handler_inline(
                 &code,
                 (control_begin, end),
@@ -118,6 +127,8 @@ impl Interpreter {
                 resume_safe,
                 installing,
             );
+            self.set_current_package_sym(saved_package);
+            self.current_unit = saved_unit;
             if let Some(mark) = mark {
                 self.end_scoped_fixtures(mark);
             }
@@ -167,8 +178,15 @@ impl Interpreter {
             let fns = entry.handler.compiled_fns.clone();
             let installing = (entry.installing_base, entry.installing_call_depth);
             let fixtures = entry.installing_fixtures.clone();
+            let installing_unit = entry.installing_unit;
+            let installing_package = entry.installing_package;
             let inner = self.control.control_handlers.split_off(idx);
             let mark = fixtures.map(|f| self.push_scoped_fixtures(f));
+            // The handler is code of the installing unit and package: its
+            // routine names resolve there, not at the raise site (#19176).
+            let saved_unit = std::mem::replace(&mut self.current_unit, installing_unit);
+            let saved_package = self.current_package_sym();
+            self.set_current_package_sym(installing_package);
             let outcome = self.run_control_handler_inline(
                 &code,
                 (control_begin, end),
@@ -177,6 +195,8 @@ impl Interpreter {
                 resume_safe,
                 installing,
             );
+            self.set_current_package_sym(saved_package);
+            self.current_unit = saved_unit;
             if let Some(mark) = mark {
                 self.end_scoped_fixtures(mark);
             }
