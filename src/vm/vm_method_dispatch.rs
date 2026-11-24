@@ -2252,7 +2252,11 @@ impl Interpreter {
         // variable: a store into it checks its declared type, which the
         // general binder records in the callee frame and this one did not
         // (#13783). Every other scalar parameter is read-only or aliases the
-        // caller's container.
+        // caller's container. A typed `$_ is copy` is registered after the
+        // routine frame is pushed instead: that push drops the `_` constraint
+        // inherited from the caller (`drop_inherited_topic_constraint`), and
+        // would drop this one with it (#19150).
+        let mut typed_copy_topic: Option<(&str, Symbol, &crate::ast::ParamDef)> = None;
         for (idx, pd) in method_def.param_defs.iter().enumerate() {
             if pd.type_constraint.is_some()
                 && !pd.sigilless
@@ -2260,6 +2264,10 @@ impl Interpreter {
                 && pd.traits.iter().any(|t| t == "copy")
                 && let (Some(name), Some(&sym)) = (param_storage.get(idx), param_syms.get(idx))
             {
+                if name.as_str() == "_" {
+                    typed_copy_topic = Some((name.as_str(), sym, pd));
+                    continue;
+                }
                 self.bind_param_type_constraint_sym(name, sym, pd.assignment_type_constraint());
             }
         }
@@ -2535,6 +2543,9 @@ impl Interpreter {
             },
             false,
         );
+        if let Some((name, sym, pd)) = typed_copy_topic {
+            self.bind_param_type_constraint_sym(name, sym, pd.assignment_type_constraint());
+        }
 
         // Execute bytecode (same as slow path)
         let let_mark = self.let_saves_len();
