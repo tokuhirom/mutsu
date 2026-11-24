@@ -9,7 +9,7 @@
 > | open findings | GitHub issues on `tokuhirom/mutsu`, labelled `todo:ticket` / `todo:deep` / `todo:perf` — [docs/issue-workflow.md](docs/issue-workflow.md) |
 > | which finding to pick up next | the `tier:*` labels on the issues themselves — `tier:S` first, then `tier:B`, `tier:N`; `tier:icebox` is out of the queue. Untiered `todo:*` issues are where the next triage pass starts |
 > | architectural decisions | [docs/adr/](docs/adr/) |
-> | roast failure analysis | [TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md) |
+> | non-whitelisted roast files | [docs/roast-compatibility.md](docs/roast-compatibility.md#non-whitelisted-roast-files-and-why) |
 > | performance numbers | the bench CI (`bench-data` branch); how to read them: [docs/benchmarks.md](docs/benchmarks.md) |
 >
 > Do **not** append progress notes here. A GitHub issue or a new file under `news/` conflicts with
@@ -65,8 +65,6 @@ and its deletion criterion.
       2026.09 made RakuAST its default frontend and removes the legacy grammar at 6.e, and slangs,
       L10N, RakuDoc v2 and `.DEPARSE` now build on it. The parser emits the RakuAST tree, `lower` is
       the only desugaring step, and `Expr`/`Stmt` stays as the compiler's lowered input.
-      - [ ] Stage 0 — `MUTSU_RAKUAST=1` round-trip mode and its pass-count ratchet
-            ([#10733](https://github.com/tokuhirom/mutsu/issues/10733)).
       - [ ] Stage 1 — close the round trip by moving desugaring out of the parser into `lower`.
       - [ ] Stage 2 — the parser emits RakuAST, construct family by family; `convert.rs` shrinks to
             nothing. Decide source positions and the node representation first (ADR §4).
@@ -81,22 +79,20 @@ and its deletion criterion.
       and the call-site cache. This replaces the name-matching `match` cascades
       (`builtins/methods_0arg/`, `builtins/methods_narg/`, the slow-path arms in
       `runtime/methods*.rs`). Slices 1a/1b (the table, the `CallMethodMut` lane and its per-site
-      memo) have landed, and about 190 of the 1,648 recognition rows have moved. The rest is cut
-      into nine PRs, not one per family: a mechanism slice (3A), six owner-group slices
-      (3B-3G), the resolver cutover and the deletion (ADR §10; live status in the issue body).
-      Each slice deletes the arms it moves. The completion criterion is ADR §6 slice 5: the cascades,
+      memo) have landed; the remaining slices and their live status are in ADR §10 and the issue
+      body. Each slice deletes the arms it moves. The completion criterion is ADR §6 slice 5: the cascades,
       `try_native_method_raw`'s name checks, `should_bypass_native_fastpath`,
       `native_method_row_table.rs` and the `native_call_unmodeled` counter are deleted, so rows are
       the only source of truth for both dispatch and `.^can`/`.^methods`. Progress is recorded in
       ADR-11276 §9, not here.
-- [ ] **The slow-path fallbacks are retired** — tracking issue
-      [#11510](https://github.com/tokuhirom/mutsu/issues/11510). AGENTS.md bans new slow-path /
-      tree-walk fallbacks; this makes the existing debt measurable and ends in its deletion.
+- [ ] **The slow-path fallbacks are retired.** AGENTS.md bans new slow-path / tree-walk
+      fallbacks; the ratchet that makes the existing debt measurable landed with
+      [#11510](https://github.com/tokuhirom/mutsu/issues/11510), and this item ends in its deletion.
       `make check-slow-path` counts `TODO: compile to bytecode` markers and the
       `call_method_with_values(` call sites under `src/vm/` per file
       (`scripts/slow-path-baseline.txt`; a count may fall without an edit, never rise), and
       `scripts/slow-path-survey.sh` sums the distinct `Class.method` shapes that still enter
-      `run_instance_method` over `t/` and the roast whitelist (**132 shapes, 380 calls** on 2026-10-24; 93 static sites). The completion
+      `run_instance_method` over `t/` and the roast whitelist. The completion
       criterion is the deletion of `run_instance_method`'s role as a fallback and of the
       `runtime/methods*.rs` slow-path cascades that serve **user-class** dispatch and the
       `eval_block_value` carriers. The built-in cascades are the previous item's (ADR-11276); this
@@ -109,15 +105,11 @@ and its deletion criterion.
       parameters (D3). The AST, parser, `Value`, `opcode`, `Env` and the GC reach the runtime only
       through narrow traits (D5). The field map behind the subsystem list is
       [docs/interpreter-state-map.md](docs/interpreter-state-map.md).
-      - [x] Phase 1 — move misplaced helpers down; `make check-layer-deps` ratchet (208 → 71 upward
-            references).
-      - [x] Phase 2 — the field × file map (`scripts/interp-field-matrix.py`).
       - [ ] Phase 3 — extract the subsystems, one per PR. `make check-interp-fields` blocks new
             direct fields; an extraction adds its holder name to
-            `scripts/interp-fields.d/<subsystem>.txt`. Done:
-            guards, caches, regex, async, threads, topic, control, dispatch (and `ModuleVisibility`);
-            439 → 266 fields. Next: io, lexicals, then module and types. `eval` waits on its
-            `pending_*` fields becoming parameters.
+            `scripts/interp-fields.d/<subsystem>.txt`. Phases 1-2 (helpers moved down, the
+            field × file map) are done; which subsystems remain is in ADR-10779 §Implementation
+            status.
       - [ ] Phase 4 — the crate split, a separate measured decision (ADR D7).
       The completion criterion is reached when these are deleted:
       - every `Interpreter` field outside the frame core and the subsystem holders;
@@ -133,16 +125,15 @@ and its deletion criterion.
       (`news/2026-07/nqp-op-layer-measured-and-rejected.md`): per dist the op set is a **threshold
       function**, which is an argument for closing the whole set, not for adding one op per failing
       dist. Inventory: [docs/nqp-op-coverage.md](docs/nqp-op-coverage.md), regenerated by
-      `scripts/nqp-op-coverage.py` — **362 of 578** Raku-reachable ops implemented on 2026-10-03,
-      216 missing. One sub-issue per category group (#11490–#11505, #11553); numeric, relational,
-      coercion, array, hash and exception groups are closed. Each op shares its routine with the
+      `scripts/nqp-op-coverage.py`, with one sub-issue per category group (#11490–#11505,
+      #11553). Each op shares its routine with the
       Raku-level primitive (ADR-0117/0118), and each landing PR re-runs the script. The completion
       criterion is an empty "Missing" column: every op is implemented or recorded under "Not
       applicable" with its reason (never stubbed).
 
-RakuAST and the regex project meet at the regex source tree ([ADR-0088](docs/adr/0088-rakuast-regex-boundary-tree.md)):
-a regex the parser keeps as a tree is both what RakuAST renders and what `RxVm` compiles, so neither
-project may reintroduce a regex kept only as source text.
+RakuAST and the regex engine meet at the regex source tree ([ADR-0088](docs/adr/0088-rakuast-regex-boundary-tree.md)):
+a regex the parser keeps as a tree is both what RakuAST renders and what `RxVm` compiles, so the
+RakuAST work may not reintroduce a regex kept only as source text.
 
 ---
 
@@ -184,21 +175,12 @@ work; see `docs/mzef-install-pipeline.md`. The **REPL** (`--repl`,
 (`site/playground.html`, deployed to GitHub Pages by `.github/workflows/pages.yml`) both ship.
 
 - [ ] **Language server** — designed in [docs/adr/0065-language-server-targets-ai-agents.md](docs/adr/0065-language-server-targets-ai-agents.md)
-      (an AI agent is the primary consumer, so only the methods an agent consumes are implemented,
-      and "does mutsu support this?" is a first-class diagnostic). **S0 (viability gate), S1 (server
-      skeleton), S2's routine half, S3 (error recovery), S4 (symbols/definition) and S5a (hover) are done** — `crates/mutsu-lsp/`,
-      `src/analysis/`, [docs/language-server.md](docs/language-server.md). Next is **S5b:
-      `references`** — the one remaining method that genuinely needs per-occurrence positions,
-      since a line may hold several and text scanning cannot rank them soundly. **Start from
-      [#7547](https://github.com/tokuhirom/mutsu/issues/7547),
-      not from D6**: reconnaissance during S5a found the parser already knows every byte offset,
-      so a thread-local occurrence table behind the analysis flag is likely cheaper than spans on
-      AST variants and touches neither `Expr`'s size nor the bincode cache. Its blocker is parser
-      **backtracking** (phantom references from failed alternatives), so **the first step is a
-      measurement of the phantom rate over `modules/`/`vendor/`/`t/`** — that number decides the
-      design, and D6/S5b get amended from it. **S2's method half is deferred with a real design question**: `$x.foo` needs the
-      receiver type, which the AST does not carry, and the existing `(owner, name)` catalog is
-      conservative in the false-positive direction — see the ADR's S2 findings.
+      (an AI agent is the primary consumer); implementation and status in
+      [docs/language-server.md](docs/language-server.md). Next is **S5b: `references`** — start
+      from [#7547](https://github.com/tokuhirom/mutsu/issues/7547) (a parser side table rather than
+      spans on AST variants; first measure the phantom-reference rate that parser backtracking
+      causes). S2's method half is deferred on a real design question (the receiver type); see
+      the ADR's S2 findings.
 - [ ] Debugger.
 - [ ] Native binary output.
 
@@ -206,9 +188,8 @@ work; see `docs/mzef-install-pipeline.md`. The **REPL** (`--repl`,
 
 - [ ] **★Ecosystem parity: per-distribution work** — the KPI itself is **built and running**; what
       remains is turning red records green, one distribution (or one root cause) at a time. The
-      corpus is measured nightly at 03:20 JST and published: **41.1%** dist parity, 53.4% file,
-      63.1% assertion, with per-distribution records and the chart `ecosystem/history.svg` on the
-      `ecosystem-data` branch (`scripts/ecosystem-ledger.sh pull`). Pick work one of two ways — by **root cause** from the clustered
+      corpus is measured nightly and published, with per-distribution records and the chart
+      `ecosystem/history.svg` on the `ecosystem-data` branch (`scripts/ecosystem-ledger.sh pull`). Pick work one of two ways — by **root cause** from the clustered
       issues (`scripts/ecosystem-tickets.py`, see docs/ecosystem-parity.md §9; the ten largest
       clusters are filed as `todo:*` issues), or by **distribution** with
       [`ecosystem-dist-fix`](.agents/skills/ecosystem-dist-fix/SKILL.md) (named) /
@@ -218,54 +199,40 @@ work; see `docs/mzef-install-pipeline.md`. The **REPL** (`--repl`,
       is the "Regressed since the previous ledger" section of `ecosystem/summary.md`). Prefer a root cause when one covers several distributions; working the whole queue
       in order, never skipping an entry for looking hard, is what keeps the published figure honest.
       Method: [docs/ecosystem-parity.md](docs/ecosystem-parity.md);
-      decisions: [ADR-0085](docs/adr/0085-ecosystem-testsuite-parity-measurement.md). The campaign
-      that built all of this was [#7785](https://github.com/tokuhirom/mutsu/issues/7785), closed
-      2026-09-12. The sweep is a measurement, not a gate, so it does **not** close B1's
+      decisions: [ADR-0085](docs/adr/0085-ecosystem-testsuite-parity-measurement.md). The sweep is a measurement, not a gate, so it does **not** close B1's
       "working-module regression CI" — that stays a separate item.
 - [ ] **★Real-dist compatibility sweep** — run real fez dists under mutsu and fix the general bugs
       they surface. Ledger: [docs/dist-compat-sweep.md](docs/dist-compat-sweep.md). **The `--run-tests`
       axis is the sharper frontier**: running each loading dist's own suite with raku as the baseline.
-      The previous batch (`scripts/dist-compat-sweep.py --run-tests`, n=60) is now fully triaged
-      (`news/2026-08/dist-test-suite-failures-batch-triaged.md`) — the next step is a fresh
-      full-corpus sample, not a specific open ticket. Per bug: minimal repro → general fix → `t/`
+      The next step is a fresh full-corpus sample (`scripts/dist-compat-sweep.py --run-tests`). Per bug: minimal repro → general fix → `t/`
       pin → PR. **Standing rule when reading a sweep**: verify any non-`missing_dep` bucket against
       `raku -I lib` before treating it as a mutsu bug — most turn out not to be.
 - [ ] Other open module-compat findings are individual `todo:ticket` / `todo:deep` issues.
 
 ---
 
-## 2. Substrate — GC, NaN-boxing, JIT: landed; soundness tail remains
+## 2. Substrate — GC, NaN-boxing and JIT have landed
 
-| layer | status |
-|---|---|
-| 3a — cycle collector on the container-kind `Gc<T>` variants | ✅ default on (ADR-0003) |
-| 3b — NaN-boxing (`Value` 48→8B) | ✅ done |
-| 4 — JIT (Cranelift) | ✅ default on (ADR-0004 closed) |
-| 3c — biased refcount | 🧊 frozen; measured-trigger only |
-
-Do **not** restart a "GC campaign". ADR-0013's Miri gate is closed (required CI job, landed) and the
-OTF compilation-gate leftovers ticket is retired — both were stale entries here. What is left:
+The cycle collector (ADR-0003), NaN-boxing and the Cranelift JIT (ADR-0004) are done and default
+on; biased refcounting (layer 3c) is frozen until a measured trigger. Do **not** restart a "GC
+campaign". What is left:
 
 - [ ] Profile-driven GC follow-ups (clone-traffic pruning, layer-3a hardening H1–H5):
       `docs/gc-post-3a-roadmap.md`. Optimization, not correctness.
 
 ---
 
-## 3. roast — at its ceiling; no cluster left to attack
+## 3. roast — a regression guard
 
-The whitelist stands at **1437 / 1465**. `integration/` — the real-Raku-program files closest to the
-project goal — is **fully whitelisted**. Per
-[TODO_roast/BLOCKERS.md](TODO_roast/BLOCKERS.md), nearly every remaining file is *non-goal* (rakudo
-itself fails), *no oracle* (local raku SORRYs), or *awaiting infrastructure* (6.e generics).
-
-**Implication for planning: roast is no longer the productive axis.** Prefer §1, §4, §5 or §6; pick
-up a roast file only when another change happens to unblock it. (The former "remaining
-language-feature gaps" ticket here — multi-line feeds, typed exceptions, `exits-ok`, `:D`/`:U`
-DefiniteHow — is fully closed; no open roast-adjacent language-feature backlog remains right now.)
+1440 of the 1455 roast files are whitelisted, `integration/` included, and every remaining file is
+*non-goal*, *no oracle* or *unpassable*
+([docs/roast-compatibility.md](docs/roast-compatibility.md#non-whitelisted-roast-files-and-why)).
+Roast is not a work source: keep the whitelist green, and pick up a remaining file only when other
+work happens to unblock it.
 
 ---
 
-## 4. perf — mostly polish, but three measured losses
+## 4. perf — mostly polish, with measured losses
 
 **Do not pick up a perf item just because the profile shows a hot symbol** — first confirm a goal
 item needs it. Levers, targets and the measurement protocol:
@@ -278,47 +245,20 @@ This section used to open "mutsu beats raku on the whole roast whitelist and on 
 one-shot wall clock, which charges rakudo its warm-up, and does not hold on steady-state or marginal
 cost. Compare warm before asserting a win.
 
-- [ ] **`JSON::Fast` at rakudo parity (~70x today; it is `mzef`'s perceived speed)** — a structural
-      change, not a slice campaign: statically typed routines compile to a typed, resolved IR on the
-      existing stack machine. Design, staged gates and the Stage 1 kill criterion are in
-      [ADR-0110](docs/adr/0110-typed-resolved-ir-for-statically-typed-routines.md); tracked by
-      [#8895](https://github.com/tokuhirom/mutsu/issues/8895). Worked solo.
+- [ ] **`JSON::Fast` at rakudo parity (it is `mzef`'s perceived speed)** — tracked by
+      [#8673](https://github.com/tokuhirom/mutsu/issues/8673) (`from-json`) and
+      [#14774](https://github.com/tokuhirom/mutsu/issues/14774) (`to-json`). The typed resolved IR
+      of [ADR-0110](docs/adr/0110-typed-resolved-ir-for-statically-typed-routines.md) landed but
+      missed its gate ([#8895](https://github.com/tokuhirom/mutsu/issues/8895)); read its findings
+      before choosing the next lever. Worked solo.
 - [ ] **The interpreter function-call path in hot loops** (the JIT bails at the call boundary) —
-      until 2026-09-13 this bullet read "the one axis where mutsu is genuinely slower than raku";
-      [ADR-0099](docs/adr/0099-regex-engine-performance-strategy.md) found two more (grammar parsing
-      and a boolean `~~`), so it is one of three:
-      [#7573](https://github.com/tokuhirom/mutsu/issues/7573). **Read that ticket's re-diagnosis
-      first**; everything this file used to say about the blocker is closed. The `&`-sigil signature
-      gate, the `nqp::` by-name resolve and the 83% `interpreter_fallbacks` figure are all fixed, and
-      the per-assertion cost is down an order of magnitude. Its consumer changed too: the vendored
-      `Test` flip it was meant to unblock **landed 2026-09-10**, so this is no longer a rung-3
-      retirement blocker but the standing CI cost of running Raku's own `Test` as Raku code
-      (`t/` 2.0x, `make roast` 1.24x) — paid on every run from now on. Two concrete levers remain,
-      per the ticket: collapse the double `multi` resolution per call, and reduce the flat
-      interpretation cost of a module body (allocation traffic and env lookups), which is what the
-      remaining ~16x against raku on an assertion actually is.
-- [ ] **Regex/grammar — read [ADR-0099](docs/adr/0099-regex-engine-performance-strategy.md) before
-      touching any of it**; it supersedes what this bullet used to say. The old text ("~25× vs raku
-      per matched character", citing ADR-0007 and a ~600s/200-document JSON consumer) is stale in
-      both halves: ADR-0007 measured 18 **ms**/char and the engine is three orders of magnitude past
-      that, and [#8183](https://github.com/tokuhirom/mutsu/issues/8183) was closed 2026-09-13 with
-      its figure already corrected to 12.6s (raku 0.84s) in `docs/batteries/json-tiny.md` — zef's
-      metadata path was never on it. What is actually open, in ADR-0099's order:
-    - [ ] Stage 0, the measured losses — all defects, no design risk, and they gate the rest:
-          [#8265](https://github.com/tokuhirom/mutsu/issues/8265) (`<sym>` kills the proto-candidate
-          memo; 3.3x on a grammar parse, which is nearly the whole ~1.9x-slower-than-warm-rakudo
-          gap), [#8262](https://github.com/tokuhirom/mutsu/issues/8262) (`:ignoremark` is O(n²)),
-          [#8263](https://github.com/tokuhirom/mutsu/issues/8263) and
-          [#8269](https://github.com/tokuhirom/mutsu/issues/8269) (Match truthiness and `$_`
-          interning: 31% of a boolean `~~`, which mutsu loses to warm rakudo 2.8x),
-          [#8270](https://github.com/tokuhirom/mutsu/issues/8270) (parse-cache defects).
-    - Stage 1, the declarative prefilter, is DONE
-          ([#8272](https://github.com/tokuhirom/mutsu/issues/8272), closed): the required literal
-          prefix, first-character set, required inner literal, subrule-derived first-sets,
-          `<:prop>`/scoped-`:ignoremark` first-sets, the `<+a -b>` composite class, and finally
-          ADR-0099 §5's NFA over the declarative prefix all landed. See `news/` for each slice.
-    - Stages 2 and 3 are no longer deferred: [ADR-0135](docs/adr/0135-regex-compiles-to-a-backtracking-program.md)
-          superseded them with the compiled backtracking program, which is §0's regex project.
+      [#7573](https://github.com/tokuhirom/mutsu/issues/7573); **read that ticket's re-diagnosis
+      first**. It is the standing CI cost of running Raku's own `Test` as Raku code. Two levers
+      remain, per the ticket: collapse the double `multi` resolution per call, and reduce the flat
+      interpretation cost of a module body (allocation traffic and env lookups).
+- Regex/grammar performance: read [ADR-0099](docs/adr/0099-regex-engine-performance-strategy.md)
+  before touching it. Its Stage 0 defects and Stage 1 prefilter are done, and ADR-0135's compiled
+  backtracking program replaced the tree walk; new findings are individual `todo:perf` issues.
 - [ ] Opcode leftovers: [docs/opcode-design-review.md](docs/opcode-design-review.md) §2/§5/§6.
 - [ ] Biased reference counting (ADR-0001 layer 3c) — frozen; start only on a measured trigger and an
       updated ADR.
@@ -331,8 +271,7 @@ Do not re-plan these — they are done: the
 [shared worker pool](docs/adr/0020-shared-worker-pool.md) (ADR-0020), the whole-`locals`
 clone/restore in `BlockScope` ([ADR-0018](docs/adr/0018-slot-addressed-lexical-capture-and-env-sync.md);
 `docs/lexical-scope-slot-campaign.md` is a historical record now), and `.^methods`/`.can` deriving
-from the real dispatch table (ADR-0019 F1/F2). Digest's `t/ripemd.t` is now whitelisted
-([#7571](https://github.com/tokuhirom/mutsu/issues/7571)) — see `docs/batteries/digest.md`.
+from the real dispatch table (ADR-0019 F1/F2).
 
 - [ ] **Non-blocking `await` — ADR-0020's rejected alternative (b), kept as a standing axis.**
       mutsu's `await` is a blocking condvar wait (`SharedPromise::wait`,
@@ -355,9 +294,6 @@ from the real dispatch table (ADR-0019 F1/F2). Digest's `t/ripemd.t` is now whit
       orders it, and fixed it with scheduler-routed promise resolution, a woken awaiter borrowing
       the resuming worker's slot, and no task overtaking its running submitter — leaving this axis
       untouched.
-- [ ] Split out the roast fudge logic. File size (376 over 500 lines, 138 over 1000, still growing —
-      `ANALYSIS.md` §6) is **not** a standalone campaign: split when a campaign opens the file and the
-      ownership boundary is visible.
 - [ ] **Improve error-message quality and bring edge-case panics to zero** — driven by roast
       pass/fail: `integration/error-reporting.t` and `weird-errors.t` for quality, and the
       deep-recursion `fatal runtime error: stack overflow` process abort for crashes. The panic
@@ -370,7 +306,7 @@ from the real dispatch table (ADR-0019 F1/F2). Digest's `t/ripemd.t` is now whit
 
 ## 6. QA & finalization — the compatibility gap roast no longer sees
 
-roast is mined out (§3), so the defects that remain are by definition the ones it does not exercise.
+Roast is a regression guard (§3), so the defects that remain are by definition the ones it does not exercise.
 The backbone is **differential testing against the reference `raku`**: any program where mutsu and
 raku disagree is a candidate defect, found objectively rather than guessed.
 
@@ -392,9 +328,9 @@ signal "mutsu differs from raku **and** from the documented expectation" over a 
 - [ ] **Panic-zero sweep** — mutsu must never Rust-panic or process-abort on any input. Extend with
       parser fuzzing driven through the same harness with a "did it panic?" oracle. The panic-family
       surface (`unwrap`/`expect`/`panic!`/`unreachable!`/`todo!`/`unimplemented!` in `src/`, test
-      scaffolding excluded) is now ratcheted at 1,906 sites by `make check-panic-surface`
-      ([#8186](https://github.com/tokuhirom/mutsu/issues/8186)) — it can only go down from here, so
-      this item is the remaining work of actually driving it toward zero.
+      scaffolding excluded) is ratcheted by `make check-panic-surface`
+      ([#8186](https://github.com/tokuhirom/mutsu/issues/8186)); this item is driving it toward
+      zero.
 - [ ] **Error / exception parity** — differential-test that mutsu throws the right `X::` type with a
       matching message and payload, not merely that it fails. Corpus: `Type/X*.rakudoc`.
 
@@ -407,10 +343,9 @@ signal "mutsu differs from raku **and** from the documented expectation" over a 
 | Bundled libraries | **40 vendored**, upstream suites gated at release | 10+ bundled, all documented |
 | mzef | install / fetch / resolution / test phase all work E2E | Full pipeline on the real fez index |
 | Binary distribution | 4 release targets + GHCR image + mise ✅ | Achieved |
-| roast whitelist | **1437 / 1465** | Achieved; remainder is mostly non-goal |
+| roast whitelist | **1440 / 1455** | Achieved; every remaining file is non-goal, no oracle or unpassable |
 | GC / JIT | **default on** ✅ | Achieved |
 | RakuAST frontend round trip (§0) | tracked in [#7564](https://github.com/tokuhirom/mutsu/issues/7564) | parity with the ordinary frontend, then default flip |
-| Regex walk uses, `regex-walk:` (§0) | tracked in ADR-0135 §8 | `walked=0 bridged=0`, then the walk deleted |
 | Built-in method rows (§0) | tracked in ADR-11276 §9 | every family migrated, then the cascades deleted |
 | Slow-path fallbacks (§0) | `make check-slow-path`, `scripts/slow-path-survey.sh` ([#11510](https://github.com/tokuhirom/mutsu/issues/11510)) | marker and call-site counts at 0, survey shape count 0, then `run_instance_method` as a fallback deleted |
 | Startup vs raku | **0.04×** | maintain |
