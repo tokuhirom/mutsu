@@ -73,7 +73,8 @@ pub(super) fn trace_of(node: &RakuAstNode) -> Result<Option<Stmt>, RuntimeError>
 
 /// Give `node`, a statement that began on `line` and occupies `span` of the
 /// unit's source, its origin.
-// Cost: O(1) for ASCII text, O(log n) otherwise, n = characters of the unit.
+// Cost: O(f + k) for ASCII text, O(f + k + log n) otherwise, f = expression
+// fields, k = custom declarator length, n = characters of the unit.
 pub(super) fn set(names: &NameScope, node: &mut RakuAstNode, line: i64, span: crate::ast::SrcSpan) {
     // The lowering reads only the line; the ranges are for `.AST`.
     if super::finalize::executing() {
@@ -106,7 +107,25 @@ pub(super) fn set(names: &NameScope, node: &mut RakuAstNode, line: i64, span: cr
         && expression.origin.0.is_none()
     {
         let mut expression = RakuAstNode::clone(expression);
-        set_span(&mut expression, span);
+        // A package written with an unscoped custom declarator starts at its
+        // name in Rakudo. `our` has no rendered scope field, so use the
+        // statement's written prefix to distinguish it from the bare form.
+        let custom_name_start = super::declare_how::marker(&expression)
+            .ok()
+            .flatten()
+            .and_then(|keyword| {
+                super::unit_source::with_text(span, |source| {
+                    let rest = source.strip_prefix(&keyword)?;
+                    rest.chars().next().filter(|ch| ch.is_whitespace())?;
+                    super::infix_origins::child(&expression, "name")
+                        .and_then(super::infix_origins::byte_range)
+                        .map(|(from, _)| from)
+                })
+            });
+        let expression_span = custom_name_start.map_or(span, |from| {
+            crate::ast::SrcSpan::new(from, span.to as usize)
+        });
+        set_span(&mut expression, expression_span);
         super::call_origins::dotty_assign(&mut expression, span);
         super::call_origins::postfix_call(&mut expression, span);
         super::infix_origins::derive(names, &mut expression);
