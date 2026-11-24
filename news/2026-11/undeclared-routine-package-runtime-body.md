@@ -9,8 +9,8 @@ reported as "Undeclared routine". Both parts are one lexical scope again for
 the check.
 
 This had been hidden: before the check stopped bailing on any `use` below the
-top level (#18994, #19137), Timezones::ZoneInfo's nested `use` skipped the check for
+top level (#18994), Timezones::ZoneInfo's nested `use` skipped the check for
 the whole module. Once it no longer did, Timezones::ZoneInfo and the three
 distributions that depend on it (DateTime::Timezones, Timezone::Simple and
 DateTime::React) went from green to `blocked_load`. All four load and pass
-their suites again.
+their suites again (#19137).
