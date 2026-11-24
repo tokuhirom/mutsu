@@ -10,17 +10,62 @@
     "unresolved": []
   },
   "dist": "DateTime::React",
-  "files": [],
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.23,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/00-sanity.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.36,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 120.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 97.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
   "load": {
-    "DateTime::React": "Failed to parse module 'DateTime::React': Failed to parse module 'Timezones::ZoneInfo': Undeclared routines:",
+    "DateTime::React": "ok",
     "DateTime::React::Shifts": "ok"
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-23",
+    "date": "2026-11-24",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "33461166",
+    "mutsu_commit": "a52740b2",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -31,12 +76,12 @@
     "index": "fez",
     "url": "https://360.zef.pm/D/AT/DATETIME_REACT/bee4f4dfb74de436093890a64472a0a71ce76d0c.tar.gz"
   },
-  "status": "blocked_load",
+  "status": "green",
   "totals": {
-    "baseline_assertions": 0,
-    "baseline_files": 0,
-    "mutsu_assertions": 0,
-    "parity_files": 0,
+    "baseline_assertions": 9,
+    "baseline_files": 2,
+    "mutsu_assertions": 9,
+    "parity_files": 2,
     "regressed_files": 0
   },
   "version": "0.2.0"
