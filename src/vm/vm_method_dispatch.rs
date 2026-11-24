@@ -667,7 +667,7 @@ impl Interpreter {
         // wins (it simply overwrites), while an unrelated CALLER lexical that
         // happens to share the name does not: the statics are the class's own
         // lexicals and the method body is inside their scope.
-        self.inject_class_body_statics(owner_class);
+        self.inject_class_body_statics_sym(owner_sym);
         // A role method's own composition bindings (its type parameters and the
         // role-body lexicals persisted with the composition) are closer than the
         // statics of a class the role is declared in: `class C { my \iv = 1;
@@ -2185,7 +2185,7 @@ impl Interpreter {
         // Injected BEFORE `self`/params are inserted so those still win, while an
         // unrelated CALLER lexical sharing the name does not — the statics are the
         // class's own lexicals and the method body is inside their scope.
-        self.inject_class_body_statics(owner_class);
+        self.inject_class_body_statics_sym(owner_sym);
         // As in the full binder: a role method's own bindings are closer than
         // the statics of a class the role is declared in.
         if owner_is_role && has_role_bindings {
