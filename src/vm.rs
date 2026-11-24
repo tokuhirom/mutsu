@@ -586,6 +586,13 @@ pub(crate) struct ControlHandlerEntry {
     /// inline run at a deeper raise site pushes it, so the handler body reads
     /// its own frame's invocant, not the raise site's (ADR-14843).
     pub installing_fixtures: Option<crate::value::frame_fixtures::FrameFixtures>,
+    /// The compunit the installing activation ran in (`current_unit` at
+    /// install): an inline run at a raise site in another unit resolves the
+    /// handler's routine names in its own module, not the raiser's (#19176).
+    pub installing_unit: crate::symbol::Symbol,
+    /// The package the installing activation ran in (its `$?PACKAGE`), for
+    /// the same reason: an `our sub` of the module resolves by package.
+    pub installing_package: crate::symbol::Symbol,
 }
 
 /// Self-contained bytecode for running a CONTROL handler inline. The `code` is
