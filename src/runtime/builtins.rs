@@ -245,7 +245,7 @@ impl Interpreter {
                 .is_some_and(|c| crate::runtime::utils::shaped_array_shape(c).is_some());
         // An element of an array a `$` variable holds (`$x[0]`) lives in an
         // anonymous container too: rakudo names it `element` (#19080).
-        let base = if anonymous || !source_name.starts_with(['@', '%']) {
+        let base = if anonymous || (container.is_some() && !source_name.starts_with(['@', '%'])) {
             "element"
         } else {
             source_name
