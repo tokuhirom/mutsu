@@ -676,7 +676,10 @@ impl RuntimeError {
         let ValueView::Instance { attributes, .. } = exception.view() else {
             return None;
         };
-        attributes.as_map().get("typename").map(Value::to_string_value)
+        attributes
+            .as_map()
+            .get("typename")
+            .map(Value::to_string_value)
     }
 
     /// Whether the optional method lookup itself missed on this receiver.
