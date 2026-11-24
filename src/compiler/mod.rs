@@ -3638,6 +3638,28 @@ impl Compiler {
     }
 
     /// Emit a read of `bare` via `OUTERS::` ("Symbols in any outer lexical scope").
+    /// Immediate-block `CALLERS::<name>` (and `$CALLERS::name`): the block's
+    /// callers are its lexical outers, then the enclosing routine's callers.
+    /// Under 6.e a name no outer scope declares is searched in the routine's
+    /// callers at run time (#18836); otherwise this is the `OUTERS::` walk.
+    // Cost: O(s), s = enclosing lexical scopes.
+    pub(super) fn emit_block_callers_var_access(&mut self, bare: String) {
+        if self.outers_declaring_depth(&bare).is_none()
+            && self.is_routine
+            && crate::parser::current_language_version_starts_with("6.e")
+        {
+            let cascade = Self::callers_name_cascades(&bare);
+            let name_idx = self.code.add_constant(Value::str(bare));
+            self.code.emit(OpCode::GetCallersVar {
+                name_idx,
+                depth: 1,
+                cascade,
+            });
+            return;
+        }
+        self.emit_outers_var_access(bare);
+    }
+
     pub(super) fn emit_outers_var_access(&mut self, bare: String) {
         // The nearest enclosing scope that declares the name is an `OUTER::`
         // at that depth, so a binding of an enclosing frame that this frame

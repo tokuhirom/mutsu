@@ -29,7 +29,7 @@ impl Interpreter {
             // of `X::Symbol::NotDynamic` (`CALLER::` still throws
             // `X::Caller::NotDynamic`).
             for depth in depth..=self.caller_env_stack.len() {
-                match self.caller_frame_var(name, depth, false) {
+                match self.caller_frame_var(name, depth, false, true) {
                     Ok(Some(found)) => return Ok(found),
                     Ok(None) => {}
                     Err(err)

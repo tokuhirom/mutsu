@@ -294,7 +294,7 @@ impl Interpreter {
     /// caller's `$_` is refused as not dynamic (`CALLER::`, #18988) rather
     /// than read (`CALLERS::` reads it).
     // Cost: O(t), t = the frame's tiers.
-    fn caller_var_lookup(
+    pub(super) fn caller_var_lookup(
         &self,
         name: &str,
         depth: usize,
@@ -305,18 +305,22 @@ impl Interpreter {
         // symbol throws X::Caller::NotDynamic). Walking past the top of the
         // call stack is not an error either.
         Ok(self
-            .caller_frame_var(name, depth, caller_topic_strict)?
+            .caller_frame_var(name, depth, caller_topic_strict, false)?
             .unwrap_or(Value::NIL))
     }
 
     /// [`Self::caller_var_lookup`], `None` when the frame at `depth` (or a
     /// frame there at all) does not have the name.
     // Cost: O(t), t = the frame's tiers.
+    /// `own_frame` looks only in that frame's own tiers, not through the
+    /// frames that called it (a cascading search visits those itself, and
+    /// reads each one's flushed slots there).
     pub(super) fn caller_frame_var(
         &self,
         name: &str,
         depth: usize,
         caller_topic_strict: bool,
+        own_frame: bool,
     ) -> Result<Option<Value>, RuntimeError> {
         let stack_len = self.caller_env_stack.len();
         if depth == 0 || depth > stack_len {
@@ -331,10 +335,17 @@ impl Interpreter {
         // #9962) first, then as itself (a lexical type), #17846.
         // A sigil-less key is reported as spelled, without a `$`.
         let reported = name;
-        let (name, found) = match env.get_through_callers(name) {
+        let lookup = |key: &str| {
+            if own_frame {
+                env.get_sym_in_frame(Symbol::intern(key))
+            } else {
+                env.get_through_callers(key)
+            }
+        };
+        let (name, found) = match lookup(name) {
             Some(val) => (name, Some(val)),
             None => match name.strip_prefix(crate::runtime::term_names::TERM_PREFIX) {
-                Some(bare) => (bare, env.get_through_callers(bare)),
+                Some(bare) => (bare, lookup(bare)),
                 None => (name, None),
             },
         };

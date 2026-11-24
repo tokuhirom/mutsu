@@ -660,7 +660,7 @@ impl Compiler {
             // Immediate-block `CALLERS::<$x>` is the lexical `OUTERS::` walk, the
             // stash twin of the `$CALLERS::x` routing in `emit_var_read`.
             if depth == 1 && self.in_immediate_block() {
-                self.emit_outers_var_access(bare);
+                self.emit_block_callers_var_access(bare);
                 self.bind_terminal = saved_terminal;
                 self.raw_list_elem_terminal = saved_raw_list_elem_terminal;
                 return;
