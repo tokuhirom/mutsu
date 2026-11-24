@@ -27,6 +27,7 @@ use super::Interpreter;
 mod conditional;
 
 mod names;
+mod package_frames;
 use names::{COMPILER_SPECIAL_CALL_NAMES, NATIVE_TYPE_NAMES};
 pub(crate) use names::{CORE_TERM_CONSTANTS, PHASER_SUGGESTION_NAMES};
 
