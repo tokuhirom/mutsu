@@ -54,6 +54,9 @@ pub(crate) struct LexicalImportReplay {
     function_writes: Vec<(Symbol, Arc<crate::ast::FunctionDef>)>,
     /// Those of them the scope lists as its own imports (`MY::`).
     own_routine_imports: Vec<Symbol>,
+    /// The names the run hid from routines written outside the block
+    /// (`note_block_bound_import`): a `sub EXPORT` hook's terms.
+    block_bound: Vec<Symbol>,
     /// The routine-alias set before and after the first run. The scope's
     /// exit puts the very `before` table back, so a later run that finds it
     /// installs `after` instead of copying the set to extend it.
@@ -79,6 +82,7 @@ pub(crate) struct ImportEffectProbe {
     env_keys_before: rustc_hash::FxHashSet<Symbol>,
     own_imports_before: rustc_hash::FxHashSet<Symbol>,
     merged_before: rustc_hash::FxHashSet<Symbol>,
+    block_bound_before: rustc_hash::FxHashSet<Symbol>,
     had_export_args: bool,
     /// How many registry writes the open scope had logged
     /// (`ImportScopeSnapshot::import_writes`).
@@ -126,6 +130,12 @@ impl Interpreter {
                 .last()
                 .map(|top| top.merged_modules.clone())
                 .unwrap_or_default(),
+            block_bound_before: self
+                .module
+                .import_scope_stack
+                .last()
+                .map(|top| top.block_bound_keys.clone())
+                .unwrap_or_default(),
             had_export_args: self.module.pending_use_export_args.is_some(),
             import_writes_before: self
                 .module
@@ -155,12 +165,15 @@ impl Interpreter {
 
     fn replayable_effects(&self, id: Symbol, probe: &ImportEffectProbe) -> Option<LexicalImportReplay> {
         // An `EVAL`'s set: each `EVAL` is a compilation of its own. A set
-        // holding a `sub EXPORT` hook's values: the hook runs again, and its
-        // run notes what the block hides from its callees.
+        // a `sub EXPORT` hook filled is replayed like any other (#19102):
+        // rakudo runs the hook once, at compile time, so the values its first
+        // run bound -- kept in the set's `hook_values` -- are the ones every
+        // later run of the block sees, and the names that run hid from the
+        // block's callees are recorded below. A `use` with arguments for the
+        // hook is never replayed (`had_export_args`).
         let text = id.resolve();
         if text.contains(crate::runtime::lexical_imports::EVAL_UNIT_MARK)
             || text.contains(crate::runtime::lexical_imports::MODULE_UNIT_MARK)
-            || self.module.lexical_imports.read().hook_values.contains_key(&id)
         {
             return None;
         }
@@ -248,12 +261,18 @@ impl Interpreter {
             .difference(&probe.merged_before)
             .copied()
             .collect();
+        let block_bound = top
+            .block_bound_keys
+            .difference(&probe.block_bound_before)
+            .copied()
+            .collect();
         Some(LexicalImportReplay {
             env_keys,
             merged,
             routine_aliases,
             function_writes,
             own_routine_imports,
+            block_bound,
             aliases_memo: (
                 Arc::clone(&probe.aliases_before),
                 Arc::clone(&self.module.imported_routine_aliases),
@@ -353,6 +372,12 @@ impl Interpreter {
             crate::runtime::lexical_imports::BLOCK_VARS_MARK,
         ) {
             self.note_block_bound_import(&name.resolve());
+        }
+        if !replay.block_bound.is_empty()
+            && let Some(top) = self.module.import_scope_stack.last_mut()
+        {
+            top.block_bound_keys
+                .extend(replay.block_bound.iter().copied());
         }
         true
     }
