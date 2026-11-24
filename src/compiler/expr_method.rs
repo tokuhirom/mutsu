@@ -16,7 +16,9 @@ impl Compiler {
             // value and answers from the container's metadata. Compiling the
             // whole subscript here also keeps the indexed expression's side
             // effects to exactly one evaluation.
-            if let Expr::Index {
+            // The subscript goes along too: a missing element's container is
+            // named after it (`@b[5]`, #19080).
+            let index_slot = if let Expr::Index {
                 target: index_target,
                 index,
                 is_positional,
@@ -24,21 +26,26 @@ impl Compiler {
             } = target
             {
                 self.compile_expr(index_target);
-                self.compile_subscript_index(index);
+                let slot = self.compile_var_meta_index(index);
                 self.code.emit(OpCode::IndexVarRef {
                     is_positional: *is_positional,
                 });
+                Some(slot)
             } else {
                 self.compile_expr(target);
-            }
+                None
+            };
             let name_idx = self.code.add_constant(Value::str(source_name));
             self.code.emit(OpCode::LoadConst(name_idx));
+            if let Some(slot) = index_slot {
+                self.code.emit(OpCode::GetLocal(slot));
+            }
             let builtin_idx = self
                 .code
                 .add_constant(Value::str("__mutsu_index_var_meta".to_string()));
             self.code.emit(OpCode::CallFunc {
                 name_idx: builtin_idx,
-                arity: 2,
+                arity: if index_slot.is_some() { 3 } else { 2 },
                 arg_sources_idx: None,
                 literal_native_args: 0,
                 static_arg_types: false,
@@ -63,16 +70,17 @@ impl Compiler {
         {
             self.compile_expr(index_target);
             self.code.emit(OpCode::Dup);
-            self.compile_subscript_index(index);
+            let index_slot = self.compile_var_meta_index(index);
             self.code.emit(OpCode::IndexVarRef {
                 is_positional: *is_positional,
             });
+            self.code.emit(OpCode::GetLocal(index_slot));
             let builtin_idx = self
                 .code
                 .add_constant(Value::str("__mutsu_anon_index_var_meta".to_string()));
             self.code.emit(OpCode::CallFunc {
                 name_idx: builtin_idx,
-                arity: 2,
+                arity: 3,
                 arg_sources_idx: None,
                 literal_native_args: 0,
                 static_arg_types: false,

@@ -56,6 +56,7 @@ impl Interpreter {
     fn builtin_index_var_meta(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let element = args.first().cloned().unwrap_or(Value::NIL);
         let source_name = args.get(1).map(Value::to_string_value).unwrap_or_default();
+        let subscript = args.get(2);
         // Read through a capture cell: a variable an escaping closure captured
         // is a shared `ContainerRef`, which is not itself a container of
         // element Scalars (#9488).
@@ -66,9 +67,9 @@ impl Interpreter {
         if let Some(c) = &container
             && let Some(key) = Self::stash_key_of_element(c, &element)
         {
-            return self.element_var_meta(element, None, &key);
+            return self.element_var_meta(element, None, &key, None);
         }
-        self.element_var_meta(element, container, &source_name)
+        self.element_var_meta(element, container, &source_name, subscript)
     }
 
     /// The key under which `container`, when it is a package stash, holds
@@ -118,6 +119,7 @@ impl Interpreter {
     fn builtin_anon_index_var_meta(&mut self, args: &[Value]) -> Result<Value, RuntimeError> {
         let container = args.first().cloned().unwrap_or(Value::NIL);
         let element = args.get(1).cloned().unwrap_or(Value::NIL);
+        let subscript = args.get(2);
         // `Pkg::<$v>.VAR`: the parent is the package's stash, which names its
         // symbols by key (#16923).
         if let Some(key) = Self::stash_key_of_element(&container, &element) {
@@ -127,9 +129,9 @@ impl Interpreter {
             if matches!(element.view(), ValueView::Array(..) | ValueView::Hash(_)) {
                 return self.call_method_with_values(element, "VAR", Vec::new());
             }
-            return self.element_var_meta(element, None, &key);
+            return self.element_var_meta(element, None, &key, None);
         }
-        self.element_var_meta(element, Some(container), "")
+        self.element_var_meta(element, Some(container), "", subscript)
     }
 
     /// Build the `.VAR` descriptor for one element of `container`.
@@ -157,6 +159,7 @@ impl Interpreter {
         element: Value,
         container: Option<Value>,
         source_name: &str,
+        subscript: Option<&Value>,
     ) -> Result<Value, RuntimeError> {
         // ADR-0040 §9's bind exclusion: `@a[0] := $p` installs the `Proxy`
         // itself as that element's container. `.VAR` on such an element IS the
@@ -176,7 +179,13 @@ impl Interpreter {
             }
             return Ok(value);
         }
-        if let Some(c) = container.as_ref() {
+        // A chained subscript of an element that does not exist yet
+        // (`@d[1][2]`) reads from an `Any` parent, which autovivifies into an
+        // array: the element still has a container (#19080).
+        let autoviv_parent = container
+            .as_ref()
+            .is_some_and(|c| matches!(c.view(), ValueView::Package(name) if name == crate::symbol::wk::any()));
+        if let Some(c) = container.as_ref().filter(|_| !autoviv_parent) {
             // A producer Seq can be a flat stream whose value cells occur at
             // selected positions (`.kv`) or inside Pair values (`.pairs`).
             // The provenance bit identifies the producer, but the indexed
@@ -234,10 +243,18 @@ impl Interpreter {
             || container
                 .as_ref()
                 .is_some_and(|c| crate::runtime::utils::shaped_array_shape(c).is_some());
-        let descriptor_name = if anonymous {
-            "element".to_string()
+        // An element of an array a `$` variable holds (`$x[0]`) lives in an
+        // anonymous container too: rakudo names it `element` (#19080).
+        let base = if anonymous || (container.is_some() && !source_name.starts_with(['@', '%'])) {
+            "element"
         } else {
-            source_name.to_string()
+            source_name
+        };
+        // An element that does not exist yet is an autovivifying container,
+        // which rakudo names after its subscript: `@b[5]`, `%h{'a'}`.
+        let descriptor_name = match Self::missing_element_suffix(container.as_ref(), subscript) {
+            Some(suffix) => format!("{base}{suffix}"),
+            None => base.to_string(),
         };
         attributes.insert("name".to_string(), Value::str(descriptor_name));
         attributes.insert(
@@ -296,6 +313,28 @@ impl Interpreter {
             Symbol::intern(pos_ref_class),
             attributes,
         ))
+    }
+
+    /// The subscript suffix of a `.VAR` element name (`[5]`, `{'a'}`) when
+    /// `subscript` addresses an element `container` does not hold yet; `None`
+    /// for an existing element or a subscript other than one `Int` / `Str`.
+    // Cost: O(1) (one hash probe).
+    fn missing_element_suffix(container: Option<&Value>, subscript: Option<&Value>) -> Option<String> {
+        let subscript = subscript?.descalarize();
+        let container = container?;
+        match (container.view(), subscript.view()) {
+            (ValueView::Array(items, kind), ValueView::Int(i)) if kind.is_real_array() => {
+                (i >= 0 && i as usize >= items.len()).then(|| format!("[{i}]"))
+            }
+            (ValueView::Package(name), ValueView::Int(i)) if name == crate::symbol::wk::any() => {
+                (i >= 0).then(|| format!("[{i}]"))
+            }
+            (ValueView::Hash(map), ValueView::Str(_) | ValueView::Int(_)) if map.key_type.is_none() => {
+                let key = subscript.to_string_value();
+                (!map.contains_key(key.as_str())).then(|| format!("{{'{key}'}}"))
+            }
+            _ => None,
+        }
     }
 
     /// The positional-ref type raku uses for one element of a NATIVE array,

@@ -103,4 +103,17 @@ impl Compiler {
                     )
         )
     }
+
+    /// Compile a `.VAR` subscript's index, leaving it on the stack for the
+    /// subscript read and keeping a copy in a hidden local, which the element
+    /// descriptor reads to name a missing element after its subscript
+    /// (`@b[5].VAR.name` is `@b[5]`, #19080). Returns the local's slot.
+    pub(super) fn compile_var_meta_index(&mut self, index: &Expr) -> u32 {
+        self.tmp_counter += 1;
+        let slot = self.alloc_local(&format!("__mutsu_var_meta_index_{}", self.tmp_counter));
+        self.compile_subscript_index(index);
+        self.code.emit(OpCode::Dup);
+        self.code.emit(OpCode::SetLocal(slot));
+        slot
+    }
 }
