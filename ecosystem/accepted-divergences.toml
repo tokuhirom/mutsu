@@ -201,6 +201,19 @@ reason = """same race as t/08-grep.rakutest: ParaSeq 0.2.7's `close-queues` wind
 reproduced on raku 2026.11 with an injected delay (maintainer decision 2026-11-17, #17723)."""
 
 [[divergence]]
+dist = "ParaSeq"
+file = "t/27-batch.t"
+shape = { verdict = "timeout", ok = 0, nok = 0, first_failure = "SWEEP-TIMEOUT" }
+issue = 19144
+reason = """a bug in ParaSeq 0.2.7 itself: `!batch`'s processor does not clamp its first \
+`nqp::slice($input, 0, $size - 1)`, so a final buffer shorter than the batch size (200000 % 6 = 2 \
+for `.batch(6)` / `.batch(:elems(6))`) dies with "MVMArray: Slice index out of bounds". `:catch` \
+(the default) swallows it, the batch never reaches its semaphore and the consumer waits forever. \
+raku 2026.11 hangs the same way, every run, with `(^200000).List.&hyperize(16, 3, :!auto).batch(6)` \
+(`:!catch` shows the exception); under `:auto` mutsu's smaller batches (~400 vs ~10000 elements) \
+make the short final buffer likely, a few percent of runs (maintainer decision 2026-11-24, #19144)."""
+
+[[divergence]]
 dist = "SOAP::Client"
 file = "t/05-simple-service.rakutest"
 shape = { verdict = "die", ok = 0, nok = 0, plan = 3, first_failure = "Failed to resolve 'www.w3schools.com:443': failed to lookup address information: Temporary failure in name resolution" }

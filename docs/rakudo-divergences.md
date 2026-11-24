@@ -556,6 +556,7 @@ failure shapes are in `ecosystem/accepted-divergences.toml`
 | NativeHelpers::Blob `t/02-cstruct` | `$*VM.name` is not `moar` (D1) | [#12829](https://github.com/tokuhirom/mutsu/issues/12829) |
 | Object::Delayed `t/02-basic` | thread-timing race (D3) | [#16898](https://github.com/tokuhirom/mutsu/issues/16898) |
 | ParaSeq `t/08-grep`, `t/20-unique` | a race in ParaSeq 0.2.7 itself | [#17723](https://github.com/tokuhirom/mutsu/issues/17723) |
+| ParaSeq `t/27-batch` | ParaSeq 0.2.7's unclamped `nqp::slice` on a short final batch; rakudo hangs the same way with a fixed batch size | [#19144](https://github.com/tokuhirom/mutsu/issues/19144) |
 | Rakudo::Options `t/02-with` | `MVM_SPESH_LOG` (D1) | [#16953](https://github.com/tokuhirom/mutsu/issues/16953) |
 | SOAP::Client `t/05-simple-service`, URI::FetchFile `t/060-http-useragent` | bundled module runs its real flow (D2) | [#15525](https://github.com/tokuhirom/mutsu/issues/15525) |
 
