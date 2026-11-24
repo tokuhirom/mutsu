@@ -29,20 +29,21 @@ use crate::ast_visit::{
     NameKind, Visit, walk_call_arg, walk_expr, walk_param, walk_regex_node, walk_stmt, walk_stmts,
 };
 use crate::regex_tree::RegexNode;
-use std::collections::HashSet;
+use crate::symbol::Symbol;
+use std::collections::{HashMap, HashSet};
 
 use super::conditional;
 
 /// The lexical scope of one statement list below the unit's top level.
-struct Frame {
+pub(super) struct Frame {
     /// The enclosing scope, if any.
-    parent: Option<usize>,
+    pub(super) parent: Option<usize>,
     /// The routines declared in this scope (outside any nested scope).
-    routines: HashSet<String>,
+    pub(super) routines: HashSet<String>,
     /// A `use` in this scope imports names the walk cannot see: a call in it
     /// (or in a scope nested in it) is not judged. The import is lexical, so
     /// a call outside the scope still is (#13441).
-    opaque_imports: bool,
+    pub(super) opaque_imports: bool,
 }
 
 #[derive(Default)]
@@ -61,10 +62,10 @@ pub(super) struct Scan {
     /// has run, a call explained by an enclosing body's routine is still here.
     pub(super) calls: Vec<(String, i64)>,
     /// The innermost routine body of each entry of `calls`.
-    call_frames: Vec<Option<usize>>,
-    frames: Vec<Frame>,
+    pub(super) call_frames: Vec<Option<usize>>,
+    pub(super) frames: Vec<Frame>,
     /// The routine body the walk is in.
-    current: Option<usize>,
+    pub(super) current: Option<usize>,
     /// The name of the `proto` whose declaration is being walked: the visitor
     /// reports it as a plain `Decl`, but it declares a routine.
     proto_name: Option<String>,
@@ -72,7 +73,7 @@ pub(super) struct Scan {
     pub(super) term_order: bool,
     /// The terms in scope at the walk's position: one set per open statement
     /// list, outermost first (never empty).
-    terms: Vec<HashSet<String>>,
+    pub(super) terms: Vec<HashSet<String>>,
     /// Every term the unit declares, wherever: `declared`'s share that is
     /// order-aware for the call check but scope-blind for the `EVAL`
     /// undeclared-name check.
@@ -80,7 +81,7 @@ pub(super) struct Scan {
     /// The keys of the enum being walked, which the visitor reports as plain
     /// `Decl`s after [`Scan::declare_term`] has taken them.
     enum_keys: Vec<String>,
-    line: i64,
+    pub(super) line: i64,
     /// The unit imports names the walker cannot see (use/require/...): skip
     /// the whole check rather than risk a false positive.
     pub(super) bail: bool,
@@ -88,12 +89,16 @@ pub(super) struct Scan {
     pub(super) eval: bool,
     /// The unit's top-level conditional `use`s (see [`conditional`]).
     pub(super) conditional_uses: Vec<conditional::ConditionalUse>,
+    /// The scope of each class or package body walked so far, by name: the
+    /// run-time part the BEGIN prologue splits off a body
+    /// (`Stmt::PackageRuntimeBody`) is walked in it again.
+    pub(super) package_frames: HashMap<Symbol, usize>,
     /// The `&name` references, with their lines. One is judged as a call only
     /// if no routine of that name is declared anywhere in the unit
     /// ([`Scan::adopt_code_vars`]): a `&name` of a package's or a routine
     /// body's routine is reachable in more ways (an `import`, an exported
     /// symbol, a closure handed out) than a call's scope rules model.
-    code_vars: Vec<(String, i64)>,
+    pub(super) code_vars: Vec<(String, i64)>,
 }
 
 /// A declared name with its sigil and twigil removed.
@@ -123,47 +128,6 @@ impl Scan {
     // Cost: O(n), n = size of the statement's AST.
     pub(super) fn walk_top_level(&mut self, stmt: &Stmt) {
         self.visit_stmt(stmt);
-    }
-
-    /// Judge each `&name` reference whose routine the unit declares nowhere,
-    /// at any scope, as a call (`say &nosuch` is "Undeclared routine").
-    // Cost: O(v + f * r), v = `&name` references, f = frames, r = routines each.
-    pub(super) fn adopt_code_vars(&mut self) {
-        let code_vars = std::mem::take(&mut self.code_vars);
-        // A `&name` carries no scope here: with a `use` below the top level,
-        // one inside its scope may name what it imported (#13441).
-        if self.frames.iter().any(|f| f.opaque_imports) {
-            return;
-        }
-        let saved_line = self.line;
-        for (name, line) in code_vars {
-            let declared_somewhere = self.declared.contains(&name)
-                || self.body_routines.contains(&name)
-                || self.frames.iter().any(|f| f.routines.contains(&name));
-            if !declared_somewhere {
-                self.line = line;
-                self.record_call(&name);
-            }
-        }
-        self.line = saved_line;
-    }
-
-    /// Drop every call that a routine declared in an enclosing routine body
-    /// explains.
-    // Cost: O(c * d), c = calls, d = routine-body nesting depth.
-    pub(super) fn resolve_body_scoped_calls(&mut self) {
-        let frames = &self.frames;
-        let mut call_frames = std::mem::take(&mut self.call_frames).into_iter();
-        self.calls.retain(|(name, _)| {
-            let mut frame = call_frames.next().flatten();
-            while let Some(i) = frame {
-                if frames[i].routines.contains(name) || frames[i].opaque_imports {
-                    return false;
-                }
-                frame = frames[i].parent;
-            }
-            true
-        });
     }
 
     /// Walk a routine declaration whose name the caller has declared: its
@@ -203,7 +167,9 @@ impl Scan {
         let term = term_name(bare);
         if let Some(inner) = term {
             self.all_terms.insert(inner.to_string());
-            if self.term_order && let Some(open) = self.terms.last_mut() {
+            if self.term_order
+                && let Some(open) = self.terms.last_mut()
+            {
                 open.insert(inner.to_string());
             }
         }
@@ -212,7 +178,9 @@ impl Scan {
             routines.insert(bare.to_string());
             // The unordered scan still resolves the term through its lexical
             // frame; the ordered scan uses the term stack above instead.
-            if !self.term_order && let Some(inner) = term {
+            if !self.term_order
+                && let Some(inner) = term
+            {
                 routines.insert(inner.to_string());
             }
             self.body_routines.extend(routines.iter().cloned());
@@ -264,7 +232,7 @@ impl Scan {
         }
     }
 
-    fn record_call(&mut self, name: &str) {
+    pub(super) fn record_call(&mut self, name: &str) {
         if self.bail {
             return;
         }
@@ -380,6 +348,12 @@ impl<'ast> Visit<'ast> for Scan {
                 self.walk_routine_body(stmt);
             }
             Stmt::MethodDecl { .. } => self.walk_routine_body(stmt),
+            Stmt::ClassDecl { name, .. } | Stmt::Package { name, .. } => {
+                self.walk_package_decl(stmt, *name)
+            }
+            Stmt::PackageRuntimeBody { name, body, .. } => {
+                self.walk_package_runtime_body(stmt, *name, body)
+            }
             // A parser desugaring (`sub a {...} given 3`) is no lexical scope.
             Stmt::SyntheticBlock(body) => walk_stmts(self, body),
             // The keys of an enum are terms from the declaration on.
@@ -439,7 +413,9 @@ impl<'ast> Visit<'ast> for Scan {
         if let Expr::CodeVar(name) = expr
             && !self.bail
             && name.starts_with(|c: char| c.is_alphabetic() || c == '_')
-            && name.chars().all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''))
+            && name
+                .chars()
+                .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | '\''))
         {
             self.code_vars.push((name.clone(), self.line));
         }
@@ -471,7 +447,10 @@ impl<'ast> Visit<'ast> for Scan {
             args: Some(args),
             ..
         } = node
-            && args.source.as_deref().is_some_and(|s| s.starts_with("sym<"))
+            && args
+                .source
+                .as_deref()
+                .is_some_and(|s| s.starts_with("sym<"))
         {
             self.visit_name(name, NameKind::Regex);
             return;
@@ -516,4 +495,3 @@ impl<'ast> Visit<'ast> for Scan {
         }
     }
 }
-
