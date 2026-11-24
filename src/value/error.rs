@@ -685,15 +685,30 @@ impl RuntimeError {
         let Some(typename) = attr_map.get("typename") else {
             return true;
         };
-        let actual = crate::value::types::what_type_name(receiver);
-        if typename.to_string_value() == actual {
+        let typename = typename.to_string_value();
+        if typename == crate::value::types::what_type_name(receiver) {
             return true;
         }
-        match receiver.view() {
-            ValueView::Mixin(inner, _) => {
-                typename.to_string_value() == crate::value::types::what_type_name(inner)
-            }
-            _ => false,
+        // The miss names the type dispatch saw, which need not be the
+        // receiver's own spelling: a List literal dispatched as its Array
+        // view, an Int read through its Scalar container, a `.VAR` view or a
+        // role mixin, a value of a subclass. Any type the receiver, or the
+        // value its container holds, nominally is counts as the receiver's
+        // own miss.
+        receiver.isa_check(&typename) || {
+            let held = receiver.descalarize().deref_container();
+            let held = match held.view() {
+                ValueView::ContainerView(cell) => cell.load(),
+                // A variable's `.VAR` descriptor dispatches as the value it
+                // holds.
+                ValueView::Instance { attributes, .. } => attributes
+                    .as_map()
+                    .get("__mutsu_var_value")
+                    .map(|value| value.clone().into_deref())
+                    .unwrap_or_else(|| held.clone()),
+                _ => held,
+            };
+            held.isa_check(&typename)
         }
     }
 
