@@ -878,10 +878,29 @@ impl Interpreter {
         if is_exact && imported.is_empty() {
             return self.sub_value_from_function_def((*candidates[0].1).clone());
         }
+        // The family's `proto` is the module's own even when only its
+        // candidates carry `is export` (Red::Do's `proto red-do(|c)`, whose
+        // body binds the row-security context before `{*}`): the exported
+        // `&name` dispatches through it, as a direct import of the family
+        // does.
+        let proto = self.declared_family_proto(&candidates[0].1, name_sym);
         candidates.extend(imported);
-        self.sub_value_from_multi_candidates(
+        let dispatcher = self.sub_value_from_multi_candidates(
             name,
             candidates.into_iter().map(|(_, def)| def).collect(),
-        )
+        );
+        match proto {
+            Some(proto) => self.with_dispatch_proto(dispatcher, &proto),
+            None => dispatcher,
+        }
+    }
+
+    /// The `proto` declared for `name` in the package and source file
+    /// `candidate` was declared in, if any.
+    // Cost: O(1), one registry probe.
+    fn declared_family_proto(&self, candidate: &FunctionDef, name: Symbol) -> Option<Arc<FunctionDef>> {
+        let key = crate::qualified::qualified(candidate.package, name);
+        let proto = self.routines().proto_functions.get(&key)?.clone();
+        (proto.source_file == candidate.source_file).then_some(proto)
     }
 }
