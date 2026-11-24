@@ -61,12 +61,21 @@ impl Interpreter {
         // region cannot be trusted (a code object that grew after install).
         let live_base =
             installing_base.filter(|&b| Self::installing_slots_live(code, b, self.locals.base()));
+        // The installing activation is the executing frame itself (a `warn`
+        // raised in the block, or a TRIR call that pushed no frame): its
+        // slots are the variables there too (ADR-12529 §3). An earlier
+        // handler run, raised under a pushed frame, wrote its change straight
+        // into the live slot and left this activation's env entry behind,
+        // so seeding from the env by name would lose that write (#19136).
+        let own_base = installing_base.filter(|&b| {
+            b == self.locals.base() && b + code.locals.len() <= self.locals.all_slots().len()
+        });
         let handler_locals: Vec<Value> = code
             .locals
             .iter()
             .enumerate()
             .map(|(i, name)| {
-                if let Some(b) = live_base {
+                if let Some(b) = live_base.or(own_base) {
                     let v = &self.locals.all_slots()[b + i];
                     if !v.is_nil() {
                         return v.clone();

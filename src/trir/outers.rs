@@ -165,17 +165,14 @@ impl Interpreter {
             let stable = v.is_container_ref();
             (v, stable)
         };
-        // mutsu#9111: a routine-nested sub's per-activation binding.
-        // The owner is what `run_trir_routine` pushes as the chunk's frame.
-        let owner = (self.current_package_sym(), chunk.def_file.get().copied());
-        if let Some(v) = self.lexsub_alias_binding_for(callee, owner, name) {
-            return Some(celled(v));
-        }
-        if let Some(owner) = self
+        // The program-scope routine this chunk is, if a mainline bucket runs
+        // it: its captured cells are its own.
+        let mainline_owner = self
             .lexicals
             .mainline_lexical_subs
             .get(callee.as_str())
-            .and_then(|owners| owners.iter().find(|o| o.runs_trir_chunk(chunk.id)))
+            .and_then(|owners| owners.iter().find(|o| o.runs_trir_chunk(chunk.id)));
+        if let Some(owner) = mainline_owner
             && let Some(v) = self
                 .lexicals
                 .unit_lexicals
@@ -185,6 +182,18 @@ impl Interpreter {
                 .cloned()
         {
             return Some(celled(v.clone()));
+        }
+        // mutsu#9111: a routine-nested sub's per-activation binding.
+        // The owner is what `run_trir_routine` pushes as the chunk's frame.
+        // A program-scope routine of the same name, package and file (a
+        // `sub sv { $s }` beside a routine's nested `sub sv { $s }`) is not
+        // that sub: the nested sub's latest activation is not its outer, as
+        // the bytecode path's `lexsub_latest_cell` also knows (#13900, #19136).
+        let owner = (self.current_package_sym(), chunk.def_file.get().copied());
+        if mainline_owner.is_none()
+            && let Some(v) = self.lexsub_alias_binding_for(callee, owner, name)
+        {
+            return Some(celled(v));
         }
         // A package's `our` scalar resolves to its one canonical cell before
         // the containing file's same-named lexical. A TRIR entry has no own
