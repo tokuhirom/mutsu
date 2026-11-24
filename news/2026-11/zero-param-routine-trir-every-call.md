@@ -17,5 +17,7 @@ takes a routine-nested sub's activation.
 The lost write of a resuming CONTROL handler no longer reproduces on current
 `main`. A regression test now pins it.
 
-With that, every parameterless routine with a TRIR chunk runs it from the
-call cache, as a routine with parameters does.
+With that, every program-scope parameterless routine with a TRIR chunk runs
+it from the call cache, free variables and all. A block- or routine-declared
+one still keeps the bytecode path: it resolves its names through an
+activation the cached call does not hand TRIR.

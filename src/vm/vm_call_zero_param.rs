@@ -22,14 +22,16 @@ impl Interpreter {
     }
 
     /// Whether a parameterless routine runs its TRIR chunk from the call
-    /// cache: whenever it has one, as a routine with parameters does. TRIR
-    /// resolves a program-scope routine's free variables in its own mainline
-    /// bucket before any routine-nested sub's activation of the same name
-    /// (`trir_declared_binding`, #19136).
+    /// cache: one declared at program scope. Its free variables resolve in
+    /// its own mainline bucket before any routine-nested sub's activation of
+    /// the same name (`trir_declared_binding`, #19136). A block- or
+    /// routine-declared one resolves its names through an activation the
+    /// cached call does not hand TRIR (a `for` body's `our sub` reads that
+    /// iteration's parameter), so it keeps `call_compiled_function_fast`.
     // Cost: O(1).
     #[inline]
     pub(super) fn zero_param_trir_ok(cf: &CompiledFunction) -> bool {
-        cf.trir.is_some()
+        cf.trir.is_some() && !cf.code.declared_in_block && !cf.code.declared_in_routine
     }
 
     /// Call the parameterless routine `cf` with the `arity` values on top of
