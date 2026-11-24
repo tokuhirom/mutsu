@@ -1990,7 +1990,7 @@ impl Interpreter {
         // Shared per candidate, so the value call compiles the body once
         // rather than on every `nextcallee` (#12875).
         let (params, callable_param_defs) = self.nextcallee_method_signature(owner, def);
-        let callable = Value::make_sub_for_routine(
+        let mut data = Value::sub_data_for_routine(
             owner,
             Symbol::intern(method_name),
             params,
@@ -1999,17 +1999,25 @@ impl Interpreter {
             def.is_rw,
             self.env.clone(),
             None,
+            Vec::new(),
         );
+        // The callee runs the candidate's own compiled body, as a direct
+        // dispatch or `.^find_method` would. Compiling its AST on the fly
+        // instead compiles it in the unit of whoever called `nextcallee`, so
+        // a routine the candidate's module imports was invisible there
+        // (#19172: Red's `ScopedDriver.prepare` reaching `Red::Driver.prepare`,
+        // which calls the imported `protected-row-query`). The source file
+        // makes the call enter the candidate's unit and its backtrace frame
+        // name the declaring file.
+        if let Some(code) = &def.compiled_code {
+            data.compiled_code = Some(code.clone());
+            data.compiled_fns = Some(def.compiled_fns.clone().unwrap_or_default());
+        }
+        data.source_file.clone_from(&def.source_file);
         // An `is raw` candidate hands back its container through the callee
         // too (`my \r := nextcallee()(self, |c)`), as through a direct call.
-        if def.is_raw
-            && let ValueView::Sub(data) = callable.view()
-        {
-            let mut raw = crate::value::SubData::clone(&data);
-            raw.is_raw = true;
-            return Value::sub_value(crate::gc::Gc::new(raw));
-        }
-        callable
+        data.is_raw = def.is_raw;
+        Value::sub_value(crate::gc::Gc::new(data))
     }
 
     pub(super) fn builtin_nextcallee(&mut self) -> Result<Value, RuntimeError> {
