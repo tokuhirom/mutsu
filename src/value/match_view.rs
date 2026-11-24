@@ -249,6 +249,22 @@ impl Value {
         self.match_attr("list")
     }
 
+    /// `$m[i]` on a *lazy* Match: slot `i` of its memoized capture list, or
+    /// `Nil` past the end. This is what the subscript's general path answers
+    /// for a Match (`target.match_list()`, then the element), read from the same
+    /// memoized list, so a repeated read hands out the same child value. `None`
+    /// for any value that is not a lazy Match.
+    // Cost: O(1) once the node is materialized; the first read materializes
+    // one level, O(c), c = the node's captures.
+    pub(crate) fn lazy_match_positional_capture(&self, i: usize) -> Option<Value> {
+        let node = self.0.as_match_node()?;
+        let list = node.attr("list");
+        Some(match list.as_ref().map(Value::view) {
+            Some(ValueView::Array(items, ..)) => items.get(i).cloned().unwrap_or(Value::NIL),
+            _ => Value::NIL,
+        })
+    }
+
     /// The positional-capture list as `.list` presents it to Raku code.
     ///
     /// The stored `list` attribute renders an unbound interior slot (an
