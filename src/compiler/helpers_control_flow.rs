@@ -196,6 +196,7 @@ impl Compiler {
         // branch too (the statement-position twin is in
         // `compile_body_with_implicit_try_inner`).
         self.hoist_sub_decls(stmts, true);
+        self.hoist_pending_dynamic_decls(stmts);
         for (i, stmt) in stmts.iter().enumerate() {
             let is_last = i == stmts.len() - 1;
             if is_last {
@@ -1378,6 +1379,7 @@ impl Compiler {
                 self.hoist_require_stubs(&main_stmts);
                 idx
             });
+            self.hoist_pending_dynamic_decls(&main_stmts);
             for (i, stmt) in main_stmts.iter().enumerate() {
                 let is_last = i == main_stmts.len() - 1 && !discards_tail_value;
                 // Keep the final expression's value on the stack so the try

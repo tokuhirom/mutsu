@@ -47,6 +47,7 @@ pub(super) struct LexicalScopeSnapshot {
     lexical_class_names_current_scope: std::collections::HashSet<String>,
     qualified_class_names_current_scope: std::collections::HashSet<String>,
     accessed_dynamic_vars: std::collections::HashSet<String>,
+    hoisted_dynamic_decls: std::collections::HashSet<String>,
     /// True when this push left `accessed_dynamic_vars` untouched (a
     /// transparent synthetic-wrapper inlining, not a real scope) — see
     /// `push_dynamic_scope_lexical`. The matching pop must then also leave it
@@ -128,6 +129,11 @@ impl Compiler {
             } else {
                 std::mem::take(&mut self.accessed_dynamic_vars)
             },
+            hoisted_dynamic_decls: if dynamic_reads_transparent {
+                std::collections::HashSet::new()
+            } else {
+                std::mem::take(&mut self.hoisted_dynamic_decls)
+            },
             accessed_dynamic_vars_transparent: dynamic_reads_transparent,
             owns_decls,
         }
@@ -165,6 +171,7 @@ impl Compiler {
         // wrongly erase any reads recorded while this frame was "open".
         if !saved.accessed_dynamic_vars_transparent {
             self.accessed_dynamic_vars = saved.accessed_dynamic_vars;
+            self.hoisted_dynamic_decls = saved.hoisted_dynamic_decls;
         }
     }
 
@@ -348,6 +355,7 @@ impl Compiler {
             });
             return true;
         }
+        self.hoisted_dynamic_decls.remove(name);
         false
     }
 

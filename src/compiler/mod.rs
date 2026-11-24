@@ -1141,6 +1141,7 @@ mod helpers_do_expr;
 mod helpers_dynamic;
 mod helpers_method_body;
 mod literal_index_assign;
+mod pending_dynamics;
 mod self_reading_container_decl;
 mod short_circuit;
 mod stash_entry_var;
@@ -1617,6 +1618,13 @@ pub(crate) struct Compiler {
     /// read of `$*x` appears directly in that SAME block, not when the read was
     /// in an enclosing or sibling scope (see `LexicalScopeSnapshot`).
     accessed_dynamic_vars: std::collections::HashSet<String>,
+    /// The dynamics of the CURRENT lexical block that its entry declared
+    /// ahead of their own declarations (`hoist_pending_dynamic_decls`) and
+    /// whose declarations have not been compiled yet. A read of one still
+    /// counts for the X::Dynamic::Postdeclaration check, as it did before the
+    /// early declaration put the name in `local_map`. Same lifecycle as
+    /// `accessed_dynamic_vars`.
+    hoisted_dynamic_decls: std::collections::HashSet<String>,
     /// Number of enclosing `for`-loop blocks between the code currently being
     /// compiled and the enclosing routine. A `for` block is a distinct call
     /// frame in Raku (`callframe(0)` inside a `for` body is the block, the
@@ -2358,6 +2366,7 @@ impl Compiler {
             dynamic_scope_names: None,
             user_listop_shadows: std::collections::HashSet::new(),
             accessed_dynamic_vars: std::collections::HashSet::new(),
+            hoisted_dynamic_decls: std::collections::HashSet::new(),
             callframe_block_depth: 0,
             is_routine: false,
             unit_tail_discards: false,

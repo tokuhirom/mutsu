@@ -878,7 +878,9 @@ impl Compiler {
             return;
         }
         // Track dynamic variable access for postdeclaration check
-        if name.starts_with('*') && !self.local_map.contains_key(name) {
+        if name.starts_with('*')
+            && (!self.local_map.contains_key(name) || self.hoisted_dynamic_decls.contains(name))
+        {
             self.accessed_dynamic_vars.insert(name.to_string());
         }
         // Slang variables ($~MAIN, $~Quote, $~Regex)

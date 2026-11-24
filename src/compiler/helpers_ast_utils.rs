@@ -735,6 +735,7 @@ impl Compiler {
     /// still performs the actual (re-)initialization.
     pub(super) fn hoist_typed_var_decls(&mut self, stmts: &[Stmt]) {
         self.note_predeclared_vars(stmts);
+        self.hoist_pending_dynamic_decls(stmts);
         // Pre-register each declaration with the constraint its own compile
         // will persist, `use variables :D/:U`'s implicit smiley included: the
         // pragma statements of this block are tracked in order, then the
@@ -849,7 +850,7 @@ impl Compiler {
     /// bookkeeping: a plain `my` declaration (see
     /// [`Self::decl_registers_before_init`]) whose initializer, if any, is a
     /// literal.
-    fn stmt_is_inert_prefix(stmt: &Stmt) -> bool {
+    pub(super) fn stmt_is_inert_prefix(stmt: &Stmt) -> bool {
         Self::decl_registers_before_init(stmt)
             && matches!(
                 stmt,
