@@ -41,19 +41,17 @@ mod unix {
     /// far and every later one, see [`forward_stream_bytes`]) and return the end
     /// the caller reads (and closes). A second request answers the first one's
     /// descriptor, `None` when the pipe could not be made.
-    // Cost: O(1) (one pipe2 system call).
+    // Cost: O(1) (one close-on-exec pipe, see `cloexec_pipe`).
     pub(crate) fn request_native_descriptor(supply_id: u64) -> Option<i64> {
         use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd};
         let mut map = native_descriptor_forwards().lock().ok()?;
         if map.contains_key(&supply_id) {
             return None;
         }
-        let mut fds = [0 as std::ffi::c_int; 2];
-        // SAFETY: `fds` is a valid two-element array for pipe2 to fill.
-        if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } != 0 {
-            return None;
-        }
-        // SAFETY: pipe2 succeeded, so both descriptors are open and owned by us;
+        // pipe2(2) does not exist on macOS; the shared helper picks the
+        // platform's way to make both ends close-on-exec.
+        let fds = crate::runtime::cloexec_pipe::cloexec_pipe().ok()?;
+        // SAFETY: the pipe was just created, so both descriptors are open and owned by us;
         // the read end leaves our ownership (the caller closes it), the write end
         // is owned by the forward until the stream ends.
         let write_fd = unsafe { OwnedFd::from_raw_fd(fds[1]) };
