@@ -124,6 +124,27 @@ def parse_det_rows(text):
     return rows
 
 
+# Per-benchmark caveats, shown on the benchmark's card (and marked in the table)
+# only while the named metric is selected: {benchmark: {metric: html}}. The key
+# is the benchmark's base name -- `+jit` stripped, `@section` kept -- the same
+# name its card is titled with. Use it for a number that is measured correctly
+# but does not mean what the chart next to it suggests.
+_RAKUPP_NATIVE_JSON = (
+    "rakupp does not run JSON::Fast's Raku code: it answers "
+    "<span class=\"mono\">JSON::Fast::from-json</span> with its own C++ JSON "
+    "parser (the module file is loaded, but a <span class=\"mono\">die</span> "
+    "put at the top of <span class=\"mono\">from-json</span> never fires). This "
+    "ratio is mutsu interpreting JSON::Fast against a native parser, not engine "
+    "against engine; <b>ratio vs rakudo</b>, which runs the same Raku code, is "
+    "the comparable number."
+)
+BENCH_NOTES = {
+    "bench-json-fast": {"ratiopp": _RAKUPP_NATIVE_JSON},
+    "bench-json-fast-spdx": {"ratiopp": _RAKUPP_NATIVE_JSON},
+    "bench-json-fast-spdx@section": {"ratiopp": _RAKUPP_NATIVE_JSON},
+}
+
+
 def build_model(rows, det_rows=()):
     # Chronological commit order: each distinct commit keyed by first-seen date.
     # Both series are appended by the same job on the same commit, so they share
@@ -182,7 +203,10 @@ def build_model(rows, det_rows=()):
     for name in sorted(benches):
         base = [benches[name]["base"][k] for k in sorted(benches[name]["base"])]
         jit = [benches[name]["jit"][k] for k in sorted(benches[name]["jit"])]
-        out.append({"name": name, "base": base, "jit": jit})
+        entry = {"name": name, "base": base, "jit": jit}
+        if name in BENCH_NOTES:
+            entry["notes"] = BENCH_NOTES[name]
+        out.append(entry)
     return {
         "commits": commit_meta,
         "benches": out,
@@ -287,6 +311,12 @@ svg { display: block; width: 100%; height: auto; overflow: visible; touch-action
 }
 .tip .r { color: color-mix(in srgb, var(--surface) 62%, transparent); }
 .axis { font-size: 9.5px; fill: var(--muted); }
+.bench-note {
+  margin: 2px 0 6px; padding: 6px 8px; font-size: 11.5px; line-height: 1.45;
+  color: var(--ink); border-left: 3px solid var(--jit); border-radius: 4px;
+  background: color-mix(in srgb, var(--jit) 10%, transparent);
+}
+.note-mark { color: var(--jit); cursor: help; margin-left: 4px; }
 table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
 th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--hair); }
 th:first-child, td:first-child { text-align: left; }
@@ -373,6 +403,10 @@ const fmt = (v) => (metric === 'instr' || metric === 'allocs') ? fmtInstr(v)
     : v.toFixed(2);
 const unit = () => metric === 'seconds' ? 's' : isRatio() ? '×' : '';
 
+// A caveat attached to this benchmark for the active metric (BENCH_NOTES in
+// the generator), or undefined.
+const noteFor = (b) => b.notes && b.notes[metric];
+
 function windowStart() { return windowN > 0 ? Math.max(0, N - windowN) : 0; }
 
 // Percent change of the last point vs the previous, in the active window.
@@ -443,9 +477,11 @@ function cardHTML(b) {
     chip = `<span class="chip ${cls}">${sign}${d.pct.toFixed(1)}%${cls==='flat'?'':arrow}</span>`;
     now = `<span class="now mono">${fmt(d.now)}<span class="unit">${unit()}${nowLane==='jit'?' (+jit)':''}</span></span>`;
   }
+  const note = noteFor(b);
   return `<div class="bench-card" data-name="${b.name}">
     <div class="head"><h2>${b.name}</h2></div>
     <div class="readout">${now}${chip}</div>
+    ${note ? `<p class="bench-note">${note}</p>` : ''}
     ${c.svg}
     <div class="tip"></div>
   </div>`;
@@ -495,7 +531,7 @@ function renderTable() {
     const defB = b.base.filter(defined), defJ = b.jit.filter(defined);
     const lastB = defB.length ? yval(defB[defB.length - 1]) : null;
     const lastJ = defJ.length ? yval(defJ[defJ.length - 1]) : null;
-    return { name: b.name, base: lastB, jit: lastJ,
+    return { name: b.name, base: lastB, jit: lastJ, note: noteFor(b),
              dpct: (dj || db) ? (dj || db).pct : null };
   });
   rows.sort((a, x) => {
@@ -508,7 +544,12 @@ function renderTable() {
   for (const r of rows) {
     const dc = r.dpct == null ? 'flat' : Math.abs(r.dpct) < 0.5 ? 'flat' : r.dpct > 0 ? 'up' : 'down';
     const dtxt = r.dpct == null ? '—' : (r.dpct > 0 ? '+' : '') + r.dpct.toFixed(1) + '%';
-    h += `<tr><td>${r.name}</td><td class="mono">${r.base==null?'—':fmt(r.base)}</td><td class="mono">${r.jit==null?'—':fmt(r.jit)}</td><td class="mono" style="color:var(--${dc==='up'?'bad':dc==='down'?'good':'muted'})">${dtxt}</td></tr>`;
+    // The table has no room for the note itself: mark the row and carry the
+    // note's text as a tooltip.
+    const mark = r.note
+      ? `<span class="note-mark" title="${r.note.replace(/<[^>]*>/g, '').replace(/"/g, '&quot;')}">†</span>`
+      : '';
+    h += `<tr><td>${r.name}${mark}</td><td class="mono">${r.base==null?'—':fmt(r.base)}</td><td class="mono">${r.jit==null?'—':fmt(r.jit)}</td><td class="mono" style="color:var(--${dc==='up'?'bad':dc==='down'?'good':'muted'})">${dtxt}</td></tr>`;
   }
   h += '</tbody></table>';
   wrap.innerHTML = h;
