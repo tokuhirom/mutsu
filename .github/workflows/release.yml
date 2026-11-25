@@ -221,7 +221,14 @@ jobs:
         env:
           MUTSU_BIN: target/release/mutsu
           BATTERY_SRC_CACHE: tmp/battery-src-cache
-        run: scripts/battery-testsuite.sh
+        # Reserve IO::Socket::Async::SSL's fixed test ports (54328-54340)
+        # from ephemeral allocation so no localhost client socket can hold
+        # one when its test listens there (#19193; see the same step in
+        # ci.yml's `test-suites` job, which this mirrors).
+        run: |
+          cur="$(cat /proc/sys/net/ipv4/ip_local_reserved_ports)"
+          sudo sysctl -w net.ipv4.ip_local_reserved_ports="${cur:+$cur,}54328-54340"
+          scripts/battery-testsuite.sh
 
   npm:
     needs: [batteries, ci]
