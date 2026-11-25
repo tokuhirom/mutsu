@@ -16,7 +16,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 4.05,
+        "secs": 3.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -26,851 +26,6 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 3.07,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 15,
-        "plan": 15,
-        "secs": 1.59,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/02-style.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 15,
-        "plan": 15,
-        "secs": 2.04,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 1.73,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/03-theme.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 2.12,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/04-event.rakutest",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-vsmsjjhn/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r20/lib/libnotcurses-ffi.so': /home/runner/.cach",
-        "nok": 0,
-        "ok": 12,
-        "plan": 16,
-        "secs": 2.12,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 4.14,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/05-sizing.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 1.97,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 4.3,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/06-container.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 2.61,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 4.4,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/07-text.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 2.12,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 17,
-        "plan": 17,
-        "secs": 3.94,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/08-text-stream.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 17,
-        "plan": 17,
-        "secs": 2.25,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 52,
-        "plan": 52,
-        "secs": 4.79,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/09-text-input.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 52,
-        "plan": 52,
-        "secs": 4.47,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 18,
-        "plan": 18,
-        "secs": 4.14,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/10-list-view.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 18,
-        "plan": 18,
-        "secs": 2.7,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 0.19,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/100-store-schema.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 2.34,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 4.36,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/101-store-schema-integration.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 3.35,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 5.66,
-        "skip": 5,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/102-image-crop-cache.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 3.2,
-        "skip": 5,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 4.87,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/103-tree-prune.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 3.04,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 4.66,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/104-store-widget-index.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 3.49,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/105-screen-subscription-lifecycle.rakutest",
-      "raku": {
-        "first_failure": "Earlier failure:",
-        "nok": 0,
-        "ok": 5,
-        "plan": 7,
-        "secs": 3.7,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 4.3,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/106-subscribe-prime-reentry.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 3,
-        "plan": 3,
-        "secs": 1.97,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/107-error-log.rakutest",
-      "raku": {
-        "first_failure": "Failed to create directory '/tmp/selkie-error-log-2-731259' with mode '0o777': Failed to mkdir: read-only file system",
-        "nok": 0,
-        "ok": 1,
-        "plan": 3,
-        "secs": 1.62,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.17,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/108-snapshot-platform.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.99,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.05,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/109-distribution-metadata.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 1.01,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 4.58,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/11-scroll-view.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 2.22,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/110-viewported-card-list-render.rakutest",
-      "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-vsmsjjhn/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r20/lib/libnotcurses.so': /home/runner/.cache/mu",
-        "nok": 0,
-        "ok": 0,
-        "plan": 10,
-        "secs": 4.91,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 8.1,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/111-focus-ancestor-eligibility.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 4.44,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 7.54,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/112-parent-chain-cycle-guard.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 3.92,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 6.7,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/113-mouse-capture-lifecycle.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 3.93,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 16,
-        "plan": 16,
-        "secs": 4.45,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/12-screen-manager.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 16,
-        "plan": 16,
-        "secs": 2.91,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 21,
-        "plan": 21,
-        "secs": 4.56,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/13-modal.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 21,
-        "plan": 21,
-        "secs": 3.74,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 30,
-        "plan": 30,
-        "secs": 4.19,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/14-rich-text.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 30,
-        "plan": 30,
-        "secs": 2.6,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 66,
-        "plan": 66,
-        "secs": 5.15,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/15-multi-line-input.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 66,
-        "plan": 66,
-        "secs": 5.16,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 18,
-        "plan": 18,
-        "secs": 4.47,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/16-border.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 18,
-        "plan": 18,
-        "secs": 3.16,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 17,
-        "plan": 17,
-        "secs": 5.28,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/17-button.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 17,
-        "plan": 17,
-        "secs": 3.34,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 4.83,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/18-confirm-modal.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 2.24,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 33,
-        "plan": 33,
-        "secs": 6.18,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/19-store.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 33,
-        "plan": 33,
-        "secs": 4.57,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 12,
-        "plan": 12,
-        "secs": 4.34,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/20-store-integration.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 12,
-        "plan": 12,
-        "secs": 3.3,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 4.62,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/21-store-focus.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 2.92,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/22-viewport.rakutest",
-      "raku": {
-        "first_failure": "Failed to open file /tmp/selkie-viewport-diag-2.log: No such file or directory",
-        "nok": 0,
-        "ok": 6,
-        "plan": 7,
-        "secs": 2.87,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 27,
-        "plan": 27,
-        "secs": 5.04,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/23-card-list.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 27,
-        "plan": 27,
-        "secs": 3.96,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 3.84,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/24-toast.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 11,
-        "plan": 11,
-        "secs": 2.51,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/25-file-browser.rakutest",
-      "raku": {
-        "first_failure": "Failed to create directory '/tmp/selkie-test-2' with mode '0o777': Failed to mkdir: read-only file system",
-        "nok": 0,
-        "ok": 6,
-        "plan": 12,
-        "secs": 2.77,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 4.31,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/26-dirty-cascade.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 2.86,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/27-checkbox.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 18,
-        "plan": 20,
-        "secs": 3.62,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 3.82,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/28-progress-bar.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 14,
-        "plan": 14,
         "secs": 2.16,
         "skip": 0,
         "todo": 0,
@@ -881,19 +36,19 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 17,
-        "plan": 17,
-        "secs": 4.06,
+        "ok": 15,
+        "plan": 15,
+        "secs": 0.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/29-radio-group.rakutest",
+      "path": "t/02-style.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 17,
-        "plan": 17,
-        "secs": 2.53,
+        "ok": 15,
+        "plan": 15,
+        "secs": 1.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -903,19 +58,19 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 31,
-        "plan": 31,
-        "secs": 4.82,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/30-select.rakutest",
+      "path": "t/03-theme.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 31,
-        "plan": 31,
-        "secs": 4.1,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -923,13 +78,13 @@
     },
     {
       "cmp": "no_baseline",
-      "path": "t/31-store-debug.rakutest",
+      "path": "t/04-event.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/selkie-store-debug-2-1795578408.617488983.log: Read-only file system",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-azeghvis/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r20/lib/libnotcurses-ffi.so': /home/runner/.cach",
         "nok": 0,
-        "ok": 1,
-        "plan": 4,
-        "secs": 2.61,
+        "ok": 12,
+        "plan": 16,
+        "secs": 1.56,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -939,19 +94,19 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 4.08,
+        "ok": 8,
+        "plan": 8,
+        "secs": 3.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/32-spinner.rakutest",
+      "path": "t/05-sizing.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 2.36,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.39,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -961,19 +116,19 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 21,
-        "plan": 21,
-        "secs": 4.38,
+        "ok": 14,
+        "plan": 14,
+        "secs": 3.01,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/33-tab-bar.rakutest",
+      "path": "t/06-container.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 21,
-        "plan": 21,
-        "secs": 4.15,
+        "ok": 14,
+        "plan": 14,
+        "secs": 1.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -983,19 +138,19 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 5.29,
+        "ok": 14,
+        "plan": 14,
+        "secs": 3.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/34-command-palette.rakutest",
+      "path": "t/07-text.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 10,
-        "plan": 10,
-        "secs": 2.3,
+        "ok": 14,
+        "plan": 14,
+        "secs": 1.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1007,17 +162,17 @@
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 4.9,
+        "secs": 3.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/35-table.rakutest",
+      "path": "t/08-text-stream.rakutest",
       "raku": {
         "nok": 0,
         "ok": 17,
         "plan": 17,
-        "secs": 3.25,
+        "secs": 1.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1027,18 +182,18 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 13,
-        "plan": 13,
-        "secs": 5.13,
+        "ok": 52,
+        "plan": 52,
+        "secs": 3.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/36-test-keys.rakutest",
+      "path": "t/09-text-input.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 13,
-        "plan": 13,
+        "ok": 52,
+        "plan": 52,
         "secs": 2.93,
         "skip": 0,
         "todo": 0,
@@ -1049,172 +204,18 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 4.6,
+        "ok": 18,
+        "plan": 18,
+        "secs": 2.89,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/37-test-supply.rakutest",
+      "path": "t/10-list-view.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 2.54,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 5.28,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/38-test-store.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 2.52,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 4.58,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/39-test-focus.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 5,
-        "plan": 5,
-        "secs": 2.36,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 5.94,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/40-test-tree.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 2.16,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 5.93,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/41-resize.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 2.33,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 16,
-        "plan": 16,
-        "secs": 4.86,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/42-password-strength.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 16,
-        "plan": 16,
-        "secs": 2.2,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 8.18,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/43-title.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 2.9,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 0.13,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/44-plot-scaler.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 14,
-        "plan": 14,
+        "ok": 18,
+        "plan": 18,
         "secs": 1.91,
         "skip": 0,
         "todo": 0,
@@ -1225,19 +226,41 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 0.15,
+        "ok": 9,
+        "plan": 9,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/45-plot-ticks.rakutest",
+      "path": "t/100-store-schema.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 14,
-        "plan": 14,
-        "secs": 1.89,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 2.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/101-store-schema-integration.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 2.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1249,40 +272,18 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.14,
-        "skip": 0,
+        "secs": 3.34,
+        "skip": 5,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/46-plot-palette.rakutest",
+      "path": "t/102-image-crop-cache.rakutest",
       "raku": {
         "nok": 0,
         "ok": 11,
         "plan": 11,
         "secs": 1.86,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 4.61,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/47-axis.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 2.26,
-        "skip": 0,
+        "skip": 5,
         "todo": 0,
         "verdict": "pass"
       }
@@ -1293,149 +294,17 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 4.95,
+        "secs": 3.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/48-legend.rakutest",
+      "path": "t/103-tree-prune.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.3,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 5.07,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/49-sparkline.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 2.46,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 6.45,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/50-plot-widget.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 2.44,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 4.99,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/51-bar-chart.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 1.9,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 4.33,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/52-histogram.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 2.67,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 4.46,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/53-heatmap.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 2.16,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 4.34,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/54-scatter.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 2.32,
+        "secs": 1.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1447,61 +316,17 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 4.76,
+        "secs": 2.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/55-line-chart.rakutest",
+      "path": "t/104-store-widget-index.rakutest",
       "raku": {
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 2.34,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 1.48,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/56-theme-graph-slots.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 1.75,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 4.64,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/57-store-push-subs.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 3.15,
+        "secs": 1.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1509,7 +334,7 @@
     },
     {
       "cmp": "no_baseline",
-      "path": "t/58-image-blit-cache.rakutest",
+      "path": "t/105-screen-subscription-lifecycle.rakutest",
       "raku": {
         "first_failure": "Earlier failure:",
         "nok": 0,
@@ -1525,19 +350,55 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 18,
-        "plan": 18,
-        "secs": 9.72,
+        "ok": 3,
+        "plan": 3,
+        "secs": 2.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/59-mouse-dispatch.rakutest",
+      "path": "t/106-subscribe-prime-reentry.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 18,
-        "plan": 18,
-        "secs": 5.92,
+        "ok": 3,
+        "plan": 3,
+        "secs": 1.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/107-error-log.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/selkie-error-log-2-953960' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 1,
+        "plan": 3,
+        "secs": 1.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/108-snapshot-platform.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1547,19 +408,19 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 5.19,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/61-effective-bounds.rakutest",
+      "path": "t/109-distribution-metadata.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 2.53,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1569,41 +430,55 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 4.42,
+        "ok": 14,
+        "plan": 14,
+        "secs": 2.88,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/62-tree-helpers.rakutest",
+      "path": "t/11-scroll-view.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 6,
-        "plan": 6,
-        "secs": 2.33,
+        "ok": 14,
+        "plan": 14,
+        "secs": 1.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
+      "cmp": "no_baseline",
+      "path": "t/110-viewported-card-list-render.rakutest",
+      "raku": {
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-azeghvis/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r20/lib/libnotcurses.so': /home/runner/.cache/mu",
+        "nok": 0,
+        "ok": 0,
+        "plan": 10,
+        "secs": 2.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 4.53,
+        "ok": 8,
+        "plan": 8,
+        "secs": 5.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/63-deep-equality-check.rakutest",
+      "path": "t/111-focus-ancestor-eligibility.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 9,
-        "plan": 9,
-        "secs": 3.0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 2.73,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1615,61 +490,17 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 4.45,
+        "secs": 5.2,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/64-layout-allocate.rakutest",
+      "path": "t/112-parent-chain-cycle-guard.rakutest",
       "raku": {
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.46,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 19,
-        "plan": 19,
-        "secs": 5.31,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/65-viewported-card-list.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 19,
-        "plan": 19,
-        "secs": 4.32,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 5.5,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/68-image-clip-only-math.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 8,
-        "plan": 8,
-        "secs": 2.87,
+        "secs": 2.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1681,39 +512,17 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 6.26,
-        "skip": 6,
+        "secs": 5.15,
+        "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/69-image-clip-only-blit.rakutest",
+      "path": "t/113-mouse-capture-lifecycle.rakutest",
       "raku": {
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.24,
-        "skip": 6,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 36,
-        "plan": 36,
-        "secs": 8.05,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/70-terminal-cleanup.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 36,
-        "plan": 36,
-        "secs": 4.59,
+        "secs": 2.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1723,18 +532,84 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 7,
-        "plan": 7,
-        "secs": 8.62,
+        "ok": 16,
+        "plan": 16,
+        "secs": 3.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/71-sprixel-refresh.rakutest",
+      "path": "t/12-screen-manager.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 7,
-        "plan": 7,
+        "ok": 16,
+        "plan": 16,
+        "secs": 1.94,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 3.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/13-modal.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 2.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 2.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/14-rich-text.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 30,
+        "plan": 30,
+        "secs": 1.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 66,
+        "plan": 66,
+        "secs": 3.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/15-multi-line-input.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 66,
+        "plan": 66,
         "secs": 3.05,
         "skip": 0,
         "todo": 0,
@@ -1745,9 +620,1134 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 3.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/16-border.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 1.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 3.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/17-button.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 2.24,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 3.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/18-confirm-modal.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 1.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 33,
+        "plan": 33,
+        "secs": 3.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/19-store.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 33,
+        "plan": 33,
+        "secs": 3.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 3.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/20-store-integration.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 12,
+        "plan": 12,
+        "secs": 1.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 2.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/21-store-focus.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 1.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/22-viewport.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/selkie-viewport-diag-2.log: No such file or directory",
+        "nok": 0,
+        "ok": 6,
+        "plan": 7,
+        "secs": 1.6,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 27,
+        "plan": 27,
+        "secs": 2.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/23-card-list.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 27,
+        "plan": 27,
+        "secs": 2.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 2.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/24-toast.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 1.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/25-file-browser.rakutest",
+      "raku": {
+        "first_failure": "Failed to create directory '/tmp/selkie-test-2' with mode '0o777': Failed to mkdir: read-only file system",
+        "nok": 0,
+        "ok": 6,
+        "plan": 12,
+        "secs": 1.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 2.76,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/26-dirty-cascade.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 2.0,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/27-checkbox.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 20,
+        "secs": 1.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 3.26,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/28-progress-bar.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 1.55,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 2.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/29-radio-group.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 1.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 31,
+        "plan": 31,
+        "secs": 3.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/30-select.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 31,
+        "plan": 31,
+        "secs": 2.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/31-store-debug.rakutest",
+      "raku": {
+        "first_failure": "Failed to open file /tmp/selkie-store-debug-2-1795631176.318083595.log: Read-only file system",
+        "nok": 0,
+        "ok": 1,
+        "plan": 4,
+        "secs": 1.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 2.65,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/32-spinner.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 1.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 3.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/33-tab-bar.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 21,
+        "plan": 21,
+        "secs": 2.31,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 3.19,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/34-command-palette.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 1.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 3.18,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/35-table.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 17,
+        "plan": 17,
+        "secs": 2.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 3.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/36-test-keys.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 13,
+        "plan": 13,
+        "secs": 1.39,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 3.06,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/37-test-supply.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.5,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 3.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/38-test-store.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 1.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 5.02,
+        "secs": 2.99,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/39-test-focus.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 1.35,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 3.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/40-test-tree.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 3.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/41-resize.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.59,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 2.88,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/42-password-strength.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 16,
+        "plan": 16,
+        "secs": 1.16,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 4.75,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/43-title.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.7,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 0.09,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/44-plot-scaler.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 1.15,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 0.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/45-plot-ticks.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 14,
+        "plan": 14,
+        "secs": 1.3,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.12,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/46-plot-palette.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 11,
+        "plan": 11,
+        "secs": 0.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 3.2,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/47-axis.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 2.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/48-legend.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.45,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 2.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/49-sparkline.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 4.17,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/50-plot-widget.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.41,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 3.22,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/51-bar-chart.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 2.91,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/52-histogram.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.49,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 3.07,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/53-heatmap.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.33,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 2.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/54-scatter.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.66,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 2.8,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/55-line-chart.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 10,
+        "plan": 10,
+        "secs": 1.43,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/56-theme-graph-slots.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.21,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 2.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/57-store-push-subs.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.79,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/58-image-blit-cache.rakutest",
+      "raku": {
+        "first_failure": "Earlier failure:",
+        "nok": 0,
+        "ok": 5,
+        "plan": 7,
+        "secs": 1.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 6.02,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/59-mouse-dispatch.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 18,
+        "plan": 18,
+        "secs": 4.57,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 2.84,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/61-effective-bounds.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.62,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 2.89,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/62-tree-helpers.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.47,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 2.9,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/63-deep-equality-check.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 9,
+        "plan": 9,
+        "secs": 1.83,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 2.93,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/64-layout-allocate.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.63,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 3.14,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/65-viewported-card-list.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 19,
+        "plan": 19,
+        "secs": 2.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 3.86,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/68-image-clip-only-math.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 8,
+        "plan": 8,
+        "secs": 1.64,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 3.9,
+        "skip": 6,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/69-image-clip-only-blit.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 6,
+        "plan": 6,
+        "secs": 1.79,
+        "skip": 6,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 36,
+        "plan": 36,
+        "secs": 4.72,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/70-terminal-cleanup.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 36,
+        "plan": 36,
+        "secs": 2.29,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 5.04,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/71-sprixel-refresh.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 7,
+        "plan": 7,
+        "secs": 2.05,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 5,
+        "plan": 5,
+        "secs": 2.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1757,7 +1757,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 2.65,
+        "secs": 1.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1769,7 +1769,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 4.71,
+        "secs": 2.99,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1779,7 +1779,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.33,
+        "secs": 1.25,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1791,7 +1791,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 4.46,
+        "secs": 2.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1801,7 +1801,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.37,
+        "secs": 1.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1813,7 +1813,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 5.32,
+        "secs": 4.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1823,7 +1823,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.47,
+        "secs": 2.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1835,7 +1835,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 5.51,
+        "secs": 3.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1845,7 +1845,7 @@
         "nok": 0,
         "ok": 8,
         "plan": 8,
-        "secs": 2.33,
+        "secs": 1.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1857,7 +1857,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 4.13,
+        "secs": 2.92,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -1867,7 +1867,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.05,
+        "secs": 1.25,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -1879,7 +1879,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 6.13,
+        "secs": 3.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1889,7 +1889,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 3.42,
+        "secs": 1.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1901,7 +1901,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 6.82,
+        "secs": 3.52,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1911,7 +1911,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.21,
+        "secs": 1.9,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1923,7 +1923,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 8.21,
+        "secs": 5.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1933,7 +1933,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 3.03,
+        "secs": 1.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1947,7 +1947,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 4,
-        "secs": 1.81,
+        "secs": 0.96,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1959,7 +1959,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 7.71,
+        "secs": 4.93,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1969,7 +1969,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 2.67,
+        "secs": 1.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1981,7 +1981,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 4.28,
+        "secs": 3.29,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1991,7 +1991,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 2.4,
+        "secs": 1.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2003,7 +2003,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 5.2,
+        "secs": 3.44,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2013,7 +2013,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 2.95,
+        "secs": 1.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2025,7 +2025,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 4.64,
+        "secs": 3.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2035,7 +2035,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 3.33,
+        "secs": 2.19,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2047,7 +2047,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 5.1,
+        "secs": 3.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2057,7 +2057,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 2.8,
+        "secs": 1.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2067,11 +2067,11 @@
       "cmp": "no_baseline",
       "path": "t/87-alpha.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-vsmsjjhn/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r20/lib/libnotcurses-ffi.so': /home/runner/.cach",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-azeghvis/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r20/lib/libnotcurses-ffi.so': /home/runner/.cach",
         "nok": 0,
         "ok": 5,
         "plan": 14,
-        "secs": 3.79,
+        "secs": 2.28,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2083,7 +2083,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 5.27,
+        "secs": 3.32,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2093,7 +2093,7 @@
         "nok": 0,
         "ok": 12,
         "plan": 12,
-        "secs": 3.51,
+        "secs": 2.16,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2103,11 +2103,11 @@
       "cmp": "no_baseline",
       "path": "t/89-modal-backdrop.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-vsmsjjhn/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r20/lib/libnotcurses-ffi.so': /home/runner/.cach",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-azeghvis/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r20/lib/libnotcurses-ffi.so': /home/runner/.cach",
         "nok": 0,
         "ok": 4,
         "plan": 11,
-        "secs": 2.88,
+        "secs": 1.86,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2119,7 +2119,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 4.93,
+        "secs": 3.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2129,7 +2129,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 2.68,
+        "secs": 1.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2141,7 +2141,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 4.52,
+        "secs": 2.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2151,7 +2151,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 3.12,
+        "secs": 1.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2161,11 +2161,11 @@
       "cmp": "no_baseline",
       "path": "t/92-gradient.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-vsmsjjhn/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r20/lib/libnotcurses-ffi.so': /home/runner/.cach",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-azeghvis/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r20/lib/libnotcurses-ffi.so': /home/runner/.cach",
         "nok": 0,
         "ok": 6,
         "plan": 15,
-        "secs": 3.68,
+        "secs": 2.33,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2177,7 +2177,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 1.77,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2187,7 +2187,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 3.42,
+        "secs": 2.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2199,7 +2199,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.78,
+        "secs": 1.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2209,7 +2209,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 2.55,
+        "secs": 1.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2221,7 +2221,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 7.52,
+        "secs": 4.97,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2231,7 +2231,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 3.51,
+        "secs": 2.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2241,11 +2241,11 @@
       "cmp": "no_baseline",
       "path": "t/96-disabled.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-vsmsjjhn/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r20/lib/libnotcurses-ffi.so': /home/runner/.cach",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-azeghvis/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r20/lib/libnotcurses-ffi.so': /home/runner/.cach",
         "nok": 0,
         "ok": 5,
         "plan": 14,
-        "secs": 4.2,
+        "secs": 2.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2255,11 +2255,11 @@
       "cmp": "no_baseline",
       "path": "t/97-motion-fade.rakutest",
       "raku": {
-        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-vsmsjjhn/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r20/lib/libnotcurses-ffi.so': /home/runner/.cach",
+        "first_failure": "Cannot locate native library '/home/runner/.cache/mutsu-ecosystem/run/ecosweep-azeghvis/sbxhome/.local/share/Notcurses-Native/binaries-notcurses-3.0.17-r20/lib/libnotcurses-ffi.so': /home/runner/.cach",
         "nok": 0,
         "ok": 0,
         "plan": 16,
-        "secs": 3.69,
+        "secs": 2.38,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2271,7 +2271,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.27,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2281,7 +2281,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 1.68,
+        "secs": 1.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2293,7 +2293,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 0.16,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2303,7 +2303,7 @@
         "nok": 0,
         "ok": 7,
         "plan": 7,
-        "secs": 1.73,
+        "secs": 1.23,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2315,7 +2315,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 7.13,
+        "secs": 5.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2325,7 +2325,7 @@
         "nok": 0,
         "ok": 6,
         "plan": 6,
-        "secs": 2.67,
+        "secs": 1.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2429,7 +2429,7 @@
     "date": "2026-11-25",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "bd0c0c8e",
+    "mutsu_commit": "13320ba6",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",

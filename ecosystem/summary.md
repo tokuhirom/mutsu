@@ -7,18 +7,20 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **100.0%** (1339/1339) |
-| file parity | 100.0% (5161/5161) |
+| **dist parity** (published headline) | **99.9%** (1336/1338) |
+| file parity | 100.0% (5153/5155) |
 | assertion parity | 100.0% |
-| accepted divergences (out of the KPI, ADR-0130) | 13 file(s) |
+| accepted divergences (out of the KPI, ADR-0130) | 12 file(s) |
 | out-of-scope distributions (`exclude.txt`, out of the KPI) | 14 |
 
 | status | distributions |
 |---|---|
 | `blocked_dep` | 3 |
 | `blocked_load` | 3 |
-| `green` | 1339 |
-| `no_baseline` | 329 |
+| `green` | 1336 |
+| `no_baseline` | 330 |
+| `partial` | 1 |
+| `red` | 1 |
 | out of scope (`exclude.txt`, any status) | 14 |
 
 ## Regressed since the previous ledger
@@ -27,7 +29,8 @@ Distributions measured at the same version in the ledger commit this
 rollup replaces that got a worse status, or a baseline file that
 lost parity (a file rakudo now fails is not counted).
 
-_None._
+- `Concurrent::BoundedChannel` 0.4.1: green → red (1 file lost parity: `t/01-sanity.rakutest`)
+- `Test::Scheduler` 1.2: green → partial (1 file lost parity: `t/virtualized-time.rakutest`)
 
 ## Distributions
 
@@ -222,7 +225,7 @@ _None._
 | `Business::CreditCard` | 0.2 | green | 2/2 |
 | `BusyIndicator` | 0.6.2 | green | 1/1 |
 | `C::Parser` | 0.3.3 | green | 9/9 |
-| `Cache::Async` | 0.3.4 | green | 7/7 |
+| `Cache::Async` | 0.3.4 | green | 8/8 |
 | `caelum` | 0.1.1 | no_baseline | — |
 | `Calendar` | 0.0.4 | no_baseline | — |
 | `CBOR::Simple` | 0.1.4 | green | 7/7 |
@@ -270,7 +273,7 @@ _None._
 | `Compress::Zlib` | 2.0.0 | green | 4/4 |
 | `Compress::Zlib::Raw` | 2.0.0 | green | 2/2 |
 | `CompUnit::Util` | 0.7.0 | green | 8/8 |
-| `Concurrent::BoundedChannel` | 0.4.1 | green | 1/1 |
+| `Concurrent::BoundedChannel` | 0.4.1 | red | 0/1 |
 | `Concurrent::Iterator` | 1.1 | green | 3/3 |
 | `Concurrent::PChannel` | 0.0.4 | no_baseline | — |
 | `Concurrent::PriorityQueue` | 0.0.2 | green | 2/2 |
@@ -704,7 +707,7 @@ _None._
 | `HTTP::Roles` | 0.2.3 | green | 1/1 |
 | `HTTP::Server::Async` | 0.2 | green | 8/8 |
 | `HTTP::Server::Async::Plugins::Router::Simple` | 0.1.2 | green | 1/1 |
-| `HTTP::Server::Logger` | 0.1.4 | green | 1/1 |
+| `HTTP::Server::Logger` | 0.1.4 | green | 2/2 |
 | `HTTP::Server::Middleware::JSON` | 0.0.3 | green | 1/1 |
 | `HTTP::Server::Router` | 0.1.7 | no_baseline | — |
 | `HTTP::Server::Router::YAML` | 0.0.1 | no_baseline | — |
@@ -878,7 +881,7 @@ _None._
 | `Linux::Cpuinfo` | 0.1.2 | green | 5/5 |
 | `Linux::Fuser` | 0.0.16 | green | 2/2 |
 | `Linux::Joystick` | 0.0.3 | green | 1/1 |
-| `Linux::NFTables` | 0.0.3 | green | 3/3 |
+| `Linux::NFTables` | 0.0.3 | green | 4/4 |
 | `List::Agnostic` | 0.0.7 | green | 1/1 |
 | `List::Allmax` | 0.0.1 | no_baseline | — |
 | `List::AllUtils` | 0.0.6 | green | 2/2 |
@@ -1182,7 +1185,7 @@ _None._
 | `P5unlink` | 0.0.1 | green | 1/1 |
 | `Pakku` | chou.5 | green | 4/4 |
 | `Parameterizable` | 0.0.4 | green | 2/2 |
-| `ParaSeq` | 0.2.7 | green | 48/48 |
+| `ParaSeq` | 0.2.7 | green | 47/47 |
 | `Parse::Paths` | 0.1.3 | green | 1/1 |
 | `Pastebin::Gist` | 1.004002 | no_baseline | — |
 | `Pastebin::Shadowcat` | 2.001003 | no_baseline | — |
@@ -1473,7 +1476,7 @@ _None._
 | `Template::Mojo` | 0.2.2 | green | 5/5 |
 | `Template::Mustache` | 1.2.7 | green | 13/13 |
 | `Template::Nest::Fast` | 0.3.0 | green | 10/10 |
-| `Template::Nest::XS` | 0.1.10 | green | 8/8 |
+| `Template::Nest::XS` | 0.1.10 | no_baseline | — |
 | `Template::Protone` | 0.1.4 | green | 3/3 |
 | `Term::Choose` | 2.0.7 | green | 5/5 |
 | `Term::Choose::Util` | 1.4.8 | green | 3/3 |
@@ -1521,7 +1524,7 @@ _None._
 | `Test::Notice` | 1.001005 | green | 2/2 |
 | `Test::Output` | 1.001006 | green | 2/2 |
 | `Test::Run` | 0.2.3 | green | 2/2 |
-| `Test::Scheduler` | 1.2 | green | 3/3 |
+| `Test::Scheduler` | 1.2 | partial | 2/3 |
 | `Test::Script` | 0.0.4 | green | 6/6 |
 | `Test::Script::Output` | 0.1.0 | green | 2/2 |
 | `Test::Selector` | 0.4.3 | no_baseline | — |

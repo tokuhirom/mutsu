@@ -19,11 +19,11 @@
       "cmp": "no_baseline",
       "path": "t/AboutDialog.rakutest",
       "raku": {
-        "first_failure": "(AboutDialog.rakutest:2): Gtk-CRITICAL **: 03:04:51.123: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provide",
+        "first_failure": "(AboutDialog.rakutest:2): Gtk-CRITICAL **: 17:55:36.855: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provide",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.85,
+        "secs": 3.35,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -35,7 +35,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 4.96,
+        "secs": 5.21,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -45,7 +45,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.42,
+        "secs": 3.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -55,11 +55,11 @@
       "cmp": "no_baseline",
       "path": "t/AccelLabel.rakutest",
       "raku": {
-        "first_failure": "(AccelLabel.rakutest:2): Gtk-CRITICAL **: 03:05:08.217: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider",
+        "first_failure": "(AccelLabel.rakutest:2): Gtk-CRITICAL **: 17:55:54.920: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.67,
+        "secs": 2.8,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -71,7 +71,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.62,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -81,7 +81,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.1,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -95,7 +95,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.41,
+        "secs": 2.72,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -109,7 +109,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.35,
+        "secs": 2.58,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -121,7 +121,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.06,
+        "secs": 1.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -131,7 +131,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.03,
+        "secs": 1.0,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -141,11 +141,11 @@
       "cmp": "no_baseline",
       "path": "t/AppChooser.rakutest",
       "raku": {
-        "first_failure": "(AppChooser.rakutest:2): Gtk-CRITICAL **: 03:05:34.630: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider",
+        "first_failure": "(AppChooser.rakutest:2): Gtk-CRITICAL **: 17:56:22.354: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider",
         "nok": 0,
         "ok": 1,
         "plan": null,
-        "secs": 2.22,
+        "secs": 2.39,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -155,11 +155,11 @@
       "cmp": "no_baseline",
       "path": "t/AppChooserButton.rakutest",
       "raku": {
-        "first_failure": "(AppChooserButton.rakutest:2): Gtk-CRITICAL **: 03:05:43.646: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_pr",
+        "first_failure": "(AppChooserButton.rakutest:2): Gtk-CRITICAL **: 17:56:31.445: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_pr",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.35,
+        "secs": 4.64,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -169,11 +169,11 @@
       "cmp": "no_baseline",
       "path": "t/AppChooserDialog.rakutest",
       "raku": {
-        "first_failure": "(AppChooserDialog.rakutest:2): Gtk-CRITICAL **: 03:05:51.825: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_pr",
+        "first_failure": "(AppChooserDialog.rakutest:2): Gtk-CRITICAL **: 17:56:39.893: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_pr",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.9,
+        "secs": 2.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -183,11 +183,11 @@
       "cmp": "no_baseline",
       "path": "t/AppChooserWidget.rakutest",
       "raku": {
-        "first_failure": "(AppChooserWidget.rakutest:2): Gtk-CRITICAL **: 03:06:00.282: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_pr",
+        "first_failure": "(AppChooserWidget.rakutest:2): Gtk-CRITICAL **: 17:56:48.135: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_pr",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.69,
+        "secs": 2.63,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -201,7 +201,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.74,
+        "secs": 2.96,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -213,7 +213,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 6.2,
+        "secs": 6.46,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -223,7 +223,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.71,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -233,11 +233,11 @@
       "cmp": "no_baseline",
       "path": "t/AspectFrame.rakutest",
       "raku": {
-        "first_failure": "(AspectFrame.rakutest:2): Gtk-CRITICAL **: 03:06:23.315: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provide",
+        "first_failure": "(AspectFrame.rakutest:2): Gtk-CRITICAL **: 17:57:12.267: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provide",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.51,
+        "secs": 2.71,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -247,11 +247,11 @@
       "cmp": "no_baseline",
       "path": "t/Assistant.rakutest",
       "raku": {
-        "first_failure": "(Assistant.rakutest:2): Gtk-CRITICAL **: 03:06:31.056: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_",
+        "first_failure": "(Assistant.rakutest:2): Gtk-CRITICAL **: 17:57:20.411: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.88,
+        "secs": 3.02,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -265,7 +265,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.59,
+        "secs": 2.77,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -287,7 +287,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.55,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -301,7 +301,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.44,
+        "secs": 2.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -315,7 +315,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.38,
+        "secs": 2.51,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -329,7 +329,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.48,
+        "secs": 2.73,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -343,7 +343,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.56,
+        "secs": 2.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -357,7 +357,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.52,
+        "secs": 2.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -369,7 +369,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.17,
+        "secs": 0.18,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -379,7 +379,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.47,
+        "secs": 0.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -391,7 +391,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.78,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -401,7 +401,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.49,
+        "secs": 0.5,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -413,7 +413,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.82,
+        "secs": 0.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -423,7 +423,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.68,
+        "secs": 0.76,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -435,7 +435,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.8,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -445,7 +445,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.69,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -457,7 +457,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.91,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -467,7 +467,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.67,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -489,7 +489,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.72,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -501,7 +501,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.88,
+        "secs": 0.95,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -511,7 +511,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.63,
+        "secs": 0.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -523,7 +523,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.85,
+        "secs": 0.86,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -533,7 +533,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.75,
+        "secs": 0.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -547,7 +547,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.43,
+        "secs": 2.49,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -559,7 +559,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.79,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -569,7 +569,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.63,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -593,11 +593,11 @@
       "cmp": "no_baseline",
       "path": "t/CheckMenuItem.rakutest",
       "raku": {
-        "first_failure": "(CheckMenuItem.rakutest:2): Gtk-CRITICAL **: 03:07:54.742: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provi",
+        "first_failure": "(CheckMenuItem.rakutest:2): Gtk-CRITICAL **: 17:58:49.853: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provi",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.72,
+        "secs": 2.8,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -611,7 +611,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.96,
+        "secs": 3.08,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -633,7 +633,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.48,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -647,7 +647,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.11,
+        "secs": 3.25,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -657,11 +657,11 @@
       "cmp": "no_baseline",
       "path": "t/ColorChooserWidget.rakutest",
       "raku": {
-        "first_failure": "(ColorChooserWidget.rakutest:2): Gtk-CRITICAL **: 03:08:21.861: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_",
+        "first_failure": "(ColorChooserWidget.rakutest:2): Gtk-CRITICAL **: 17:59:17.607: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.51,
+        "secs": 2.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -671,11 +671,11 @@
       "cmp": "no_baseline",
       "path": "t/ComboBox.rakutest",
       "raku": {
-        "first_failure": "(ComboBox.rakutest:2): Gtk-CRITICAL **: 03:08:29.299: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "first_failure": "(ComboBox.rakutest:2): Gtk-CRITICAL **: 17:59:25.102: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.77,
+        "secs": 2.72,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -685,11 +685,11 @@
       "cmp": "no_baseline",
       "path": "t/ComboBoxText.rakutest",
       "raku": {
-        "first_failure": "(ComboBoxText.rakutest:2): Gtk-CRITICAL **: 03:08:37.243: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provid",
+        "first_failure": "(ComboBoxText.rakutest:2): Gtk-CRITICAL **: 17:59:33.314: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provid",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.6,
+        "secs": 2.81,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -703,7 +703,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.76,
+        "secs": 2.99,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -715,7 +715,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.71,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -725,7 +725,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.99,
+        "secs": 1.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -737,7 +737,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 4.86,
+        "secs": 4.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -747,7 +747,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.77,
+        "secs": 0.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -757,11 +757,11 @@
       "cmp": "no_baseline",
       "path": "t/Dialog.rakutest",
       "raku": {
-        "first_failure": "(Dialog.rakutest:2): Gtk-CRITICAL **: 03:09:00.640: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_pri",
+        "first_failure": "(Dialog.rakutest:2): Gtk-CRITICAL **: 17:59:57.642: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_pri",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.68,
+        "secs": 2.85,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -773,7 +773,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.09,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -795,7 +795,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.67,
+        "secs": 0.69,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -805,7 +805,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.53,
+        "secs": 0.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -817,7 +817,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.29,
+        "secs": 0.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -827,7 +827,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.52,
+        "secs": 0.54,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -837,7 +837,7 @@
       "cmp": "no_baseline",
       "path": "t/DrawingArea.rakutest",
       "raku": {
-        "first_failure": "(DrawingArea.rakutest:2): Gtk-CRITICAL **: 03:09:11.654: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provide",
+        "first_failure": "(DrawingArea.rakutest:2): Gtk-CRITICAL **: 18:00:08.817: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provide",
         "nok": 0,
         "ok": 0,
         "plan": null,
@@ -853,7 +853,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.09,
+        "secs": 0.11,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -863,7 +863,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.54,
+        "secs": 0.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -877,7 +877,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.32,
+        "secs": 2.48,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -891,7 +891,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.36,
+        "secs": 2.54,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -913,7 +913,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.51,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -923,11 +923,11 @@
       "cmp": "no_baseline",
       "path": "t/EventBox.rakutest",
       "raku": {
-        "first_failure": "(EventBox.rakutest:2): Gtk-CRITICAL **: 03:09:34.614: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "first_failure": "(EventBox.rakutest:2): Gtk-CRITICAL **: 18:00:32.730: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.54,
+        "secs": 2.86,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -937,11 +937,11 @@
       "cmp": "no_baseline",
       "path": "t/Expander.rakutest",
       "raku": {
-        "first_failure": "(Expander.rakutest:2): Gtk-CRITICAL **: 03:09:42.632: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "first_failure": "(Expander.rakutest:2): Gtk-CRITICAL **: 18:00:41.230: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.39,
+        "secs": 2.6,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -953,7 +953,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.68,
+        "secs": 0.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -963,7 +963,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.56,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -973,11 +973,11 @@
       "cmp": "no_baseline",
       "path": "t/FileChooserButton.rakutest",
       "raku": {
-        "first_failure": "(FileChooserButton.rakutest:2): Gtk-CRITICAL **: 03:09:51.384: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_p",
+        "first_failure": "(FileChooserButton.rakutest:2): Gtk-CRITICAL **: 18:00:50.514: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_p",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.49,
+        "secs": 2.83,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -987,11 +987,11 @@
       "cmp": "no_baseline",
       "path": "t/FileChooserDialog.rakutest",
       "raku": {
-        "first_failure": "(FileChooserDialog.rakutest:2): Gtk-CRITICAL **: 03:09:59.349: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_p",
+        "first_failure": "(FileChooserDialog.rakutest:2): Gtk-CRITICAL **: 18:00:58.691: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_p",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.77,
+        "secs": 2.86,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1001,11 +1001,89 @@
       "cmp": "no_baseline",
       "path": "t/FileChooserWidget.rakutest",
       "raku": {
-        "first_failure": "(FileChooserWidget.rakutest:2): Gtk-CRITICAL **: 03:10:07.448: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_p",
+        "first_failure": "(FileChooserWidget.rakutest:2): Gtk-CRITICAL **: 18:01:06.986: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_p",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.76,
+        "secs": 2.48,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.85,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/FileFilter.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.81,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Fixed.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Frame.rakutest",
+      "raku": {
+        "first_failure": "(Frame.rakutest:2): Gtk-CRITICAL **: 18:01:24.420: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_priv",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.78,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/Grid.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.74,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/HeaderBar.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.72,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1022,90 +1100,12 @@
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/FileFilter.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.78,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/Fixed.rakutest",
-      "raku": {
-        "first_failure": "Cannot instantiate a native type",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.57,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/Frame.rakutest",
-      "raku": {
-        "first_failure": "(Frame.rakutest:2): Gtk-CRITICAL **: 03:10:24.448: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_priv",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.55,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/Grid.rakutest",
-      "raku": {
-        "first_failure": "Cannot instantiate a native type",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.6,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/HeaderBar.rakutest",
-      "raku": {
-        "first_failure": "Cannot instantiate a native type",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.61,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.84,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
       "path": "t/IconInfo.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.79,
+        "secs": 0.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1117,7 +1117,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.11,
+        "secs": 1.24,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1127,7 +1127,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.99,
+        "secs": 1.01,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1137,11 +1137,11 @@
       "cmp": "no_baseline",
       "path": "t/IconView.rakutest",
       "raku": {
-        "first_failure": "(IconView.rakutest:2): Gtk-CRITICAL **: 03:10:51.922: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "first_failure": "(IconView.rakutest:2): Gtk-CRITICAL **: 18:01:53.206: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.86,
+        "secs": 2.75,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1155,7 +1155,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.85,
+        "secs": 1.91,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1165,11 +1165,11 @@
       "cmp": "no_baseline",
       "path": "t/Label.rakutest",
       "raku": {
-        "first_failure": "(Label.rakutest:2): Gtk-CRITICAL **: 03:11:05.988: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_priv",
+        "first_failure": "(Label.rakutest:2): Gtk-CRITICAL **: 18:02:07.515: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_priv",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.07,
+        "secs": 3.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1183,7 +1183,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.7,
+        "secs": 2.83,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1193,11 +1193,11 @@
       "cmp": "no_baseline",
       "path": "t/LevelBar.rakutest",
       "raku": {
-        "first_failure": "(LevelBar.rakutest:2): Gtk-CRITICAL **: 03:11:23.339: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "first_failure": "(LevelBar.rakutest:2): Gtk-CRITICAL **: 18:02:24.664: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.47,
+        "secs": 2.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1211,7 +1211,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.78,
+        "secs": 3.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1221,11 +1221,11 @@
       "cmp": "no_baseline",
       "path": "t/ListBoxRow.rakutest",
       "raku": {
-        "first_failure": "(ListBoxRow.rakutest:2): Gtk-CRITICAL **: 03:11:42.131: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider",
+        "first_failure": "(ListBoxRow.rakutest:2): Gtk-CRITICAL **: 18:02:44.029: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.39,
+        "secs": 2.44,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1237,7 +1237,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.72,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1247,7 +1247,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.32,
+        "secs": 1.28,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1269,7 +1269,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.8,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1279,11 +1279,11 @@
       "cmp": "no_baseline",
       "path": "t/Menu.rakutest",
       "raku": {
-        "first_failure": "(Menu.rakutest:2): Gtk-CRITICAL **: 03:11:53.054: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_priva",
+        "first_failure": "(Menu.rakutest:2): Gtk-CRITICAL **: 18:02:55.207: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_priva",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.49,
+        "secs": 2.47,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1293,11 +1293,11 @@
       "cmp": "no_baseline",
       "path": "t/MenuBar.rakutest",
       "raku": {
-        "first_failure": "(MenuBar.rakutest:2): Gtk-CRITICAL **: 03:12:00.404: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_pr",
+        "first_failure": "(MenuBar.rakutest:2): Gtk-CRITICAL **: 18:03:03.057: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_pr",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.58,
+        "secs": 2.54,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1311,7 +1311,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.67,
+        "secs": 3.75,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1321,11 +1321,11 @@
       "cmp": "no_baseline",
       "path": "t/MenuItem.rakutest",
       "raku": {
-        "first_failure": "(MenuItem.rakutest:2): Gtk-CRITICAL **: 03:12:18.667: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "first_failure": "(MenuItem.rakutest:2): Gtk-CRITICAL **: 18:03:21.829: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.64,
+        "secs": 2.73,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1339,7 +1339,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.61,
+        "secs": 3.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1349,11 +1349,11 @@
       "cmp": "no_baseline",
       "path": "t/MessageDialog.rakutest",
       "raku": {
-        "first_failure": "(MessageDialog.rakutest:2): Gtk-CRITICAL **: 03:12:37.705: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provi",
+        "first_failure": "(MessageDialog.rakutest:2): Gtk-CRITICAL **: 18:03:41.241: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provi",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.79,
+        "secs": 3.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1367,7 +1367,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.69,
+        "secs": 2.86,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1381,7 +1381,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.62,
+        "secs": 2.73,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1391,11 +1391,11 @@
       "cmp": "no_baseline",
       "path": "t/Orientable.rakutest",
       "raku": {
-        "first_failure": "(Orientable.rakutest:2): Gtk-CRITICAL **: 03:13:02.310: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider",
+        "first_failure": "(Orientable.rakutest:2): Gtk-CRITICAL **: 18:04:06.623: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.36,
+        "secs": 2.55,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1405,11 +1405,11 @@
       "cmp": "no_baseline",
       "path": "t/Paned.rakutest",
       "raku": {
-        "first_failure": "(Paned.rakutest:2): Gtk-CRITICAL **: 03:13:09.771: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_priv",
+        "first_failure": "(Paned.rakutest:2): Gtk-CRITICAL **: 18:04:14.729: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_priv",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.6,
+        "secs": 2.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1419,11 +1419,11 @@
       "cmp": "no_baseline",
       "path": "t/PlacesSidebar.rakutest",
       "raku": {
-        "first_failure": "(PlacesSidebar.rakutest:2): Gtk-CRITICAL **: 03:13:17.508: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provi",
+        "first_failure": "(PlacesSidebar.rakutest:2): Gtk-CRITICAL **: 18:04:22.598: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provi",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.58,
+        "secs": 2.56,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1435,7 +1435,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.93,
+        "secs": 3.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1445,7 +1445,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.65,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1455,11 +1455,11 @@
       "cmp": "no_baseline",
       "path": "t/PopoverMenu.rakutest",
       "raku": {
-        "first_failure": "(PopoverMenu.rakutest:2): Gtk-CRITICAL **: 03:13:29.929: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provide",
+        "first_failure": "(PopoverMenu.rakutest:2): Gtk-CRITICAL **: 18:04:34.819: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provide",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.73,
+        "secs": 2.58,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1469,7 +1469,7 @@
       "cmp": "no_baseline",
       "path": "t/ProgressBar.rakutest",
       "raku": {
-        "first_failure": "(ProgressBar.rakutest:2): Gtk-CRITICAL **: 03:13:37.948: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provide",
+        "first_failure": "(ProgressBar.rakutest:2): Gtk-CRITICAL **: 18:04:42.632: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provide",
         "nok": 0,
         "ok": 0,
         "plan": null,
@@ -1487,7 +1487,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.13,
+        "secs": 4.15,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1497,11 +1497,11 @@
       "cmp": "no_baseline",
       "path": "t/RadioMenuItem.rakutest",
       "raku": {
-        "first_failure": "(RadioMenuItem.rakutest:2): Gtk-CRITICAL **: 03:13:57.592: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provi",
+        "first_failure": "(RadioMenuItem.rakutest:2): Gtk-CRITICAL **: 18:05:02.984: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provi",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.91,
+        "secs": 2.51,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1511,11 +1511,11 @@
       "cmp": "no_baseline",
       "path": "t/Range.rakutest",
       "raku": {
-        "first_failure": "(Range.rakutest:2): Gtk-CRITICAL **: 03:14:06.113: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_priv",
+        "first_failure": "(Range.rakutest:2): Gtk-CRITICAL **: 18:05:11.049: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_priv",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.74,
+        "secs": 2.81,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1525,11 +1525,11 @@
       "cmp": "no_baseline",
       "path": "t/RecentChooser.rakutest",
       "raku": {
-        "first_failure": "(RecentChooser.rakutest:2): Gtk-CRITICAL **: 03:14:14.653: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provi",
+        "first_failure": "(RecentChooser.rakutest:2): Gtk-CRITICAL **: 18:05:19.460: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provi",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.07,
+        "secs": 2.67,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1539,11 +1539,11 @@
       "cmp": "no_baseline",
       "path": "t/RecentChooserDialog.rakutest",
       "raku": {
-        "first_failure": "(RecentChooserDialog.rakutest:2): Gtk-CRITICAL **: 03:14:23.062: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style",
+        "first_failure": "(RecentChooserDialog.rakutest:2): Gtk-CRITICAL **: 18:05:28.116: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.96,
+        "secs": 3.09,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1553,11 +1553,11 @@
       "cmp": "no_baseline",
       "path": "t/RecentChooserMenu.rakutest",
       "raku": {
-        "first_failure": "(RecentChooserMenu.rakutest:2): Gtk-CRITICAL **: 03:14:31.694: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_p",
+        "first_failure": "(RecentChooserMenu.rakutest:2): Gtk-CRITICAL **: 18:05:36.691: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_p",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.56,
+        "secs": 2.64,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1567,11 +1567,11 @@
       "cmp": "no_baseline",
       "path": "t/RecentChooserWidget.rakutest",
       "raku": {
-        "first_failure": "(RecentChooserWidget.rakutest:2): Gtk-CRITICAL **: 03:14:39.527: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style",
+        "first_failure": "(RecentChooserWidget.rakutest:2): Gtk-CRITICAL **: 18:05:44.920: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.46,
+        "secs": 2.77,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1583,7 +1583,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 4.53,
+        "secs": 4.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1593,7 +1593,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.99,
+        "secs": 1.02,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1605,7 +1605,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 0.87,
+        "secs": 0.85,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1615,7 +1615,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 0.77,
+        "secs": 0.83,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1627,7 +1627,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.73,
+        "secs": 0.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1637,7 +1637,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.99,
+        "secs": 1.03,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1647,11 +1647,11 @@
       "cmp": "no_baseline",
       "path": "t/Revealer.rakutest",
       "raku": {
-        "first_failure": "(Revealer.rakutest:2): Gtk-CRITICAL **: 03:14:55.925: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "first_failure": "(Revealer.rakutest:2): Gtk-CRITICAL **: 18:06:02.409: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.65,
+        "secs": 2.61,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1661,11 +1661,11 @@
       "cmp": "no_baseline",
       "path": "t/Scale.rakutest",
       "raku": {
-        "first_failure": "(Scale.rakutest:2): Gtk-CRITICAL **: 03:15:03.526: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_priv",
+        "first_failure": "(Scale.rakutest:2): Gtk-CRITICAL **: 18:06:10.473: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_priv",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.78,
+        "secs": 2.72,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1677,7 +1677,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.68,
+        "secs": 0.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1687,7 +1687,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.58,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1697,11 +1697,11 @@
       "cmp": "no_baseline",
       "path": "t/ScrolledWindow.rakutest",
       "raku": {
-        "first_failure": "(ScrolledWindow.rakutest:2): Gtk-CRITICAL **: 03:15:12.829: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_prov",
+        "first_failure": "(ScrolledWindow.rakutest:2): Gtk-CRITICAL **: 18:06:19.745: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_prov",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.38,
+        "secs": 2.42,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1715,7 +1715,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.0,
+        "secs": 3.16,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1727,7 +1727,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.69,
+        "secs": 0.75,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1737,7 +1737,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.53,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1747,11 +1747,11 @@
       "cmp": "no_baseline",
       "path": "t/Separator.rakutest",
       "raku": {
-        "first_failure": "(Separator.rakutest:2): Gtk-CRITICAL **: 03:15:30.587: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_",
+        "first_failure": "(Separator.rakutest:2): Gtk-CRITICAL **: 18:06:38.528: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.32,
+        "secs": 2.36,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1761,11 +1761,11 @@
       "cmp": "no_baseline",
       "path": "t/SeparatorMenuItem.rakutest",
       "raku": {
-        "first_failure": "(SeparatorMenuItem.rakutest:2): Gtk-CRITICAL **: 03:15:38.003: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_p",
+        "first_failure": "(SeparatorMenuItem.rakutest:2): Gtk-CRITICAL **: 18:06:46.404: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_p",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.4,
+        "secs": 2.87,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1777,7 +1777,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.37,
+        "secs": 3.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1787,7 +1787,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.63,
+        "secs": 0.7,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1799,7 +1799,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 3.46,
+        "secs": 3.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1809,7 +1809,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.61,
+        "secs": 0.66,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1821,7 +1821,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 3.43,
+        "secs": 3.33,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1831,7 +1831,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 0.6,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1843,7 +1843,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 6.55,
+        "secs": 6.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1853,7 +1853,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 1.16,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1867,7 +1867,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.06,
+        "secs": 3.1,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1877,11 +1877,11 @@
       "cmp": "no_baseline",
       "path": "t/Spinner.rakutest",
       "raku": {
-        "first_failure": "(Spinner.rakutest:2): Gtk-CRITICAL **: 03:16:14.495: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_pr",
+        "first_failure": "(Spinner.rakutest:2): Gtk-CRITICAL **: 18:07:23.802: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_pr",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.45,
+        "secs": 2.62,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1895,7 +1895,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.67,
+        "secs": 2.8,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1905,11 +1905,11 @@
       "cmp": "no_baseline",
       "path": "t/StackSidebar.rakutest",
       "raku": {
-        "first_failure": "(StackSidebar.rakutest:2): Gtk-CRITICAL **: 03:16:29.687: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provid",
+        "first_failure": "(StackSidebar.rakutest:2): Gtk-CRITICAL **: 18:07:39.821: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provid",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.57,
+        "secs": 2.67,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1919,11 +1919,11 @@
       "cmp": "no_baseline",
       "path": "t/StackSwitcher.rakutest",
       "raku": {
-        "first_failure": "(StackSwitcher.rakutest:2): Gtk-CRITICAL **: 03:16:37.662: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provi",
+        "first_failure": "(StackSwitcher.rakutest:2): Gtk-CRITICAL **: 18:07:47.766: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provi",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.63,
+        "secs": 2.82,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1933,11 +1933,11 @@
       "cmp": "no_baseline",
       "path": "t/Statusbar.rakutest",
       "raku": {
-        "first_failure": "(Statusbar.rakutest:2): Gtk-CRITICAL **: 03:16:46.050: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_",
+        "first_failure": "(Statusbar.rakutest:2): Gtk-CRITICAL **: 18:07:56.146: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.87,
+        "secs": 2.88,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1947,11 +1947,11 @@
       "cmp": "no_baseline",
       "path": "t/StyleContext.rakutest",
       "raku": {
-        "first_failure": "(StyleContext.rakutest:2): Gtk-ERROR **: 03:16:54.940: Can't create a GtkStyleContext without a display connection",
+        "first_failure": "(StyleContext.rakutest:2): Gtk-ERROR **: 18:08:05.075: Can't create a GtkStyleContext without a display connection",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.13,
+        "secs": 3.26,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1973,7 +1973,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.5,
+        "secs": 0.57,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -1983,11 +1983,11 @@
       "cmp": "no_baseline",
       "path": "t/Switch.rakutest",
       "raku": {
-        "first_failure": "(Switch.rakutest:2): Gtk-CRITICAL **: 03:17:04.431: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_pri",
+        "first_failure": "(Switch.rakutest:2): Gtk-CRITICAL **: 18:08:15.013: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_pri",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.63,
+        "secs": 2.76,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -1999,7 +1999,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.26,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2009,7 +2009,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.57,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2021,7 +2021,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.4,
+        "secs": 1.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2031,7 +2031,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.11,
+        "secs": 1.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2053,28 +2053,6 @@
         "nok": 0,
         "ok": 0,
         "plan": 0,
-        "secs": 0.59,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 1.2,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/Targets.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
         "secs": 0.63,
         "skip": 0,
         "todo": 0,
@@ -2087,7 +2065,29 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.24,
+        "secs": 1.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Targets.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.67,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2097,7 +2097,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.02,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2109,134 +2109,12 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.4,
+        "secs": 0.37,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
       "path": "t/TextIter.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.53,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.69,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/TextTag.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.77,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.7,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/TextTagTable.rakutest",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.86,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/TextView.rakutest",
-      "raku": {
-        "first_failure": "(TextView.rakutest:2): Gtk-CRITICAL **: 03:17:24.144: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.36,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/ToggleButton.rakutest",
-      "raku": {
-        "first_failure": "Cannot instantiate a native type",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.97,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/ToolButton.rakutest",
-      "raku": {
-        "first_failure": "Cannot instantiate a native type [at dist/t/ToolButton.rakutest:6]",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 1.96,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "no_baseline",
-      "path": "t/ToolItem.rakutest",
-      "raku": {
-        "first_failure": "(ToolItem.rakutest:2): Gtk-CRITICAL **: 03:17:46.124: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
-        "nok": 0,
-        "ok": 0,
-        "plan": null,
-        "secs": 2.33,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "die"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.44,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/Tooltip.rakutest",
       "raku": {
         "nok": 0,
         "ok": 1,
@@ -2251,19 +2129,19 @@
       "cmp": "parity",
       "mutsu": {
         "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.12,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.71,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       },
-      "path": "t/TreeIter.rakutest",
+      "path": "t/TextTag.rakutest",
       "raku": {
         "nok": 0,
-        "ok": 2,
-        "plan": 2,
-        "secs": 0.6,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2275,7 +2153,129 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
+        "secs": 0.71,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/TextTagTable.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.92,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/TextView.rakutest",
+      "raku": {
+        "first_failure": "(TextView.rakutest:2): Gtk-CRITICAL **: 18:08:35.780: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ToggleButton.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 3.28,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ToolButton.rakutest",
+      "raku": {
+        "first_failure": "Cannot instantiate a native type [at dist/t/ToolButton.rakutest:6]",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.1,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "no_baseline",
+      "path": "t/ToolItem.rakutest",
+      "raku": {
+        "first_failure": "(ToolItem.rakutest:2): Gtk-CRITICAL **: 18:08:59.726: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "nok": 0,
+        "ok": 0,
+        "plan": null,
+        "secs": 2.46,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "die"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.53,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/Tooltip.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.54,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
+        "secs": 0.13,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/TreeIter.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 2,
+        "plan": 2,
         "secs": 0.61,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.6,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2285,7 +2285,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.78,
+        "secs": 0.79,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2307,7 +2307,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.66,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2319,7 +2319,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.75,
+        "secs": 0.78,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2329,7 +2329,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.82,
+        "secs": 0.98,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2341,7 +2341,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.67,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2351,7 +2351,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.54,
+        "secs": 0.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2363,7 +2363,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.71,
+        "secs": 0.77,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2373,7 +2373,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.39,
+        "secs": 1.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -2383,11 +2383,11 @@
       "cmp": "no_baseline",
       "path": "t/TreeView.rakutest",
       "raku": {
-        "first_failure": "(TreeView.rakutest:2): Gtk-CRITICAL **: 03:18:03.012: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "first_failure": "(TreeView.rakutest:2): Gtk-CRITICAL **: 18:09:17.080: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.55,
+        "secs": 2.66,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2397,11 +2397,11 @@
       "cmp": "no_baseline",
       "path": "t/TreeViewColumn.rakutest",
       "raku": {
-        "first_failure": "(TreeViewColumn.rakutest:2): Gtk-CRITICAL **: 03:18:10.933: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_prov",
+        "first_failure": "(TreeViewColumn.rakutest:2): Gtk-CRITICAL **: 18:09:25.108: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_prov",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.72,
+        "secs": 3.0,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2411,11 +2411,11 @@
       "cmp": "no_baseline",
       "path": "t/Viewport.rakutest",
       "raku": {
-        "first_failure": "(Viewport.rakutest:2): Gtk-CRITICAL **: 03:18:19.513: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
+        "first_failure": "(Viewport.rakutest:2): Gtk-CRITICAL **: 18:09:33.848: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_p",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 3.31,
+        "secs": 3.03,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2429,7 +2429,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.63,
+        "secs": 2.84,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2443,7 +2443,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.47,
+        "secs": 2.57,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2453,11 +2453,11 @@
       "cmp": "no_baseline",
       "path": "t/Window.rakutest",
       "raku": {
-        "first_failure": "(Window.rakutest:2): Gtk-CRITICAL **: 03:18:44.131: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_pri",
+        "first_failure": "(Window.rakutest:2): Gtk-CRITICAL **: 18:09:59.091: _gtk_css_lookup_resolve: assertion '(((__extension__ ({ GTypeInstance *__inst = (GTypeInstance*) ((provider)); GType __t = ((_gtk_style_provider_pri",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.61,
+        "secs": 2.98,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -2616,7 +2616,7 @@
     "date": "2026-11-25",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "bd0c0c8e",
+    "mutsu_commit": "13320ba6",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
