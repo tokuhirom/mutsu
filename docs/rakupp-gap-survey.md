@@ -22,8 +22,9 @@ on it.
      those rows 5-15% faster.
 - On top of these, a few rows have a cost of their own: module load (`use Test`, `use YAMLish`),
   one-time grammar analysis, and bless/TWEAK in `bench-ctor`.
-- Three of these causes have **no issue yet**: the startup page faults, the allocator measurement,
-  and the cache-miss profile of the regex rows. Everything else is already tracked
+- Three of these causes had no issue when this survey was written. They are now filed as
+  #19197 (startup page faults), #19198 (the allocator) and #19199 (the regex rows' cache-miss
+  profile, a sub-issue of #15737). Everything else was already tracked
   ([issue map](#existing-issues)).
 
 ## Setup
@@ -229,27 +230,29 @@ is startup.
 |---|---|---|
 | JSON::Fast compared with a native parser | json-fast* | dashboard note #19195; real target is #8673 (vs rakudo) |
 | Instructions per opcode | yaml, ripemd, all | #8819 |
-| Instruction speed (I-cache, branches) | ctor, regex*, word-count | #15737 (Mooish measurement only) |
+| Instruction speed (I-cache, branches) | ctor, regex*, word-count | #15737; #19199 for the regex rows |
 | Startup instructions | all | #17504 (open), #18956 (fixed) |
+| Startup page faults | all | #19197 |
 | `use Test` load and tax | ripemd | #11756, #12026, #7565 |
 | Module load re-runs BEGIN and traits | yaml (load) | #18012 |
 | Grammar first-parse analysis | grammar-parse* | #17640 |
 | YAMLish parse and actions | yaml | #12917, #7576 |
 | Attribute access and slots | ctor | #9291, #18356 |
 | Hash-key allocation | ctor, word-count | #7549 |
-| Allocator choice | all | #15235 records one negative mimalloc result. Nothing tracks the measurement above. |
+| Allocator choice | all | #19198; #15235 records one negative mimalloc result |
 
-## Not covered by any issue
+## Filed from this survey
 
-1. **Startup page faults.** ~28 MB of text touched by `Interpreter::new`, ~3 ms of system time
-   per process. Close condition to propose: minor faults of an empty program within 1.5x
-   rakupp's, measured with rusage.
-2. **Global allocator on the allocation-heavy rows.** Re-run the jemalloc preload above as a
-   real `#[global_allocator]` (jemalloc and mimalloc), keeping the counting wrapper, on these
-   rows and on #15235's workload. Decide on wall time and RSS together.
-3. **The cache and mispredict profile of the regex rows.** #15737's instruction-speed analysis
-   extended to `bench-regex-match` and `bench-regex-split-subst`, where mutsu retires fewer
-   instructions than rakupp and still loses.
+These three had no issue when the survey was written. Each issue carries its own close
+condition.
+
+1. **Startup page faults**: #19197. ~28 MB of text touched by `Interpreter::new`, ~3 ms of
+   system time per process. Goal: `bench-startup` at or under 1.10x rakupp.
+2. **Global allocator on the allocation-heavy rows**: #19198. Re-run the jemalloc preload above
+   as a real `#[global_allocator]` (jemalloc and mimalloc), keeping the counting wrapper, on
+   these rows and on #15235's workload. Decide on wall time and RSS together.
+3. **The cache and mispredict profile of the regex rows**: #19199, a sub-issue of #15737.
+   Goal: `bench-regex-capture@section` at or under 1.00x rakupp.
 
 ## Reproducing
 
