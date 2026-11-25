@@ -832,6 +832,16 @@ jobs:
           if ! dpkg -s libssl-dev >/dev/null 2>&1; then
             sudo apt-get update && sudo apt-get install -y libssl-dev
           fi
+          # IO::Socket::Async::SSL's upstream tests listen on fixed ports
+          # 54328-54340, inside the kernel's ephemeral range (32768-60999).
+          # A localhost client socket -- e.g. one of the ~200 TIME_WAITs its
+          # own thread-stress.rakutest leaves just before upgrade.rakutest --
+          # that was handed one of them makes the listener's bind fail with
+          # EADDRINUSE, on rakudo too (#19193). Reserving them only stops the
+          # kernel from picking them for outgoing connections; an explicit
+          # bind still works. Keep in sync with release.yml's `batteries` job.
+          cur="$(cat /proc/sys/net/ipv4/ip_local_reserved_ports)"
+          sudo sysctl -w net.ipv4.ip_local_reserved_ports="${cur:+$cur,}54328-54340"
           scripts/battery-testsuite.sh
         env:
           MUTSU_BIN: target/release/mutsu
