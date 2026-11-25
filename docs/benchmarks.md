@@ -19,7 +19,9 @@ each — `<name>` pins `MUTSU_JIT=off` as the interpreter baseline, `<name>+jit`
 JIT-on configuration — with wall clock, simulated instruction counts and heap allocation counts;
 see `scripts/bench-ci.sh` and `scripts/bench-det.sh`), so adding a file is all it takes to add a
 series. Each row is the median of 7 runs plus a ratio against `raku` measured on the same runner in
-the same job, and against Raku++ (`rakupp`) as a second reference.
+the same job, and against Raku++ (`rakupp`) as a second reference. What the rakupp ratio
+is made of, row by row, and which of its rows are not engine against engine (rakupp answers
+JSON::Fast natively) is in [rakupp-gap-survey.md](rakupp-gap-survey.md).
 
 ### Adding a benchmark
 
