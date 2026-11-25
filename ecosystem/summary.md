@@ -8,9 +8,9 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 | metric | value |
 |---|---|
 | **dist parity** (published headline) | **100.0%** (1339/1339) |
-| file parity | 100.0% (5163/5163) |
+| file parity | 100.0% (5161/5161) |
 | assertion parity | 100.0% |
-| accepted divergences (out of the KPI, ADR-0130) | 14 file(s) |
+| accepted divergences (out of the KPI, ADR-0130) | 13 file(s) |
 | out-of-scope distributions (`exclude.txt`, out of the KPI) | 14 |
 
 | status | distributions |
@@ -222,7 +222,7 @@ _None._
 | `Business::CreditCard` | 0.2 | green | 2/2 |
 | `BusyIndicator` | 0.6.2 | green | 1/1 |
 | `C::Parser` | 0.3.3 | green | 9/9 |
-| `Cache::Async` | 0.3.4 | green | 9/9 |
+| `Cache::Async` | 0.3.4 | green | 7/7 |
 | `caelum` | 0.1.1 | no_baseline | — |
 | `Calendar` | 0.0.4 | no_baseline | — |
 | `CBOR::Simple` | 0.1.4 | green | 7/7 |
@@ -270,7 +270,7 @@ _None._
 | `Compress::Zlib` | 2.0.0 | green | 4/4 |
 | `Compress::Zlib::Raw` | 2.0.0 | green | 2/2 |
 | `CompUnit::Util` | 0.7.0 | green | 8/8 |
-| `Concurrent::BoundedChannel` | 0.4.1 | no_baseline | — |
+| `Concurrent::BoundedChannel` | 0.4.1 | green | 1/1 |
 | `Concurrent::Iterator` | 1.1 | green | 3/3 |
 | `Concurrent::PChannel` | 0.0.4 | no_baseline | — |
 | `Concurrent::PriorityQueue` | 0.0.2 | green | 2/2 |
@@ -704,7 +704,7 @@ _None._
 | `HTTP::Roles` | 0.2.3 | green | 1/1 |
 | `HTTP::Server::Async` | 0.2 | green | 8/8 |
 | `HTTP::Server::Async::Plugins::Router::Simple` | 0.1.2 | green | 1/1 |
-| `HTTP::Server::Logger` | 0.1.4 | green | 2/2 |
+| `HTTP::Server::Logger` | 0.1.4 | green | 1/1 |
 | `HTTP::Server::Middleware::JSON` | 0.0.3 | green | 1/1 |
 | `HTTP::Server::Router` | 0.1.7 | no_baseline | — |
 | `HTTP::Server::Router::YAML` | 0.0.1 | no_baseline | — |
@@ -878,7 +878,7 @@ _None._
 | `Linux::Cpuinfo` | 0.1.2 | green | 5/5 |
 | `Linux::Fuser` | 0.0.16 | green | 2/2 |
 | `Linux::Joystick` | 0.0.3 | green | 1/1 |
-| `Linux::NFTables` | 0.0.3 | green | 4/4 |
+| `Linux::NFTables` | 0.0.3 | green | 3/3 |
 | `List::Agnostic` | 0.0.7 | green | 1/1 |
 | `List::Allmax` | 0.0.1 | no_baseline | — |
 | `List::AllUtils` | 0.0.6 | green | 2/2 |
@@ -999,7 +999,7 @@ _None._
 | `Math::Root` | 0.0.4 | green | 3/3 |
 | `Math::SalvoCombatModeling` | 0.0.1 | green | 1/1 |
 | `Math::Sequences` | 0.1.2 | green | 9/9 |
-| `Math::SparseMatrix` | 0.0.17 | green | 19/19 |
+| `Math::SparseMatrix` | 0.0.17 | green | 20/20 |
 | `Math::SparseMatrix::Native` | 0.0.10 | no_baseline | — |
 | `Math::SpecialFunctions` | 0.1.1 | green | 4/4 |
 | `Math::Splines` | 0.0.2 | green | 4/4 |
@@ -1069,7 +1069,7 @@ _None._
 | `MUGS::UI::CLI` | 0.1.4 | no_baseline | — |
 | `MUGS::UI::TUI` | 0.1.4 | no_baseline | — |
 | `MUGS::UI::WebSimple` | 0.1.4 | no_baseline | — |
-| `Mux` | 0.0.4 | green | 1/1 |
+| `Mux` | 0.0.4 | no_baseline | — |
 | `mv2d` | 0.1.333 | green | 1/1 |
 | `MVC::Keayl` | 0.9.2 | green | 37/37 |
 | `MVC::Keayl::Admin` | 0.9.1 | green | 3/3 |
@@ -1182,7 +1182,7 @@ _None._
 | `P5unlink` | 0.0.1 | green | 1/1 |
 | `Pakku` | chou.5 | green | 4/4 |
 | `Parameterizable` | 0.0.4 | green | 2/2 |
-| `ParaSeq` | 0.2.7 | green | 47/47 |
+| `ParaSeq` | 0.2.7 | green | 48/48 |
 | `Parse::Paths` | 0.1.3 | green | 1/1 |
 | `Pastebin::Gist` | 1.004002 | no_baseline | — |
 | `Pastebin::Shadowcat` | 2.001003 | no_baseline | — |

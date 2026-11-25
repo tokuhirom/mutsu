@@ -1,8 +1,8 @@
 {
-  "accepted_files": 14,
+  "accepted_files": 13,
   "assertion_parity": 100.0,
-  "baseline_assertions": 198584,
-  "baseline_files": 5163,
+  "baseline_assertions": 198667,
+  "baseline_files": 5161,
   "dist_parity": 100.0,
   "distributions": 1688,
   "excluded_dists": [
@@ -25,8 +25,8 @@
   "generated": "2026-11-25",
   "graded_distributions": 1339,
   "green_distributions": 1339,
-  "mutsu_assertions": 198583,
-  "parity_files": 5163,
+  "mutsu_assertions": 198667,
+  "parity_files": 5161,
   "schema": 1,
   "status": {
     "blocked_dep": 3,
