@@ -94,7 +94,7 @@ const benchRows = [
 ];
 for (let i = 0; i < 6; i++) {
   const sha = `${i}`.repeat(40);
-  for (const [name, base] of [['bench-fib', 0.2], ['bench-hash', 0.04]]) {
+  for (const [name, base] of [['bench-fib', 0.2], ['bench-hash', 0.04], ['bench-json-fast', 0.1]]) {
     const t = (base * (1 + i / 50)).toFixed(4);
     // The first commits predate the rakupp columns, as on bench-data: their
     // rows have ten fields, not thirteen.
@@ -215,10 +215,12 @@ try {
          'and the shared footer credit');
   assert(await page.locator('.lang-switch button').count() === 2,
          'and the language switch');
-  assert(await page.locator('.bench-card svg').count() === 2,
+  assert(await page.locator('.bench-card svg').count() === 3,
          'the charts still render (one per benchmark)');
+  assert(await page.locator('.bench-note').count() === 0,
+         'a benchmark note stays hidden under a metric it does not concern');
   await page.click('#view button[data-v="table"]');
-  assert(await page.locator('#tableWrap tbody tr').count() === 2,
+  assert(await page.locator('#tableWrap tbody tr').count() === 3,
          'and the table view still works');
 
   // The controls are the page's whole state, so a link has to carry them --
@@ -251,7 +253,7 @@ try {
          'reopening such a link restores the view');
   assert(await page.getAttribute('#metric button[data-v="ratio"]', 'aria-pressed') === 'true',
          'and the metric');
-  assert(await page.locator('#tableWrap tbody tr').count() === 2,
+  assert(await page.locator('#tableWrap tbody tr').count() === 3,
          'with the table actually rendered');
   assert((await page.textContent('#tableWrap th[data-k="jit"]')).includes('↓'),
          'and the table sorted the way the link asked');
@@ -263,6 +265,11 @@ try {
   assert(await page.evaluate(() =>
     [...document.querySelectorAll('.bench-card text.axis')].some(t => t.textContent === 'rakupp')),
     'and its reference line is labelled rakupp');
+  // rakupp answers JSON::Fast::from-json natively, so the JSON rows' rakupp
+  // ratio carries a caveat on that card -- and only on that card.
+  assert(await page.locator('.bench-card[data-name="bench-json-fast"] .bench-note').count() === 1
+         && await page.locator('.bench-note').count() === 1,
+         'the JSON::Fast card notes that rakupp parses JSON natively');
 
   // A link to a metric this history cannot show (no deterministic series here)
   // must fall back rather than render an empty page -- and say so in the URL.
