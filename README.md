@@ -132,10 +132,14 @@ subtests (`HISTORY.tsv`).
 Roast measures the language against its spec. The other question — *does the
 module I actually use work?* — is measured by running each zef distribution's own
 test suite under both rakudo and mutsu and comparing the two. As of the ledger
-summary of 2026-11-22, the ecosystem index has **1,686** distributions. **1,339**
-of them can be graded against a rakudo baseline, and **99.3%** of those (1,329)
-pass every test file that rakudo passes (**99.3%** of test files, **99.9%** of
-assertions). Look up a particular distribution on the [ecosystem
+summary of 2026-11-25, the ecosystem index has **1,688** distributions. **1,339**
+of them can be graded against a rakudo baseline, and **all 1,339 (100%)** pass
+every test file that rakudo passes (**100%** of test files and of assertions).
+Thirteen test files whose failure was traced to the distribution itself (a race or
+bug that rakudo also shows under the same conditions) are recorded as accepted
+divergences in
+[`ecosystem/accepted-divergences.toml`](ecosystem/accepted-divergences.toml)
+and left out of the count. Look up a particular distribution on the [ecosystem
 page](https://tokuhirom.github.io/mutsu/ecosystem.html). The per-distribution
 records are on the [`ecosystem-data`](https://github.com/tokuhirom/mutsu/tree/ecosystem-data/ecosystem)
 branch, the metric over time is in
