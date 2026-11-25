@@ -1,0 +1,64 @@
+name: Report a red scheduled CI run on main
+
+# A red hourly run on `main` must reach a person: nobody watches a scheduled
+# run's checks. `wasm-e2e` is post-merge only (ADR-11581), so the hourly run is
+# the only place its failures show before a release; on 2026-11-01 it was red
+# for hours and the first anyone looked was the v0.26.0 tag build. This opens
+# the `ci:main` tracking issue, or comments on it when a run fails a set of jobs
+# that no earlier comment names (an hourly run that stays red the same way would
+# otherwise add a comment per hour).
+#
+# This used to be a `report` job inside ci.yml. It moved here because ci.yml is
+# also a reusable workflow: release.yml calls it as the gate in front of every
+# publish, and a called workflow may not ask for a permission its caller does
+# not grant. The job's `issues: write` made every release run fail at startup
+# (`startup_failure`) under release.yml's read-only grant. Keeping the report in
+# its own workflow leaves ci.yml read-only and the release gate least-privilege.
+#
+# Only scheduled runs report: a dispatch reports to whoever started it, a pull
+# request to its author, and a release gate to the release.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  report:
+    if: >-
+      github.event.workflow_run.event == 'schedule' &&
+      github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      issues: write
+    steps:
+      - name: Open or update the tracking issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          # The names of the jobs that failed, in the order the run lists them.
+          failed=$(gh api --paginate "repos/${GH_REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+            --jq '.jobs[] | select(.conclusion == "failure") | .name' | tr '\n' ' ')
+          line="Failed: ${failed% }"
+          body="CI on \`main\` failed at \`${HEAD_SHA::12}\`: ${RUN_URL}
+
+          ${line}"
+          gh label create ci:main --color B60205 \
+            --description "Hourly CI failure on main (ci.yml)" 2>/dev/null || true
+          existing=$(gh issue list --label ci:main --state open --json number --jq '.[0].number // empty')
+          if [ -z "$existing" ]; then
+            gh issue create --label ci:main --title "CI on main is red" --body "$body"
+          elif ! gh issue view "$existing" --json body,comments \
+                 --jq '[.body, (.comments[].body)] | join("\n")' | grep -qxF "$line"; then
+            gh issue comment "$existing" --body "$body"
+          fi
