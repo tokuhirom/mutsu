@@ -8,6 +8,12 @@ use mutsu::{Interpreter, RuntimeError, Value};
 
 mod cli_options;
 
+// The linker reads the startup text layout (see `build.rs`, #19197), so cargo
+// would not notice an edit to it. Including it here makes the file a source
+// dependency of the binary alone: regenerating it relinks `mutsu` without
+// rebuilding the library. The bytes are never used, so nothing is emitted.
+const _: &[u8] = include_bytes!("../linker/startup-text.ld");
+
 use cli_options::{
     handle_negated_long_option, handle_negated_short_option, illegal_option, print_help,
     print_negation_error,
