@@ -138,10 +138,20 @@ _RAKUPP_NATIVE_JSON = (
     "against engine; <b>ratio vs rakudo</b>, which runs the same Raku code, is "
     "the comparable number."
 )
+_RAKUPP_NON_PIE_STARTUP = (
+    "Most of this row is process startup, and rakupp is a non-PIE executable "
+    "(loaded at a fixed address, no relative relocations). mutsu is a PIE, so "
+    "the dynamic loader applies ~80k relocations and copy-on-write faults in "
+    "~400 pages first. Linked non-PIE, the same mutsu build measures about "
+    "<b>1.1x</b> rakupp here, not ~1.3-1.4x. That trade (less ASLR) is #11158's "
+    "call. See <span class=\"mono\">docs/rakupp-gap-survey.md</span>."
+)
 BENCH_NOTES = {
     "bench-json-fast": {"ratiopp": _RAKUPP_NATIVE_JSON},
     "bench-json-fast-spdx": {"ratiopp": _RAKUPP_NATIVE_JSON},
     "bench-json-fast-spdx@section": {"ratiopp": _RAKUPP_NATIVE_JSON},
+    "bench-startup": {"ratiopp": _RAKUPP_NON_PIE_STARTUP},
+    "string-concat": {"ratiopp": _RAKUPP_NON_PIE_STARTUP},
 }
 
 
