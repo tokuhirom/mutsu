@@ -5,7 +5,9 @@ The bench CI appends one row per (commit, benchmark) to `bench-history.tsv` on
 the `bench-data` branch, but the raw TSV makes the *trend* hard to read. This
 turns it into small-multiple line charts — one mini chart per benchmark, with
 the interpreter (MUTSU_JIT=off) and +jit series over commit order — so a
-regression or win is visible at a glance.
+regression or win is visible at a glance. It opens with the benchmarks mutsu
+loses against rakudo or rakupp, on a median of the last commits rather than the
+latest point, each linked to the issues `benchmarks/bench-tracking.toml` names.
 
 Usage:
     # open directly in a browser (standards mode via --standalone):
@@ -28,8 +30,11 @@ orphan. That trades away self-containedness, which is why it is opt-in.
 import argparse
 import html
 import json
+import os
 import re
+import statistics
 import sys
+import tomllib
 
 COLUMNS = [
     "date",
@@ -146,16 +151,148 @@ _RAKUPP_NON_PIE_STARTUP = (
     "<b>1.1x</b> rakupp here, not ~1.3-1.4x. That trade (less ASLR) is #11158's "
     "call. See <span class=\"mono\">docs/rakupp-gap-survey.md</span>."
 )
+# Each note also carries a short `tag`, the label the "mutsu is slower here"
+# section and the table put next to the ratio it qualifies, and `engine`: False
+# when the ratio is not engine against engine at all, which takes it out of the
+# section's ranking (the row is still listed, in its own group, labelled).
+_NOTE_NATIVE_JSON = {"tag": "rakupp parses JSON natively", "engine": False,
+                     "html": _RAKUPP_NATIVE_JSON}
+_NOTE_NON_PIE = {"tag": "mostly startup; rakupp is non-PIE", "engine": True,
+                 "html": _RAKUPP_NON_PIE_STARTUP}
 BENCH_NOTES = {
-    "bench-json-fast": {"ratiopp": _RAKUPP_NATIVE_JSON},
-    "bench-json-fast-spdx": {"ratiopp": _RAKUPP_NATIVE_JSON},
-    "bench-json-fast-spdx@section": {"ratiopp": _RAKUPP_NATIVE_JSON},
-    "bench-startup": {"ratiopp": _RAKUPP_NON_PIE_STARTUP},
-    "string-concat": {"ratiopp": _RAKUPP_NON_PIE_STARTUP},
+    "bench-json-fast": {"ratiopp": _NOTE_NATIVE_JSON},
+    "bench-json-fast-spdx": {"ratiopp": _NOTE_NATIVE_JSON},
+    "bench-json-fast-spdx@section": {"ratiopp": _NOTE_NATIVE_JSON},
+    "bench-startup": {"ratiopp": _NOTE_NON_PIE},
+    "string-concat": {"ratiopp": _NOTE_NON_PIE},
 }
 
+# How many of a series' newest points the robust figures read. The bench CI
+# records two or three commits a day and wall clock moves 16-33% between runs
+# of one binary (docs/benchmarks.md), so a single point is noise; a median of
+# ten is about four days of history, short enough to follow a real step (the
+# 2026-11-22 bench-threads drop from ~2.5x to ~0.35x rakudo shows up within
+# five commits) and long enough that one bad runner does not move it.
+RECENT = 10
+# A series whose newest point is older than this many commits is no longer
+# measured (a renamed or retired benchmark): it has no standing.
+STALE_AFTER = 30
 
-def build_model(rows, det_rows=()):
+DEFAULT_TRACKING = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "benchmarks", "bench-tracking.toml")
+_TRACKING_KEYS = {"issues", "survey", "note"}
+
+
+def load_tracking(path):
+    """benchmarks/bench-tracking.toml: {benchmark: {issues, survey?, note?}}.
+
+    The file is repository data, but the page shows it, so its shape is checked
+    here rather than trusted: issue numbers are ints, the survey anchor is a
+    slug, the note is plain text. A malformed file fails the render instead of
+    putting markup or a broken link on the page."""
+    with open(path, "rb") as f:
+        raw = tomllib.load(f)
+    out = {}
+    for name, ent in raw.items():
+        if not isinstance(ent, dict):
+            raise SystemExit(f"bench-visualize: {path}: [{name}] is not a table")
+        extra = set(ent) - _TRACKING_KEYS
+        if extra:
+            raise SystemExit(f"bench-visualize: {path}: [{name}] has unknown key(s) "
+                             + ", ".join(sorted(extra)))
+        issues = ent.get("issues", [])
+        if not (isinstance(issues, list) and issues
+                and all(isinstance(n, int) and not isinstance(n, bool) and n > 0
+                        for n in issues)):
+            raise SystemExit(f"bench-visualize: {path}: [{name}] needs `issues`, "
+                             "a non-empty list of issue numbers")
+        rec = {"issues": issues}
+        survey = ent.get("survey")
+        if survey is not None:
+            if not (isinstance(survey, str) and re.fullmatch(r"[a-z0-9-]+", survey)):
+                raise SystemExit(f"bench-visualize: {path}: [{name}] survey must be "
+                                 "a lowercase anchor slug")
+            rec["survey"] = survey
+        note = ent.get("note")
+        if note is not None:
+            if not isinstance(note, str) or re.search(r"[<>&]", note):
+                raise SystemExit(f"bench-visualize: {path}: [{name}] note must be "
+                                 "plain text (no <, > or &)")
+            rec["note"] = note
+        out[name] = rec
+    return out
+
+
+def _quantile(sorted_vals, q):
+    """Linear-interpolated quantile of an already sorted, non-empty list."""
+    pos = (len(sorted_vals) - 1) * q
+    lo = int(pos)
+    hi = min(lo + 1, len(sorted_vals) - 1)
+    return sorted_vals[lo] + (sorted_vals[hi] - sorted_vals[lo]) * (pos - lo)
+
+
+def robust(values):
+    """Median and interquartile range of the newest RECENT values, or None."""
+    vals = sorted(values[-RECENT:])
+    if not vals:
+        return None
+    return {"med": round(statistics.median(vals), 4), "lo": round(_quantile(vals, .25), 4),
+            "hi": round(_quantile(vals, .75), 4), "n": len(vals)}
+
+
+def standing(entry, n_commits):
+    """Where mutsu stands against each reference on this benchmark, read from
+    the shipped configuration's series (+jit, the default) and falling back to
+    the interpreter series for a benchmark recorded only without it.
+
+    Each ratio is the median of the per-commit ratios over the newest RECENT
+    points -- not the latest point -- with its interquartile range, so a row is
+    "losing" because it has been slower for days, and "marginal" when a quarter
+    or more of those points were at or under parity anyway."""
+    lane = "jit" if entry["jit"] else "base"
+    pts = entry[lane]
+    if not pts or pts[-1][0] < n_commits - STALE_AFTER:
+        return None
+    out = {"lane": lane}
+    for key, slot in (("ratio", 2), ("ratiopp", 5)):
+        r = robust([p[slot] for p in pts if p[slot] is not None])
+        if r is not None:
+            r["losing"] = r["med"] > 1.0
+            r["marginal"] = r["losing"] and r["lo"] <= 1.0
+        out[key] = r
+    return out
+
+
+def losers(benches):
+    """The benchmarks mutsu loses, worst first.
+
+    Ranked by the worst engine-against-engine ratio. A row that loses only on a
+    ratio whose note says it is not engine against engine (rakupp's native JSON
+    parser) is still listed -- labelled, after the ranked rows -- rather than
+    hidden or ranked on a number that does not compare engines."""
+    ranked, other = [], []
+    for b in benches:
+        st = b.get("standing")
+        if not st:
+            continue
+        engine, any_loss = [], []
+        for key in ("ratio", "ratiopp"):
+            r = st.get(key)
+            if not r or not r["losing"]:
+                continue
+            any_loss.append(r["med"])
+            note = b.get("notes", {}).get(key)
+            if not note or note["engine"]:
+                engine.append(r["med"])
+        if engine:
+            ranked.append((-max(engine), b["name"]))
+        elif any_loss:
+            other.append((-max(any_loss), b["name"]))
+    return {"ranked": [n for _, n in sorted(ranked)],
+            "other": [n for _, n in sorted(other)]}
+
+
+def build_model(rows, det_rows=(), tracking=None):
     # Chronological commit order: each distinct commit keyed by first-seen date.
     # Both series are appended by the same job on the same commit, so they share
     # this axis -- but build it from BOTH, so a commit recorded in only one of
@@ -216,10 +353,17 @@ def build_model(rows, det_rows=()):
         entry = {"name": name, "base": base, "jit": jit}
         if name in BENCH_NOTES:
             entry["notes"] = BENCH_NOTES[name]
+        st = standing(entry, len(order))
+        if st:
+            entry["standing"] = st
+        if tracking and name in tracking:
+            entry["tracking"] = tracking[name]
         out.append(entry)
     return {
         "commits": commit_meta,
         "benches": out,
+        "losers": losers(out),
+        "recent": RECENT,
         # When the newest measurement was recorded -- the latest row date across
         # both series, not the last commit's first-seen date, which a re-run of an
         # already-recorded commit would leave behind. Shown in the page header so
@@ -334,6 +478,32 @@ thead th { position: sticky; top: 0; background: var(--card); color: var(--muted
   font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; cursor: pointer; }
 tbody tr:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
 .hidden { display: none; }
+/* Wins and losses against a reference engine, wherever a ratio is shown. A
+   marginal loss (a quarter of the recent points at or under parity) keeps the
+   colour but drops the weight; a caveated ratio carries its tag. */
+.lose { color: var(--bad); font-weight: 650; }
+.lose.marginal { font-weight: 400; }
+.win { color: var(--good); }
+.tag { display: inline-block; margin-left: 6px; font-size: 10.5px; font-weight: 500; padding: 0 5px;
+  border-radius: 5px; color: var(--jit); border: 1px solid color-mix(in srgb, var(--jit) 45%, transparent);
+  cursor: help; white-space: nowrap; }
+.bench-card.losing { border-left: 3px solid var(--bad); }
+.standing { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); margin: 0 0 4px; }
+.losing-section {
+  background: color-mix(in srgb, var(--bad) 7%, var(--card)); border: 1px solid var(--edge);
+  border-left: 4px solid var(--bad); border-radius: 12px; padding: 14px 16px 10px;
+  margin-bottom: 22px; box-shadow: var(--shadow); overflow-x: auto;
+}
+.losing-section h2 { font-size: 16px; margin: 0 0 2px; }
+.losing-section .sub { color: var(--muted); font-size: 12px; margin: 0 0 10px; }
+.losing-section th:nth-child(2), .losing-section td:nth-child(2),
+.losing-section th:last-child { text-align: left; }
+.losing-section td.track { text-align: left; white-space: normal; min-width: 14em; }
+.losing-section td.track a { color: var(--base); margin-right: 8px; }
+.losing-section .why { display: block; color: var(--muted); font-size: 11.5px; }
+.losing-section tr.group td { text-align: left; color: var(--muted); font-size: 11px;
+  text-transform: uppercase; letter-spacing: .05em; padding-top: 14px; }
+.untracked { color: var(--bad); font-weight: 600; }
 .foot { color: var(--muted); font-size: 11.5px; margin-top: 22px; }
 </style>
 __CHROME_NAV__
@@ -375,6 +545,11 @@ __CHROME_NAV__
   </div>
 </div>
 <main>
+  <section class="losing-section" id="losing" aria-labelledby="losingTitle">
+    <h2 id="losingTitle">mutsu is slower here</h2>
+    <p class="sub" id="losingSub"></p>
+    <div id="losingWrap"></div>
+  </section>
   <div class="grid" id="grid"></div>
   <div id="tableWrap" class="hidden"></div>
   <p class="foot" id="foot"></p>
@@ -415,17 +590,84 @@ const unit = () => metric === 'seconds' ? 's' : isRatio() ? '×' : '';
 
 // A caveat attached to this benchmark for the active metric (BENCH_NOTES in
 // the generator), or undefined.
-const noteFor = (b) => b.notes && b.notes[metric];
+const noteFor = (b) => b.notes && b.notes[metric] && b.notes[metric].html;
+const RECENT = DATA.recent;
+const LOSERS = DATA.losers.ranked, LOSERS_OTHER = DATA.losers.other;
+const ISSUE_URL = 'https://github.com/tokuhirom/mutsu/issues/';
+const SURVEY_URL = 'https://github.com/tokuhirom/mutsu/blob/main/docs/rakupp-gap-survey.md#';
+const REFS = [['ratio', 'rakudo'], ['ratiopp', 'rakupp']];
+const median = (xs) => {
+  const v = [...xs].sort((a, b) => a - b), m = v.length >> 1;
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+};
+
+// Build a DOM node. Text goes in through `append` (a text node), never as
+// markup: the loser section is built this way so that nothing read from the
+// data -- a benchmark name, a tracking note -- is ever parsed as HTML.
+function el(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null) continue;
+    if (k === 'class') e.className = v; else e.setAttribute(k, v);
+  }
+  for (const k of kids) if (k != null) e.append(k);
+  return e;
+}
+const stripTags = (h) => h.replace(/<[^>]*>/g, '');
+// One robust ratio (`standing` in the generator): its colour class and the
+// tooltip that says what the number is.
+const ratioClass = (r) => !r ? '' : r.losing ? (r.marginal ? 'lose marginal' : 'lose') : 'win';
+const ratioTitle = (r) => `median of the last ${r.n} commits; interquartile range `
+  + `${r.lo.toFixed(2)}-${r.hi.toFixed(2)}×`
+  + (r.marginal ? '; a quarter or more of them at or under 1.0×' : '');
+function ratioCell(b, key) {
+  const r = b.standing && b.standing[key];
+  if (!r) return el('td', { class: 'mono' }, '—');
+  const note = b.notes && b.notes[key];
+  return el('td', { class: 'mono ' + ratioClass(r), title: ratioTitle(r) },
+    r.med.toFixed(2) + '×',
+    note ? el('span', { class: 'tag', title: stripTags(note.html) }, note.tag) : null);
+}
 
 function windowStart() { return windowN > 0 ? Math.max(0, N - windowN) : 0; }
 
-// Percent change of the last point vs the previous, in the active window.
-function delta(pts) {
-  const w = pts.filter(p => p[0] >= windowStart() && defined(p));
-  if (w.length < 2) return null;
-  const a = yval(w[w.length - 2]), b = yval(w[w.length - 1]);
-  if (!a) return null;
-  return { pct: (b - a) / a * 100, now: b };
+// The newest RECENT points of a series, as values. Deliberately not limited to
+// the commit window: the window shapes the charts, but a median or a trend has
+// to read the same points whatever is zoomed in -- and a 50- or 150-commit
+// window can hold fewer than 2 x RECENT wall-clock points, since the
+// deterministic series records more commits than the wall-clock one.
+function recentVals(pts) {
+  return pts.filter(defined).slice(-RECENT).map(yval);
+}
+
+// A trend that a single noisy commit cannot fake: the median of the newest
+// RECENT points against the median of the RECENT before them, reported only
+// when the step is larger than the noise. The noise is the series' own: the
+// spread of each half around its median (MAD, scaled to a standard deviation),
+// turned into the standard error of a difference of two medians (1.2533 s
+// sqrt(2/k)). A step beyond two of those is shown; anything smaller -- which on
+// a 16-33%-noisy wall-clock series is most commit-to-commit motion -- is not.
+// The floor (0.5%) is for the deterministic series, whose spread can be zero.
+function trend(pts) {
+  const w = pts.filter(defined).map(yval);
+  if (w.length < 2 * RECENT) return null;
+  const cur = w.slice(-RECENT), prev = w.slice(-2 * RECENT, -RECENT);
+  const mc = median(cur), mp = median(prev);
+  if (!mp) return null;
+  const resid = [...cur.map(v => Math.abs(v - mc)), ...prev.map(v => Math.abs(v - mp))];
+  const sigma = 1.4826 * median(resid);
+  const band = Math.max(2 * 1.2533 * sigma * Math.sqrt(2 / RECENT), 0.005 * Math.abs(mp));
+  return { pct: (mc - mp) / mp * 100, bandPct: band / Math.abs(mp) * 100,
+           real: Math.abs(mc - mp) > band };
+}
+
+function trendChip(t) {
+  if (!t) return `<span class="chip flat" title="fewer than ${2 * RECENT} points recorded">—</span>`;
+  const band = `±${t.bandPct.toFixed(1)}%`;
+  if (!t.real) return `<span class="chip flat" title="median of the last ${RECENT} vs the ${RECENT} before moved ${t.pct.toFixed(1)}%, inside the noise band ${band}">no change</span>`;
+  const word = metric === 'seconds' ? (t.pct > 0 ? ' slower' : ' faster')
+    : (metric === 'instr' || metric === 'allocs') ? (t.pct > 0 ? ' more' : ' fewer') : '';
+  return `<span class="chip ${t.pct > 0 ? 'up' : 'down'}" title="median of the last ${RECENT} vs the ${RECENT} before; noise band ${band}">${t.pct > 0 ? '+' : ''}${t.pct.toFixed(1)}%${word}</span>`;
 }
 
 const W = 300, H = 96, PADL = 6, PADR = 10, PADT = 10, PADB = 16;
@@ -474,23 +716,23 @@ function chart(b) {
 
 function cardHTML(b) {
   const c = chart(b);
-  const dj = delta(b.jit), db = delta(b.base);
-  const d = dj || db;
-  let chip = '<span class="chip flat">—</span>', now = '', nowLane = dj ? 'jit' : 'base';
-  if (d) {
-    const cls = Math.abs(d.pct) < 0.5 ? 'flat' : (d.pct > 0 ? 'up' : 'down');
-    const sign = d.pct > 0 ? '+' : '';
-    const arrow = metric === 'seconds' ? (d.pct > 0 ? ' slower' : (d.pct < 0 ? ' faster' : ''))
-      : (metric === 'instr' || metric === 'allocs')
-        ? (d.pct > 0 ? ' more' : (d.pct < 0 ? ' fewer' : ''))
-      : '';
-    chip = `<span class="chip ${cls}">${sign}${d.pct.toFixed(1)}%${cls==='flat'?'':arrow}</span>`;
-    now = `<span class="now mono">${fmt(d.now)}<span class="unit">${unit()}${nowLane==='jit'?' (+jit)':''}</span></span>`;
-  }
+  // The shipped configuration (+jit) when it has points in the window.
+  const nowLane = recentVals(b.jit).length ? 'jit' : 'base';
+  const vals = recentVals(b[nowLane]);
+  const now = vals.length
+    ? `<span class="now mono" title="median of the last ${vals.length} points">${fmt(median(vals))}<span class="unit">${unit()}${nowLane==='jit'?' (+jit)':''}</span></span>`
+    : '';
+  const chip = trendChip(trend(b[nowLane]));
+  // Where mutsu stands against each reference, whatever metric is shown.
+  const st = b.standing || {};
+  const standingLine = REFS.filter(([k]) => st[k]).map(([k, ref]) =>
+    `<span title="${ratioTitle(st[k])}">vs ${ref} <b class="mono ${ratioClass(st[k])}">${st[k].med.toFixed(2)}×</b></span>`).join('');
   const note = noteFor(b);
-  return `<div class="bench-card" data-name="${b.name}">
+  const losing = LOSERS.includes(b.name);
+  return `<div class="bench-card${losing ? ' losing' : ''}" data-name="${b.name}">
     <div class="head"><h2>${b.name}</h2></div>
     <div class="readout">${now}${chip}</div>
+    ${standingLine ? `<div class="standing">${standingLine}</div>` : ''}
     ${note ? `<p class="bench-note">${note}</p>` : ''}
     ${c.svg}
     <div class="tip"></div>
@@ -537,12 +779,14 @@ function wireHover(card, b) {
 function renderTable() {
   const wrap = document.getElementById('tableWrap');
   const rows = benches.map(b => {
-    const dj = delta(b.jit), db = delta(b.base);
-    const defB = b.base.filter(defined), defJ = b.jit.filter(defined);
-    const lastB = defB.length ? yval(defB[defB.length - 1]) : null;
-    const lastJ = defJ.length ? yval(defJ[defJ.length - 1]) : null;
-    return { name: b.name, base: lastB, jit: lastJ, note: noteFor(b),
-             dpct: (dj || db) ? (dj || db).pct : null };
+    const vb = recentVals(b.base), vj = recentVals(b.jit);
+    const t = trend(vj.length ? b.jit : b.base);
+    const st = b.standing || {};
+    return { b, name: b.name, base: vb.length ? median(vb) : null,
+             jit: vj.length ? median(vj) : null, note: noteFor(b),
+             // Only a trend beyond the noise sorts as one; the rest is 0.
+             trend: t ? (t.real ? t.pct : 0) : null, t,
+             rk: st.ratio ? st.ratio.med : null, pp: st.ratiopp ? st.ratiopp.med : null };
   });
   rows.sort((a, x) => {
     const av = a[sortKey], xv = x[sortKey];
@@ -550,24 +794,71 @@ function renderTable() {
     return (av > xv ? 1 : av < xv ? -1 : 0) * sortDir;
   });
   const th = (k, label) => `<th data-k="${k}">${label}${sortKey===k?(sortDir>0?' ↑':' ↓'):''}</th>`;
-  let h = `<table><thead><tr>${th('name','benchmark')}${th('base','interp '+unit())}${th('jit','+jit '+unit())}${th('dpct','Δ latest')}</tr></thead><tbody>`;
+  let h = `<table><thead><tr>${th('name','benchmark')}${th('base','interp '+unit())}${th('jit','+jit '+unit())}${th('trend','trend')}${th('rk','vs rakudo')}${th('pp','vs rakupp')}</tr></thead><tbody></tbody></table>`;
+  wrap.innerHTML = h;
+  const body = wrap.querySelector('tbody');
   for (const r of rows) {
-    const dc = r.dpct == null ? 'flat' : Math.abs(r.dpct) < 0.5 ? 'flat' : r.dpct > 0 ? 'up' : 'down';
-    const dtxt = r.dpct == null ? '—' : (r.dpct > 0 ? '+' : '') + r.dpct.toFixed(1) + '%';
     // The table has no room for the note itself: mark the row and carry the
     // note's text as a tooltip.
-    const mark = r.note
-      ? `<span class="note-mark" title="${r.note.replace(/<[^>]*>/g, '').replace(/"/g, '&quot;')}">†</span>`
-      : '';
-    h += `<tr><td>${r.name}${mark}</td><td class="mono">${r.base==null?'—':fmt(r.base)}</td><td class="mono">${r.jit==null?'—':fmt(r.jit)}</td><td class="mono" style="color:var(--${dc==='up'?'bad':dc==='down'?'good':'muted'})">${dtxt}</td></tr>`;
+    const mark = r.note ? el('span', { class: 'note-mark', title: stripTags(r.note) }, '†') : null;
+    const tc = document.createElement('td');
+    tc.className = 'mono';
+    tc.innerHTML = trendChip(r.t);
+    body.append(el('tr', {},
+      el('td', {}, r.name, mark),
+      el('td', { class: 'mono' }, r.base == null ? '—' : fmt(r.base)),
+      el('td', { class: 'mono' }, r.jit == null ? '—' : fmt(r.jit)),
+      tc, ratioCell(r.b, 'ratio'), ratioCell(r.b, 'ratiopp')));
   }
-  h += '</tbody></table>';
-  wrap.innerHTML = h;
   wrap.querySelectorAll('th').forEach(t => t.onclick = () => {
     const k = t.dataset.k; if (k === sortKey) sortDir *= -1; else { sortKey = k; sortDir = k === 'name' ? 1 : -1; }
     writeHash();
     renderTable();
   });
+}
+
+// The "mutsu is slower here" section: every benchmark whose robust ratio (the
+// generator's `standing`) is above 1.0× against rakudo or rakupp, worst first,
+// with the issues that track it. Independent of the controls, so rendered once.
+function renderLosing() {
+  const byName = Object.fromEntries(benches.map(b => [b.name, b]));
+  const measured = benches.filter(b => b.standing).length;
+  const sub = document.getElementById('losingSub');
+  const wrap = document.getElementById('losingWrap');
+  const total = LOSERS.length + LOSERS_OTHER.length;
+  sub.textContent = `${total} of ${measured} benchmarks. Each ratio is mutsu ÷ the reference, `
+    + `the median over the last ${RECENT} commits of the +jit series (the default build); `
+    + `above 1.00× mutsu is slower. A lighter red figure is marginal: a quarter or more of `
+    + `those commits were at or under parity.`;
+  if (!total) {
+    wrap.append(el('p', {}, 'mutsu is at or under parity with both references on every benchmark.'));
+    return;
+  }
+  const head = el('tr', {}, el('th', {}, '#'), el('th', {}, 'benchmark'),
+    el('th', {}, 'vs rakudo'), el('th', {}, 'vs rakupp'), el('th', {}, 'tracked by'));
+  const body = el('tbody');
+  const row = (name, i) => {
+    const b = byName[name], tr = b.tracking;
+    const track = el('td', { class: 'track' });
+    if (tr) {
+      for (const n of tr.issues)
+        track.append(el('a', { href: ISSUE_URL + n, rel: 'noopener' }, '#' + n));
+      if (tr.survey)
+        track.append(el('a', { href: SURVEY_URL + tr.survey, rel: 'noopener' }, 'gap survey'));
+      if (tr.note) track.append(el('span', { class: 'why' }, tr.note));
+    } else {
+      track.append(el('span', { class: 'untracked' }, 'no tracking issue'));
+    }
+    return el('tr', { 'data-name': name }, el('td', { class: 'mono' }, String(i + 1)),
+      el('td', {}, name), ratioCell(b, 'ratio'), ratioCell(b, 'ratiopp'), track);
+  };
+  LOSERS.forEach((n, i) => body.append(row(n, i)));
+  if (LOSERS_OTHER.length) {
+    body.append(el('tr', { class: 'group' }, el('td', { colspan: '5' },
+      'Losing only on a ratio that is not engine against engine')));
+    LOSERS_OTHER.forEach((n, i) => body.append(row(n, LOSERS.length + i)));
+  }
+  wrap.append(el('table', {}, el('thead', {}, head), body));
 }
 
 function render() {
@@ -598,7 +889,9 @@ const VALID = {
   window: (v) => v === '0' || v === '50' || v === '150',
   view: (v) => v === 'charts' || v === 'table',
   y: (v) => v === 'fit' || v === 'zero',
-  sort: (v) => v === 'name' || v === 'base' || v === 'jit' || v === 'dpct',
+  // Keep in step with the table's `th(...)` keys; asserted like the metrics.
+  sort: (v) => v === 'name' || v === 'base' || v === 'jit' || v === 'trend'
+    || v === 'rk' || v === 'pp',
   dir: (v) => v === 'asc' || v === 'desc',
 };
 
@@ -717,7 +1010,12 @@ document.getElementById('foot').innerHTML =
     ? `<b>ratio vs rakupp</b> is mutsu ÷ <a href="https://github.com/ash/rakupp">Raku++</a>, ` +
       `an independent C++ implementation, measured the same way on the same runner. `
     : '') +
-  `Δ latest = last commit vs the previous in the window. ` +
+  `The big number on a card and the table's columns are the <b>median of the last ${RECENT} ` +
+  `points</b> in the window, not the latest one: a CI runner is a lottery, and one commit's ` +
+  `move is mostly noise. <b>trend</b> compares that median with the median of the ${RECENT} ` +
+  `points before it, and is shown only when the step is larger than twice the standard ` +
+  `error of a difference of medians estimated from the series' own spread ` +
+  `(hover a chip for its band); otherwise it reads <i>no change</i>. ` +
   (DATA.hasDet
     ? `<b>instructions</b> is the deterministic series: simulated instruction counts ` +
       `(callgrind), which do not depend on the runner and reproduce to ~0.1%, against ` +
@@ -734,7 +1032,9 @@ document.getElementById('foot').innerHTML =
     : '') +
   `Source: <span class="mono">bench-history.tsv</span>` +
   (DATA.hasDet ? ` and <span class="mono">bench-det-history.tsv</span>` : '') +
-  ` on <span class="mono">bench-data</span>.`;
+  ` on <span class="mono">bench-data</span>; tracking issues from ` +
+  `<span class="mono">benchmarks/bench-tracking.toml</span>.`;
+renderLosing();
 render();
 </script>
 """
@@ -801,6 +1101,48 @@ def _assert_metrics_valid(doc):
         )
 
 
+def report_markdown(model):
+    """The loser list as Markdown, for an issue comment or a status report."""
+    by = {b["name"]: b for b in model["benches"]}
+
+    def cell(b, key):
+        r = b.get("standing", {}).get(key)
+        if not r:
+            return "-"
+        txt = f"{r['med']:.2f}x"
+        if r["losing"]:
+            txt = f"**{txt}**" if not r["marginal"] else f"{txt} (marginal)"
+        note = b.get("notes", {}).get(key)
+        return f"{txt} ({note['tag']})" if note else txt
+
+    lines = [f"Median of the last {model['recent']} commits, +jit series.", "",
+             "| # | benchmark | vs rakudo | vs rakupp | tracked by |",
+             "|---:|---|---:|---:|---|"]
+    names = model["losers"]["ranked"] + model["losers"]["other"]
+    for i, name in enumerate(names, 1):
+        b = by[name]
+        tr = b.get("tracking")
+        track = ", ".join(f"#{n}" for n in tr["issues"]) if tr else "**none**"
+        if tr and tr.get("survey"):
+            track += f", survey `#{tr['survey']}`"
+        lines.append(f"| {i} | {name} | {cell(b, 'ratio')} | {cell(b, 'ratiopp')} | {track} |")
+    return "\n".join(lines)
+
+
+def _assert_sorts_valid(doc):
+    """Every sortable table column must be a sort key the URL state accepts --
+    the same drift `_assert_metrics_valid` guards, for the table's `th(...)`."""
+    cols = set(re.findall(r"\$\{th\('([a-z]+)'", doc))
+    valid = re.search(r"\n  sort: \(v\) =>(.*?),\n  dir:", doc, re.S)
+    if not cols or not valid:
+        raise SystemExit("bench-visualize: cannot find the table columns or the VALID.sort "
+                         "predicate -- the template changed shape; update _assert_sorts_valid.")
+    accepted = set(re.findall(r"v === '([^']+)'", valid.group(1)))
+    if cols != accepted:
+        raise SystemExit("bench-visualize: table sort keys " + ", ".join(sorted(cols))
+                         + " differ from VALID.sort " + ", ".join(sorted(accepted)))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("input", nargs="?", help="bench-history.tsv (default: stdin)")
@@ -829,6 +1171,19 @@ def main():
         "assets/i18n.js from the same directory). Use when the output is deployed into "
         "site/; omit to keep the file self-contained for offline use.",
     )
+    ap.add_argument(
+        "--tracking",
+        metavar="TOML",
+        default=DEFAULT_TRACKING,
+        help="which issue tracks each losing benchmark (default: "
+        "benchmarks/bench-tracking.toml next to this script)",
+    )
+    ap.add_argument(
+        "--report",
+        action="store_true",
+        help="print the 'mutsu is slower here' list as a Markdown table on stderr "
+        "(stdout when no HTML is written, i.e. with -o and this flag, or this flag alone)",
+    )
     args = ap.parse_args()
 
     text = open(args.input, encoding="utf-8").read() if args.input else sys.stdin.read()
@@ -842,7 +1197,18 @@ def main():
         except OSError as e:
             print(f"bench-visualize: no deterministic series ({e}); "
                   f"rendering wall clock only", file=sys.stderr)
-    model = build_model(rows, det_rows)
+    model = build_model(rows, det_rows, load_tracking(args.tracking))
+    for name in model["losers"]["ranked"] + model["losers"]["other"]:
+        if not any(b["name"] == name and "tracking" in b for b in model["benches"]):
+            print(f"bench-visualize: {name} loses with no tracking issue; file one "
+                  f"and add it to {os.path.relpath(args.tracking)}", file=sys.stderr)
+    if args.report:
+        report = report_markdown(model)
+        if args.output:
+            print(report, file=sys.stderr)
+        else:
+            print(report)
+            return
     payload = json.dumps(model, separators=(",", ":"))
     # Guard against a stray </script> in the data breaking the inline block.
     payload = payload.replace("</", "<\\/")
@@ -856,6 +1222,7 @@ def main():
         doc = '<!DOCTYPE html>\n<meta charset="utf-8">\n' + doc
 
     _assert_metrics_valid(doc)
+    _assert_sorts_valid(doc)
 
     if args.output:
         with open(args.output, "w", encoding="utf-8") as f:

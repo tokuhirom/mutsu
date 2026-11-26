@@ -1,0 +1,115 @@
+# Which issue tracks each benchmark row that mutsu loses.
+#
+# scripts/bench-visualize.py reads this file to render the bench-trend
+# dashboard's "mutsu is slower here" section: every row whose median ratio over
+# the last commits is above 1.0x against rakudo or rakupp is listed there, worst
+# first, with the issues named here linked next to it. A losing row with no
+# entry is shown as "no tracking issue" and the generator warns about it.
+#
+# One table per benchmark, keyed by the name its dashboard card carries (`+jit`
+# stripped, `@section` kept). Keys:
+#
+#   issues  open `todo:perf` (or `todo:deep`) issues on tokuhirom/mutsu whose
+#           work closes the gap on this row, most specific first
+#   survey  an anchor in docs/rakupp-gap-survey.md that explains the row
+#   note    one plain-text sentence shown with the links (no markup)
+#
+# A row that has no issue gets one before it gets an entry: a `todo:perf`
+# issue on `lane:perf`, close condition "ratio <= 1.0x vs <rakudo|rakupp> on
+# the bench CI median". An entry may outlive its row's loss (rows near 1.0x
+# cross it both ways); it is then simply not listed. Remove it with its issue.
+
+["bench-json-fast-spdx@section"]
+issues = [8673]
+note = "Against rakudo this is engine against engine; against rakupp it is not (rakupp parses JSON natively)."
+
+["bench-json-fast"]
+issues = [8673]
+survey = "what-rakupp-actually-runs"
+note = "Loses only to rakupp's native C++ JSON parser; ratio vs rakudo is the comparable number."
+
+["bench-json-fast-spdx"]
+issues = [8673]
+survey = "what-rakupp-actually-runs"
+note = "Loses only to rakupp's native C++ JSON parser; ratio vs rakudo is the comparable number."
+
+["bench-grammar-parse"]
+issues = [17640, 19197]
+survey = "bench-grammar-parse-bench-grammar-parse-deep"
+note = "Startup plus one-time grammar analysis; the parse itself is a 150-250 character input."
+
+["bench-grammar-parse-deep"]
+issues = [17640, 19197]
+survey = "bench-grammar-parse-bench-grammar-parse-deep"
+note = "Startup plus one-time grammar analysis; the parse itself is a 150-250 character input."
+
+["bench-startup"]
+issues = [19197]
+survey = "cross-cutting-cause-1-startup-page-faults"
+
+["string-concat"]
+issues = [19197]
+survey = "cross-cutting-cause-1-startup-page-faults"
+
+["word-count"]
+issues = [19197, 7549]
+survey = "word-count"
+
+["bench-yaml-parse-big"]
+issues = [12917, 7576, 18012]
+survey = "bench-yaml-parse-big"
+
+["bench-yaml-parse-big@section"]
+issues = [12917, 7576]
+survey = "bench-yaml-parse-big"
+
+["bench-ctor"]
+issues = [9291, 18356, 19198]
+survey = "bench-ctor"
+
+["bench-multi-dispatch@section"]
+issues = [19232, 18267]
+note = "Both engines are bimodal on the CI runner here; single rows swing between 0.8x and 2.7x."
+
+["bench-ripemd-rounds"]
+issues = [11756, 7565]
+survey = "bench-ripemd-rounds"
+
+["bench-ripemd-rounds@section"]
+issues = [11756, 7565]
+survey = "bench-ripemd-rounds"
+
+["bench-regex-match"]
+issues = [19199]
+survey = "regex-rows-match-capture-split-subst-assertion"
+
+["bench-regex-match@section"]
+issues = [19199]
+survey = "regex-rows-match-capture-split-subst-assertion"
+
+["bench-regex-capture"]
+issues = [19199]
+survey = "regex-rows-match-capture-split-subst-assertion"
+
+["bench-regex-capture@section"]
+issues = [19199]
+survey = "regex-rows-match-capture-split-subst-assertion"
+
+["bench-regex-split-subst"]
+issues = [19199, 19198]
+survey = "regex-rows-match-capture-split-subst-assertion"
+
+["bench-regex-split-subst@section"]
+issues = [19199, 19198]
+survey = "regex-rows-match-capture-split-subst-assertion"
+
+["bench-regex-assertion"]
+issues = [19199]
+survey = "regex-rows-match-capture-split-subst-assertion"
+
+["bench-regex-assertion@section"]
+issues = [19199]
+survey = "regex-rows-match-capture-split-subst-assertion"
+
+["hash-access"]
+issues = [10951]
