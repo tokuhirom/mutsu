@@ -954,6 +954,16 @@ impl Env {
         self.dyn_base = Some(Arc::new(base));
     }
 
+    /// Whether a lookup of `key` would reach a base-tier lazy entry that has
+    /// not been built yet: no env tier anywhere in the process ever held `key`
+    /// ([`crate::symbol::ever_tier_key`]), and the chain's base has it unbuilt.
+    /// Such a value has never been read, so it has not been written either.
+    // Cost: O(t + l), t = tiers of the chain (pointer steps only), l = lazy
+    // entries.
+    pub(crate) fn is_unbuilt_base_entry(&self, key: Symbol) -> bool {
+        !crate::symbol::ever_tier_key(key) && self.dyn_base().is_some_and(|b| b.is_unbuilt(&key))
+    }
+
     /// This env's per-interpreter base tier, or the one its chain bottoms out
     /// at. `None` for an env that was never given one (`Env::new()` and
     /// friends — those hold no built-in dynamics today either).

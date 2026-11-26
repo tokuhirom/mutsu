@@ -86,6 +86,16 @@ impl DynBase {
         self.map.contains_key(key) || self.lazy.iter().any(|entry| entry.key == *key)
     }
 
+    /// Whether `key` is a lazy entry that has not been built yet.
+    // Cost: O(l), l = lazy entries.
+    pub(crate) fn is_unbuilt(&self, key: &Symbol) -> bool {
+        !self.map.contains_key(key)
+            && self
+                .lazy
+                .iter()
+                .any(|entry| entry.key == *key && entry.value.get().is_none())
+    }
+
     /// Every key, lazy ones included, without building any.
     // Cost: O(1) to create; walking it is O(n + l).
     pub(crate) fn keys(&self) -> impl Iterator<Item = &Symbol> {
