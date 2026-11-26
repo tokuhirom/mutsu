@@ -5,8 +5,8 @@ than through the Zef ecosystem. They are ordinary Raku source, so mutsu runs the
 genuine upstream implementation instead of reimplementing it natively.
 
 - Upstream project: <https://github.com/rakudo/rakudo>
-- Imported from release **2026.06**, source tarball
-  <https://rakudo.org/dl/rakudo/rakudo-2026.06.tar.gz> (`rakudo-2026.06/`)
+- Imported from release **2026.11**, source tarball
+  <https://rakudo.org/dl/rakudo/rakudo-2026.11.tar.gz> (`rakudo-2026.11/`)
 - License: **Artistic-2.0** — `LICENSE` in this directory is the upstream
   license file copied verbatim from the same release, and it governs every file
   under `lib/` here. Copyright remains with The Perl Foundation / the Rakudo
@@ -18,16 +18,16 @@ genuine upstream implementation instead of reimplementing it natively.
 
 | Module          | Upstream path             | md5 of the imported file           |
 | --------------- | ------------------------- | ---------------------------------- |
-| `Pod::To::Text` | `lib/Pod/To/Text.rakumod` | `3903bd3642ee99500a4ca67782fc5055`  |
+| `Pod::To::Text` | `lib/Pod/To/Text.rakumod` | `67148127ea936e2d3d7964b56e5dc5e7`  |
 | `Telemetry`     | `lib/Telemetry.rakumod`   | `9ccb1decfc2e45e504b924589743a24b`  |
-| `Test`          | `lib/Test.rakumod`        | `f34dec45d52ad099c37f42fdbd93e277`  |
-| `NativeCall`    | `lib/NativeCall.rakumod`  | `4bd77651da44cd061a50a582457b278f`  |
-| `NativeCall::Types` | `lib/NativeCall/Types.rakumod` | `c9f3a7912199f91a89a27bbcd81e2f78` |
-| `NativeCall::Dispatcher` | `lib/NativeCall/Dispatcher.rakumod` | `1591768e4f6679935f4cc4640cdb0dc8` |
+| `Test`          | `lib/Test.rakumod`        | `1397008dba2206f792a3bd1925de5f98`  |
+| `NativeCall`    | `lib/NativeCall.rakumod`  | `a4cdd6f826e98c75c5dc58341dd2a76f`  |
+| `NativeCall::Types` | `lib/NativeCall/Types.rakumod` | `2faf8a4de5e11ccc0507ebf2d4c2e1d2` |
+| `NativeCall::Dispatcher` | `lib/NativeCall/Dispatcher.rakumod` | `989bbb0571ae84f00494c639c977800c` |
 | `NativeCall::Compiler::GNU` | `lib/NativeCall/Compiler/GNU.rakumod` | `e4137971eea209f610fa1415449c2a6c` |
 | `NativeCall::Compiler::MSVC` | `lib/NativeCall/Compiler/MSVC.rakumod` | `0eef1fd91fb8080009fb70c14a6e9776` |
 
-(`LICENSE` is `rakudo-2026.06/LICENSE`, md5 `18740546821e33d23e8809da70d4a79a`.)
+(`LICENSE` is `rakudo-2026.11/LICENSE`, md5 `18740546821e33d23e8809da70d4a79a`.)
 
 ### `NativeCall` runs verbatim, and is what `use NativeCall` resolves to
 
