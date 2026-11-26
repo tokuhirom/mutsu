@@ -381,6 +381,23 @@ impl MatchTarget {
         &self.chars
     }
 
+    /// The text of a recorded span as a `Str` value, clamped to the subject
+    /// bounds. On an ASCII subject (char index == byte index) it shares the
+    /// subject's buffer ([`crate::value::StrBody::slice_of`]); otherwise the
+    /// span is re-encoded as by [`Self::span_str`].
+    // Cost: O(1) when shared; O(m) otherwise, m = chars of the span.
+    pub(crate) fn span_value(&self, from: usize, to: usize) -> crate::value::Value {
+        if self.ascii {
+            let len = self.chars.len();
+            let a = from.min(len);
+            let b = to.clamp(a, len);
+            return crate::value::Value::str_from_body(crate::value::StrBody::slice_of(
+                &self.text, a, b,
+            ));
+        }
+        crate::value::Value::str(self.span_str(from, to))
+    }
+
     /// The text of a recorded span, clamped to the subject bounds.
     pub(crate) fn span_str(&self, from: usize, to: usize) -> String {
         let len = self.chars.len();

@@ -13,8 +13,8 @@
 //! — stays in the interpreter's `dispatch_substr`. This helper returns `None`
 //! for all of those so the caller defers, exactly as the four copies did.
 
-use crate::builtins::grapheme_index::with_str_index;
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::builtins::grapheme_index::str_and_index;
+use crate::value::{RuntimeError, StrBody, Value, ValueView};
 
 /// Pure `substr` slice for a non-negative integer `start` and optional
 /// non-negative integer `len`. Returns `None` (defer to the interpreter) when
@@ -42,11 +42,12 @@ pub(crate) fn native_substr_slice(
     };
 
     // O(len) once the invocant's grapheme index is cached, not O(n) (#9140).
-    with_str_index(target, |text, idx| {
-        if start > idx.len() {
-            return None; // out-of-range: the interpreter returns a Failure
-        }
-        let slice = crate::builtins::str_prim::slice(text, idx, start, len.unwrap_or(usize::MAX));
-        Some(Ok(Value::str(slice.to_string())))
-    })
+    let (text, idx) = str_and_index(target);
+    if start > idx.len() {
+        return None; // out-of-range: the interpreter returns a Failure
+    }
+    let len = len.unwrap_or(usize::MAX).min(idx.len() - start);
+    let (b0, b1) = idx.byte_range(&text, start, len);
+    // The result shares the invocant's buffer (`StrBody::slice_of`).
+    Some(Ok(Value::str_from_body(StrBody::slice_of(&text, b0, b1))))
 }

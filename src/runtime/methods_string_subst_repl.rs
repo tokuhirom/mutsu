@@ -318,7 +318,7 @@ impl Interpreter {
                 Value::array(
                     qlist
                         .iter()
-                        .map(|(a, b, _)| Value::str(t.span_str(*a, *b)))
+                        .map(|(a, b, _)| t.span_value(*a, *b))
                         .collect(),
                 )
             } else if let Some(slot) = captures.positional.get(i) {
