@@ -99,7 +99,10 @@ pub(crate) fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Opt
         // `Type (short gist)`; a type object shows as its name.
         "X::TypeCheck" => {
             let operation = attr_str(attrs, "operation");
-            Some(format!("Type check failed in {operation}; {}", type_check_detail(attrs)))
+            Some(format!(
+                "Type check failed in {operation}; {}",
+                type_check_detail(attrs)
+            ))
         }
         // Rakudo's subclasses fix the operation (`X::TypeCheck::Binding`'s is
         // `binding`) or word the message themselves (`X::TypeCheck::Return`),
