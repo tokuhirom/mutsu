@@ -33,7 +33,7 @@ const X_ROWS: &[u8] = X_CLASS_ROWS.as_bytes();
 const CORE_ROWS: &[u8] = CORE_CLASS_ROWS.as_bytes();
 
 /// The number of `X::` rows; they come first.
-const X_LEN: usize = count_rows(X_ROWS);
+pub(crate) const X_LEN: usize = count_rows(X_ROWS);
 /// The number of core rows; they follow the `X::` rows.
 const CORE_LEN: usize = count_rows(CORE_ROWS);
 /// The number of catalogue rows.
