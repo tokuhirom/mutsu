@@ -17,6 +17,14 @@ pub(crate) fn os_env_hash() -> ValueMap {
     ValueMap::default()
 }
 
+/// `%*ENV`'s initial value: the OS environment as a `Hash`, each value
+/// `val()`-ed as rakudo does (`IntStr` for `42`). The builder of the base
+/// tier's lazy `%*ENV` entry (#19224).
+// Cost: O(v), v = the environment's variables.
+fn env_hash_value() -> Value {
+    Value::hash_with_data(Value::hash_arc(os_env_hash()))
+}
+
 impl Interpreter {
     /// Take any pending regex security error from the thread-local store.
     pub(crate) fn take_pending_regex_error() -> Option<RuntimeError> {
@@ -2395,13 +2403,8 @@ impl Interpreter {
             env.insert("@*ARGS".to_string(), Value::real_array(Vec::new()));
             env.insert("*INIT-INSTANT".to_string(), Value::make_instant_now());
             crate::vm::process_start_epoch_nanos();
-            // Populate %*ENV with all OS environment variables so that
-            // %*ENV.keys, %*ENV.elems, and copying %*ENV work correctly.
-            let env_hash = os_env_hash();
-            env.insert(
-                "%*ENV".to_string(),
-                Value::hash_with_data(Value::hash_arc(env_hash)),
-            );
+            // `%*ENV` is not built here: it is a lazy entry of the base tier,
+            // installed below and built on its first lookup (#19224).
             env.insert(
                 "*SCHEDULER".to_string(),
                 Value::make_instance(Symbol::intern("ThreadPoolScheduler"), HashMap::new()),
@@ -2530,6 +2533,14 @@ impl Interpreter {
                 }
             }
             crate::env::set_global_base(enum_base);
+            // The base tier, carrying `%*ENV` as a lazy entry: reading every
+            // environment variable and `val()`-ing each value was ~15% of a
+            // `say "hello"`'s instructions, for a hash most programs never
+            // name (#19224). Installed after the process-wide tier, which
+            // `set_dyn_base` absorbs; `hoist_builtin_dynamics` keeps it.
+            let mut base = crate::env::DynBase::default();
+            base.insert_lazy(Symbol::intern("%*ENV"), env_hash_value);
+            interpreter.env.set_dyn_base(base);
             // Set up $*REPO as a default CompUnit::Repository::FileSystem instance
             // (attrs mirror explicit `.new()` construction, see
             // methods_object_dispatch_new.rs's "CompUnit::Repository::FileSystem" arm,

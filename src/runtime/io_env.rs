@@ -136,9 +136,9 @@ impl Interpreter {
         if moved.is_empty() && self.env.dyn_base().is_some() {
             return;
         }
-        let mut base: crate::env::SymMap = match self.env.dyn_base() {
+        let mut base: crate::env::DynBase = match self.env.dyn_base() {
             Some(existing) => (**existing).clone(),
-            None => crate::env::SymMap::default(),
+            None => crate::env::DynBase::default(),
         };
         for (sym, v) in moved {
             base.insert(sym, v);

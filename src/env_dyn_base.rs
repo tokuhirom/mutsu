@@ -89,7 +89,9 @@ impl DynBase {
     /// Every key, lazy ones included, without building any.
     // Cost: O(1) to create; walking it is O(n + l).
     pub(crate) fn keys(&self) -> impl Iterator<Item = &Symbol> {
-        self.map.keys().chain(self.lazy.iter().map(|entry| &entry.key))
+        self.map
+            .keys()
+            .chain(self.lazy.iter().map(|entry| &entry.key))
     }
 
     /// Every entry, building the lazy ones.
@@ -161,9 +163,15 @@ mod tests {
         assert_eq!(base.keys().filter(|k| **k == key).count(), 1);
         assert_eq!(base.built_values().count(), 0);
         assert_eq!(BUILDS.load(Ordering::Relaxed), before);
-        assert_eq!(base.get(&key).map(|v| v.to_string_value()), Some("7".into()));
+        assert_eq!(
+            base.get(&key).map(|v| v.to_string_value()),
+            Some("7".into())
+        );
         let copy = base.clone();
-        assert_eq!(copy.get(&key).map(|v| v.to_string_value()), Some("7".into()));
+        assert_eq!(
+            copy.get(&key).map(|v| v.to_string_value()),
+            Some("7".into())
+        );
         assert_eq!(BUILDS.load(Ordering::Relaxed), before + 1);
         assert_eq!(base.built_values().count(), 1);
     }
@@ -175,6 +183,9 @@ mod tests {
         base.insert_lazy(key, build);
         base.insert(key, Value::int(1));
         assert_eq!(base.iter().filter(|(k, _)| **k == key).count(), 1);
-        assert_eq!(base.get(&key).map(|v| v.to_string_value()), Some("1".into()));
+        assert_eq!(
+            base.get(&key).map(|v| v.to_string_value()),
+            Some("1".into())
+        );
     }
 }

@@ -8,6 +8,7 @@ use crate::symbol::Symbol;
 use crate::value::Value;
 use crate::value::ValueMap;
 
+pub(crate) use crate::env_dyn_base::DynBase;
 /// The lexical environment's backing map. Keyed by interned `Symbol` (an 8-byte
 /// `(u32, u32)`-free `u32` handle), looked up on every variable read/write — the
 /// single hottest map in the interpreter. `FxHashMap` (a non-cryptographic hash
@@ -20,7 +21,6 @@ use crate::value::ValueMap;
 /// [`crate::env_tier::Tier`], which owns the map and is what `Env::inner`
 /// actually holds.
 pub(crate) use crate::env_tier::{CaptureWalk, SymMap, Tier};
-pub(crate) use crate::env_dyn_base::DynBase;
 
 mod activation_capture;
 mod eval_unit_capture;
@@ -824,7 +824,7 @@ fn empty_overlay_ref() -> &'static Arc<Tier> {
 fn residual_base_tombstones(
     env: &Env,
     merged: &SymMap,
-    base: Option<&SymMap>,
+    base: Option<&DynBase>,
 ) -> Option<rustc_hash::FxHashSet<Symbol>> {
     let base = base?;
     let mut out: Option<rustc_hash::FxHashSet<Symbol>> = None;
@@ -1885,7 +1885,7 @@ impl Env {
     /// chains over it, and the outer capture is the enclosing lexical scope of
     /// the inner one. Writing them leaf-first here lets a later `insert`
     /// overwrite an earlier one and reproduces that.
-    fn collect_fallbacks(&self, out: &mut SymMap, base: Option<&SymMap>) {
+    fn collect_fallbacks(&self, out: &mut SymMap, base: Option<&DynBase>) {
         let mut cur = self;
         loop {
             if let Some(fb) = &cur.fallback {
@@ -1919,7 +1919,7 @@ impl Env {
         &self,
         out: &mut SymMap,
         keep: &F,
-        base: Option<&SymMap>,
+        base: Option<&DynBase>,
     ) -> bool {
         let mut wrote = false;
         let mut cur = self;
@@ -1960,7 +1960,7 @@ impl Env {
             cur = parent;
         }
         let dyn_base = cur.dyn_base.clone();
-        let base_map: Option<&SymMap> = match dyn_base.as_deref() {
+        let base_map: Option<&DynBase> = match dyn_base.as_deref() {
             Some(base) => Some(base),
             None => global_base(),
         };
@@ -2161,7 +2161,7 @@ impl Env {
         // first and every overlay in the chain layers over them. When one
         // contributes, the chain's own root tier is no longer the first thing
         // written and must start suppressing its rejects (`outermost=false`).
-        let base_map: Option<&SymMap> = match dyn_base.as_deref() {
+        let base_map: Option<&DynBase> = match dyn_base.as_deref() {
             Some(base) => Some(base),
             None => global_base(),
         };
@@ -2331,7 +2331,7 @@ impl Env {
         // walk has to start there or the inner closure loses every name the
         // outer one captured (ADR-0092 §4). Gated on the latch: this runs per
         // closure creation, and a chain walk that finds nothing is pure loss.
-        let base_map: Option<&SymMap> = match dyn_base.as_deref() {
+        let base_map: Option<&DynBase> = match dyn_base.as_deref() {
             Some(base) => Some(base),
             None => global_base(),
         };
