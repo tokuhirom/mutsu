@@ -62,11 +62,12 @@ impl Interpreter {
 
     fn build_builtin_registry() -> Registry {
         // Sized for the ~450 built-in classes, so the table is not rehashed
-        // (and every `ClassDef` moved) as it grows.
-        let mut classes = rustc_hash::FxHashMap::with_capacity_and_hasher(
-            BUILTIN_CLASS_CAPACITY,
-            Default::default(),
-        );
+        // as it grows. Each class goes straight into the registry's own
+        // representation (#19197).
+        let mut classes =
+            super::runtime_init_class_table::BuiltinClassTable::with_capacity(
+                BUILTIN_CLASS_CAPACITY,
+            );
         classes.insert(
             "Mu".to_string(),
             ClassDef {
@@ -2588,27 +2589,11 @@ impl Interpreter {
         }
         // Every built-in exception class declares the attributes rakudo's does
         // (`builtin_exception_attrs`), so `.^attributes`, the accessors and
-        // construction see them (#18654). They are declared on the class's
-        // first attribute access, not here: declaring all of them doubled the
-        // startup of every program (#18956).
-        for (name, cls) in classes.iter_mut() {
-            if super::builtin_exception_attrs::may_declare(name) {
-                let class = cls
-                    .mro
-                    .first()
-                    .copied()
-                    .filter(|own| own.as_str() == name)
-                    .unwrap_or_else(|| Symbol::intern(name));
-                cls.attributes.defer_builtin_exception(class);
-            }
-        }
+        // construction see them (#18654). `BuiltinClassTable::insert` marks
+        // each one for declaration on first access.
 
         let mut registry = Registry::default();
-        registry.classes = classes
-            .into_iter()
-            .map(|(name, def)| (name, def.into()))
-            .collect::<crate::runtime::registry_sharded_map::ShardedMap<_, _>>()
-            .into();
+        registry.classes = classes.into_inner().into();
         // Built-in class -> composed-role seeds (PR-A slice 2: class metadata
         // now lives in the shared Registry instead of an Interpreter field).
         let ccr = &mut registry.class_composed_roles;
