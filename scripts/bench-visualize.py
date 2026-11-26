@@ -151,13 +151,14 @@ _RAKUPP_NON_PIE_STARTUP = (
     "<b>1.1x</b> rakupp here, not ~1.3-1.4x. That trade (less ASLR) is #11158's "
     "call. See <span class=\"mono\">docs/rakupp-gap-survey.md</span>."
 )
-# Each note also carries a short `tag`, shown in the tooltip of the † a card
-# and the table put next to the ratio it qualifies, and `engine`: False when the
-# ratio is not engine against engine at all, which takes it out of `--report`'s
-# ranking (the row is still listed, in its own group, labelled).
+# Both notes describe a ratio where rakupp wins by something other than running
+# the same Raku code faster (a native parser; a non-PIE link), so mutsu being
+# slower there is not a gap to close. `engine: False` keeps such a ratio from
+# being coloured or counted as a loss: the card shows the note itself instead,
+# and `--report` lists the row in its own group, labelled with the short `tag`.
 _NOTE_NATIVE_JSON = {"tag": "rakupp parses JSON natively", "engine": False,
                      "html": _RAKUPP_NATIVE_JSON}
-_NOTE_NON_PIE = {"tag": "mostly startup; rakupp is non-PIE", "engine": True,
+_NOTE_NON_PIE = {"tag": "mostly startup; rakupp is non-PIE", "engine": False,
                  "html": _RAKUPP_NON_PIE_STARTUP}
 BENCH_NOTES = {
     "bench-json-fast": {"ratiopp": _NOTE_NATIVE_JSON},
@@ -480,8 +481,8 @@ tbody tr:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
 .hidden { display: none; }
 /* Wins and losses against a reference engine, wherever a ratio is shown. A
    marginal loss (a quarter of the recent points at or under parity) keeps the
-   colour but drops the weight; a caveated ratio carries a † with the caveat
-   as its tooltip. */
+   colour but drops the weight. A caveated ratio is not coloured: its card
+   carries the note instead. */
 .lose { color: var(--bad); font-weight: 650; }
 .lose.marginal { font-weight: 400; }
 .standing { display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline;
@@ -570,6 +571,15 @@ const unit = () => metric === 'seconds' ? 's' : isRatio() ? '×' : '';
 // A caveat attached to this benchmark for the active metric (BENCH_NOTES in
 // the generator), or undefined.
 const noteFor = (b) => b.notes && b.notes[metric] && b.notes[metric].html;
+// The note a card shows: the active metric's, or else the note of a ratio its
+// "vs rakudo / vs rakupp" line shows in every metric -- that ratio needs its
+// explanation next to it whatever is selected.
+const cardNoteFor = (b) => noteFor(b)
+  || (b.notes && b.standing && REFS.map(([k]) => b.standing[k] && b.notes[k] && b.notes[k].html)
+        .find(Boolean));
+// A caveated ratio (rakupp answering natively, its non-PIE startup) is not a
+// loss to act on: it is shown uncoloured, with the note on the card.
+const caveated = (b, k) => !!(b.notes && b.notes[k] && b.notes[k].engine === false);
 const RECENT = DATA.recent;
 const ISSUE_URL = 'https://github.com/tokuhirom/mutsu/issues/';
 const REFS = [['ratio', 'rakudo'], ['ratiopp', 'rakupp']];
@@ -599,10 +609,8 @@ const ratioTitle = (r) => `median of the last ${r.n} commits; interquartile rang
 function ratioCell(b, key) {
   const r = b.standing && b.standing[key];
   if (!r) return el('td', { class: 'mono' }, '—');
-  const note = b.notes && b.notes[key];
-  return el('td', { class: 'mono ' + ratioClass(r), title: ratioTitle(r) },
-    r.med.toFixed(2) + '×',
-    note ? el('span', { class: 'note-mark', title: note.tag + ': ' + stripTags(note.html) }, '†') : null);
+  return el('td', { class: 'mono ' + (caveated(b, key) ? '' : ratioClass(r)), title: ratioTitle(r) },
+    r.med.toFixed(2) + '×');
 }
 
 function windowStart() { return windowN > 0 ? Math.max(0, N - windowN) : 0; }
@@ -702,20 +710,18 @@ function cardHTML(b) {
   // Where mutsu stands against each reference, whatever metric is shown.
   const st = b.standing || {};
   const esc = (t) => t.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-  let standingLine = REFS.filter(([k]) => st[k]).map(([k, ref]) => {
-    const n = b.notes && b.notes[k];
-    const mark = n ? `<span class="note-mark" title="${esc(n.tag + ': ' + stripTags(n.html))}">†</span>` : '';
-    return `<span title="${ratioTitle(st[k])}">vs ${ref} <b class="mono ${ratioClass(st[k])}">${st[k].med.toFixed(2)}×</b>${mark}</span>`;
-  }).join('');
+  let standingLine = REFS.filter(([k]) => st[k]).map(([k, ref]) =>
+    `<span title="${ratioTitle(st[k])}">vs ${ref} <b class="mono ${caveated(b, k) ? '' : ratioClass(st[k])}">${st[k].med.toFixed(2)}×</b></span>`
+  ).join('');
   // A losing card names the issues that track the gap (bench-tracking.toml;
   // numbers only, validated by the generator), quietly, after its ratios.
-  const losing = REFS.some(([k]) => st[k] && st[k].losing);
+  const losing = REFS.some(([k]) => st[k] && st[k].losing && !caveated(b, k));
   if (losing && b.tracking) {
     standingLine += `<span title="${b.tracking.note ? esc(b.tracking.note) : 'tracking issues'}">`
       + b.tracking.issues.map(n => `<a href="${ISSUE_URL}${n}" rel="noopener">#${n}</a>`).join(' ')
       + '</span>';
   }
-  const note = noteFor(b);
+  const note = cardNoteFor(b);
   return `<div class="bench-card" data-name="${b.name}">
     <div class="head"><h2>${b.name}</h2></div>
     <div class="readout">${now}${chip}</div>
@@ -770,7 +776,7 @@ function renderTable() {
     const t = trend(vj.length ? b.jit : b.base);
     const st = b.standing || {};
     return { b, name: b.name, base: vb.length ? median(vb) : null,
-             jit: vj.length ? median(vj) : null, note: noteFor(b),
+             jit: vj.length ? median(vj) : null, note: cardNoteFor(b),
              // Only a trend beyond the noise sorts as one; the rest is 0.
              trend: t ? (t.real ? t.pct : 0) : null, t,
              rk: st.ratio ? st.ratio.med : null, pp: st.ratiopp ? st.ratiopp.med : null };
