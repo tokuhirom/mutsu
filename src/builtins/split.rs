@@ -116,7 +116,11 @@ pub(crate) fn parse_split_limit(value: &Value) -> Result<Option<usize>, RuntimeE
 pub(crate) struct SplitMatch {
     pub from: usize,
     pub to: usize,
-    pub matched: String,
+    /// The `Str` a string splitter reports for `:v`/`:kv`/`:p`. It is built
+    /// once per split call and shared by every match (a refcount bump, not a
+    /// copy of the separator per match, #19201). Unread when `match_obj` is
+    /// set, so a regex splitter leaves it `Nil`.
+    pub matched: Value,
     pub splitter_index: usize,
     /// Whether this match came from a regex splitter (affects :v/:kv/:p output).
     pub is_regex: bool,
@@ -139,7 +143,6 @@ pub(crate) fn split_by_string(
         return Vec::new();
     }
     let mut result = Vec::new();
-    let chars: Vec<char> = text.chars().collect();
 
     if text.is_empty() {
         if sep.is_empty() {
@@ -150,6 +153,9 @@ pub(crate) fn split_by_string(
     }
 
     if sep.is_empty() {
+        // Only the empty separator walks codepoints; a non-empty one searches
+        // the UTF-8 directly, so it must not pay for a char vector (#19201).
+        let chars: Vec<char> = text.chars().collect();
         let max_splits = limit.map(|l| if l > 0 { l - 1 } else { 0 });
         let mut seg_start = 0;
 
@@ -167,7 +173,8 @@ pub(crate) fn split_by_string(
                 Some(SplitMatch {
                     from: match_pos,
                     to: match_pos,
-                    matched: String::new(),
+                    // A non-regex zero-width match reports no separator.
+                    matched: Value::NIL,
                     splitter_index: 0,
                     is_regex: false,
                     match_obj: None,
@@ -183,6 +190,8 @@ pub(crate) fn split_by_string(
     let max_splits = limit.map(|l| if l > 0 { l - 1 } else { 0 });
     let mut splits_done = 0;
     let mut pos = 0;
+    // The separator as reported by `:v`, built once and shared by every match.
+    let sep_value = Value::str_from(sep);
 
     loop {
         if let Some(max) = max_splits
@@ -208,7 +217,7 @@ pub(crate) fn split_by_string(
                     Some(SplitMatch {
                         from,
                         to,
-                        matched: sep.to_string(),
+                        matched: sep_value.clone(),
                         splitter_index: 0,
                         is_regex: false,
                         match_obj: None,
@@ -251,6 +260,9 @@ pub(crate) fn split_by_strings(
 
     let index = crate::builtins::grapheme_index::GraphemeIndex::build(text);
     let splitter_lengths: Vec<usize> = splitters.iter().map(|s| s.chars().count()).collect();
+    // Each separator as reported by `:v`, built once per call and shared by its
+    // matches rather than copied per match (#19201).
+    let splitter_values: Vec<Value> = splitters.iter().map(|s| Value::str_from(s)).collect();
     // Per splitter: `Some(Some(p))` = next occurrence starts at `p`,
     // `Some(None)` = no occurrence at or after the last search start (so none
     // ever again), `None` = not searched yet. A cached `p` stays valid while
@@ -311,7 +323,7 @@ pub(crate) fn split_by_strings(
                     Some(SplitMatch {
                         from,
                         to,
-                        matched: separator.clone(),
+                        matched: splitter_values[splitter_idx].clone(),
                         splitter_index: splitter_idx,
                         is_regex: false,
                         match_obj: None,
@@ -334,7 +346,7 @@ pub(crate) fn split_by_strings(
 fn separator_value(m: &SplitMatch) -> Value {
     match &m.match_obj {
         Some(obj) => obj.clone(),
-        None => Value::str(m.matched.clone()),
+        None => m.matched.clone(),
     }
 }
 
@@ -360,25 +372,31 @@ fn push_separator_info(result: &mut Vec<Value>, m: &SplitMatch, opts: &SplitOpts
 }
 
 /// Apply split options to raw split results.
-// Cost: O(n + k), n = total chars of the pieces (each is copied once more),
-// k = pieces.
+// Cost: O(k), k = pieces: each piece's buffer moves into its `Str` (no copy).
 pub(crate) fn apply_split_opts(
     parts: Vec<(String, Option<SplitMatch>)>,
     opts: &SplitOpts,
 ) -> Vec<Value> {
-    let mut result = Vec::new();
+    // Without :v/:k/:kv/:p there is one value per piece; with them, at most
+    // two more per separator, so the first case is sized exactly.
+    let separators_reported = opts.v || opts.k || opts.kv || opts.p;
+    let mut result = Vec::with_capacity(if separators_reported {
+        parts.len() * 3
+    } else {
+        parts.len()
+    });
 
-    for (segment, match_info) in &parts {
+    for (segment, match_info) in parts {
         if opts.skip_empty && segment.is_empty() {
-            if let Some(m) = match_info {
+            if let Some(m) = &match_info {
                 push_separator_info(&mut result, m, opts);
             }
             continue;
         }
 
-        result.push(Value::str(segment.clone()));
+        result.push(Value::str(segment));
 
-        if let Some(m) = match_info {
+        if let Some(m) = &match_info {
             push_separator_info(&mut result, m, opts);
         }
     }
