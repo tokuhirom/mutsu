@@ -277,7 +277,9 @@ mod tests {
     #[test]
     fn every_row_computes_what_the_eager_loop_wrote() {
         let registry = crate::runtime::Interpreter::shared_builtin_registry();
-        for index in 0..catalogue::LEN {
+        // The `X::` rows: a core row has no `does` list of its own (its
+        // composed roles, if any, are written eagerly into the overlay).
+        for index in 0..catalogue::X_LEN {
             let name = catalogue::name(index);
             let does: Roles = catalogue::does(index).map(str::to_string).collect();
             if does.is_empty() {
