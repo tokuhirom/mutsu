@@ -235,12 +235,12 @@ impl Interpreter {
         }
         let kind = if class_mro
             .iter()
-            .any(|name| name == "CompUnit::Repository::Installation")
+            .any(|name| *name == crate::symbol::wk::repo_installation_class())
         {
             "inst"
         } else if class_mro
             .iter()
-            .any(|name| name == "CompUnit::Repository::FileSystem")
+            .any(|name| *name == crate::symbol::wk::repo_filesystem_class())
         {
             "file"
         } else {

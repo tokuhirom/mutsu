@@ -1800,7 +1800,7 @@ impl Interpreter {
                 // `class C is BagHash { }` and its Set/Mix siblings keep their
                 // entries in `__baggy_data__`, the same way the `is Hash` and
                 // `is Array` blocks above use their own backing attributes.
-                self.seed_quanthash_storage(class_key, &mut attrs, &positional_ctor_args)?;
+                self.seed_quanthash_storage(crate::symbol::Symbol::intern(class_key), &mut attrs, &positional_ctor_args)?;
                 // Then evaluate defaults for attributes not provided by args,
                 // binding `self` so default expressions like `self.x` work.
                 // Restore role parameter bindings so that default expressions
@@ -1996,7 +1996,7 @@ impl Interpreter {
                 // Embed `is default(...)` element defaults into `@`/`%` containers
                 // (evaluating any role-deferred expression while type params are
                 // still bound in `self.env`).
-                self.apply_container_attribute_defaults(class_key, &mut attrs);
+                self.apply_container_attribute_defaults(crate::symbol::Symbol::intern(class_key), &mut attrs);
                 // Add alias metadata for `has $x` (no twigil) attributes
                 self.add_alias_attribute_metadata(class_key, &mut attrs);
                 // An attribute whose initializer is deferred still holds its seed
@@ -2400,7 +2400,7 @@ impl Interpreter {
                 // BUILDALL that never calls back skips attribute
                 // initialization entirely); running it post-build is an
                 // additive approximation.
-                self.run_user_buildall_hook(class_key, &instance, &args)?;
+                self.run_user_buildall_hook(crate::symbol::Symbol::intern(class_key), &instance, &args)?;
                 return Ok(instance);
             }
         }

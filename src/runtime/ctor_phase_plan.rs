@@ -109,6 +109,7 @@ impl Interpreter {
                 let pinned = self.try_pin_phase_candidate(mro_class, method_name);
                 steps.push(ConstructionPhaseStep::Class {
                     mro_class: mro_class.to_string(),
+                    mro_sym: Symbol::intern(mro_class),
                     pinned,
                 });
             }
@@ -181,7 +182,7 @@ impl Interpreter {
         class_name: Symbol,
         inv: &Value,
         args: &[Value],
-        method_name: &str,
+        method_name: &'static str,
         role_fail: PhaseFail,
         class_fail: PhaseFail,
     ) -> Result<Result<(), Value>, RuntimeError> {
@@ -190,6 +191,11 @@ impl Interpreter {
             return Ok(Ok(()));
         };
         let plan = self.native_ctor_plan(class_name);
+        let method_sym = match method_name {
+            "TWEAK" => crate::symbol::wk::tweak_method(),
+            "BUILD" => crate::symbol::wk::build_method(),
+            other => Symbol::intern(other),
+        };
         crate::alloc_scope_named!(_sc_steps, "phase-steps:clone-steps");
         let steps = if method_name == "BUILD" {
             plan.build_steps.clone()
@@ -225,7 +231,11 @@ impl Interpreter {
                     ),
                     &role_fail,
                 ),
-                ConstructionPhaseStep::Class { mro_class, pinned } => {
+                ConstructionPhaseStep::Class {
+                    mro_class,
+                    mro_sym,
+                    pinned,
+                } => {
                     // The pinned direct run must stay equivalent to full
                     // dispatch: a wrap chain registered after plan build
                     // re-routes through the full path (a runtime-global
@@ -233,16 +243,19 @@ impl Interpreter {
                     let r = if let Some(def) = pinned
                         && !self.has_any_wrap_chains()
                     {
-                        self.push_method_samewith_context(
-                            mro_class,
-                            method_name,
+                        // The class and method arrive interned and the name is
+                        // `'static`: no per-call intern or `String` for them.
+                        self.push_method_samewith_context_named(
+                            *mro_sym,
+                            std::borrow::Cow::Borrowed(method_name),
                             args,
                             Some(inv.clone()),
                         );
-                        let r = self.run_resolved_method_celled(
+                        let r = self.run_resolved_method_celled_syms(
                             mro_class,
                             mro_class,
-                            method_name,
+                            *mro_sym,
+                            method_sym,
                             def,
                             probe,
                             args.to_vec(),

@@ -202,23 +202,39 @@ pub(crate) fn seed_native_subclass_payloads(
     positional_args: &[Value],
 ) {
     use crate::builtins::native_base::{INT_PAYLOAD, NUM_PAYLOAD, RAT_PAYLOAD};
-    if class_mro.iter().any(|name| name == "Int") && !attrs.contains_key(INT_PAYLOAD) {
+    if class_mro
+        .iter()
+        .any(|name| *name == crate::symbol::wk::int_type())
+        && !attrs.contains_key(INT_PAYLOAD)
+    {
         let payload = positional_args.first().map_or(0, crate::runtime::to_int);
         attrs.insert(INT_PAYLOAD, Value::int(payload));
-    } else if class_mro.iter().any(|name| name == "Num") && !attrs.contains_key(NUM_PAYLOAD) {
+    } else if class_mro
+        .iter()
+        .any(|name| *name == crate::symbol::wk::num_type())
+        && !attrs.contains_key(NUM_PAYLOAD)
+    {
         // raku: `Num.new(\value)` boxes `value.Num` into the subclass; no
         // argument is `0e0`.
         let payload = positional_args.first().map_or(0.0, |v| {
             crate::runtime::coerce_to_numeric(v.clone()).to_f64()
         });
         attrs.insert(NUM_PAYLOAD, Value::num(payload));
-    } else if class_mro.iter().any(|name| name == "Rat") && !attrs.contains_key(RAT_PAYLOAD) {
+    } else if class_mro
+        .iter()
+        .any(|name| *name == crate::symbol::wk::rat_type())
+        && !attrs.contains_key(RAT_PAYLOAD)
+    {
         // raku: `Rat.new(\nu, \de)` boxes the reduced fraction into the
         // subclass; no argument is `0/1`. The native constructor builds it.
         let payload = Interpreter::build_native_rat_value(positional_args);
         attrs.insert(RAT_PAYLOAD, payload);
     }
-    if class_mro.iter().any(|name| name == "Str") && !attrs.contains_key("__mutsu_str_value") {
+    if class_mro
+        .iter()
+        .any(|name| *name == crate::symbol::wk::str_type())
+        && !attrs.contains_key("__mutsu_str_value")
+    {
         let payload = args
             .iter()
             .find_map(|arg| match arg.view() {
@@ -230,7 +246,10 @@ pub(crate) fn seed_native_subclass_payloads(
     }
     // An `is Attribute` subclass is a metaobject too: `Attribute.new`'s named
     // arguments are its facts, which the `Attribute` rows read.
-    if class_mro.iter().any(|name| name == "Attribute") && !attrs.contains_key("__mutsu_attr_name")
+    if class_mro
+        .iter()
+        .any(|name| *name == crate::symbol::wk::attribute_class())
+        && !attrs.contains_key("__mutsu_attr_name")
     {
         for (key, value) in
             crate::runtime::methods_object_dispatch_new::attribute_facts_from_args(args)
@@ -249,7 +268,7 @@ pub(crate) fn seed_native_subclass_payloads(
     // (`native_base::redirect`).
     if class_mro
         .iter()
-        .any(|name| name == "CompUnit::DependencySpecification")
+        .any(|name| *name == crate::symbol::wk::depspec_class())
         && !attrs.contains_key(crate::builtins::native_base::DEPSPEC_PAYLOAD)
         && let Ok(payload) = Interpreter::build_compunit_dependencyspecification(args)
     {
@@ -260,10 +279,12 @@ pub(crate) fn seed_native_subclass_payloads(
     // `.list`, `.hash`, `<key>` and `[i]` on it (`native_base::redirect`).
     // A `Match` (and a grammar, a `Match` subclass) is a `Capture` too, with its
     // captures of its own.
-    if class_mro.iter().any(|name| name == "Capture")
-        && !class_mro
-            .iter()
-            .any(|name| name == "Match" || name == "Grammar")
+    if class_mro
+        .iter()
+        .any(|name| *name == crate::symbol::wk::capture_class())
+        && !class_mro.iter().any(|name| {
+            *name == crate::symbol::wk::match_class() || *name == crate::symbol::wk::grammar_class()
+        })
         && !attrs.contains_key(crate::builtins::native_base::CAPTURE_PAYLOAD)
     {
         // The nameds live in a hash node of their own, which nqp code shares
@@ -1505,6 +1526,9 @@ pub(crate) enum ConstructionPhaseStep {
     /// `run_instance_method_celled` path.
     Class {
         mro_class: String,
+        /// `mro_class` interned at plan build, so a construction does not
+        /// re-intern it for every phase call.
+        mro_sym: crate::symbol::Symbol,
         pinned: Option<MethodDef>,
     },
 }

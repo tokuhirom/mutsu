@@ -598,6 +598,33 @@ impl Interpreter {
         args: Vec<Value>,
         invocant: Option<Value>,
     ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
+        self.run_resolved_method_celled_syms(
+            receiver_class_name,
+            owner_class,
+            crate::symbol::Symbol::intern(owner_class),
+            crate::symbol::Symbol::intern(method_name),
+            method_def,
+            attributes,
+            args,
+            invocant,
+        )
+    }
+
+    /// [`Self::run_resolved_method_celled`] for a caller that holds the owner
+    /// class and method name already interned (a construction phase step):
+    /// the per-call `Symbol::intern` of both is skipped.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn run_resolved_method_celled_syms(
+        &mut self,
+        receiver_class_name: &str,
+        owner_class: &str,
+        owner_sym: crate::symbol::Symbol,
+        method_sym: crate::symbol::Symbol,
+        method_def: &MethodDef,
+        attributes: &AttrMap,
+        args: Vec<Value>,
+        invocant: Option<Value>,
+    ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
         crate::alloc_scope!("resolved-method-celled");
         // Writeback-safety gate (§B, #3658 step 4 — free_var_writes filter REMOVED).
         // Any resolved candidate that has compiled bytecode and is not a delegation
@@ -665,8 +692,8 @@ impl Interpreter {
         self.current_unit = self.unit_of_source(method_def.source_file.as_deref());
         let call_result = self.call_compiled_method(
             receiver_class_name,
-            crate::symbol::Symbol::intern(owner_class),
-            crate::symbol::Symbol::intern(method_name),
+            owner_sym,
+            method_sym,
             method_def,
             &cc,
             crate::vm::vm_method_call_attrs::CallAttrs::Map(attributes),

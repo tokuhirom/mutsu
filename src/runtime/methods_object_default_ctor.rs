@@ -351,7 +351,7 @@ impl Interpreter {
             }
         }
         // Embed `is default(...)` element defaults into `@`/`%` containers.
-        self.apply_container_attribute_defaults(cn_resolved, &mut attrs);
+        self.apply_container_attribute_defaults(crate::symbol::Symbol::intern(cn_resolved), &mut attrs);
         // Add alias metadata for `has $x` (no twigil) attributes
         if !plan.alias_attributes.is_empty() {
             crate::vm::vm_method_call_attrs::note_alias_meta_written();

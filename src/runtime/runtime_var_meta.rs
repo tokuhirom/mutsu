@@ -837,9 +837,10 @@ impl Interpreter {
     /// default is carried via `attr_var_defaults` and the unassigned-scalar read).
     pub(crate) fn apply_container_attribute_defaults(
         &mut self,
-        class_name: &str,
+        class_sym: crate::symbol::Symbol,
         attributes: &mut crate::value::AttrMap,
     ) {
+        let class_name = class_sym.as_str();
         // Fast gate: a class with no `is default(...)` element default makes every
         // per-attribute registry probe below return `None`, so the whole scan (the
         // keys `Vec` plus a `(String, String)` registry-key allocation per container
@@ -851,7 +852,7 @@ impl Interpreter {
         let skip = self
             .caches
             .native_ctor_plan_cache
-            .get(&crate::symbol::Symbol::intern(class_name))
+            .get(&class_sym)
             .is_some_and(|p| !p.has_container_defaults);
         if skip {
             return;

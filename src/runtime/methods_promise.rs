@@ -434,20 +434,20 @@ impl Interpreter {
         let Some(class) = class_mro.first().copied() else {
             return;
         };
-        if class_mro.iter().any(|name| name == "Promise") && !attrs.contains_key(PROMISE_PAYLOAD) {
+        if class_mro.iter().any(|name| *name == crate::symbol::wk::promise_class()) && !attrs.contains_key(PROMISE_PAYLOAD) {
             let explicit = Self::named_value(args, "scheduler");
             let promise = self.new_bound_promise(class, explicit);
             attrs.insert(PROMISE_PAYLOAD, Value::promise(promise));
-        } else if class_mro.iter().any(|name| name == "Channel")
+        } else if class_mro.iter().any(|name| *name == crate::symbol::wk::channel_class())
             && !attrs.contains_key(CHANNEL_PAYLOAD)
         {
             attrs.insert(CHANNEL_PAYLOAD, Value::channel(SharedChannel::new()));
-        } else if class_mro.iter().any(|name| name == "Supplier")
+        } else if class_mro.iter().any(|name| *name == crate::symbol::wk::supplier_class())
             && !attrs.contains_key(SUPPLIER_SUBCLASS)
         {
             // A supplier's state is its attributes, so the subclass instance
             // carries them itself.
-            let preserving = class_mro.iter().any(|name| name == "Supplier::Preserving");
+            let preserving = class_mro.iter().any(|name| *name == crate::symbol::wk::supplier_preserving_class());
             Self::seed_supplier_state(attrs, preserving);
             attrs.insert(SUPPLIER_SUBCLASS, Value::TRUE);
         }

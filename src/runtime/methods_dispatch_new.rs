@@ -887,9 +887,9 @@ impl Interpreter {
         }
         // See `quanthash_subclass`: a `Set`/`Bag`/`Mix` (or `*Hash`) subclass
         // keeps its entries in `__baggy_data__`.
-        self.seed_quanthash_storage(cn_resolved, &mut attributes, &positional_args)?;
+        self.seed_quanthash_storage(class_name, &mut attributes, &positional_args)?;
         // Embed `is default(...)` element defaults into `@`/`%` containers.
-        self.apply_container_attribute_defaults(cn_resolved, &mut attributes);
+        self.apply_container_attribute_defaults(class_name, &mut attributes);
         crate::alloc_scope_end!(_sc_container);
         // Build the instance BEFORE the BUILD/TWEAK phases and thread its shared
         // attribute cell through them (raku semantics: `self` inside BUILD/TWEAK
@@ -944,7 +944,7 @@ impl Interpreter {
         }
         // `bless` also runs a user BUILDALL/POPULATE (Rakudo: bless calls
         // BUILDALL) — see `run_user_buildall_hook` for the semantics.
-        self.run_user_buildall_hook(cn_resolved, &inv, &args)?;
+        self.run_user_buildall_hook(class_name, &inv, &args)?;
         // And so is `is required`: Rakudo enforces it in `BUILDALL`, which
         // `bless` runs, so a class whose own `method new { self.bless: |%h }`
         // replaces the default constructor — the commonest custom-constructor
@@ -953,7 +953,7 @@ impl Interpreter {
         // attribute. mutsu only checked it on the default-`new` path, so any
         // such class silently constructed with the attribute unset. Checked
         // last, because BUILD/TWEAK/BUILDALL are all entitled to supply it.
-        self.enforce_required_attributes_after_build(cn_resolved, &inv, &args)?;
+        self.enforce_required_attributes_after_build(class_name, &inv, &args)?;
         Ok(inv)
     }
 
@@ -964,14 +964,16 @@ impl Interpreter {
     /// pre-BUILD seed leaves on an untyped attribute.
     pub(crate) fn enforce_required_attributes_after_build(
         &mut self,
-        class_key: &str,
+        class_sym: crate::symbol::Symbol,
         inv: &Value,
         args: &[Value],
     ) -> Result<(), RuntimeError> {
         // The attribute list is class shape: the cached per-class plan holds
         // it (dropped with the dispatch caches at every class-shape mutation),
-        // so a construction does not re-collect it from the MRO.
-        let plan = self.native_ctor_plan(crate::symbol::Symbol::intern(class_key));
+        // so a construction does not re-collect it from the MRO. The class
+        // arrives interned: a by-name key would re-intern it on every
+        // construction.
+        let plan = self.native_ctor_plan(class_sym);
         let class_attrs_info = &*plan.class_attrs;
         if !class_attrs_info.iter().any(|a| a.is_required.is_some()) {
             return Ok(());
@@ -1022,7 +1024,7 @@ impl Interpreter {
     /// `native_mu_base`.
     pub(crate) fn run_user_buildall_hook(
         &mut self,
-        class_key: &str,
+        class_sym: crate::symbol::Symbol,
         instance: &Value,
         args: &[Value],
     ) -> Result<(), RuntimeError> {
@@ -1033,9 +1035,7 @@ impl Interpreter {
         // now a cached-plan field read instead of an MRO walk of registry
         // lookups that interned both the class and the method name at every
         // level.
-        let Some(method) = self
-            .native_ctor_plan(crate::symbol::Symbol::intern(class_key))
-            .user_buildall
+        let Some(method) = self.native_ctor_plan(class_sym).user_buildall
         else {
             return Ok(());
         };

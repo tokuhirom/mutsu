@@ -1186,6 +1186,27 @@ pub(crate) mod wk {
         /// The smartmatch protocol's method, probed on every type-object
         /// matcher (`smart_match_inner`).
         accepts_method => "ACCEPTS";
+        /// The built-in classes a user subclass needs a native payload for,
+        /// looked for in the class's MRO on every `bless`
+        /// (`seed_native_subclass_payloads`, `seed_concurrency_payload`,
+        /// `seed_repository_state`, `seed_iteration_buffer_storage`): a symbol
+        /// compare per MRO entry, not an `as_str` plus a `memcmp`.
+        attribute_class => "Attribute";
+        depspec_class => "CompUnit::DependencySpecification";
+        capture_class => "Capture";
+        match_class => "Match";
+        grammar_class => "Grammar";
+        promise_class => "Promise";
+        channel_class => "Channel";
+        supplier_class => "Supplier";
+        supplier_preserving_class => "Supplier::Preserving";
+        repo_installation_class => "CompUnit::Repository::Installation";
+        repo_filesystem_class => "CompUnit::Repository::FileSystem";
+        iteration_buffer_class => "IterationBuffer";
+        /// The construction-phase submethods, called by name once per class
+        /// level on every construction (`run_construction_phase_steps`).
+        tweak_method => "TWEAK";
+        build_method => "BUILD";
     }
 
     /// How many positional-capture index names ([`capture_index`]) are served
