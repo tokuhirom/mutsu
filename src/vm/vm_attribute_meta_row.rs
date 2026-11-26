@@ -52,7 +52,7 @@ impl Interpreter {
         target: &Value,
         method_sym: Symbol,
     ) -> bool {
-        let attribute = Symbol::intern("Attribute");
+        let attribute = crate::symbol::wk::attribute_class();
         let method = method_sym.as_str();
         let receiver = match target.view() {
             ValueView::Instance { class_name, .. } => {

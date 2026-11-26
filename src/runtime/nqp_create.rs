@@ -209,7 +209,7 @@ impl Interpreter {
         class_mro: &[Symbol],
     ) {
         let items = super::nqp_ops_list::iteration_buffer_items_key();
-        if class_mro.iter().any(|name| name == "IterationBuffer")
+        if class_mro.iter().any(|name| *name == crate::symbol::wk::iteration_buffer_class())
             && !attrs.contains_key(items)
             && !self.is_opaque_iteration_buffer_class(class)
         {
@@ -230,7 +230,7 @@ impl Interpreter {
             && self
                 .mro_syms_readonly(class)
                 .iter()
-                .any(|name| name.as_str() == "IterationBuffer")
+                .any(|name| *name == crate::symbol::wk::iteration_buffer_class())
     }
 
     /// [`CreateKind`] for the type named `name` (short name `short`).
@@ -313,7 +313,7 @@ impl Interpreter {
                     || (self
                         .class_mro(class.as_str())
                         .iter()
-                        .any(|name| name.as_str() == "IterationBuffer")
+                        .any(|name| *name == crate::symbol::wk::iteration_buffer_class())
                         && !self.is_opaque_iteration_buffer_class(class.as_str()));
                 let shape = CreateShape {
                     template,

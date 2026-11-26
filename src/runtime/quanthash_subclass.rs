@@ -87,17 +87,18 @@ impl Interpreter {
     /// `Hash`/`Array` blocks beside each call site are.
     pub(crate) fn seed_quanthash_storage(
         &mut self,
-        class_key: &str,
+        class_sym: Symbol,
         attrs: &mut crate::runtime::AttrMap,
         positional_args: &[Value],
     ) -> Result<(), RuntimeError> {
+        let class_key = class_sym.as_str();
         if attrs.contains_key(crate::symbol::wk::baggy_data()) {
             return Ok(());
         }
         // Pure class shape, memoized on a registered class's plan: the parent
         // walk costs more than the rest of a plain `.new` (#12917).
         let base = if self.registry().classes.contains_key(class_key) {
-            let plan = self.native_ctor_plan(Symbol::intern(class_key));
+            let plan = self.native_ctor_plan(class_sym);
             match plan.quanthash_base.get() {
                 Some(base) => *base,
                 None => {

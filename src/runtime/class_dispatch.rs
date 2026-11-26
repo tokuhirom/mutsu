@@ -509,8 +509,8 @@ impl Interpreter {
         // the interpreter path.
         let result = self.run_resolved_method_celled(
             receiver_class_name,
-            owner_class.as_str(),
-            method_name,
+            crate::symbol::Symbol::intern(owner_class.as_str()),
+            crate::symbol::Symbol::intern(method_name),
             &method_def,
             attributes,
             args,
@@ -563,8 +563,8 @@ impl Interpreter {
         };
         let (v, reconciled) = self.run_resolved_method_celled(
             receiver_class_name,
-            owner_class,
-            method_name,
+            crate::symbol::Symbol::intern(owner_class),
+            crate::symbol::Symbol::intern(method_name),
             &method_def,
             &attributes,
             args,
@@ -591,13 +591,16 @@ impl Interpreter {
     pub(super) fn run_resolved_method_celled(
         &mut self,
         receiver_class_name: &str,
-        owner_class: &str,
-        method_name: &str,
+        owner_sym: crate::symbol::Symbol,
+        method_sym: crate::symbol::Symbol,
         method_def: &MethodDef,
         attributes: &AttrMap,
         args: Vec<Value>,
         invocant: Option<Value>,
     ) -> Result<(Value, Option<AttrMap>), RuntimeError> {
+        // The owner and method arrive interned: a construction phase step
+        // holds them from plan build, so a TWEAK call does not re-intern them.
+        let owner_class = owner_sym.as_str();
         crate::alloc_scope!("resolved-method-celled");
         // Writeback-safety gate (§B, #3658 step 4 — free_var_writes filter REMOVED).
         // Any resolved candidate that has compiled bytecode and is not a delegation
@@ -665,8 +668,8 @@ impl Interpreter {
         self.current_unit = self.unit_of_source(method_def.source_file.as_deref());
         let call_result = self.call_compiled_method(
             receiver_class_name,
-            crate::symbol::Symbol::intern(owner_class),
-            crate::symbol::Symbol::intern(method_name),
+            owner_sym,
+            method_sym,
             method_def,
             &cc,
             crate::vm::vm_method_call_attrs::CallAttrs::Map(attributes),
