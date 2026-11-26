@@ -28,7 +28,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.05,
+        "secs": 0.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -38,7 +38,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.95,
+        "secs": 0.81,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -52,7 +52,7 @@
         "nok": 6,
         "ok": 8,
         "plan": 14,
-        "secs": 23.84,
+        "secs": 22.15,
         "skip": 0,
         "todo": 0,
         "verdict": "fail"
@@ -62,11 +62,11 @@
       "cmp": "no_baseline",
       "path": "t/01-basic-wait/base-wait.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/SG0lZHeOG7: Read-only file system",
+        "first_failure": "Failed to open file /tmp/bkfX8EF5Zm: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.61,
+        "secs": 4.38,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -76,11 +76,11 @@
       "cmp": "no_baseline",
       "path": "t/01-basic-wait/basic-wait.rakutest",
       "raku": {
-        "first_failure": "Failed to open file /tmp/Q0vBizzXd8: Read-only file system",
+        "first_failure": "Failed to open file /tmp/rd0_Ilrja6: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.29,
+        "secs": 4.42,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -122,7 +122,7 @@
     "date": "2026-11-26",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "ee3c7d99",
+    "mutsu_commit": "afd0efb7",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",

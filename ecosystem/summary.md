@@ -7,8 +7,8 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **100.0%** (1341/1341) |
-| file parity | 100.0% (5163/5163) |
+| **dist parity** (published headline) | **99.9%** (1338/1339) |
+| file parity | 100.0% (5162/5163) |
 | assertion parity | 100.0% |
 | accepted divergences (out of the KPI, ADR-0130) | 15 file(s) |
 | out-of-scope distributions (`exclude.txt`, out of the KPI) | 14 |
@@ -17,8 +17,9 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 |---|---|
 | `blocked_dep` | 3 |
 | `blocked_load` | 3 |
-| `green` | 1341 |
-| `no_baseline` | 327 |
+| `green` | 1338 |
+| `no_baseline` | 329 |
+| `partial` | 1 |
 | out of scope (`exclude.txt`, any status) | 14 |
 
 ## Regressed since the previous ledger
@@ -27,7 +28,7 @@ Distributions measured at the same version in the ledger commit this
 rollup replaces that got a worse status, or a baseline file that
 lost parity (a file rakudo now fails is not counted).
 
-_None._
+- `Linux::NFTables` 0.0.3: green → partial
 
 ## Distributions
 
@@ -270,11 +271,11 @@ _None._
 | `Compress::Zlib` | 2.0.0 | green | 4/4 |
 | `Compress::Zlib::Raw` | 2.0.0 | green | 2/2 |
 | `CompUnit::Util` | 0.7.0 | green | 8/8 |
-| `Concurrent::BoundedChannel` | 0.4.1 | green | 1/1 |
+| `Concurrent::BoundedChannel` | 0.4.1 | no_baseline | — |
 | `Concurrent::Iterator` | 1.1 | green | 3/3 |
 | `Concurrent::PChannel` | 0.0.4 | no_baseline | — |
 | `Concurrent::PriorityQueue` | 0.0.2 | green | 2/2 |
-| `Concurrent::Progress` | 1.2 | green | 1/1 |
+| `Concurrent::Progress` | 1.2 | green | 2/2 |
 | `Concurrent::Queue` | 1.2 | green | 2/2 |
 | `Concurrent::Stack` | 1.3 | green | 2/2 |
 | `Concurrent::Trie` | 1.2 | green | 2/2 |
@@ -554,7 +555,7 @@ _None._
 | `FINALIZER` | 0.0.10 | green | 3/3 |
 | `FiniteFields` | 0.3.2 | green | 1/1 |
 | `FixedInt` | 0.0.5 | green | 1/1 |
-| `flow` | 0.0.6 | green | 3/3 |
+| `flow` | 0.0.6 | green | 4/4 |
 | `Font::AFM` | 1.24.10 | green | 4/4 |
 | `Font::FreeType` | 0.5.16 | green | 5/5 |
 | `FontConfig` | 0.1.9 | green | 2/2 |
@@ -878,7 +879,7 @@ _None._
 | `Linux::Cpuinfo` | 0.1.2 | green | 5/5 |
 | `Linux::Fuser` | 0.0.16 | green | 2/2 |
 | `Linux::Joystick` | 0.0.3 | green | 1/1 |
-| `Linux::NFTables` | 0.0.3 | green | 3/3 |
+| `Linux::NFTables` | 0.0.3 | partial | 3/4 |
 | `List::Agnostic` | 0.0.7 | green | 1/1 |
 | `List::Allmax` | 0.0.1 | no_baseline | — |
 | `List::AllUtils` | 0.0.6 | green | 2/2 |
@@ -910,7 +911,7 @@ _None._
 | `Locale::Dates` | 0.0.7 | green | 2/2 |
 | `Locale::US` | 0.0.2 | green | 1/1 |
 | `LocalTime` | 0.0.3 | green | 7/7 |
-| `Log::Async` | 0.0.17 | green | 14/14 |
+| `Log::Async` | 0.0.17 | green | 15/15 |
 | `Log::Dispatch` | 0.0.8 | green | 4/4 |
 | `Log::Reader` | 1 | green | 2/2 |
 | `Log::Syslog::Native` | 0.1.2 | green | 3/3 |
@@ -1011,7 +1012,7 @@ _None._
 | `Mathematica::Serializer` | 0.2.1 | green | 3/3 |
 | `MCP` | 0.33.6 | green | 10/10 |
 | `MCP::Client` | 0.6.2 | green | 25/25 |
-| `MCP::Server` | 0.7.2 | green | 23/23 |
+| `MCP::Server` | 0.7.2 | green | 24/24 |
 | `MCP::Server::Tool::Ask` | 0.1.5 | green | 5/5 |
 | `MCP::Server::Tool::FileSystem` | 0.3.6 | no_baseline | — |
 | `MCP::Server::Tool::Shell` | 0.4.5 | green | 13/13 |
@@ -1069,7 +1070,7 @@ _None._
 | `MUGS::UI::CLI` | 0.1.4 | no_baseline | — |
 | `MUGS::UI::TUI` | 0.1.4 | no_baseline | — |
 | `MUGS::UI::WebSimple` | 0.1.4 | no_baseline | — |
-| `Mux` | 0.0.4 | green | 2/2 |
+| `Mux` | 0.0.4 | green | 1/1 |
 | `mv2d` | 0.1.333 | green | 1/1 |
 | `MVC::Keayl` | 0.9.2 | green | 37/37 |
 | `MVC::Keayl::Admin` | 0.9.1 | green | 3/3 |
@@ -1182,7 +1183,7 @@ _None._
 | `P5unlink` | 0.0.1 | green | 1/1 |
 | `Pakku` | chou.5 | green | 4/4 |
 | `Parameterizable` | 0.0.4 | green | 2/2 |
-| `ParaSeq` | 0.2.7 | green | 47/47 |
+| `ParaSeq` | 0.2.7 | green | 46/46 |
 | `Parse::Paths` | 0.1.3 | green | 1/1 |
 | `Pastebin::Gist` | 1.004002 | no_baseline | — |
 | `Pastebin::Shadowcat` | 2.001003 | no_baseline | — |
@@ -1201,7 +1202,7 @@ _None._
 | `PDF::Document` | 0.0.10 | no_baseline | — |
 | `PDF::Extract` | 0.0.4 | no_baseline | — |
 | `PDF::Font::Loader` | 0.8.15 | green | 4/4 |
-| `PDF::Font::Loader::CSS` | 0.0.1 | green | 1/1 |
+| `PDF::Font::Loader::CSS` | 0.0.1 | no_baseline | — |
 | `PDF::Font::Loader::HarfBuzz` | 0.0.2 | no_baseline | — |
 | `PDF::Grammar` | 0.3.6 | green | 10/10 |
 | `PDF::ISO_32000` | 0.0.13 | green | 2/2 |
@@ -1427,7 +1428,7 @@ _None._
 | `static` | 0.0.1 | green | 14/14 |
 | `Staticish` | 0.0.9 | green | 4/4 |
 | `Statistics` | 0.0.6 | no_baseline | — |
-| `Statistics::Distributions` | 0.1.8 | green | 4/4 |
+| `Statistics::Distributions` | 0.1.8 | green | 3/3 |
 | `Statistics::LinearRegression` | 1.1.2 | green | 1/1 |
 | `Stomp` | 0.1.0 | green | 4/4 |
 | `Storable::Lite` | 0.0.2 | green | 2/2 |
