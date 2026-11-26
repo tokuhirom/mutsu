@@ -559,7 +559,7 @@ impl Interpreter {
         def.parents
             .iter()
             .filter(|p| !matches!(p.as_str(), "Any" | "Mu" | "Cool"))
-            .filter(|p| registry.classes.contains_key(*p))
+            .filter(|p| registry.classes.contains_key(p))
             .cloned()
             .collect()
     }

@@ -99,7 +99,7 @@ impl Interpreter {
                 .names
                 .iter()
                 .map(String::as_str)
-                .filter(|n| !registry.classes.contains_key(*n) && !registry.roles.contains_key(*n))
+                .filter(|n| !registry.classes.contains_key(n) && !registry.roles.contains_key(*n))
                 .collect()
         };
         let type_names = TypeNames::new(missing.iter().copied());

@@ -364,7 +364,7 @@ impl Interpreter {
         // whatever ran during the EVAL itself.
         let resurrected_classes: Vec<String> = classes_snapshot
             .keys()
-            .filter(|name| !current_classes.contains_key(*name))
+            .filter(|name| !current_classes.contains_key(name))
             .cloned()
             .collect();
         // The merge is `snapshot` overlaid with what the EVAL left (minus its
@@ -526,7 +526,7 @@ impl Interpreter {
             .registry()
             .classes
             .keys()
-            .filter(|name| !classes_before.contains_key(*name))
+            .filter(|name| !classes_before.contains_key(name))
             .cloned()
             .collect();
         self.module.eval_failed_classes.extend(added);

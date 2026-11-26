@@ -256,7 +256,7 @@ impl Interpreter {
             name.as_str()
         };
         if shown != "Raku::Grammar"
-            || self.registry().classes.contains_key(&*name)
+            || self.registry().classes.contains_key(&name)
             || self.ensure_raku_bases().is_err()
         {
             return match_obj;

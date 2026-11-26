@@ -1028,7 +1028,7 @@ impl Interpreter {
         // :coerce(&cf)]` default) is named without them too.
         if let ValueView::Package(name) = value.view() {
             let spelled = name.resolve();
-            if !self.registry().classes.contains_key(&*spelled)
+            if !self.registry().classes.contains_key(&spelled)
                 && let std::borrow::Cow::Owned(plain) =
                     crate::value::constraint_without_named_args(&spelled)
             {
