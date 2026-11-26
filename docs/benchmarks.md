@@ -72,3 +72,26 @@ without its subject size says nothing.
   `bench-fib`/`bench-tak` **cannot resolve anything smaller than ~30%**, and an apparent move on
   one of them is usually a change in host-class composition between the two windows compared.
   Always quote the benchmark name *and its noise class* alongside any number.
+
+## The bench-trend dashboard
+
+`scripts/bench-visualize.py` renders `bench-history.tsv` into `bench-trend.html` on the site
+(`pages.yml`). It answers "where does mutsu lose, and by how much", not "what moved since the
+previous commit", because a one-commit move on this runner pool is mostly noise:
+
+- **"mutsu is slower here"** heads the page. It lists every benchmark whose ratio against rakudo
+  or rakupp is above 1.0x, where the ratio is the **median of the last 10 commits** of the `+jit`
+  series (the default build), not the latest point. Rows are ranked by their worst
+  engine-against-engine ratio. A row that loses only on a ratio its card note marks as not engine
+  against engine (rakupp parsing JSON natively) is listed after them, labelled. A ratio is
+  *marginal* when a quarter or more of those commits were at or under parity.
+- Each listed row links the issues that track it, from
+  [`benchmarks/bench-tracking.toml`](../benchmarks/bench-tracking.toml). A losing row with no
+  entry shows "no tracking issue", and the generator warns. File a `todo:perf` issue on
+  `lane:perf` for it, close condition "ratio <= 1.0x vs <rakudo|rakupp> on the bench CI median",
+  then add the entry.
+- A card's **trend** chip compares the median of the last 10 points with the median of the 10
+  before. It is shown only when the step exceeds twice the standard error of that difference,
+  estimated from the series' own spread (MAD); otherwise it reads *no change*.
+- `python3 scripts/bench-visualize.py --report bench-history.tsv` prints the same list as a
+  Markdown table, for an issue or a status report.

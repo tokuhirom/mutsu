@@ -92,15 +92,30 @@ const benchRows = [
   'date\tcommit\tbenchmark\tmutsu_median_s\tmutsu_min_s\traku_median_s\tratio_mutsu_over_raku\truns\trunner\trakudo'
     + '\trakupp_median_s\tratio_mutsu_over_rakupp\trakupp',
 ];
-for (let i = 0; i < 6; i++) {
-  const sha = `${i}`.repeat(40);
-  for (const [name, base] of [['bench-fib', 0.2], ['bench-hash', 0.04], ['bench-json-fast', 0.1]]) {
-    const t = (base * (1 + i / 50)).toFixed(4);
+// 24 commits, enough for the robust figures (a median of the last 10 against
+// the 10 before):
+// - bench-fib halves at commit 12, a step far outside its noise, so its trend
+//   is shown; it loses to rakupp (1.10x) and has no tracking entry;
+// - bench-hash jitters by 1% around a flat line, so it has no trend; it beats
+//   both references;
+// - bench-json-fast loses only to rakupp, whose ratio there is not engine
+//   against engine (its tracking entry is the real one in
+//   benchmarks/bench-tracking.toml).
+const benchSpecs = [
+  ['bench-fib', (i) => (i < 12 ? 0.2 : 0.1), '1.10'],
+  ['bench-hash', (i) => 0.04 * (i % 2 ? 1.01 : 0.99), '0.90'],
+  ['bench-json-fast', (i) => 0.1 * (1 + i / 50), '1.10'],
+];
+for (let i = 0; i < 24; i++) {
+  const sha = `${i}`.padStart(2, '0').repeat(20);
+  const day = String(1 + i).padStart(2, '0');
+  for (const [name, secs, ratioPp] of benchSpecs) {
+    const t = secs(i).toFixed(4);
     // The first commits predate the rakupp columns, as on bench-data: their
     // rows have ten fields, not thirteen.
-    const pp = i < 3 ? '' : '\t0.2000\t1.10\tRaku++';
-    benchRows.push(`2026-07-${10 + i}T00:00:00Z\t${sha}\t${name}\t${t}\t${t}\t0.3000\t0.80\t7\tci\tRakudo${pp}`);
-    benchRows.push(`2026-07-${10 + i}T00:00:00Z\t${sha}\t${name}+jit\t${t}\t${t}\t0.3000\t0.70\t7\tci\tRakudo${pp}`);
+    const pp = i < 3 ? '' : `\t0.2000\t${ratioPp}\tRaku++`;
+    benchRows.push(`2026-07-${day}T00:00:00Z\t${sha}\t${name}\t${t}\t${t}\t0.3000\t0.80\t7\tci\tRakudo${pp}`);
+    benchRows.push(`2026-07-${day}T00:00:00Z\t${sha}\t${name}+jit\t${t}\t${t}\t0.3000\t0.70\t7\tci\tRakudo${pp}`);
   }
 }
 writeFileSync(BENCH_TSV, benchRows.join('\n') + '\n');
@@ -219,9 +234,45 @@ try {
          'the charts still render (one per benchmark)');
   assert(await page.locator('.bench-note').count() === 0,
          'a benchmark note stays hidden under a metric it does not concern');
+
+  // The dashboard leads with where mutsu loses, not with what moved since the
+  // previous commit.
+  console.log('Test: benchmark dashboard leads with the rows mutsu loses');
+  const losingRows = page.locator('#losing tbody tr[data-name]');
+  assert(await losingRows.count() === 2,
+         'the losing section lists the two rows above 1.0x and not the winning one');
+  assert(await losingRows.nth(0).getAttribute('data-name') === 'bench-fib',
+         'an engine-against-engine loss is ranked first');
+  assert(await page.locator('#losing tr.group').count() === 1
+         && await losingRows.nth(1).getAttribute('data-name') === 'bench-json-fast',
+         'a loss only to rakupp\'s native JSON parser is listed after it, in its own group');
+  assert(await losingRows.nth(1).locator('.tag').textContent() === 'rakupp parses JSON natively',
+         'with its caveat on the ratio it qualifies');
+  assert(await losingRows.nth(1).locator('a[href$="/issues/8673"]').count() === 1,
+         'and a link to the issue benchmarks/bench-tracking.toml names for it');
+  assert(await losingRows.nth(0).locator('.untracked').count() === 1,
+         'a losing row with no tracking issue says so');
+  assert(await losingRows.nth(0).locator('td.lose').count() === 1
+         && await losingRows.nth(0).locator('td.win').count() === 1,
+         'the losing ratio is flagged and the winning one is not');
+  assert(await page.locator('.bench-card.losing').count() === 1
+         && await page.locator('.bench-card.losing').getAttribute('data-name') === 'bench-fib',
+         'the losing card is flagged too');
+  assert(await page.locator('.bench-card[data-name="bench-fib"] .standing .lose').count() === 1,
+         'and carries its ratios against both references');
+  assert((await page.textContent('.bench-card[data-name="bench-fib"] .chip')).includes('faster'),
+         'a step far outside the noise is shown as a trend');
+  assert(await page.textContent('.bench-card[data-name="bench-hash"] .chip') === 'no change',
+         'commit-to-commit jitter is not');
+  assert(!(await page.textContent('body')).includes('Δ latest'),
+         'no single-commit delta is presented anywhere');
+
   await page.click('#view button[data-v="table"]');
   assert(await page.locator('#tableWrap tbody tr').count() === 3,
          'and the table view still works');
+  assert(await page.locator('#tableWrap th[data-k="trend"]').count() === 1
+         && await page.locator('#tableWrap tbody td.lose').count() === 2,
+         'with a robust trend column and the losing ratios flagged');
 
   // The controls are the page's whole state, so a link has to carry them --
   // otherwise "look at the instruction counts over the last 50 commits" cannot
@@ -257,6 +308,18 @@ try {
          'with the table actually rendered');
   assert((await page.textContent('#tableWrap th[data-k="jit"]')).includes('↓'),
          'and the table sorted the way the link asked');
+
+  await page.goto(`${BASE}/bench-trend.html?lang=en#view=table&sort=pp&dir=desc`,
+                  { waitUntil: 'networkidle' });
+  assert(await page.textContent('#tableWrap tbody tr:first-child td:first-child') === 'bench-fib',
+         'the table sorts by the ratio vs rakupp, worst first');
+  // A fresh load, not a same-document hash change (which re-renders on a later
+  // `hashchange` this assertion would race).
+  await page.goto('about:blank');
+  await page.goto(`${BASE}/bench-trend.html?lang=en#view=table&sort=dpct`,
+                  { waitUntil: 'networkidle' });
+  assert(new URL(page.url()).hash === '#view=table',
+         'an old link sorted by the retired single-commit delta falls back to the name');
 
   await page.goto(`${BASE}/bench-trend.html?lang=en#metric=ratiopp`,
                   { waitUntil: 'networkidle' });
