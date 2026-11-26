@@ -777,12 +777,29 @@ impl Interpreter {
                             // The attribute's type (a `subset` included) and
                             // `where` clause hold for a blessed value as they
                             // do for an assigned one, as in `.new`.
-                            let checked = self.check_attr_store_type(
-                                cn_resolved,
-                                &plan.class_attrs[i].name,
-                                sigil,
-                                coerced,
-                            )?;
+                            // Skipped when the attribute has neither a type nor
+                            // a `where` (memoized on the plan): the check would
+                            // return the value unchanged.
+                            let needs_check = sigil == '$'
+                                && match plan.store_check_needed.get(i) {
+                                    Some(memo) => *memo.get_or_init(|| {
+                                        self.attr_store_has_constraint(
+                                            cn_resolved,
+                                            &plan.class_attrs[i].name,
+                                        )
+                                    }),
+                                    None => true,
+                                };
+                            let checked = if needs_check {
+                                self.check_attr_store_type(
+                                    cn_resolved,
+                                    &plan.class_attrs[i].name,
+                                    sigil,
+                                    coerced,
+                                )?
+                            } else {
+                                coerced
+                            };
                             Self::itemize_attr_store_value(sigil, checked)
                         };
                         attributes.insert(plan.attr_syms[i], coerced)
