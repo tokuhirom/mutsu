@@ -7,7 +7,7 @@ use Test;
 # exhaustive behaviour check is the release-time gate that runs the full
 # upstream suite (scripts/battery-testsuite.sh).
 
-plan 8;
+plan 9;
 
 use Text::CSV;
 
@@ -18,6 +18,11 @@ is-deeply [$csv.fields».text], ['one', 'two, with comma', 'three'],
 
 ok $csv.combine('a', 'b,c', 'd'), 'combine accepts fields';
 is $csv.string, 'a,"b,c",d', 'combine quotes the field with the separator';
+
+# The bundled tree is upstream `main` past the 0.022 tag (#19210), which adds
+# `column_indices` alongside `column_names`.
+$csv.column_names(<a b c>);
+isa-ok $csv.column_indices, Hash, 'column_indices (upstream after 0.022) is a Hash';
 
 my @rows = csv(in => [['x', 'y'], ['1', '2']]);
 is-deeply @rows, [['x', 'y'], ['1', '2']], 'csv(in => @data) round-trips rows';
