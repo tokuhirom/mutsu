@@ -222,8 +222,8 @@ impl Interpreter {
                 ConstructionPhaseStep::Role { role_name, def } => (
                     self.run_resolved_method_celled(
                         &cn,
-                        role_name,
-                        method_name,
+                        Symbol::intern(role_name),
+                        method_sym,
                         def,
                         probe,
                         args.to_vec(),
@@ -251,8 +251,7 @@ impl Interpreter {
                             args,
                             Some(inv.clone()),
                         );
-                        let r = self.run_resolved_method_celled_syms(
-                            mro_class,
+                        let r = self.run_resolved_method_celled(
                             mro_class,
                             *mro_sym,
                             method_sym,
