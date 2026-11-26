@@ -24,7 +24,7 @@
 #   extra_includes  comma-separated extra `-I` dirs; `{clone}` = the fetched
 #                   repo root; `-` means none
 name	bundled_lib	test_url	commit	test_glob	extra_includes
-zef	vendor/zef/lib	https://github.com/ugexe/zef.git	0aa54f53b55662d3a7a3b89981d34b9de97422f1	t/*.rakutest	{clone}/t/lib
+zef	vendor/zef/lib	https://github.com/ugexe/zef.git	a5289115b669adfe8afd2bea52d031320fed5d78	t/*.rakutest	{clone}/t/lib
 OpenSSL	modules/OpenSSL/lib	https://github.com/raku-community-modules/OpenSSL.git	aab471d3902bb99b35f3f3b398eef1d42e25347b	t/*.rakutest	-
 IO::Socket::SSL	modules/IO-Socket-SSL/lib	https://github.com/raku-community-modules/IO-Socket-SSL.git	353ef4f58da07cb141715d6baa95de5d36d1e26a	t/*.rakutest	modules/OpenSSL/lib
 URI	modules/URI/lib	https://github.com/raku-community-modules/URI.git	f44892483b074a88ce76ae7f2d714df04ccd8eef	t/*.rakutest	{clone}/t/lib
