@@ -341,7 +341,7 @@ impl Interpreter {
             saved_failed_classes,
         );
         let mut current_classes = self.registry().classes.clone();
-        current_classes.retain(|name, _| !is_eval_role_artifact(name) && !failed_classes.contains(name));
+        current_classes.retain_names(|name| !is_eval_role_artifact(name) && !failed_classes.contains(name));
         let current_type_keys: std::collections::HashSet<String> = current_roles
             .keys()
             .filter(|name| keep_role(name))
@@ -401,8 +401,8 @@ impl Interpreter {
             reg.role_hides.retain(|name, _| keep_role(name));
             refill(&mut reg.role_hides, &role_hides_snapshot);
             reg.classes
-                .retain(|name, _| !is_eval_role_artifact(name) && !failed_classes.contains(name));
-            refill(&mut reg.classes, &classes_snapshot);
+                .retain_names(|name| !is_eval_role_artifact(name) && !failed_classes.contains(name));
+            reg.classes.refill_from(&classes_snapshot);
             reg.hidden_classes
                 .retain(|name| !failed_classes.contains(name));
             reg.hidden_classes
