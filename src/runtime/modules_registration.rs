@@ -43,6 +43,7 @@ mod registry;
 pub(crate) mod routine_context;
 pub(crate) mod routine_tables;
 pub(crate) mod registry_class_table;
+pub(crate) mod registry_composed_role_table;
 pub(crate) mod registry_cow_table;
 /// Registry tables split into copy-on-write shards (ADR-17216 §4).
 pub(crate) mod registry_sharded_map;

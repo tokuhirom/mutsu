@@ -35,7 +35,7 @@ impl Interpreter {
             );
             // Check direct composed roles and transitive sub-roles
             let check_transitive =
-                |class_composed: &crate::runtime::registry_sharded_map::ShardedMap<String, Vec<String>>,
+                |class_composed: &crate::runtime::registry_composed_role_table::ComposedRoleTable,
                  role_parents: &crate::runtime::registry_sharded_map::ShardedMap<String, Vec<String>>,
                  cn: &str|
                  -> Option<Value> {
