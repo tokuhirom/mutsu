@@ -235,31 +235,23 @@ try {
   assert(await page.locator('.bench-note').count() === 0,
          'a benchmark note stays hidden under a metric it does not concern');
 
-  // The dashboard leads with where mutsu loses, not with what moved since the
-  // previous commit.
-  console.log('Test: benchmark dashboard leads with the rows mutsu loses');
-  const losingRows = page.locator('#losing tbody tr[data-name]');
-  assert(await losingRows.count() === 2,
-         'the losing section lists the two rows above 1.0x and not the winning one');
-  assert(await losingRows.nth(0).getAttribute('data-name') === 'bench-fib',
-         'an engine-against-engine loss is ranked first');
-  assert(await page.locator('#losing tr.group').count() === 1
-         && await losingRows.nth(1).getAttribute('data-name') === 'bench-json-fast',
-         'a loss only to rakupp\'s native JSON parser is listed after it, in its own group');
-  assert(await losingRows.nth(1).locator('.tag').textContent() === 'rakupp parses JSON natively',
-         'with its caveat on the ratio it qualifies');
-  assert(await losingRows.nth(1).locator('a[href$="/issues/8673"]').count() === 1,
-         'and a link to the issue benchmarks/bench-tracking.toml names for it');
-  assert(await losingRows.nth(0).locator('.untracked').count() === 1,
-         'a losing row with no tracking issue says so');
-  assert(await losingRows.nth(0).locator('td.lose').count() === 1
-         && await losingRows.nth(0).locator('td.win').count() === 1,
-         'the losing ratio is flagged and the winning one is not');
-  assert(await page.locator('.bench-card.losing').count() === 1
-         && await page.locator('.bench-card.losing').getAttribute('data-name') === 'bench-fib',
-         'the losing card is flagged too');
-  assert(await page.locator('.bench-card[data-name="bench-fib"] .standing .lose').count() === 1,
-         'and carries its ratios against both references');
+  // Where mutsu loses is marked in the ordinary cards, quietly: the losing
+  // ratio in red, the caveat as a †, the tracking issues as small links.
+  console.log('Test: benchmark dashboard marks the ratios mutsu loses');
+  assert(await page.locator('#losing').count() === 0,
+         'there is no separate losers section');
+  const fib = page.locator('.bench-card[data-name="bench-fib"] .standing');
+  assert(await fib.locator('.lose').count() === 1 && await fib.locator('.win').count() === 1,
+         'a card carries its ratios against both references, the losing one flagged');
+  assert(await page.locator('.bench-card[data-name="bench-hash"] .standing .lose').count() === 0,
+         'a card that wins against both flags nothing');
+  const json = page.locator('.bench-card[data-name="bench-json-fast"] .standing');
+  assert((await json.locator('.note-mark').getAttribute('title')).startsWith('rakupp parses JSON natively'),
+         'a caveated ratio carries its caveat');
+  assert(await json.locator('a[href$="/issues/8673"]').count() === 1,
+         'a losing card links the issue benchmarks/bench-tracking.toml names for it');
+  assert(await fib.locator('a').count() === 0,
+         'and a losing card with no tracking entry links nothing');
   assert((await page.textContent('.bench-card[data-name="bench-fib"] .chip')).includes('faster'),
          'a step far outside the noise is shown as a trend');
   assert(await page.textContent('.bench-card[data-name="bench-hash"] .chip') === 'no change',

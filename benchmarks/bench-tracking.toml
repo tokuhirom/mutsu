@@ -1,10 +1,9 @@
 # Which issue tracks each benchmark row that mutsu loses.
 #
-# scripts/bench-visualize.py reads this file to render the bench-trend
-# dashboard's "mutsu is slower here" section: every row whose median ratio over
-# the last commits is above 1.0x against rakudo or rakupp is listed there, worst
-# first, with the issues named here linked next to it. A losing row with no
-# entry is shown as "no tracking issue" and the generator warns about it.
+# scripts/bench-visualize.py reads this file: on the bench-trend dashboard a
+# card whose median ratio over the last commits is above 1.0x against rakudo or
+# rakupp links the issues named here, and `--report` lists them next to each
+# losing row. For a losing row with no entry the generator warns.
 #
 # One table per benchmark, keyed by the name its dashboard card carries (`+jit`
 # stripped, `@section` kept). Keys:
