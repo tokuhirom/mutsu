@@ -256,10 +256,11 @@ impl ComposedRoleTable {
         }
         if self.catalogue.is_some() && snapshot.catalogue == self.catalogue {
             for index in 0..catalogue::LEN {
-                if self.is_hidden(index) && !snapshot.is_hidden(index) {
-                    if let Some(hidden) = self.hidden.as_mut() {
-                        Arc::make_mut(hidden).remove(&(index as u32));
-                    }
+                if self.is_hidden(index)
+                    && !snapshot.is_hidden(index)
+                    && let Some(hidden) = self.hidden.as_mut()
+                {
+                    Arc::make_mut(hidden).remove(&(index as u32));
                 }
             }
         }
