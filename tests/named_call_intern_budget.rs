@@ -196,10 +196,7 @@ fn unit_lexical_store_does_not_intern_its_name() {
     // whether that lands inside the measured LOW run. Load it once here so
     // both lengths measure the same, cached load.
     interns_for(&format!("{preamble}\nbump-count(1);"));
-    let per_call = interns_per_call(
-        preamble,
-        r#"$hits = bump-count(1);"#,
-    );
+    let per_call = interns_per_call(preamble, r#"$hits = bump-count(1);"#);
     eprintln!("unit-lexical store after a dynamic bind: {per_call:.3} interns per call");
     // Measured 2.000 before the fix and 0.000 after.
     let limit = 0.0;
@@ -209,4 +206,3 @@ fn unit_lexical_store_does_not_intern_its_name() {
          ({per_call:.3} interns/call, budget {limit}); see #19215"
     );
 }
-
