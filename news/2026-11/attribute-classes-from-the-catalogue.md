@@ -16,7 +16,9 @@ was left of the registry build.
 The code that built them moved verbatim into `builtin_class_catalogue_attr::build_all`
 (ADR-19206). It now runs once per process, the first time any of these classes is looked up.
 The classes became the static class catalogue's third row segment. The registry's class table
-now starts empty, so every built-in class is a catalogue row.
+now starts empty, so every built-in class is a catalogue row. The start-up class table that
+#19204 introduced for the build (`runtime_init_class_table.rs`) had no classes left to hold,
+so it was removed.
 
 Their accessor rows are no longer synced at start-up. `Registry::accessor_is_public_sym`
 answers a built-in class's accessors from its own attribute list. It already did this for the
