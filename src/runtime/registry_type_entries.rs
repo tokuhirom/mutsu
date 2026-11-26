@@ -203,6 +203,27 @@ impl<K: TypeKey, S: std::hash::BuildHasher> TypeTable for std::collections::Hash
     }
 }
 
+impl TypeTable for crate::runtime::registry::ClassTable {
+    type Item = (String, CowTable<ClassDef>);
+    // Cost: O(n), n = the names; a catalogue class (ADR-19206) is
+    // materialized by its lookup.
+    fn entries_of(&self, names: &TypeNames) -> Vec<Self::Item> {
+        names
+            .strs
+            .iter()
+            .filter_map(|name| self.get(name).map(|entry| (name.clone(), entry.clone())))
+            .collect()
+    }
+    // Cost: O(i), i = items.
+    fn insert_absent(&mut self, items: Vec<Self::Item>) {
+        for (name, entry) in items {
+            if !self.contains_key(&name) {
+                self.insert(name, entry);
+            }
+        }
+    }
+}
+
 impl<T: TypeTable + Clone> TypeTable for CowTable<T> {
     type Item = T::Item;
     // Cost: as for the inner table.

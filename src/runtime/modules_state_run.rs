@@ -56,6 +56,8 @@ mod runtime_container;
 mod runtime_encoding;
 pub(crate) mod runtime_init;
 mod runtime_init_class_table;
+mod builtin_class_catalogue;
+mod builtin_class_catalogue_x_rows;
 mod builtin_exception_attrs;
 mod runtime_module;
 mod foreign_main;

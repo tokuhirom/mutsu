@@ -341,7 +341,7 @@ impl Interpreter {
             saved_failed_classes,
         );
         let mut current_classes = self.registry().classes.clone();
-        current_classes.retain(|name, _| !is_eval_role_artifact(name) && !failed_classes.contains(name));
+        current_classes.retain_names(|name| !is_eval_role_artifact(name) && !failed_classes.contains(name));
         let current_type_keys: std::collections::HashSet<String> = current_roles
             .keys()
             .filter(|name| keep_role(name))
@@ -364,7 +364,7 @@ impl Interpreter {
         // whatever ran during the EVAL itself.
         let resurrected_classes: Vec<String> = classes_snapshot
             .keys()
-            .filter(|name| !current_classes.contains_key(*name))
+            .filter(|name| !current_classes.contains_key(name))
             .cloned()
             .collect();
         // The merge is `snapshot` overlaid with what the EVAL left (minus its
@@ -401,8 +401,8 @@ impl Interpreter {
             reg.role_hides.retain(|name, _| keep_role(name));
             refill(&mut reg.role_hides, &role_hides_snapshot);
             reg.classes
-                .retain(|name, _| !is_eval_role_artifact(name) && !failed_classes.contains(name));
-            refill(&mut reg.classes, &classes_snapshot);
+                .retain_names(|name| !is_eval_role_artifact(name) && !failed_classes.contains(name));
+            reg.classes.refill_from(&classes_snapshot);
             reg.hidden_classes
                 .retain(|name| !failed_classes.contains(name));
             reg.hidden_classes
@@ -526,7 +526,7 @@ impl Interpreter {
             .registry()
             .classes
             .keys()
-            .filter(|name| !classes_before.contains_key(*name))
+            .filter(|name| !classes_before.contains_key(name))
             .cloned()
             .collect();
         self.module.eval_failed_classes.extend(added);

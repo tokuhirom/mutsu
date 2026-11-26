@@ -33,7 +33,7 @@ impl Interpreter {
         let display = crate::value::types::what_type_name(value);
         let registry = self.registry();
         // Cost: O(1) amortized: the display-name index is rebuilt (one scan of the
-        // class table) only when the table has grown since it was built.
+        // class table) only when the table's key set changed since it was built.
         let mut index = registry
             .mixin_display_index
             .lock()
@@ -43,7 +43,8 @@ impl Interpreter {
         {
             return Some(key.clone());
         }
-        if index.0 != registry.classes.len() {
+        let stamp = registry.classes.key_generation();
+        if index.0 != stamp {
             let mut rebuilt = HashMap::default();
             for key in registry.classes.keys() {
                 if key.contains("+{") {
@@ -52,7 +53,7 @@ impl Interpreter {
                         .or_insert_with(|| key.clone());
                 }
             }
-            *index = (registry.classes.len(), rebuilt);
+            *index = (stamp, rebuilt);
             return index.1.get(display.as_str()).cloned();
         }
         None

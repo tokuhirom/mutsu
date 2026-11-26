@@ -49,7 +49,9 @@ pub(crate) type CompiledProto = (
     Arc<crate::opcode::CompiledCode>,
     Option<Arc<crate::opcode::CompiledFns>>,
 );
-pub(crate) type ClassTable = Sharded<String, CowTable<ClassDef>>;
+/// The class table: a copy-on-write overlay over the static built-in class
+/// catalogue (ADR-19206).
+pub(crate) use super::registry_class_table::ClassTable;
 /// The role table: sharded like [`ClassTable`], each definition behind its
 /// own `Arc`, so copying a shard never copies a role body.
 pub(crate) type RoleTable = CowTable<ShardedMap<String, CowTable<RoleDef>>>;
@@ -238,11 +240,11 @@ type StampedClassShortNames = (u64, ClassShortNameIndex);
 #[derive(Clone, Default)]
 pub(crate) struct Registry {
     /// `user_facing_type_name -> class key` for the `base+{roles}` mixin classes, valid
-    /// for the class-table size it was built at (see
+    /// for the class-table key generation it was built at (see
     /// `Interpreter::mixin_class_of_type_object`). Shared across forks; a hit is
     /// re-verified against `classes`.
     pub(crate) mixin_display_index:
-        std::sync::Arc<std::sync::Mutex<(usize, HashMap<String, String>)>>,
+        std::sync::Arc<std::sync::Mutex<(u64, HashMap<String, String>)>>,
     /// The stash `nqp::setwho` gave a type object, by `who_override_key`:
     /// its `.WHO` answers that very object.
     pub(crate) who_overrides: Sharded<String, crate::value::Value>,
