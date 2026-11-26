@@ -418,16 +418,10 @@ impl Interpreter {
             };
             reg.class_composed_roles
                 .retain(|name, roles| !drops_composition(name, roles));
-            refill(
-                &mut reg.class_composed_roles,
-                &class_composed_roles_snapshot,
-            );
+            reg.class_composed_roles.refill_from(&class_composed_roles_snapshot);
             reg.class_direct_composed_roles
                 .retain(|name, roles| !drops_composition(name, roles));
-            refill(
-                &mut reg.class_direct_composed_roles,
-                &class_direct_composed_roles_snapshot,
-            );
+            reg.class_direct_composed_roles.refill_from(&class_direct_composed_roles_snapshot);
             reg.class_role_param_bindings
                 .retain(|name, _| !is_eval_role_artifact(name) && !failed_classes.contains(name));
             refill(

@@ -224,6 +224,27 @@ impl TypeTable for crate::runtime::registry::ClassTable {
     }
 }
 
+impl TypeTable for crate::runtime::registry_composed_role_table::ComposedRoleTable {
+    type Item = (String, Vec<String>);
+    // Cost: O(n), n = the names; a catalogue entry (ADR-19206) is computed by
+    // its lookup.
+    fn entries_of(&self, names: &TypeNames) -> Vec<Self::Item> {
+        names
+            .strs
+            .iter()
+            .filter_map(|name| self.get(name).map(|roles| (name.clone(), roles.clone())))
+            .collect()
+    }
+    // Cost: O(i), i = items.
+    fn insert_absent(&mut self, items: Vec<Self::Item>) {
+        for (name, roles) in items {
+            if !self.contains_key(&name) {
+                self.insert(name, roles);
+            }
+        }
+    }
+}
+
 impl<T: TypeTable + Clone> TypeTable for CowTable<T> {
     type Item = T::Item;
     // Cost: as for the inner table.
