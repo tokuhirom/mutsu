@@ -82,8 +82,9 @@ previous commit", because a one-commit move on this runner pool is mostly noise:
 - Each card, and the table, shows **vs rakudo** and **vs rakupp**: the **median of the last 10
   commits** of mutsu ÷ the reference on the `+jit` series (the default build), not the latest
   point. A ratio above 1.0x is red; it is lighter (*marginal*) when a quarter or more of those
-  commits were at or under parity. A ratio that is not engine against engine (rakupp parsing
-  JSON natively) carries a † whose tooltip says so. Wins are not coloured: the page stays a
+  commits were at or under parity. A ratio rakupp wins by something other than running the same
+  Raku code faster (its native JSON parser, its non-PIE startup) is not coloured and does not
+  count as a loss: the card shows its note instead, in every metric. Wins are not coloured: the page stays a
   trend view, and the losses read at a glance within it.
 - A losing card links the issues that track it, from
   [`benchmarks/bench-tracking.toml`](../benchmarks/bench-tracking.toml). For a losing row with no
