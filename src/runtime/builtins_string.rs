@@ -160,14 +160,15 @@ impl Interpreter {
             {
                 let (from, to) = (caps.from, caps.to);
                 let segment: String = chars[pos..from].iter().collect();
-                let matched: String = chars[from..to].iter().collect();
                 let match_obj = self.split_separator_match(caps, text);
                 result.push((
                     segment,
                     Some(SplitMatch {
                         from,
                         to,
-                        matched,
+                        // The separator Match is what `:v` reports; no copy of
+                        // its text is needed (#19201).
+                        matched: Value::NIL,
                         splitter_index: 0,
                         is_regex: true,
                         match_obj: Some(match_obj),
@@ -336,7 +337,9 @@ struct CachedSplitMatch {
     from: usize,
     to: usize,
     byte_to: usize,
-    matched: String,
+    /// What `:v` reports for a string splitter (`Nil` for a regex one, whose
+    /// separator Match is reported instead).
+    matched: Value,
     /// `Some` exactly when the splitter is a regex.
     caps: Option<RegexCaptures>,
 }
@@ -380,11 +383,18 @@ impl Interpreter {
                     &sep,
                 )?;
                 let from = cursor.char_pos + text[cursor.byte_pos..from_byte].chars().count();
+                let byte_to = from_byte + sep.len();
+                // A `Str` splitter is reported as itself (shared, not copied).
+                let matched = if matches!(splitter.view(), ValueView::Str(_)) {
+                    splitter.clone()
+                } else {
+                    Value::str(sep)
+                };
                 return Some(CachedSplitMatch {
                     from,
                     to: from + sep_chars.len(),
-                    byte_to: from_byte + sep.len(),
-                    matched: sep,
+                    byte_to,
+                    matched,
                     caps: None,
                 });
             }
@@ -403,7 +413,7 @@ impl Interpreter {
             from: caps.from,
             to: caps.to,
             byte_to,
-            matched: chars[caps.from..caps.to].iter().collect(),
+            matched: Value::NIL,
             caps: Some(caps),
         })
     }
