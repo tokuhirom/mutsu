@@ -8,12 +8,15 @@
 # (This bit us for modules/ and LICENSE, and again for crates/ — the root
 # Cargo.toml lists crates/mutsu-lsp as a workspace member, so cargo cannot load
 # the manifest without it. docker.yml only runs on a tag, so PR CI does not
-# catch it.)
+# catch it. Again for linker/: build.rs and src/main.rs read
+# linker/startup-text.ld, added by #19203.)
 *
+!build.rs
 !Cargo.toml
 !Cargo.lock
 !src/
 !vendor/
 !crates/
+!linker/
 !modules/
 !LICENSE
