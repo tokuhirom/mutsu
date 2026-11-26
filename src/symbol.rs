@@ -997,6 +997,14 @@ pub(crate) mod wk {
         /// instance (`runtime/which_identity.rs`).
         which_method => "WHICH";
         order_more => "More";
+        /// The OS handle type (`nqp_ops_proc::OS_HANDLE_CLASS`), asked with
+        /// the BOOT scalar types of every instance receiver of a method call
+        /// (`boot_collection::is_boot_collection_invocant`).
+        boot_io => "BOOTIO";
+        /// The built-in `Iterator` class, whose instances' dispatch shape is
+        /// decoded from their attributes; asked of every instance receiver
+        /// (`DispatchShape` of an `Instance`).
+        iterator_class => "Iterator";
         /// The builtin a subscript's value adverbs (`:k`/`:v`/`:kv`/`:p`) lower to
         /// (`ast::SUBSCRIPT_ADVERB_FN`).
         subscript_adverb => "__mutsu_subscript_adverb";

@@ -54,6 +54,15 @@ fn is_boot_object_class(name: &str) -> bool {
         || name == super::nqp_ops_proc::OS_HANDLE_CLASS
 }
 
+/// [`is_boot_object_class`] for an interned class name: four symbol compares
+/// instead of resolving the name and matching strings, since every instance
+/// receiver of a method call asks it.
+// Cost: O(1).
+fn is_boot_object_class_sym(name: crate::symbol::Symbol) -> bool {
+    use crate::symbol::wk;
+    name == wk::boot_int() || name == wk::boot_num() || name == wk::boot_str() || name == wk::boot_io()
+}
+
 /// The `BOOT*` type a type object names, if any.
 // Cost: O(1).
 pub(crate) fn boot_type_object_name(v: &Value) -> Option<Symbol> {
@@ -213,7 +222,7 @@ pub(crate) fn is_boot_collection_invocant(target: &Value) -> bool {
         // materialize it.
         || (!target.is_lazy_match_value()
             && matches!(target.view(), ValueView::Instance { class_name, .. }
-                if is_boot_object_class(class_name.as_str())))
+                if is_boot_object_class_sym(class_name)))
 }
 
 impl Interpreter {
@@ -326,3 +335,23 @@ impl Interpreter {
     }
 }
 
+
+#[cfg(test)]
+mod tests {
+    use super::{is_boot_object_class, is_boot_object_class_sym};
+    use crate::symbol::Symbol;
+
+    #[test]
+    fn boot_object_class_sym_agrees_with_the_string_form() {
+        for name in [
+            "BOOTInt", "BOOTNum", "BOOTStr", "BOOTIO", "BOOTHash", "BOOTArray", "Int", "Iterator",
+            "Foo",
+        ] {
+            assert_eq!(
+                is_boot_object_class_sym(Symbol::intern(name)),
+                is_boot_object_class(name),
+                "{name}"
+            );
+        }
+    }
+}

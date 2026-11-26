@@ -29,6 +29,20 @@ impl Interpreter {
             .set(Some(crate::state_scope::StateScopeId::Type(owner.id())));
     }
 
+    /// [`Self::scope_method_state`] for a caller holding both names as
+    /// symbols: no re-intern of the receiver's class for a metamethod.
+    // Cost: O(1).
+    pub(super) fn scope_method_state_sym(&self, method: Symbol, receiver: Symbol, owner: Symbol) {
+        let owner = if method.as_str().starts_with('^') {
+            receiver
+        } else {
+            owner
+        };
+        self.lexicals
+            .state_scope_id
+            .set(Some(crate::state_scope::StateScopeId::Type(owner.id())));
+    }
+
     /// Call a compiled method body (MethodDef with compiled_code).
     /// Mirrors `Interpreter::run_resolved_method_celled` but executes bytecode.
     ///
