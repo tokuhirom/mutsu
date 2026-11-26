@@ -26,6 +26,9 @@ on it.
   #19197 (startup page faults), #19198 (the allocator) and #19199 (the regex rows' cache-miss
   profile, a sub-issue of #15737). Everything else was already tracked
   ([issue map](#existing-issues)).
+- The numbers below are from `13320ba6`. Where things stood a day later, after the first
+  #19197 slices and the string-allocation work (#19201), is under
+  [Re-measurement](#re-measurement-2026-11-26-main-5f44cb0d).
 
 ## Setup
 
@@ -74,8 +77,10 @@ A `die` placed at the top of a module routine shows whether rakupp executes the 
 | YAMLish (`modules/YAMLish`) | yes | a `die` at the top of `load-yaml` fires under rakupp exactly as under mutsu |
 | Test | built in | rakupp lists the Test API as a built-in. `use Test;` adds nothing measurable to its startup, against ~12 ms on mutsu with a warm precomp cache. |
 
-The rakupp binary is a statically linked, non-PIE executable (`EXEC`, 24 MB, no
-`R_X86_64_RELATIVE` relocations). mutsu is an 85 MB PIE with 77k relative relocations.
+The rakupp binary is a non-PIE executable (`EXEC`, loaded at the fixed address `0x400000`, 24 MB,
+no `R_X86_64_RELATIVE` relocations). Its own runtime (`librakupp`) is linked in statically, and
+libc, libm, libpthread and libdl are dynamic. mutsu is an 85 MB PIE with ~80k relative
+relocations.
 
 ## Cross-cutting cause 1: startup page faults
 
@@ -205,6 +210,10 @@ blocks, and on them the gain held over 15 alternating runs. An allocator change 
 on these rows *and* on #15235's workload. Note that `src/lib.rs` already installs a counting
 `#[global_allocator]` for `alloc_stats`, which a real allocator would have to wrap.
 
+The same preload measured a day later, after #19201 had cut the allocation count, splits in two.
+Rows dominated by startup now get 7-11% *slower*, and the allocation-heavy rows gain about half
+of what they did. See [Re-measurement](#re-measurement-2026-11-26-main-5f44cb0d).
+
 ## Row-specific costs
 
 ### bench-grammar-parse, bench-grammar-parse-deep
@@ -289,6 +298,73 @@ condition.
    these rows and on #15235's workload. Decide on wall time and RSS together.
 3. **The cache and mispredict profile of the regex rows**: #19199, a sub-issue of #15737.
    Goal: `bench-regex-capture@section` at or under 1.00x rakupp.
+
+## Re-measurement (2026-11-26, `main` `5f44cb0d`)
+
+What changed since `13320ba6`:
+
+- **#19197 slices**: start-up text grouped by a linker script (#19203), the scratch built-in
+  class table removed (#19204), and `%*ENV` built on its first lookup (#19225).
+- **#19201**: `.split` pieces share the invocant's buffer (#19202, #19207), and so do `comb`,
+  `lines`, `words`, `substr` and an ASCII subject's Match text (#19213). The same work
+  stopped a `for … -> $x` loop from building a `String` key per iteration.
+
+### bench-det (CI, deterministic)
+
+`bench-det-history.tsv`, interpreter series, `f03eae22` (2026-11-25) → `5815153c` (2026-11-26):
+
+| benchmark | instructions | allocations |
+|---|---:|---:|
+| bench-startup | 7.51M → 5.38M (-28%) | 9,899 → 6,682 (-32%) |
+| string-concat | -8.8% | -30% |
+| bench-grammar-parse | -12% | -16% |
+| bench-grammar-parse-deep | -7.6% | -13% |
+| word-count | -14% | 768,041 → 339,829 (-56%) |
+| bench-regex-split-subst | -10% | -26% |
+| regex-match, regex-capture, ctor, yaml-parse-big, ripemd-rounds, json-fast-spdx | within ±2% | within ±3% |
+
+The wall-clock series lagged: its newest row was `afd0efb7`, which predates #19213 and #19225.
+
+### Local wall clock, page faults and the jemalloc preload
+
+Release build of `5f44cb0d` and rakupp v5.0.1, `MUTSU_JIT=off`. Each figure is the median of 11
+interleaved runs, timed as user + sys from `wait4`, on the noisy 4-core container (read every
+ratio as ±10%).
+
+| benchmark | mutsu | rakupp | vs rakupp | minor faults (mutsu / rakupp) | jemalloc preload |
+|---|---:|---:|---:|---:|---:|
+| empty program | 6.0 ms | 4.1 ms | 1.44 | 1,000 / 469 | +7% |
+| bench-startup | 5.8 ms | 4.4 ms | 1.30 | 1,033 / 512 | +11% |
+| string-concat | 7.8 ms | 6.5 ms | 1.19 | 1,226 / 567 | +11% |
+| bench-grammar-parse | 11.3 ms | 7.1 ms | 1.59 | 1,667 / 761 | +3% |
+| bench-grammar-parse-deep | 13.6 ms | 7.1 ms | 1.92 | 1,727 / 753 | +11% |
+| word-count | 100.7 ms | 101.5 ms | **0.99** | | -6% |
+| bench-regex-split-subst | 221 ms | 162 ms | 1.36 | | -8% |
+| bench-regex-match | 157 ms | 124 ms | 1.27 | | -5% |
+| bench-regex-capture | 241 ms | 171 ms | 1.41 | | -6% |
+| bench-ctor | 290 ms | 188 ms | 1.54 | | -14% |
+| bench-yaml-parse-big | 153 ms | 106 ms | 1.45 | | -6% |
+| bench-ripemd-rounds | 80 ms | 58 ms | 1.38 | | -9% |
+
+Measured this way, rakupp takes ~470 faults for an empty program, not the ~300 quoted in
+cause 1. mutsu's count fell from ~1,200-1,400 to ~1,000, so the gap is now about 2x rather than
+4x.
+
+What this says:
+
+- **Startup (#19197)** is still ~1.3-1.4x rakupp, and mutsu still takes twice the faults. The
+  breakdown under cause 1 names what is left: ~400 copy-on-write faults from the PIE's
+  relocations, which only a non-PIE link removes (#11158, needs the maintainer), and heap pages
+  first touched during start-up (ADR-19206 targets the built-in registry).
+- **word-count** has drawn level with rakupp. The split and for-loop allocation work removed most
+  of its gap.
+- **The jemalloc preload no longer helps across the board (#19198).** It now costs startup-bound
+  rows 7-11%, and its gain on the allocation-heavy rows has roughly halved: word-count -10% →
+  -6%, split-subst -15% → -8%. ctor's -14% (previously -5%) is within this box's noise. These are
+  still preloads. #19198's real test is a `#[global_allocator]` build, which has not been made.
+- **What remains on the heavier rows does not move with these changes.** ctor (1.5x),
+  yaml-parse-big, regex-capture and ripemd-rounds (~1.4x) have flat instruction counts, so they
+  sit with instruction speed (#19199, #15737) and per-opcode cost (#8819).
 
 ## Reproducing
 
