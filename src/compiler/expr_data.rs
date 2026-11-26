@@ -269,7 +269,7 @@ impl Compiler {
                     if let Expr::Literal(lit) = index.as_ref()
                         && let ValueView::Str(key) = lit.view()
                     {
-                        let key_idx = self.code.add_constant(Value::str((**key).clone()));
+                        let key_idx = self.code.add_constant(Value::str(key.to_string()));
                         self.code.emit(OpCode::ExistsEnvIndex(key_idx));
                         return;
                     }
@@ -668,7 +668,7 @@ impl Compiler {
             // A `&` key keeps its sigil: a lexical routine lives under `&name`,
             // and `CALLERS::` walks every caller scope for it.
             let bare: String = match key.chars().next() {
-                Some('&') => String::clone(&key),
+                Some('&') => key.to_string(),
                 Some('$' | '@' | '%') => key.chars().skip(1).collect(),
                 // A sigil-less key names a term: a constant's binding is its
                 // term key (#9962, #17846).
@@ -737,7 +737,7 @@ impl Compiler {
         {
             let bare: String = match key.chars().next() {
                 Some('$' | '@' | '%' | '&') => key.chars().skip(1).collect(),
-                _ => String::clone(&key),
+                _ => key.to_string(),
             };
             let name_idx = self.code.add_constant(Value::str(bare));
             self.code.emit(OpCode::GetCallerVar {
@@ -775,10 +775,10 @@ impl Compiler {
                     {
                         term
                     } else {
-                        String::clone(&key)
+                        key.to_string()
                     }
                 }
-                _ => String::clone(&key),
+                _ => key.to_string(),
             };
             match scope {
                 OuterStash::At(depth) => self.emit_outer_var_access(bare, depth),

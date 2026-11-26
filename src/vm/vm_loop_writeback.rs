@@ -204,7 +204,7 @@ impl Interpreter {
     fn element_source_key(index: &Value) -> String {
         match index.view() {
             ValueView::Int(i) => i.to_string(),
-            ValueView::Str(s) => String::clone(&s),
+            ValueView::Str(s) => s.to_string(),
             _ => index.to_string_value(),
         }
     }

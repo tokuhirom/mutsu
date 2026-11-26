@@ -528,7 +528,7 @@ impl Interpreter {
             Some(ValueView::Array(srcs, ..)) => srcs
                 .iter()
                 .map(|src| match src.view() {
-                    ValueView::Str(s) if !s.is_empty() => Some((**s).clone()),
+                    ValueView::Str(s) if !s.is_empty() => Some(s.to_string()),
                     _ => None,
                 })
                 .collect(),

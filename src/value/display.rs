@@ -535,7 +535,7 @@ impl Value {
             ValueView::Int(i) => i.to_string(),
             ValueView::BigInt(n) => n.to_string(),
             ValueView::Num(f) => format_num(f),
-            ValueView::Str(s) => (**s).clone(),
+            ValueView::Str(s) => s.to_string(),
             ValueView::Bool(true) => "True".to_string(),
             ValueView::Bool(false) => "False".to_string(),
             ValueView::Range(a, b) => {

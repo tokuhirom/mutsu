@@ -243,6 +243,8 @@ impl Interpreter {
                 _ => unreachable!("ForLoop param must be a string constant"),
             });
 
+        // The loop parameter's env key, interned on the first iteration.
+        let mut param_sym: Option<Symbol> = None;
         let arity = spec.arity.max(1) as usize;
         // The implicit-topic loop (`for @a { $_ = ... }`). A multi-param
         // signature binds named parameters out of the chunk instead, so `$_`
@@ -1059,7 +1061,10 @@ impl Interpreter {
                 _ => item,
             };
             if let Some(ref name) = param_name {
-                self.env_mut().insert(name.clone(), item.clone());
+                // Interned once per loop, not a `String` key per iteration:
+                // `Env::insert` only interns its key (#19201).
+                let sym = *param_sym.get_or_insert_with(|| Symbol::intern(name));
+                self.env_mut().insert_sym_noting(sym, item.clone());
                 // Create non-twigil alias for placeholder params: $^a → $a
                 if let Some(bare) = name.strip_prefix("&^") {
                     self.env_mut().insert(format!("&{}", bare), item.clone());

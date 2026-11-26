@@ -1,5 +1,6 @@
 use crate::symbol::Symbol;
-use crate::value::{RuntimeError, Value, ValueView};
+use crate::value::{RuntimeError, StrBody, Value, ValueView};
+use std::sync::Arc;
 
 /// Named parameters for split
 #[derive(Default)]
@@ -131,6 +132,34 @@ pub(crate) struct SplitMatch {
     pub match_obj: Option<Value>,
 }
 
+/// One piece of a split, before it becomes a `Str`.
+pub(crate) enum Piece {
+    /// A byte range of the split invocant (on `char` boundaries). It becomes a
+    /// [`StrBody::Slice`] sharing the invocant's buffer, not a copy (#19201).
+    Range(usize, usize),
+    /// A piece built some other way (the codepoint-walking paths).
+    Owned(String),
+}
+
+impl Piece {
+    fn is_empty(&self) -> bool {
+        match self {
+            Piece::Range(start, end) => start == end,
+            Piece::Owned(s) => s.is_empty(),
+        }
+    }
+
+    /// The piece as a `Str`. `base` is the invocant the ranges index.
+    // Cost: O(1) for a shared range; O(m) when [`StrBody::slice_of`] copies,
+    // m = bytes of the piece.
+    fn into_value(self, base: &Arc<StrBody>) -> Value {
+        match self {
+            Piece::Range(start, end) => Value::str_from_body(StrBody::slice_of(base, start, end)),
+            Piece::Owned(s) => Value::str(s),
+        }
+    }
+}
+
 /// Split a string by a string splitter. Returns list of `(segment, Option<match>)`.
 // Cost: O(n*m) worst, O(n + k) typical, n = bytes of the invocant, m = bytes
 // of the separator, k = pieces produced (grapheme-boundary-aware search).
@@ -138,7 +167,7 @@ pub(crate) fn split_by_string(
     text: &str,
     sep: &str,
     limit: Option<usize>,
-) -> Vec<(String, Option<SplitMatch>)> {
+) -> Vec<(Piece, Option<SplitMatch>)> {
     if limit == Some(0) {
         return Vec::new();
     }
@@ -148,7 +177,7 @@ pub(crate) fn split_by_string(
         if sep.is_empty() {
             return result;
         }
-        result.push((String::new(), None));
+        result.push((Piece::Range(0, 0), None));
         return result;
     }
 
@@ -163,11 +192,11 @@ pub(crate) fn split_by_string(
             if let Some(max) = max_splits
                 && splits_done >= max
             {
-                let remaining: String = chars[seg_start..].iter().collect();
+                let remaining = Piece::Owned(chars[seg_start..].iter().collect());
                 result.push((remaining, None));
                 return result;
             }
-            let segment: String = chars[seg_start..match_pos].iter().collect();
+            let segment = Piece::Owned(chars[seg_start..match_pos].iter().collect());
             result.push((
                 segment,
                 Some(SplitMatch {
@@ -182,7 +211,7 @@ pub(crate) fn split_by_string(
             ));
             seg_start = match_pos;
         }
-        result.push((String::new(), None));
+        result.push((Piece::Range(0, 0), None));
         return result;
     }
 
@@ -197,7 +226,7 @@ pub(crate) fn split_by_string(
         if let Some(max) = max_splits
             && splits_done >= max
         {
-            let remaining = text[pos..].to_string();
+            let remaining = Piece::Range(pos, text.len());
             result.push((remaining, None));
             return result;
         }
@@ -211,7 +240,7 @@ pub(crate) fn split_by_string(
                 let to = index
                     .grapheme_at_boundary(text, match_end)
                     .expect("grapheme search returns a boundary");
-                let segment = text[pos..match_pos].to_string();
+                let segment = Piece::Range(pos, match_pos);
                 result.push((
                     segment,
                     Some(SplitMatch {
@@ -227,7 +256,7 @@ pub(crate) fn split_by_string(
                 splits_done += 1;
             }
             None => {
-                let remaining = text[pos..].to_string();
+                let remaining = Piece::Range(pos, text.len());
                 result.push((remaining, None));
                 return result;
             }
@@ -248,13 +277,13 @@ pub(crate) fn split_by_strings(
     text: &str,
     splitters: &[String],
     limit: Option<usize>,
-) -> Vec<(String, Option<SplitMatch>)> {
+) -> Vec<(Piece, Option<SplitMatch>)> {
     if limit == Some(0) {
         return Vec::new();
     }
     let mut result = Vec::new();
     if text.is_empty() {
-        result.push((String::new(), None));
+        result.push((Piece::Range(0, 0), None));
         return result;
     }
 
@@ -276,7 +305,7 @@ pub(crate) fn split_by_strings(
         if let Some(max) = max_splits
             && splits_done >= max
         {
-            let remaining = text[pos..].to_string();
+            let remaining = Piece::Range(pos, text.len());
             result.push((remaining, None));
             return result;
         }
@@ -317,7 +346,7 @@ pub(crate) fn split_by_strings(
                 let to = index
                     .grapheme_at_boundary(text, match_end)
                     .expect("grapheme search returns a boundary");
-                let segment = text[pos..match_pos].to_string();
+                let segment = Piece::Range(pos, match_pos);
                 result.push((
                     segment,
                     Some(SplitMatch {
@@ -333,7 +362,7 @@ pub(crate) fn split_by_strings(
                 splits_done += 1;
             }
             None => {
-                let remaining = text[pos..].to_string();
+                let remaining = Piece::Range(pos, text.len());
                 result.push((remaining, None));
                 return result;
             }
@@ -372,10 +401,11 @@ fn push_separator_info(result: &mut Vec<Value>, m: &SplitMatch, opts: &SplitOpts
 }
 
 /// Apply split options to raw split results.
-// Cost: O(k), k = pieces: each piece's buffer moves into its `Str` (no copy).
+// Cost: O(k), k = pieces: each piece shares the invocant's buffer (no copy).
 pub(crate) fn apply_split_opts(
-    parts: Vec<(String, Option<SplitMatch>)>,
+    parts: Vec<(Piece, Option<SplitMatch>)>,
     opts: &SplitOpts,
+    base: &Arc<StrBody>,
 ) -> Vec<Value> {
     // Without :v/:k/:kv/:p there is one value per piece; with them, at most
     // two more per separator, so the first case is sized exactly.
@@ -394,7 +424,7 @@ pub(crate) fn apply_split_opts(
             continue;
         }
 
-        result.push(Value::str(segment));
+        result.push(segment.into_value(base));
 
         if let Some(m) = &match_info {
             push_separator_info(&mut result, m, opts);
@@ -445,14 +475,15 @@ pub(crate) fn native_split_function(args: &[Value]) -> Option<Result<Value, Runt
     }
 
     let splitters = get_string_splitters(splitter)?;
-    let text = target.to_string_value();
+    let base = crate::value::str_iter::shared_text(target);
+    let text: &str = &base;
 
     let parts = if splitters.len() == 1 {
-        split_by_string(&text, &splitters[0], opts.limit)
+        split_by_string(text, &splitters[0], opts.limit)
     } else {
-        split_by_strings(&text, &splitters, opts.limit)
+        split_by_strings(text, &splitters, opts.limit)
     };
 
-    let result = apply_split_opts(parts, &opts);
+    let result = apply_split_opts(parts, &opts, &base);
     Some(Ok(Value::seq(result)))
 }

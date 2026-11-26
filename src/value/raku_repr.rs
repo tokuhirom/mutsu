@@ -1272,7 +1272,7 @@ fn raku_value_node(v: &Value) -> String {
                     // uses the general `key => value` form.
                     let typed = map.typed_key(k);
                     let key_str: Option<String> = match typed.view() {
-                        ValueView::Str(s) => Some((**s).clone()),
+                        ValueView::Str(s) => Some(s.to_string()),
                         _ => None,
                     };
                     let is_ident = key_str.as_deref().is_some_and(is_adverbial_pair_key);

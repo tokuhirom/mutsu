@@ -50,6 +50,10 @@ impl Value {
     pub fn str(s: String) -> Self {
         Value::Str(Arc::new(crate::value::StrBody::Flat(s)))
     }
+    /// A `Str` holding an already-built body (e.g. a [`crate::value::StrBody::Slice`]).
+    pub(crate) fn str_from_body(body: crate::value::StrBody) -> Self {
+        Value::Str(Arc::new(body))
+    }
     pub fn str_from(s: &str) -> Self {
         Value::Str(Arc::new(crate::value::StrBody::Flat(s.to_string())))
     }
