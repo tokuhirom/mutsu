@@ -27,10 +27,11 @@ The API-fit question in Recommendation point 3 below is closed in
 ### What ships
 
 `modules/Text-CSV/` vendors the dist verbatim from upstream
-[Tux/CSV](https://github.com/Tux/CSV) at tag `v0.022`
-(`4e4ed4151dddc27583caf86f375bfc005d14c5be`, the commit matching the
-`zef:Tux` 0.022 release; `lib/` and `META6.json` are byte-identical to the
-REA archive): `lib/Text/CSV.rakumod`, `lib/Text/IO/String.rakumod`, the
+[Tux/CSV](https://github.com/Tux/CSV) at commit
+`0300d63c0895ff8cb43dac41b569504d04551007` (2026-11-26 refresh, #19210: the
+`zef:Tux` 0.022 release `4e4ed415` plus upstream's unreleased fixes on
+`main` -- the `--> T` signature style, `column_indices`, and `fields` honouring
+`column_names` for `colrange`; `META6.json` still says 0.022): `lib/Text/CSV.rakumod`, `lib/Text/IO/String.rakumod`, the
 `Text/CSV.pod6` docs, `META6.json`, `LICENSE` (Artistic-2.0), `README.md`.
 The release gate fetches the upstream suite at that same commit
 (`batteries.lock`) and runs it against the bundled tree on every release.

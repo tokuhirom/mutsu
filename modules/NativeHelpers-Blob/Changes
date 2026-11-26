@@ -1,5 +1,7 @@
 Revision history for NativeHelpers::Blob
 
+{{$NEXT}}
+
 0.1.13  2026-07-16T21:08:06+02:00
     - Make Offset and BODY_OF survive the GC moving an object
       (ugexe++)

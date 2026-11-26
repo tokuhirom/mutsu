@@ -374,7 +374,7 @@ class Cro::PipelineTraceTransform does Cro::Transform {
     method transformer(Supply:D $in --> Supply) {
         supply {
             whenever $in -> \msg {
-                my $output = (try msg.trace-output) // msg.perl;
+                my $output = (try msg.trace-output) // msg.raku;
                 self!output-trace: "EMIT {encode $output}";
                 emit msg;
                 LAST {

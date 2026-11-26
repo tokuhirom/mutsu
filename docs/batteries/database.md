@@ -221,7 +221,7 @@ cp README.md META6.json "$MUTSU_REPO/modules/NativeLibs/"
 
 # Moved from salortiz/ to the raku-community-modules org (auth zef:) at 0.1.12.
 git clone https://github.com/raku-community-modules/NativeHelpers-Blob.git /tmp/nhb-src
-cd /tmp/nhb-src && git checkout 0.1.13   # cec918868916893ee0866d49c0f86e601465da3d
+cd /tmp/nhb-src && git checkout faefc4b5f665d94cbea8d638e6a91593f78e75bd   # 0.1.13 + unreleased (Changes `{{$NEXT}}` header)
 cp -r lib "$MUTSU_REPO/modules/NativeHelpers-Blob/lib"
 cp Changes README.md LICENSE META6.json "$MUTSU_REPO/modules/NativeHelpers-Blob/"
 ```

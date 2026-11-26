@@ -65,8 +65,10 @@ the parent. ([news](../../news/2026-09/nested-capture-literal-flattened.md))
 
 ### Provenance and re-vendoring
 
-Vendored from the upstream v0.3.6 tag, commit
-`0349d282e257be61075f55abfde4c42a01bc8f10`, pinned in `batteries.lock`. Only
+Vendored from upstream commit
+`0e4838a70ad6793309ac024e224b59015aeaada9` (the v0.3.6 tag `0349d282` plus the
+unreleased `<namechar>`/`<namestartchar>` range consolidation; refreshed
+2026-11-26, #19210), pinned in `batteries.lock`. Only
 `lib/`, `META6.json`, `LICENSE` and `README.md` are copied — upstream `t/`,
 `xt/`, `.github/` and any `.precomp` artifacts a local `raku` run leaves behind
 are excluded (BATTERIES.md §3). To re-vendor a newer version:
