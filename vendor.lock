@@ -18,7 +18,7 @@
 #
 # Format: tab-separated. Columns:
 #   name              dir               url                                          branch   commit                                     date
-roast	roast	https://github.com/Raku/roast.git	master	7639d080ee3f3f58d00fc5f4b3e376ab1152ca92	2026-11-11
-raku-doc	raku-doc	https://github.com/Raku/doc.git	main	5d041ab6dac91eb310d0ffaf6cc62f14586b16c5	2026-11-07
+roast	roast	https://github.com/Raku/roast.git	master	3821e5926ebd94687a8cd1a9b3c555fee1411f4a	2026-11-25
+raku-doc	raku-doc	https://github.com/Raku/doc.git	main	50954c6a2a71084e32b6914acd003150d48c272e	2026-11-25
 old-design-docs	old-design-docs	https://github.com/Raku/old-design-docs.git	master	1c4e6039a116421c7dbd36c56c34d3f774dcaf8f	2025-06-08
 rakudo	vendor/rakudo	https://github.com/rakudo/rakudo.git	main	cf806368ad0bc63ea56f8c44e90c5112c9b3c794	2026-11-14	src/core.c/RakuAST/Deparse.rakumod,lib/RakuAST/Deparse/Highlight.rakumod,lib/RakuAST/Deparse/Highlight/CORE.rakumod
