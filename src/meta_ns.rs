@@ -473,11 +473,13 @@ impl MetaNs {
 
     /// [`Self::key`] for a caller that only has the name as a `&str`.
     ///
-    /// Interns `name` before the memo lookup, so it costs a string hash on
-    /// every call and is the wrong entry point for a hot path — reach for it
-    /// only where the caller genuinely has no `Symbol`.
+    /// Looks `name` up before interning it (`qualified::known_symbol`), so a
+    /// name already in the table -- every variable name the compiler emitted
+    /// -- is not re-interned per call. It still hashes the text, so a hot
+    /// path that holds a `Symbol` should call [`Self::key`] instead.
+    // Cost: O(|name|) for the lookup's hash, then as `key`.
     pub(crate) fn key_for_str(self, name: &str) -> Symbol {
-        self.key(Symbol::intern(name))
+        self.key(crate::qualified::known_symbol(name))
     }
 
     /// [`Self::key_for_str`] as a `&'static str`, for the sites that hand the
