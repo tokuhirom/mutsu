@@ -8,30 +8,44 @@
 //! built-in class copies it into that table first, so a slot is never written
 //! after it is filled.
 //!
-//! Slice 1 holds the ~370 `X::` exception classes that `build_builtin_registry`
-//! used to register one by one (`register_x`): their construction was ~23% of
-//! a `say "hello"`'s instructions.
+//! Two kinds of row share one index space:
 //!
-//! The rows are one `&'static str` plus `const`-computed `u32` offset tables, so
+//! - rows `0..X_LEN` are the ~370 `X::` exception classes that
+//!   `build_builtin_registry` used to register one by one (`register_x`,
+//!   slice 1), each described by its name, parent and composed roles;
+//! - rows `X_LEN..LEN` are the attribute-less core classes whose `ClassDef`
+//!   literal moved into `builtin_class_catalogue_core` (slice 2), each built
+//!   by its own builder.
+//!
+//! The rows are `&'static str`s plus `const`-computed `u32` offset tables, so
 //! the catalogue lives in `.rodata` and costs the dynamic loader no relocations
 //! (ADR-19206 §2.2).
 
 use std::sync::OnceLock;
 
 use super::ClassDef;
+use super::builtin_class_catalogue_core::{CORE_CLASS_ROWS, build_core_class};
 use super::builtin_class_catalogue_x_rows::X_CLASS_ROWS;
 use super::registry_cow_table::CowTable;
 use crate::symbol::Symbol;
 
-const ROWS: &[u8] = X_CLASS_ROWS.as_bytes();
+const X_ROWS: &[u8] = X_CLASS_ROWS.as_bytes();
+const CORE_ROWS: &[u8] = CORE_CLASS_ROWS.as_bytes();
 
+/// The number of `X::` rows; they come first.
+const X_LEN: usize = count_rows(X_ROWS);
+/// The number of core rows; they follow the `X::` rows.
+const CORE_LEN: usize = count_rows(CORE_ROWS);
 /// The number of catalogue rows.
-pub(crate) const LEN: usize = count_rows(ROWS);
+pub(crate) const LEN: usize = X_LEN + CORE_LEN;
 
-/// Byte offset of each row's first byte.
-static ROW_START: [u32; LEN] = row_starts::<LEN>(ROWS);
-/// Byte offset of the tab that ends each row's name.
-static NAME_END: [u32; LEN] = name_ends::<LEN>(ROWS);
+/// Byte offset of each `X::` row's first byte.
+static ROW_START: [u32; X_LEN] = row_starts::<X_LEN>(X_ROWS);
+/// Byte offset of the tab that ends each `X::` row's name.
+static NAME_END: [u32; X_LEN] = name_ends::<X_LEN>(X_ROWS);
+/// The same two tables for the core rows.
+static CORE_ROW_START: [u32; CORE_LEN] = row_starts::<CORE_LEN>(CORE_ROWS);
+static CORE_NAME_END: [u32; CORE_LEN] = name_ends::<CORE_LEN>(CORE_ROWS);
 
 /// Each row's name as a `String`, built on the first whole-table walk (keys
 /// of the class table are `String`s; start-up never walks it).
@@ -40,10 +54,10 @@ static NAME_STRINGS: OnceLock<Box<[String]>> = OnceLock::new();
 /// Each row's materialized class, filled on first lookup.
 static SLOTS: [OnceLock<CowTable<ClassDef>>; LEN] = [const { OnceLock::new() }; LEN];
 
-/// The parents of the eagerly built classes a catalogue row's MRO walk can
-/// reach (`build_builtin_registry` still builds these four). Their own
-/// parents end the walk at `Exception`, which has none. A unit test pins
-/// this table against the eagerly built classes.
+/// The parents of the non-`X::`-row classes an `X::` row's MRO walk can reach
+/// (core rows, whose `ClassDef` literals say so). Their own parents end the
+/// walk at `Exception`, which has none. A unit test pins this table against
+/// the built classes.
 const EAGER_PARENTS: &[(&str, &str)] = &[
     ("X::AdHoc", "Exception"),
     ("X::TypeCheck", "Exception"),
@@ -144,7 +158,12 @@ const fn bytes_lt(s: &[u8], a0: usize, a1: usize, b0: usize, b1: usize) -> bool 
 /// The name of row `index`.
 // Cost: O(1).
 pub(crate) fn name(index: usize) -> &'static str {
-    &X_CLASS_ROWS[ROW_START[index] as usize..NAME_END[index] as usize]
+    match index.checked_sub(X_LEN) {
+        None => &X_CLASS_ROWS[ROW_START[index] as usize..NAME_END[index] as usize],
+        Some(core) => {
+            &CORE_CLASS_ROWS[CORE_ROW_START[core] as usize..CORE_NAME_END[core] as usize]
+        }
+    }
 }
 
 /// The name of row `index`, as the `String` a class-table key walk yields.
@@ -153,9 +172,13 @@ pub(crate) fn name_string(index: usize) -> &'static String {
     &NAME_STRINGS.get_or_init(|| (0..LEN).map(|row| name(row).to_string()).collect())[index]
 }
 
-/// The `parent` and `does` fields of row `index`.
+/// The `parent` and `does` fields of row `index`; empty for a core row, whose
+/// builder holds its parents.
 // Cost: O(r), r = the row's length.
 fn fields(index: usize) -> (&'static str, &'static str) {
+    if index >= X_LEN {
+        return ("", "");
+    }
     let end = ROW_START
         .get(index + 1)
         .map_or(X_CLASS_ROWS.len(), |next| *next as usize)
@@ -180,11 +203,18 @@ pub(crate) fn does(index: usize) -> impl Iterator<Item = &'static str> {
 /// The row of the built-in class `name`, if the catalogue has one.
 // Cost: O(|name| log LEN).
 pub(crate) fn index_of(name_: &str) -> Option<usize> {
-    // Every row is an `X::` name; anything else misses without a search.
-    if !name_.starts_with("X::") {
-        return None;
+    // Every `X::` row's name starts with `X::`; core rows are searched too.
+    if name_.starts_with("X::")
+        && let Some(index) = search(0, X_LEN, name_)
+    {
+        return Some(index);
     }
-    let (mut lo, mut hi) = (0usize, LEN);
+    search(X_LEN, LEN, name_)
+}
+
+/// Binary search for `name_` among rows `lo..hi`, which are sorted by name.
+// Cost: O(|name| log (hi - lo)).
+fn search(mut lo: usize, mut hi: usize, name_: &str) -> Option<usize> {
     while lo < hi {
         let mid = (lo + hi) / 2;
         match name(mid).cmp(name_) {
@@ -196,11 +226,13 @@ pub(crate) fn index_of(name_: &str) -> Option<usize> {
     None
 }
 
-/// The first parent of a class a row's MRO walk reaches: another row, one of
-/// the eagerly built classes in [`EAGER_PARENTS`], or none.
+/// The first parent of a class an `X::` row's MRO walk reaches: another `X::`
+/// row, one of the classes in [`EAGER_PARENTS`], or none.
 // Cost: O(|name| log LEN).
 fn parent_of(name_: &str) -> Option<&'static str> {
-    if let Some(index) = index_of(name_) {
+    if let Some(index) = index_of(name_)
+        && index < X_LEN
+    {
         return Some(parent(index));
     }
     EAGER_PARENTS
@@ -213,7 +245,29 @@ fn parent_of(name_: &str) -> Option<&'static str> {
 // Cost: O(1) after the first call; the first builds the class in O(d log LEN),
 // d = its MRO depth.
 pub(crate) fn materialize(index: usize) -> &'static CowTable<ClassDef> {
-    SLOTS[index].get_or_init(|| build(index).into())
+    SLOTS[index].get_or_init(|| match index.checked_sub(X_LEN) {
+        None => build(index).into(),
+        Some(core) => build_core(core, name(index)).into(),
+    })
+}
+
+/// Core row `core`'s class, as `build_builtin_registry` inserted it: its
+/// builder's literal, and -- for a built-in exception class -- its rakudo
+/// attributes marked for declaration on first access, as
+/// `BuiltinClassTable::insert` marks them (#18654, #18956).
+// Cost: O(s), s = the size of the class's literal sets.
+fn build_core(core: usize, name_: &str) -> ClassDef {
+    let mut class_def = build_core_class(core);
+    if super::builtin_exception_attrs::may_declare(name_) {
+        let class = class_def
+            .mro
+            .first()
+            .copied()
+            .filter(|own| own.as_str() == name_)
+            .unwrap_or_else(|| Symbol::intern(name_));
+        class_def.attributes.defer_builtin_exception(class);
+    }
+    class_def
 }
 
 /// The class row `index` describes, exactly as `register_x` used to build it:
@@ -255,7 +309,11 @@ mod tests {
             assert_eq!(index_of(name(index)), Some(index), "{}", name(index));
         }
         assert_eq!(index_of("X::NoSuchClass::Here"), None);
-        assert_eq!(index_of("Exception"), None);
+        assert_eq!(index_of("NoSuchClass"), None);
+        let exception = index_of("Exception").expect("core row");
+        assert!(exception >= X_LEN);
+        let adhoc = index_of("X::AdHoc").expect("core row");
+        assert!(adhoc >= X_LEN, "X::AdHoc is a core row, not an `X::` row");
     }
 
     #[test]
@@ -276,7 +334,7 @@ mod tests {
     #[test]
     fn every_row_builds_what_register_x_built() {
         let registry = crate::runtime::Interpreter::shared_builtin_registry();
-        for index in 0..LEN {
+        for index in 0..X_LEN {
             let class_def = build(index);
             let mut expected = vec![name(index).to_string()];
             let mut cur = parent(index).to_string();
@@ -299,6 +357,20 @@ mod tests {
             assert_eq!(class_def.parents, vec![parent(index).to_string()]);
             assert!(class_def.attributes.is_deferred(), "{}", name(index));
             assert!(registry.classes.contains_key(name(index)));
+        }
+    }
+
+    /// Every core row builds a class whose MRO starts with its own name (or
+    /// is empty), and is visible in the built registry under that name.
+    #[test]
+    fn every_core_row_builds_and_is_visible() {
+        let registry = crate::runtime::Interpreter::shared_builtin_registry();
+        for index in X_LEN..LEN {
+            let class_def = materialize(index);
+            if let Some(first) = class_def.mro.first() {
+                assert_eq!(first.as_str(), name(index));
+            }
+            assert!(registry.classes.contains_key(name(index)), "{}", name(index));
         }
     }
 
