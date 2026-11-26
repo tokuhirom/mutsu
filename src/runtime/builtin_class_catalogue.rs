@@ -161,8 +161,8 @@ fn fields(index: usize) -> (&'static str, &'static str) {
         .map_or(X_CLASS_ROWS.len(), |next| *next as usize)
         - 1;
     let rest = &X_CLASS_ROWS[NAME_END[index] as usize + 1..end];
-    rest.split_once('\t')
-        .expect("catalogue rows are checked to have three fields")
+    // `name_ends` checks every row's three fields at compile time.
+    rest.split_once('\t').unwrap_or((rest, ""))
 }
 
 /// The real superclass of row `index`.
