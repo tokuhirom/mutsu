@@ -32,7 +32,7 @@ impl RegexParser<'_> {
         self.parse_raku_char_class_tallied(inner, negated, &mut CharClassAltTally::default())
     }
 
-    /// [`Interpreter::parse_raku_char_class`], also recording in `tally` how
+    /// [`crate::runtime::regex_parser::RegexParser::parse_raku_char_class`], also recording in `tally` how
     /// many alternatives Rakudo would compile the enumeration into (see
     /// `regex_parse_charclass_alts`).
     pub(super) fn parse_raku_char_class_tallied(

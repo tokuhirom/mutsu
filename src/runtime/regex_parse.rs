@@ -150,7 +150,7 @@ thread_local! {
     /// exclusions from reading the code, missed the `<$var>` form, and made
     /// `roast/S05-metasyntax/litvar.t` reuse the tree of `$var = '$i'` for
     /// `$var = '<$i>'`. Anything that reads such state must raise this;
-    /// `Interpreter::note_regex_parse_ambient_read` is the single way to do it.
+    /// `RegexParser::note_regex_parse_ambient_read` is the single way to do it.
     pub(crate) static PARSE_CONSULTED_AMBIENT_STATE: std::cell::Cell<bool> =
         const { std::cell::Cell::new(false) };
 

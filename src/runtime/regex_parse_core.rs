@@ -309,7 +309,7 @@ pub(super) fn scalar_names_in_decl(code: &str) -> Vec<String> {
     names
 }
 
-/// What [`Interpreter::consume_repeat_separator`] found after a repeating
+/// What [`crate::runtime::regex_parser::RegexParser::consume_repeat_separator`] found after a repeating
 /// quantifier.
 #[derive(Default)]
 struct SeparatorParse {
@@ -1007,7 +1007,7 @@ impl RegexParser<'_> {
     /// This wraps EVERY entry into the recursive-descent parser, not just the
     /// outermost one [`REGEX_PARSE_CACHE`]
     /// covers: the parser re-enters itself through
-    /// [`Interpreter::parse_regex_with_mode`] for groups, lookaround bodies,
+    /// [`crate::runtime::regex_parser::RegexParser::parse_regex_with_mode`] for groups, lookaround bodies,
     /// alternation branches, conjunction parts and `%`-separator atoms, and
     /// that path had no memo of its own, so the inside of a cached outer
     /// pattern was re-parsed on every outer parse.
