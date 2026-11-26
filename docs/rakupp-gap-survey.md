@@ -110,9 +110,28 @@ Startup instructions are already watched: #18956 doubled them and was fixed, and
 Startup *page faults* are not tracked by any issue. The deterministic series cannot see them,
 and the wall-clock series cannot separate them from noise.
 
-Possible levers, none tried: build less of the registry eagerly; group start-up code with linker
+Possible levers: build less of the registry eagerly; group start-up code with linker
 ordering (`-Z` function-sections ordering or BOLT). [pgo-experiment.md](pgo-experiment.md)
 measured PGO on a hot loop, not on startup layout, and does not cover this.
+
+**Update (#19197, first slice): start-up code is now grouped.** `build.rs` passes
+`linker/startup-text.ld`, an lld `INSERT BEFORE .text` script, to the link of the `mutsu` binary.
+The script lists the ~1,700 functions start-up executes as hash-free section patterns, and
+`scripts/gen-startup-layout.py` regenerates it from callgrind traces. On a CI-style release build
+(non-incremental), `bench-startup` under `MUTSU_JIT=off` went from ~1,396 to ~1,217 minor
+faults, and the resident text went from 27.4 MB to 8.8 MB. Over 2x40 interleaved runs, median
+wall time fell 5-7%. The rest of the faults are not code. Here is where they go, measured with
+`/proc/<pid>/stat` at `main` and at `exit_group` under gdb:
+
+| phase | minor faults | main cause |
+|---|---:|---|
+| `execve` | ~143 | the kernel loading the binary |
+| dynamic loader, before `main` | ~470 | ~80k `R_X86_64_RELATIVE` relocations dirty ~396 pages of `.data.rel.ro` (one copy-on-write fault each) |
+| `main` to exit | ~555 | the interpreter thread's malloc arena (~1 MB anonymous memory, one fault per page), `.rodata`, `.rela.dyn` and the remaining text |
+
+The two large items left both come from data, not layout. One is the relocations: a non-PIE
+link would remove them, but it lowers ASLR and needs the maintainer's approval (see AGENTS.md
+and #11158). The other is heap pages first touched during start-up.
 
 ## Cross-cutting cause 2: instruction speed
 

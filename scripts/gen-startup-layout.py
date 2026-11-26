@@ -66,21 +66,41 @@ def text_symbols(binary):
     return syms
 
 
-def executed_addresses(binary, cg_out):
-    """Instruction addresses executed inside `binary`, from a callgrind dump."""
+def executed_addresses(binary, cg_out, main_addr):
+    """Instruction addresses executed inside `binary`, from a callgrind dump,
+    as addresses in the binary's own (`nm`) address space."""
     target = os.path.realpath(binary)
-    addrs = set()
-    in_target = False
+    named = set()
+    unnamed = set()
+    main_min = None
+    ob = None
+    fn = None
     with open(cg_out) as f:
         for line in f:
             if line.startswith("ob="):
-                in_target = os.path.realpath(line[3:].strip()) == target
-            elif in_target and line.startswith("0x"):
-                addrs.add(int(line.split(None, 1)[0], 16))
-    return addrs
+                ob = line[3:].strip()
+            elif line.startswith("fn="):
+                fn = line[3:].strip()
+            elif line.startswith("0x"):
+                addr = int(line.split(None, 1)[0], 16)
+                if ob == "???":
+                    unnamed.add(addr)
+                    if fn == "main":
+                        main_min = addr if main_min is None else min(main_min, addr)
+                elif ob is not None and os.path.realpath(ob) == target:
+                    named.add(addr)
+    # Valgrind does not recognise a binary whose executable segment holds more
+    # than `.text` -- i.e. one already built with this layout -- as an object:
+    # its code comes out under `ob=???` at absolute (load-biased) addresses.
+    # The C `main`'s entry gives the bias. Other `???` code (JIT output, the
+    # vDSO) maps to no symbol and is dropped by the caller.
+    if main_min is not None:
+        bias = main_min - main_addr
+        named |= {a - bias for a in unnamed}
+    return named
 
 
-def run_workloads(binary):
+def run_workloads(binary, main_addr):
     addrs = set()
     os.makedirs(os.path.join(ROOT, "tmp"), exist_ok=True)
     with tempfile.TemporaryDirectory(dir=os.path.join(ROOT, "tmp")) as tmp:
@@ -108,7 +128,7 @@ def run_workloads(binary):
                 stderr=subprocess.DEVNULL,
                 check=True,
             )
-            addrs |= executed_addresses(binary, cg_out)
+            addrs |= executed_addresses(binary, cg_out, main_addr)
     return addrs
 
 
@@ -136,8 +156,9 @@ def read_patterns(path):
 def generate(args):
     syms = text_symbols(args.binary)
     starts = [s[0] for s in syms]
+    main_addr = next(a for a, _, name in syms if name == "main")
     executed = set()
-    for addr in run_workloads(args.binary):
+    for addr in run_workloads(args.binary, main_addr):
         i = bisect.bisect_right(starts, addr) - 1
         if i >= 0 and syms[i][0] <= addr < syms[i][0] + max(syms[i][1], 1):
             executed.add(syms[i][2])
