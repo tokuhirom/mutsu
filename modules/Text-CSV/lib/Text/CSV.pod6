@@ -3064,14 +3064,14 @@ L<Text::CSV::Slurp>, L<Spreadsheet::CSV> and L<Spreadsheet::Read>;
 
 =head1 AUTHOR
 
-H.Merijn Brand F<E<lt>h.m.brand@xs4all.nlE<gt>> wrote this based on the
+H.Merijn Brand F<E<lt>hmbrand@cpan.orgE<gt>> wrote this based on the
 features provided by perl5's Text::CSV_XS.
 
 Liz Mattijsen helped in getting the best out of raku.
 
 =head1 COPYRIGHT AND LICENSE
 
- Copyright (C) 2014-2018 H.Merijn Brand. All rights reserved.
+ Copyright (C) 2014-2023 H.Merijn Brand. All rights reserved.
 
 This library is free software; you can redistribute and/or modify it under
 the same terms as Perl itself.

@@ -39,7 +39,7 @@ Template::Mustache	modules/Template-Mustache/lib	https://github.com/raku-communi
 HTTP::UserAgent	modules/HTTP-UserAgent/lib	https://github.com/raku-community-modules/HTTP-UserAgent.git	1d6a31a0656a422524c266831f3d27bd62a3e3d7	t/*.rakutest	{clone}/t/lib
 YAMLish	modules/YAMLish/lib	https://github.com/Leont/yamlish.git	2a1d04ab7098e9ea0491ff8d1907fd868f938e62	t/*.rakutest	modules/MIME-Base64/lib
 NativeLibs	modules/NativeLibs/lib	https://github.com/salortiz/NativeLibs.git	f3e78510702af0eeb49b4418dc59008ff4f8cd1b	t/*.t	-
-NativeHelpers::Blob	modules/NativeHelpers-Blob/lib	https://github.com/raku-community-modules/NativeHelpers-Blob.git	cec918868916893ee0866d49c0f86e601465da3d	t/*.rakutest	-
+NativeHelpers::Blob	modules/NativeHelpers-Blob/lib	https://github.com/raku-community-modules/NativeHelpers-Blob.git	faefc4b5f665d94cbea8d638e6a91593f78e75bd	t/*.rakutest	-
 DBIish	modules/DBIish/lib	https://github.com/raku-community-modules/DBIish.git	1af110d88e6fa0929700dd74273cd5e4db25a3a9	t/*.rakutest	modules/NativeLibs/lib,modules/NativeHelpers-Blob/lib
 if	modules/if/lib	https://github.com/raku-community-modules/if.git	d97707f3e539bf5272c8f845ede19d7fefb3e95c	t/*.rakutest	-
 Crypt::Random	modules/Crypt-Random/lib	https://github.com/skinkade/crypt-random.git	c1bf9393ab736ac5e5de2d0c3f56078c178cc071	t/*.t	-
@@ -51,10 +51,10 @@ Digest	modules/Digest/lib	https://github.com/grondilu/libdigest-raku.git	2870e65
 Digest::HMAC	modules/Digest-HMAC/lib	https://github.com/JJ/Raku-Digest-HMAC.git	9bae022a49c14ab92a059d7a0d5aa95c4026c27f	t/*.t	modules/Digest/lib
 Slangify	modules/Slangify/lib	https://github.com/lizmat/Slangify.git	471f23d5ab20ad71e3732199a4bb7d2498bdddf2	t/*.rakutest	{clone}/t
 Slang::Tuxic	modules/Slang-Tuxic/lib	https://github.com/raku-community-modules/Slang-Tuxic.git	d6b458ce7777f08ec32b783ef31e4210f8d8f26c	t/*.rakutest	modules/Slangify/lib
-Text::CSV	modules/Text-CSV/lib	https://github.com/Tux/CSV.git	4e4ed4151dddc27583caf86f375bfc005d14c5be	t/*.t	modules/Slang-Tuxic/lib,modules/Slangify/lib,modules/File-Temp/lib,modules/File-Directory-Tree/lib
+Text::CSV	modules/Text-CSV/lib	https://github.com/Tux/CSV.git	0300d63c0895ff8cb43dac41b569504d04551007	t/*.t	modules/Slang-Tuxic/lib,modules/Slangify/lib,modules/File-Temp/lib,modules/File-Directory-Tree/lib
 TinyFloats	modules/TinyFloats/lib	https://github.com/japhb/TinyFloats.git	ee901975aca54e2bbf3af01c1f85e2b307ad2a55	t/*.rakutest	-
 CBOR::Simple	modules/CBOR-Simple/lib	https://github.com/japhb/CBOR-Simple.git	48104256cee6e10cc88bb07e2a643ea2ef5d1d6a	t/*.rakutest	modules/TinyFloats/lib
-Cro::Core	modules/Cro-Core/lib	https://github.com/croservices/cro-core.git	cfabfbc8bd3ccb01b36159a9cce3db8929a3a7b5	t/*.rakutest	-
+Cro::Core	modules/Cro-Core/lib	https://github.com/croservices/cro-core.git	3f4619f424224c519bedc41a76bb9c187732aff2	t/*.rakutest	-
 IO::Socket::Async::SSL	modules/IO-Socket-Async-SSL/lib	https://github.com/raku-community-modules/IO-Socket-Async-SSL.git	93de258042282d13f0ade0987bfed3649f7b459b	t/*.rakutest	modules/OpenSSL/lib
 Cro::TLS	modules/Cro-TLS/lib	https://github.com/croservices/cro-tls.git	2be4b0c17329100eefea6d33525b0a070a21a1ca	t/*.rakutest	modules/Cro-Core/lib,modules/IO-Socket-Async-SSL/lib,modules/OpenSSL/lib
 JSON::JWT	modules/JSON-JWT/lib	https://github.com/raku-community-modules/JSON-JWT.git	ca573c81d9c22f79de19652bb6ee8eb6cefe0052	t/*.rakutest	modules/MIME-Base64/lib,modules/OpenSSL/lib,modules/Digest-HMAC/lib,modules/Digest/lib
@@ -65,4 +65,4 @@ JSON::Fast	modules/JSON-Fast/lib	https://github.com/timo/json_fast.git	a06a1f497
 UUID	modules/UUID/lib	https://github.com/retupmoca/P6-UUID.git	26cb869622057da286b1b60780ee39e3b4ece0a4	t/*.t	-
 Terminal::ANSI	modules/Terminal-ANSI/lib	https://git.sr.ht/~bduggan/raku-terminal-ansi	691d0959ff8ea0a7c491167b366746cdfc0fb0be	t/*.rakutest	modules/OO-Monitors/lib
 Log::Async	modules/Log-Async/lib	https://github.com/bduggan/raku-log-async.git	c238fc014bacf7a44a4e4a5b194695eab89e11e8	t/*.rakutest	modules/Terminal-ANSI/lib,modules/OO-Monitors/lib
-XML	modules/XML/lib	https://github.com/raku-community-modules/XML.git	0349d282e257be61075f55abfde4c42a01bc8f10	t/*.rakutest	-
+XML	modules/XML/lib	https://github.com/raku-community-modules/XML.git	0e4838a70ad6793309ac024e224b59015aeaada9	t/*.rakutest	-

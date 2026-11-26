@@ -1,5 +1,8 @@
 Revision history for Cro::Core
 
+{{NEXT}}
+    - Replace .perl with .raku
+
 0.8.10
     - Fix parsing URIs with empty path segments.
     - Enhance `Cro::Message` objects to allow adding arbitrary data via

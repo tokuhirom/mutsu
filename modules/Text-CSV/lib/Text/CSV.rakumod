@@ -26,7 +26,7 @@ my constant %errors =
     1010 => "INI - the header is empty",
     1011 => "INI - the header contains more than one valid separator",
     1012 => "INI - the header contains an empty field",
-    1013 => "INI - the header contains nun-unique fields",
+    1013 => "INI - the header contains non-unique fields",
 #   1014 => "INI - header called on undefined stream",
 
     # Syntax errors
@@ -119,7 +119,7 @@ class RangeSet {
     method min () { @!ranges>>.key.min   }
     method max () { @!ranges>>.value.max }
 
-    method in (Int:D $i) returns Bool {
+    method in (Int:D $i --> Bool) {
         for @!ranges -> $r {
             $i >= $r.key && $i <= $r.value and return True;
             }
@@ -193,7 +193,7 @@ class CellSet {
         @!cr.push: CellRange.new (:$row, :$col);
         }
 
-    method in (Int:D $row, Int:D $col) returns Bool {
+    method in (Int:D $row, Int:D $col --> Bool) {
         #return @!cr.any (*.in ($row, $col));
         for @!cr -> $c {
             $c.in ($row, $col) and return True;
@@ -219,7 +219,7 @@ class CSV::Field {
     has Bool $!is_formula is default(False);
     has Bool $!analysed   is default(False);
 
-    multi method new (Str(Cool) $str) {
+    multi method new (Str(Cool) $str --> CSV::Field) {
         $str.defined ?? self.bless.add ($str) !! self.bless;
         }
 
@@ -297,33 +297,33 @@ class CSV::Field {
             $!is_utf8    = True;
         }
 
-    method is_binary () returns Bool {
+    method is_binary ( --> Bool) {
         $!analysed or self.analyse;
         $!is_binary;
         }
 
-    method is_utf8 () returns Bool {
+    method is_utf8 ( --> Bool) {
         $!analysed or self.analyse;
         $!is_utf8;
         }
 
-    method is_missing () returns Bool {
+    method is_missing ( --> Bool) {
         $!analysed or self.analyse;
         $!is_missing;
         }
 
-    method is_formula () returns Bool {
+    method is_formula ( --> Bool) {
         $!analysed or self.analyse;
         $!is_formula;
         }
 
-    method is-quoted ()  returns Bool { $.is_quoted; }
-    method is-binary ()  returns Bool { self.is_binary; }
-    method is-utf8 ()    returns Bool { self.is_utf8; }
-    method is-missing () returns Bool { self.is_missing; }
-    method is-formula () returns Bool { self.is_formula; }
+    method is-quoted  (--> Bool) { $.is_quoted; }
+    method is-binary  (--> Bool) { self.is_binary; }
+    method is-utf8    (--> Bool) { self.is_utf8; }
+    method is-missing (--> Bool) { self.is_missing; }
+    method is-formula (--> Bool) { self.is_formula; }
 
-    method set-quoted ()              { self.set_quoted; }
+    method set-quoted ()         { self.set_quoted; }
     } # CSV::Field
 
 class Text::CSV { ... }
@@ -353,11 +353,11 @@ class CSV::Row does Iterable does Positional does Associative {
             %($!csv.column_names Z=> @!fields){$k}.text = $v.Str;
         }
 
-    multi method push (CSV::Field $f) { @!fields.push: $f; }
-    multi method push (Cool       $f) { @!fields.push: CSV::Field.new ($f); }
+    multi method push (CSV::Field $f) { @!fields.push:   $f; }
+    multi method push (Cool       $f) { @!fields.push:   CSV::Field.new ($f); }
     multi method push (CSV::Row   $r) { @!fields.append: $r.fields; }
 
-    method pop returns CSV::Field { @!fields.pop; }
+    method pop (--> CSV::Field) { @!fields.pop; }
     }
 
 class Text::CSV {
@@ -399,6 +399,7 @@ class Text::CSV {
     has CSV::Row   $!csv-row;
     has Str        @!ahead;
     has Str        @!cnames;
+    has Int        %!cnamesi;
     has IO::Handle $!io;
     has Bool       $!eof;
     has Int        @!types;
@@ -562,7 +563,7 @@ class Text::CSV {
         }
 
     # String attributes
-    method !a_str ($attr is rw, *@s) returns Str {
+    method !a_str ($attr is rw, *@s --> Str) {
         if (@s.elems == 1) {
             my $x = @s[0];
             $x.defined && $x ~~ Str && $x eq "" and $x = Str;
@@ -571,55 +572,55 @@ class Text::CSV {
             }
         $attr;
         }
-    method sep (*@s) returns Str { self!a_str ($!sep, @s); }
-    method quo (*@s) returns Str { self!a_str ($!quo, @s); }
-    method esc (*@s) returns Str { self!a_str ($!esc, @s); }
-    method eol (*@s) returns Str {
+    method sep (*@s --> Str) { self!a_str ($!sep, @s); }
+    method quo (*@s --> Str) { self!a_str ($!quo, @s); }
+    method esc (*@s --> Str) { self!a_str ($!esc, @s); }
+    method eol (*@s --> Str) {
         @s[0] ~~ Array and @s = |@s[0]; # Allow *OUT.nl-out
         self!a_str ($!eol, @s);
         }
 
     # Boolean attributes
-    method !a_bool ($attr is rw, *@s) returns Bool {
+    method !a_bool ($attr is rw, *@s --> Bool) {
         if (@s.elems == 1) {
             $attr = ?@s[0];
             self!check_sanity;
             }
         $attr;
         }
-    method binary                (*@s) returns Bool { self!a_bool ($!binary,                @s); }
-    method always_quote          (*@s) returns Bool { self!a_bool ($!always_quote,          @s); }
-    method quote_empty           (*@s) returns Bool { self!a_bool ($!quote_empty,           @s); }
-    method quote_space           (*@s) returns Bool { self!a_bool ($!quote_space,           @s); }
-    method escape_null           (*@s) returns Bool { self!a_bool ($!escape_null,            @s); }
-    method quote_binary          (*@s) returns Bool { self!a_bool ($!quote_binary,          @s); }
-    method allow_loose_quotes    (*@s) returns Bool { self!a_bool ($!allow_loose_quotes,    @s); }
-    method allow_loose_escapes   (*@s) returns Bool { self!a_bool ($!allow_loose_escapes,   @s); }
-    method allow_unquoted_escape (*@s) returns Bool { self!a_bool ($!allow_unquoted_escape, @s); }
-    method allow_whitespace      (*@s) returns Bool { self!a_bool ($!allow_whitespace,      @s); }
-    method blank_is_undef        (*@s) returns Bool { self!a_bool ($!blank_is_undef,        @s); }
-    method empty_is_undef        (*@s) returns Bool { self!a_bool ($!empty_is_undef,        @s); }
-    method keep_meta             (*@s) returns Bool { self!a_bool ($!keep_meta,             @s); }
-    method auto_diag             (*@s) returns Bool { self!a_bool ($!auto_diag,             @s); }
-    method strict                (*@s) returns Bool { self!a_bool ($!strict,                @s); }
-    method eof                   ()    returns Bool { $!eof || $!errno == 2012; }
+    method binary                (*@s --> Bool) { self!a_bool ($!binary,                @s); }
+    method always_quote          (*@s --> Bool) { self!a_bool ($!always_quote,          @s); }
+    method quote_empty           (*@s --> Bool) { self!a_bool ($!quote_empty,           @s); }
+    method quote_space           (*@s --> Bool) { self!a_bool ($!quote_space,           @s); }
+    method escape_null           (*@s --> Bool) { self!a_bool ($!escape_null,            @s); }
+    method quote_binary          (*@s --> Bool) { self!a_bool ($!quote_binary,          @s); }
+    method allow_loose_quotes    (*@s --> Bool) { self!a_bool ($!allow_loose_quotes,    @s); }
+    method allow_loose_escapes   (*@s --> Bool) { self!a_bool ($!allow_loose_escapes,   @s); }
+    method allow_unquoted_escape (*@s --> Bool) { self!a_bool ($!allow_unquoted_escape, @s); }
+    method allow_whitespace      (*@s --> Bool) { self!a_bool ($!allow_whitespace,      @s); }
+    method blank_is_undef        (*@s --> Bool) { self!a_bool ($!blank_is_undef,        @s); }
+    method empty_is_undef        (*@s --> Bool) { self!a_bool ($!empty_is_undef,        @s); }
+    method keep_meta             (*@s --> Bool) { self!a_bool ($!keep_meta,             @s); }
+    method auto_diag             (*@s --> Bool) { self!a_bool ($!auto_diag,             @s); }
+    method strict                (*@s --> Bool) { self!a_bool ($!strict,                @s); }
+    method eof                   (    --> Bool) { $!eof || $!errno == 2012; }
 
     # Numeric attributes
-    method !a_num ($attr is rw, *@s) returns Int {
+    method !a_num ($attr is rw, *@s --> Int) {
         @s.elems == 1 and $attr = +@s[0];
         $attr;
         }
-    method record_number (*@s) returns Int { self!a_num ($!record_number, @s); }
+    method record_number (*@s --> Int) { self!a_num ($!record_number, @s); }
 
     # Numeric attributes, boolean allowed
-    method !a_bool_int ($attr is rw, *@s) returns Int {
+    method !a_bool_int ($attr is rw, *@s --> Int) {
         if (@s.elems == 1) {
             my $v = @s[0];
             $attr = $v ~~ Bool ?? +$v !! $v.defined ?? $v eq "" ?? 0 !! +$v !! 0;
             }
         $attr;
         }
-    method diag_verbose (*@s) returns Int { self!a_bool_int ($!diag_verbose, @s); }
+    method diag_verbose (*@s --> Int) { self!a_bool_int ($!diag_verbose, @s); }
 
     method header (IO::Handle:D $fh,
                    Array       :$sep-set            = [< , ; >],
@@ -650,23 +651,23 @@ class Text::CSV {
         self;
         }
 
-    multi method formula ()         returns Str { $!formula;           };
-    multi method formula (Str:U)    returns Str { $!formula = "undef"; };
-    multi method formula (Str:D $x) returns Str {
+    multi method formula (         --> Str) { $!formula;           };
+    multi method formula (Str:U    --> Str) { $!formula = "undef"; };
+    multi method formula (Str:D $x --> Str) {
         my Str $f = $x.lc;
         $f eq "" and $f = "empty";
         $f ~~ "none" | "die" | "croak" | "diag" | "empty" | "undef" or self!fail (1500);
         $!formula = $f;
         };
 
-    multi method skip_empty_rows ()          returns Int { $!skip_empty_rows;              };
-    multi method skip_empty_rows (Any:U)     returns Int { self.skip_empty_rows ("false"); };
-    multi method skip_empty_rows (Bool  $x)  returns Int { self.skip_empty_rows (lc $x);   };
-    multi method skip_empty_rows (Int:D $x
-                          where 0 <= * <= 5) returns Int { self.skip_empty_rows (~$x);       };
-    multi method skip_empty_rows (Callable:D $x) returns Int { $!skip_empty_rows_cb = $x; return $!skip_empty_rows = 6; }
-    multi method skip_empty_rows (Routine:D  $x) returns Int { $!skip_empty_rows_cb = $x; return $!skip_empty_rows = 6; }
-    multi method skip_empty_rows (Str:D  $x) returns Int {
+    multi method skip_empty_rows (              --> Int) { $!skip_empty_rows;              };
+    multi method skip_empty_rows (Any:U         --> Int) { self.skip_empty_rows ("false"); };
+    multi method skip_empty_rows (Bool       $x --> Int) { self.skip_empty_rows (lc $x);   };
+    multi method skip_empty_rows (Int:D      $x
+                              where 0 <= * <= 5 --> Int) { self.skip_empty_rows (~$x);       };
+    multi method skip_empty_rows (Callable:D $x --> Int) { $!skip_empty_rows_cb = $x; return $!skip_empty_rows = 6; }
+    multi method skip_empty_rows (Routine:D  $x --> Int) { $!skip_empty_rows_cb = $x; return $!skip_empty_rows = 6; }
+    multi method skip_empty_rows (Str:D      $x --> Int) {
         my Str $f = $x.lc;
         $!skip_empty_rows_cb = Any;
         $f ~~ "0" | ""     | "false" and return $!skip_empty_rows = 0;
@@ -678,21 +679,22 @@ class Text::CSV {
         self!fail (1500);
         };
 
-    multi method undef_str ()           returns Str { $!undef_str;         };
-    multi method undef_str (Any:U)      returns Str { $!undef_str = Str;   };
-    multi method undef_str (Str:D $x)   returns Str { $!undef_str = $x     };
+    multi method undef_str (         --> Str) { $!undef_str;         };
+    multi method undef_str (Any:U    --> Str) { $!undef_str = Str;   };
+    multi method undef_str (Str:D $x --> Str) { $!undef_str = $x     };
 
-    multi method comment_str ()         returns Str { $!comment_str;       };
-    multi method comment_str (Any:U)    returns Str { $!comment_str = Str; };
-    multi method comment_str (Str:D $x) returns Str { $!comment_str = $x   };
+    multi method comment_str (         --> Str) { $!comment_str;       };
+    multi method comment_str (Any:U    --> Str) { $!comment_str = Str; };
+    multi method comment_str (Str:D $x --> Str) { $!comment_str = $x   };
 
-    multi method column_names (Bool:D $ where *.not) returns Array[Str] { @!cnames = (); }
-    multi method column_names (Any:U)                returns Array[Str] { @!cnames = (); }
-    multi method column_names (0)                    returns Array[Str] { @!cnames = (); }
-    multi method column_names (*@c)                  returns Array[Str] {
+    multi method column_names (Bool:D $ where *.not --> Array[Str]) { @!cnames = (); }
+    multi method column_names (Any:U                --> Array[Str]) { @!cnames = (); }
+    multi method column_names (0                    --> Array[Str]) { @!cnames = (); }
+    multi method column_names (*@c                  --> Array[Str]) {
         @c.elems and @!cnames = @c.map (*.Str);
         @!cnames;
         }
+    method column_indices (--> Hash) { %!cnamesi }
 
     my %predef-hooks =
         not_blank => { $^row.elems > 1 or $^row[0].defined && $^row[0] ne "" or $^row[0].is-quoted },
@@ -744,7 +746,7 @@ class Text::CSV {
         %!callbacks;
         }
 
-    method !rfc7111ranges (Str:D $spec) returns RangeSet {
+    method !rfc7111ranges (Str:D $spec --> RangeSet) {
         $spec eq "" and self!fail (2013);
         my RangeSet $range = RangeSet.new;
         for $spec.split (";") -> $r {
@@ -779,29 +781,29 @@ class Text::CSV {
         @!crange;
         }
 
-    multi method rowrange (Str $range) returns RangeSet {
+    multi method rowrange (Str $range --> RangeSet) {
         $!rrange = RangeSet;
         $range.defined and $!rrange = self!rfc7111ranges ($range);
         $!rrange;
         }
 
-    multi method rowrange () returns RangeSet {
+    multi method rowrange (--> RangeSet) {
         $!rrange;
         }
 
-    method version () returns Str {
+    method version (--> Str) {
         $VERSION;
         }
 
-    method status () returns Bool {
+    method status (--> Bool) {
         !?$!errno;
         }
 
-    method error_input () returns Str {
+    method error_input (--> Str) {
         $!errno ?? $!error_input !! Str
         }
 
-    method error_diag () returns CSV::Diag {
+    method error_diag (--> CSV::Diag) {
         CSV::Diag.new (
             error   => $!errno,
             message => $!error_message,
@@ -812,30 +814,30 @@ class Text::CSV {
             );
         }
 
-    method is_quoted  (Int:D $i) returns Bool {
+    method is_quoted  (Int:D $i --> Bool) {
         $i >= 0 && $i < $!csv-row.fields.elems && $!csv-row.fields[$i].is_quoted;
         }
 
-    method is_binary  (Int:D $i) returns Bool {
+    method is_binary  (Int:D $i --> Bool) {
         $i >= 0 && $i < $!csv-row.fields.elems && $!csv-row.fields[$i].is_binary;
         }
 
-    method is_utf8    (Int:D $i) returns Bool {
+    method is_utf8    (Int:D $i --> Bool) {
         $i >= 0 && $i < $!csv-row.fields.elems && $!csv-row.fields[$i].is_utf8;
         }
 
-    method is_missing (Int:D $i) returns Bool {
+    method is_missing (Int:D $i --> Bool) {
         $i >= 0 && $i < $!csv-row.fields.elems && $!csv-row.fields[$i].is_missing;
         }
 
-    method !accept-field (CSV::Field $f) returns Bool {
+    method !accept-field (CSV::Field $f --> Bool) {
         $!csv-row.push: $f;
         True;
         }
 
     # combine : direction = 0
     # parse   : direction = 1
-    method !ready (Int:D $direction, CSV::Field $f) returns Bool {
+    method !ready (Int:D $direction, CSV::Field $f --> Bool) {
 
         if ($f.undefined) {
             if ($direction) {
@@ -884,19 +886,31 @@ class Text::CSV {
         } # ready
 
     method fields () {
-        @!crange ?? ($!csv-row.fields[@!crange]:v) !! $!csv-row.fields;
+        my     @f  = $!csv-row.fields;
+        my Int @r  = @!crange;
+        my Str @h  = $!csv-row.csv.column-names;
+        my Int %i  = $!csv-row.csv.column-indices;
+        my Int $nf = @f.elems;
+        if (@h && !@r) {
+            my @i = %i{@h}.grep (*.defined);
+            @r = @i if $nf >= @i.elems;
+            }
+        @r && @f and @f = @f[@r]:v;
+        @f;
         }
 
     method strings () {
-        self.fields».Str.Array;
+        my CSV::Field @f = self.fields;
+        @f».Str.Array;
         }
 
-    multi method string () returns Str {
+    multi method string (--> Str) {
         #progress (0, $!csv-row.fields);
-        self.string ($!csv-row.fields);
+        my CSV::Field @f = self.fields;
+        self.string (@f);
         }
 
-    multi method string (CSV::Field:D @fld) returns Str {
+    multi method string (CSV::Field:D @fld--> Str) {
 
         %!callbacks<before_print>.defined and
             %!callbacks<before_print>.($!csv-row);
@@ -933,13 +947,13 @@ class Text::CSV {
         #); $x
         } # string
 
-    multi method combine (Capture $c) returns Bool {
+    multi method combine (Capture $c --> Bool) {
         self.combine ($c.list);
         }
-    multi method combine (*@f) returns Bool {
+    multi method combine (*@f --> Bool) {
         self.combine (@f);
         }
-    multi method combine (@f) returns Bool {
+    multi method combine (@f --> Bool) {
         $!csv-row.fields = ();
         my int $i = 0;
         for flat @f -> $f {
@@ -962,7 +976,7 @@ class Text::CSV {
         True;
         }
 
-    method parse (Str $buffer) returns Bool {
+    method parse (Str $buffer --> Bool) {
 
         my int $skip = 0;
         my int $pos  = 0;
@@ -1005,7 +1019,7 @@ class Text::CSV {
 
         $!csv-row.fields = ();
 
-        my sub keep () returns Bool {
+        my sub keep (--> Bool) {
             self!ready (1, $f) ?? !($f = CSV::Field.new) !! False;
             } # add
 
@@ -1331,7 +1345,7 @@ class Text::CSV {
         parse_done ();
         } # parse
 
-    method row returns CSV::Row { $!csv-row; }
+    method row (--> CSV::Row) { $!csv-row; }
 
     method !row_hr (@row) {
         my @cn  = (@!crange ?? @!cnames[@!crange] !! @!cnames);
@@ -1504,21 +1518,21 @@ class Text::CSV {
         @lines;
         }
 
-    multi method print (IO::Handle:D $io, *%p) returns Bool {
+    multi method print (IO::Handle:D $io, *%p --> Bool) {
         @!cnames.elems or self!fail (3009);
         self.print ($io, %p{@!cnames});
         }
 
-    multi method print (IO::Handle:D $io,  %c) returns Bool {
+    multi method print (IO::Handle:D $io,  %c --> Bool) {
         @!cnames.elems or self!fail (3009);
         self.print ($io, [ %c{@!cnames} ]);
         }
 
-    multi method print (IO::Handle:D $io, Capture $c) returns Bool {
+    multi method print (IO::Handle:D $io, Capture $c --> Bool) {
         self.print ($io, $c.list);
         }
 
-    multi method print (IO::Handle:D $io,  @fld) returns Bool {
+    multi method print (IO::Handle:D $io,  @fld --> Bool) {
         self.combine (@fld) or return False;
         my $nl = $io.nl-out;
         $!eol.defined and $io.nl-out = $!eol;
@@ -1527,7 +1541,7 @@ class Text::CSV {
         True;
         }
 
-    multi method print (IO::Handle:D $io, *@fld) returns Bool {
+    multi method print (IO::Handle:D $io, *@fld --> Bool) {
         # Temp guard ... I expected *%p sig to be called
         if (@fld[0] ~~ Pair) {
             @!cnames.elems or self!fail (3009);
@@ -1540,7 +1554,7 @@ class Text::CSV {
         self.print ($io, [@fld]);
         }
 
-    method say (IO::Handle:D $io, |f) returns Bool {
+    method say (IO::Handle:D $io, |f --> Bool) {
         my $eol = $!eol;
         $!eol ||= "\r\n";
         my Bool $state = self.print ($io, |f);
@@ -1881,15 +1895,29 @@ class Text::CSV {
             }
 
         if ($io-in ~~ IO::Handle and $io-in.defined) {
-            @in = $fragment
-                ?? self.fragment    ($io-in, :$meta, $fragment)
-                !! self.getline_all ($io-in, :$meta);
+            if ($fragment) {
+                @in = self.fragment ($io-in, :$meta, $fragment);
+                # Columns are already selected, do not re-apply on output
+                self.colrange (Str);
+                }
+            else {
+                @in = self.getline_all ($io-in, :$meta);
+                }
             }
 
         my @h;
         $out ~~ Hash || $headers ~~ Array || ($headers ~~ Str && $headers eq "auto") and
             @h = @!cnames.elems ?? @!cnames !! @in.shift.list;
         @h.elems and @kh = @h;
+
+        # Field order stability
+        %!cnamesi = ();
+        if (@kh.elems and @in[0] ~~ Array) {
+            my Int $i = 0;
+            my Int %order;
+            @in[0].list.map ({ %order{$_} = $i++ });
+            @kh.list.map ({ %!cnamesi{$_} = %order{$_} });
+            }
 
       # unless (?$out || ?$tmpfn || ?$io-out) { # TODO: Fix for csv () in void context!
         unless ((?$out && $out !~~ Hash) || ?$tmpfn) {
@@ -1952,7 +1980,10 @@ class Text::CSV {
                     $out.push: $r;
                     }
                 default {
-                    defined $io-out and $io-out.print (self.string);
+                    if ($io-out.defined) {
+                        my Str $s = self.string;
+                        $io-out.print ($s) if $s.defined;
+                        }
                     }
                 }
             }
@@ -2035,6 +2066,7 @@ BEGIN {
     alias ("skip_empty_rows",       < skip-empty-rows >);
 
     alias ("column_names",          < column-names >);
+    alias ("column_indices",        < column-indices >);
     alias ("error_diag",            < error-diag diag diag-error diag_error >);
     alias ("error_input",           < error-input >);
     alias ("getline_all",           < getline-all >);

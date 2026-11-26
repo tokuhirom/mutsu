@@ -193,7 +193,7 @@ To bump a module, re-vendor — do **not** hand-edit the vendored tree:
 
 | Module | Upstream | Pinned version | Commit |
 | --- | --- | --- | --- |
-| `Cro::Core` | <https://github.com/croservices/cro-core> | release-0.8.10 | `cfabfbc8` (2025-01-15) |
+| `Cro::Core` | <https://github.com/croservices/cro-core> | release-0.8.10 + `main` (`.perl` → `.raku`) | `3f4619f4` (refreshed 2026-11-26, #19210) |
 | `Cro::TLS` | <https://github.com/croservices/cro-tls> | release-0.8.10 | `2be4b0c1` (2025-01-15) |
 | `Cro::HTTP` | <https://github.com/croservices/cro-http> | release-0.8.13 | `6238e753` (2026-06-02) |
 

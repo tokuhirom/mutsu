@@ -65,4 +65,4 @@ GNU General Public License or Artistic License 2.
 
 Author
 ------
-H.Merijn Brand <h.m.brand@xs4all.nl>
+H.Merijn Brand <hmbrand@cpan.org>
