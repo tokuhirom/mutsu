@@ -5,9 +5,9 @@ The bench CI appends one row per (commit, benchmark) to `bench-history.tsv` on
 the `bench-data` branch, but the raw TSV makes the *trend* hard to read. This
 turns it into small-multiple line charts — one mini chart per benchmark, with
 the interpreter (MUTSU_JIT=off) and +jit series over commit order — so a
-regression or win is visible at a glance. It opens with the benchmarks mutsu
+regression or win is visible at a glance. Each card also marks where mutsu
 loses against rakudo or rakupp, on a median of the last commits rather than the
-latest point, each linked to the issues `benchmarks/bench-tracking.toml` names.
+latest point, with the issues `benchmarks/bench-tracking.toml` names.
 
 Usage:
     # open directly in a browser (standards mode via --standalone):
@@ -151,10 +151,10 @@ _RAKUPP_NON_PIE_STARTUP = (
     "<b>1.1x</b> rakupp here, not ~1.3-1.4x. That trade (less ASLR) is #11158's "
     "call. See <span class=\"mono\">docs/rakupp-gap-survey.md</span>."
 )
-# Each note also carries a short `tag`, the label the "mutsu is slower here"
-# section and the table put next to the ratio it qualifies, and `engine`: False
-# when the ratio is not engine against engine at all, which takes it out of the
-# section's ranking (the row is still listed, in its own group, labelled).
+# Each note also carries a short `tag`, shown in the tooltip of the † a card
+# and the table put next to the ratio it qualifies, and `engine`: False when the
+# ratio is not engine against engine at all, which takes it out of `--report`'s
+# ranking (the row is still listed, in its own group, labelled).
 _NOTE_NATIVE_JSON = {"tag": "rakupp parses JSON natively", "engine": False,
                      "html": _RAKUPP_NATIVE_JSON}
 _NOTE_NON_PIE = {"tag": "mostly startup; rakupp is non-PIE", "engine": True,
@@ -480,30 +480,14 @@ tbody tr:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
 .hidden { display: none; }
 /* Wins and losses against a reference engine, wherever a ratio is shown. A
    marginal loss (a quarter of the recent points at or under parity) keeps the
-   colour but drops the weight; a caveated ratio carries its tag. */
+   colour but drops the weight; a caveated ratio carries a † with the caveat
+   as its tooltip. */
 .lose { color: var(--bad); font-weight: 650; }
 .lose.marginal { font-weight: 400; }
-.win { color: var(--good); }
-.tag { display: inline-block; margin-left: 6px; font-size: 10.5px; font-weight: 500; padding: 0 5px;
-  border-radius: 5px; color: var(--jit); border: 1px solid color-mix(in srgb, var(--jit) 45%, transparent);
-  cursor: help; white-space: nowrap; }
-.bench-card.losing { border-left: 3px solid var(--bad); }
-.standing { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11.5px; color: var(--muted); margin: 0 0 4px; }
-.losing-section {
-  background: color-mix(in srgb, var(--bad) 7%, var(--card)); border: 1px solid var(--edge);
-  border-left: 4px solid var(--bad); border-radius: 12px; padding: 14px 16px 10px;
-  margin-bottom: 22px; box-shadow: var(--shadow); overflow-x: auto;
-}
-.losing-section h2 { font-size: 16px; margin: 0 0 2px; }
-.losing-section .sub { color: var(--muted); font-size: 12px; margin: 0 0 10px; }
-.losing-section th:nth-child(2), .losing-section td:nth-child(2),
-.losing-section th:last-child { text-align: left; }
-.losing-section td.track { text-align: left; white-space: normal; min-width: 14em; }
-.losing-section td.track a { color: var(--base); margin-right: 8px; }
-.losing-section .why { display: block; color: var(--muted); font-size: 11.5px; }
-.losing-section tr.group td { text-align: left; color: var(--muted); font-size: 11px;
-  text-transform: uppercase; letter-spacing: .05em; padding-top: 14px; }
-.untracked { color: var(--bad); font-weight: 600; }
+.standing { display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline;
+  font-size: 11.5px; color: var(--muted); margin: 0 0 4px; }
+.standing a { color: var(--muted); }
+.standing a:hover { color: var(--ink); }
 .foot { color: var(--muted); font-size: 11.5px; margin-top: 22px; }
 </style>
 __CHROME_NAV__
@@ -545,11 +529,6 @@ __CHROME_NAV__
   </div>
 </div>
 <main>
-  <section class="losing-section" id="losing" aria-labelledby="losingTitle">
-    <h2 id="losingTitle">mutsu is slower here</h2>
-    <p class="sub" id="losingSub"></p>
-    <div id="losingWrap"></div>
-  </section>
   <div class="grid" id="grid"></div>
   <div id="tableWrap" class="hidden"></div>
   <p class="foot" id="foot"></p>
@@ -592,9 +571,7 @@ const unit = () => metric === 'seconds' ? 's' : isRatio() ? '×' : '';
 // the generator), or undefined.
 const noteFor = (b) => b.notes && b.notes[metric] && b.notes[metric].html;
 const RECENT = DATA.recent;
-const LOSERS = DATA.losers.ranked, LOSERS_OTHER = DATA.losers.other;
 const ISSUE_URL = 'https://github.com/tokuhirom/mutsu/issues/';
-const SURVEY_URL = 'https://github.com/tokuhirom/mutsu/blob/main/docs/rakupp-gap-survey.md#';
 const REFS = [['ratio', 'rakudo'], ['ratiopp', 'rakupp']];
 const median = (xs) => {
   const v = [...xs].sort((a, b) => a - b), m = v.length >> 1;
@@ -602,8 +579,7 @@ const median = (xs) => {
 };
 
 // Build a DOM node. Text goes in through `append` (a text node), never as
-// markup: the loser section is built this way so that nothing read from the
-// data -- a benchmark name, a tracking note -- is ever parsed as HTML.
+// markup, so that nothing read from the data is ever parsed as HTML.
 function el(tag, attrs, ...kids) {
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
@@ -626,7 +602,7 @@ function ratioCell(b, key) {
   const note = b.notes && b.notes[key];
   return el('td', { class: 'mono ' + ratioClass(r), title: ratioTitle(r) },
     r.med.toFixed(2) + '×',
-    note ? el('span', { class: 'tag', title: stripTags(note.html) }, note.tag) : null);
+    note ? el('span', { class: 'note-mark', title: note.tag + ': ' + stripTags(note.html) }, '†') : null);
 }
 
 function windowStart() { return windowN > 0 ? Math.max(0, N - windowN) : 0; }
@@ -725,11 +701,22 @@ function cardHTML(b) {
   const chip = trendChip(trend(b[nowLane]));
   // Where mutsu stands against each reference, whatever metric is shown.
   const st = b.standing || {};
-  const standingLine = REFS.filter(([k]) => st[k]).map(([k, ref]) =>
-    `<span title="${ratioTitle(st[k])}">vs ${ref} <b class="mono ${ratioClass(st[k])}">${st[k].med.toFixed(2)}×</b></span>`).join('');
+  const esc = (t) => t.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  let standingLine = REFS.filter(([k]) => st[k]).map(([k, ref]) => {
+    const n = b.notes && b.notes[k];
+    const mark = n ? `<span class="note-mark" title="${esc(n.tag + ': ' + stripTags(n.html))}">†</span>` : '';
+    return `<span title="${ratioTitle(st[k])}">vs ${ref} <b class="mono ${ratioClass(st[k])}">${st[k].med.toFixed(2)}×</b>${mark}</span>`;
+  }).join('');
+  // A losing card names the issues that track the gap (bench-tracking.toml;
+  // numbers only, validated by the generator), quietly, after its ratios.
+  const losing = REFS.some(([k]) => st[k] && st[k].losing);
+  if (losing && b.tracking) {
+    standingLine += `<span title="${b.tracking.note ? esc(b.tracking.note) : 'tracking issues'}">`
+      + b.tracking.issues.map(n => `<a href="${ISSUE_URL}${n}" rel="noopener">#${n}</a>`).join(' ')
+      + '</span>';
+  }
   const note = noteFor(b);
-  const losing = LOSERS.includes(b.name);
-  return `<div class="bench-card${losing ? ' losing' : ''}" data-name="${b.name}">
+  return `<div class="bench-card" data-name="${b.name}">
     <div class="head"><h2>${b.name}</h2></div>
     <div class="readout">${now}${chip}</div>
     ${standingLine ? `<div class="standing">${standingLine}</div>` : ''}
@@ -815,50 +802,6 @@ function renderTable() {
     writeHash();
     renderTable();
   });
-}
-
-// The "mutsu is slower here" section: every benchmark whose robust ratio (the
-// generator's `standing`) is above 1.0× against rakudo or rakupp, worst first,
-// with the issues that track it. Independent of the controls, so rendered once.
-function renderLosing() {
-  const byName = Object.fromEntries(benches.map(b => [b.name, b]));
-  const measured = benches.filter(b => b.standing).length;
-  const sub = document.getElementById('losingSub');
-  const wrap = document.getElementById('losingWrap');
-  const total = LOSERS.length + LOSERS_OTHER.length;
-  sub.textContent = `${total} of ${measured} benchmarks. Each ratio is mutsu ÷ the reference, `
-    + `the median over the last ${RECENT} commits of the +jit series (the default build); `
-    + `above 1.00× mutsu is slower. A lighter red figure is marginal: a quarter or more of `
-    + `those commits were at or under parity.`;
-  if (!total) {
-    wrap.append(el('p', {}, 'mutsu is at or under parity with both references on every benchmark.'));
-    return;
-  }
-  const head = el('tr', {}, el('th', {}, '#'), el('th', {}, 'benchmark'),
-    el('th', {}, 'vs rakudo'), el('th', {}, 'vs rakupp'), el('th', {}, 'tracked by'));
-  const body = el('tbody');
-  const row = (name, i) => {
-    const b = byName[name], tr = b.tracking;
-    const track = el('td', { class: 'track' });
-    if (tr) {
-      for (const n of tr.issues)
-        track.append(el('a', { href: ISSUE_URL + n, rel: 'noopener' }, '#' + n));
-      if (tr.survey)
-        track.append(el('a', { href: SURVEY_URL + tr.survey, rel: 'noopener' }, 'gap survey'));
-      if (tr.note) track.append(el('span', { class: 'why' }, tr.note));
-    } else {
-      track.append(el('span', { class: 'untracked' }, 'no tracking issue'));
-    }
-    return el('tr', { 'data-name': name }, el('td', { class: 'mono' }, String(i + 1)),
-      el('td', {}, name), ratioCell(b, 'ratio'), ratioCell(b, 'ratiopp'), track);
-  };
-  LOSERS.forEach((n, i) => body.append(row(n, i)));
-  if (LOSERS_OTHER.length) {
-    body.append(el('tr', { class: 'group' }, el('td', { colspan: '5' },
-      'Losing only on a ratio that is not engine against engine')));
-    LOSERS_OTHER.forEach((n, i) => body.append(row(n, LOSERS.length + i)));
-  }
-  wrap.append(el('table', {}, el('thead', {}, head), body));
 }
 
 function render() {
@@ -1032,9 +975,11 @@ document.getElementById('foot').innerHTML =
     : '') +
   `Source: <span class="mono">bench-history.tsv</span>` +
   (DATA.hasDet ? ` and <span class="mono">bench-det-history.tsv</span>` : '') +
-  ` on <span class="mono">bench-data</span>; tracking issues from ` +
+  ` on <span class="mono">bench-data</span>. <b>vs rakudo / vs rakupp</b> on a card and in ` +
+  `the table are the median of mutsu ÷ the reference over the last ${RECENT} commits; red ` +
+  `means mutsu is slower (lighter red: a quarter or more of those commits were at or under ` +
+  `parity), and a losing card links its tracking issues from ` +
   `<span class="mono">benchmarks/bench-tracking.toml</span>.`;
-renderLosing();
 render();
 </script>
 """
@@ -1181,7 +1126,7 @@ def main():
     ap.add_argument(
         "--report",
         action="store_true",
-        help="print the 'mutsu is slower here' list as a Markdown table on stderr "
+        help="print the losing rows, worst first, as a Markdown table on stderr "
         "(stdout when no HTML is written, i.e. with -o and this flag, or this flag alone)",
     )
     args = ap.parse_args()
