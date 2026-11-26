@@ -651,6 +651,9 @@ impl Interpreter {
                 self.env.insert_sym(sym, value);
             }
         }
+        // Left before the compile-failure handling below: a snippet that
+        // never compiled has no running frame of its own.
+        self.routine_stack.evals.leave(eval_frames_saved);
         // A compile-time diagnosis (`X::Comp`/`X::Syntax::*`) raised while
         // parsing the EVAL'd string reports `.filename` matching the EVAL
         // pseudo-file (rakudo: `/EVAL/`), just like `.line` reports the line
@@ -663,9 +666,6 @@ impl Interpreter {
         // A diagnosis whose exception is not built yet (a typed
         // `X::Syntax::Confused: ...` message) carries the name on the error,
         // and the exception built from it later reports it.
-        // Left before the compile-failure handling below: a snippet that
-        // never compiled has no running frame of its own.
-        self.routine_stack.evals.leave(eval_frames_saved);
         if let Err(ref mut e) = result
             && e.code().is_some_and(|c| c.is_parse())
         {
@@ -695,6 +695,13 @@ impl Interpreter {
                         self.build_backtrace_value_with_runtime(false),
                     );
                 }
+            } else if e.exception.is_none() {
+                // Not built yet (a typed `X::Syntax::...: ` message): build it
+                // now, with that backtrace, so every CATCH path sees one.
+                let exception = e.exception_value_with_backtrace(|| {
+                    Some(self.build_backtrace_value_with_runtime(false))
+                });
+                e.exception = Some(Box::new(exception));
             }
         }
         crate::parser::set_parser_source_file(saved_source_file);
