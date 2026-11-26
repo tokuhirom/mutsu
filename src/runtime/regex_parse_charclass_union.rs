@@ -4,8 +4,9 @@
 //! each guarded by the subtractions that follow.
 
 use super::*;
+use super::regex_parser::RegexParser;
 
-impl Interpreter {
+impl RegexParser<'_> {
     /// `-[lead] + [pos] - [rest]`: every character except `lead`, united with
     /// `pos`, minus `rest`. Desugared to `[ <-[lead]> | <[pos]> ]`, each branch
     /// guarded by `<!before <[rest]>>` when a later subtraction exists.

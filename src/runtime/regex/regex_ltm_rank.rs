@@ -237,7 +237,7 @@ mod tests {
     /// position 0 in the empty package, returning `ltm_prefix_len_at`'s result.
     fn measure(pattern: &str, text: &str) -> (Option<usize>, bool) {
         let mut interp = Interpreter::new();
-        let parsed = interp
+        let parsed = crate::runtime::regex_parser::RegexParser::new(Some(&interp))
             .parse_regex_with_mode(pattern, RegexParseMode::Match)
             .expect("pattern should parse");
         let chars: Vec<char> = text.chars().collect();
@@ -416,7 +416,7 @@ mod tests {
         interp
             .run("grammar G { token item { a <.ws> b } }")
             .expect("grammar declaration should run");
-        let outer = interp
+        let outer = crate::runtime::regex_parser::RegexParser::new(Some(&interp))
             .parse_regex_with_mode("<item>", RegexParseMode::Match)
             .expect("outer pattern should parse");
         let chars: Vec<char> = "a   b".chars().collect();
@@ -429,7 +429,7 @@ mod tests {
     /// empty package.
     fn litlen(pattern: &str, text: &str) -> usize {
         let mut interp = Interpreter::new();
-        let parsed = interp
+        let parsed = crate::runtime::regex_parser::RegexParser::new(Some(&interp))
             .parse_regex_with_mode(pattern, RegexParseMode::Match)
             .expect("pattern should parse");
         let chars: Vec<char> = text.chars().collect();
@@ -442,7 +442,7 @@ mod tests {
     fn litlen_in_g(grammar: &str, pattern: &str, text: &str) -> usize {
         let mut interp = Interpreter::new();
         interp.run(grammar).expect("grammar declaration should run");
-        let parsed = interp
+        let parsed = crate::runtime::regex_parser::RegexParser::new(Some(&interp))
             .parse_regex_with_mode(pattern, RegexParseMode::Match)
             .expect("pattern should parse");
         let chars: Vec<char> = text.chars().collect();
