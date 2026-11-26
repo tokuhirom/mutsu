@@ -715,7 +715,20 @@ impl Interpreter {
                 match attr_idx.map(|i| i as usize) {
                     Some(i) => {
                         if plan.attr_binds[i] {
-                            self.check_attr_store_type(cn_resolved, key, '$', value.deref_container())?;
+                            let needs_check = match plan.store_check_needed.get(i) {
+                                Some(memo) => *memo.get_or_init(|| {
+                                    self.attr_store_has_constraint(cn_resolved, key)
+                                }),
+                                None => true,
+                            };
+                            if needs_check {
+                                self.check_attr_store_type(
+                                    cn_resolved,
+                                    key,
+                                    '$',
+                                    value.deref_container(),
+                                )?;
+                            }
                             Self::bind_constructor_attribute(
                                 &mut attributes, plan.attr_syms[i], key, value.clone(),
                             );

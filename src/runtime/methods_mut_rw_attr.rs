@@ -146,6 +146,16 @@ impl Interpreter {
     /// `expected <anon> but got Int (-3)`, the same check a `$!x = v` inside a
     /// method gets (`check_scalar_attr_where_on_assign`).
     // Cost: O(M + P), M = MRO length, P = cost of the predicate.
+    /// Whether [`Self::check_attr_store_type`] has anything to check for a
+    /// `$` attribute: a declared type constraint or a `where` clause. When it
+    /// has neither, that check returns its value unchanged whatever the value
+    /// is, so a caller may skip it. Both facts are class shape.
+    // Cost: O(d), d = classes in the MRO (the walks the check itself makes).
+    pub(crate) fn attr_store_has_constraint(&mut self, class_name: &str, attr: &str) -> bool {
+        self.get_attr_type_constraint(class_name, attr).is_some()
+            || self.class_attr_where_constraint(class_name, attr, '$').is_some()
+    }
+
     fn check_attr_store_where(
         &mut self,
         class_name: &str,

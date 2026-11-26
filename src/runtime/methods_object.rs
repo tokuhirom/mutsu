@@ -687,6 +687,9 @@ impl Interpreter {
         let deferred_seeds = (0..class_attrs.len())
             .map(|_| std::sync::OnceLock::new())
             .collect();
+        let store_check_needed = (0..class_attrs.len())
+            .map(|_| std::sync::OnceLock::new())
+            .collect();
         let has_build_overrides = registered
             && self
                 .registry()
@@ -696,6 +699,7 @@ impl Interpreter {
         let plan = std::sync::Arc::new(super::NativeCtorPlan {
             seed_defaults,
             deferred_seeds,
+            store_check_needed,
             alias_attributes,
             eligible,
             eligible_when_user_new_declines,
