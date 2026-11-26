@@ -44,11 +44,11 @@
       "cmp": "no_baseline",
       "path": "t/00-pg-test-runner.rakutest",
       "raku": {
-        "first_failure": "Failed to remove the file '/tmp/red-pg-runner-2-96512': Failed to delete file: read-only file system",
+        "first_failure": "Failed to remove the file '/tmp/red-pg-runner-2-369999': Failed to delete file: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.77,
+        "secs": 2.61,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 24.77,
+        "secs": 13.87,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -76,7 +76,7 @@
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 9.1,
+        "secs": 8.37,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -102,7 +102,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.3,
+        "secs": 3.01,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,7 +112,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 6.74,
+        "secs": 5.82,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -124,7 +124,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 9.4,
+        "secs": 9.27,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -134,7 +134,7 @@
         "nok": 0,
         "ok": 5,
         "plan": 5,
-        "secs": 110.01,
+        "secs": 106.59,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -146,7 +146,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 1.3,
+        "secs": 1.45,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -156,7 +156,7 @@
         "nok": 0,
         "ok": 16,
         "plan": 16,
-        "secs": 4.75,
+        "secs": 4.94,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -168,7 +168,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 15.43,
+        "secs": 14.35,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -178,7 +178,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 23.16,
+        "secs": 22.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -200,7 +200,7 @@
     "date": "2026-11-26",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "afd0efb7",
+    "mutsu_commit": "4f1c7bbf",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",

@@ -14,11 +14,11 @@
       "cmp": "no_baseline",
       "path": "t/01-basic.t",
       "raku": {
-        "first_failure": "touch: cannot touch '/tmp/7420134715610064.txt': Read-only file system",
+        "first_failure": "touch: cannot touch '/tmp/09353041885942881.txt': Read-only file system",
         "nok": 3,
         "ok": 3,
         "plan": null,
-        "secs": 1.6,
+        "secs": 1.96,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -34,7 +34,7 @@
     "date": "2026-11-26",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "afd0efb7",
+    "mutsu_commit": "4f1c7bbf",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",

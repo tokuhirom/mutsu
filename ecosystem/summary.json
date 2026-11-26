@@ -1,9 +1,9 @@
 {
-  "accepted_files": 15,
+  "accepted_files": 13,
   "assertion_parity": 100.0,
-  "baseline_assertions": 198558,
-  "baseline_files": 5163,
-  "dist_parity": 99.9,
+  "baseline_assertions": 198572,
+  "baseline_files": 5156,
+  "dist_parity": 100.0,
   "distributions": 1688,
   "excluded_dists": [
     "App::MoarVM::Debug",
@@ -24,16 +24,15 @@
   "file_parity": 100.0,
   "generated": "2026-11-26",
   "graded_distributions": 1339,
-  "green_distributions": 1338,
-  "mutsu_assertions": 198557,
-  "parity_files": 5162,
+  "green_distributions": 1339,
+  "mutsu_assertions": 198572,
+  "parity_files": 5156,
   "schema": 1,
   "status": {
     "blocked_dep": 3,
     "blocked_load": 9,
-    "green": 1341,
+    "green": 1342,
     "no_baseline": 329,
-    "partial": 1,
     "red": 5
   },
   "status_table": [
@@ -47,15 +46,11 @@
     ],
     [
       "green",
-      1338
+      1339
     ],
     [
       "no_baseline",
       329
-    ],
-    [
-      "partial",
-      1
     ],
     [
       "excluded",

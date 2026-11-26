@@ -7,19 +7,18 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **99.9%** (1338/1339) |
-| file parity | 100.0% (5162/5163) |
+| **dist parity** (published headline) | **100.0%** (1339/1339) |
+| file parity | 100.0% (5156/5156) |
 | assertion parity | 100.0% |
-| accepted divergences (out of the KPI, ADR-0130) | 15 file(s) |
+| accepted divergences (out of the KPI, ADR-0130) | 13 file(s) |
 | out-of-scope distributions (`exclude.txt`, out of the KPI) | 14 |
 
 | status | distributions |
 |---|---|
 | `blocked_dep` | 3 |
 | `blocked_load` | 3 |
-| `green` | 1338 |
+| `green` | 1339 |
 | `no_baseline` | 329 |
-| `partial` | 1 |
 | out of scope (`exclude.txt`, any status) | 14 |
 
 ## Regressed since the previous ledger
@@ -28,7 +27,7 @@ Distributions measured at the same version in the ledger commit this
 rollup replaces that got a worse status, or a baseline file that
 lost parity (a file rakudo now fails is not counted).
 
-- `Linux::NFTables` 0.0.3: green → partial
+_None._
 
 ## Distributions
 
@@ -223,7 +222,7 @@ lost parity (a file rakudo now fails is not counted).
 | `Business::CreditCard` | 0.2 | green | 2/2 |
 | `BusyIndicator` | 0.6.2 | green | 1/1 |
 | `C::Parser` | 0.3.3 | green | 9/9 |
-| `Cache::Async` | 0.3.4 | green | 8/8 |
+| `Cache::Async` | 0.3.4 | green | 9/9 |
 | `caelum` | 0.1.1 | no_baseline | — |
 | `Calendar` | 0.0.4 | no_baseline | — |
 | `CBOR::Simple` | 0.1.4 | green | 7/7 |
@@ -360,7 +359,7 @@ lost parity (a file rakudo now fails is not counted).
 | `Data::Dump` | 0.0.18 | green | 9/9 |
 | `Data::Dump::Tree` | 2.9.4 | green | 16/16 |
 | `Data::ExampleDatasets` | 0.2.4 | green | 2/2 |
-| `Data::Generators` | 0.1.11 | green | 9/9 |
+| `Data::Generators` | 0.1.11 | green | 8/8 |
 | `Data::Geographics` | 0.1.5 | no_baseline | — |
 | `Data::Importers` | 0.1.8 | green | 1/1 |
 | `Data::MessagePack` | 0.1.4 | green | 26/26 |
@@ -698,7 +697,7 @@ lost parity (a file rakudo now fails is not counted).
 | `HTML::Strip` | 0.1.3 | green | 1/1 |
 | `HTML::Tag` | 0.1.2 | green | 4/4 |
 | `HTML::Template` | 0.0.1 | green | 3/3 |
-| `HTTP::Core` | 0.1.0 | green | 2/2 |
+| `HTTP::Core` | 0.1.0 | green | 1/1 |
 | `HTTP::Easy` | 1.3 | green | 1/1 |
 | `HTTP::HPACK` | 1.0.3 | green | 2/2 |
 | `HTTP::RequestTarget::Raw` | 0.1.0 | green | 1/1 |
@@ -879,7 +878,7 @@ lost parity (a file rakudo now fails is not counted).
 | `Linux::Cpuinfo` | 0.1.2 | green | 5/5 |
 | `Linux::Fuser` | 0.0.16 | green | 2/2 |
 | `Linux::Joystick` | 0.0.3 | green | 1/1 |
-| `Linux::NFTables` | 0.0.3 | partial | 3/4 |
+| `Linux::NFTables` | 0.0.3 | green | 3/3 |
 | `List::Agnostic` | 0.0.7 | green | 1/1 |
 | `List::Allmax` | 0.0.1 | no_baseline | — |
 | `List::AllUtils` | 0.0.6 | green | 2/2 |
@@ -1000,7 +999,7 @@ lost parity (a file rakudo now fails is not counted).
 | `Math::Root` | 0.0.4 | green | 3/3 |
 | `Math::SalvoCombatModeling` | 0.0.1 | green | 1/1 |
 | `Math::Sequences` | 0.1.2 | green | 9/9 |
-| `Math::SparseMatrix` | 0.0.17 | green | 20/20 |
+| `Math::SparseMatrix` | 0.0.17 | green | 19/19 |
 | `Math::SparseMatrix::Native` | 0.0.10 | no_baseline | — |
 | `Math::SpecialFunctions` | 0.1.1 | green | 4/4 |
 | `Math::Splines` | 0.0.2 | green | 4/4 |
@@ -1070,7 +1069,7 @@ lost parity (a file rakudo now fails is not counted).
 | `MUGS::UI::CLI` | 0.1.4 | no_baseline | — |
 | `MUGS::UI::TUI` | 0.1.4 | no_baseline | — |
 | `MUGS::UI::WebSimple` | 0.1.4 | no_baseline | — |
-| `Mux` | 0.0.4 | green | 1/1 |
+| `Mux` | 0.0.4 | green | 2/2 |
 | `mv2d` | 0.1.333 | green | 1/1 |
 | `MVC::Keayl` | 0.9.2 | green | 37/37 |
 | `MVC::Keayl::Admin` | 0.9.1 | green | 3/3 |
@@ -1183,7 +1182,7 @@ lost parity (a file rakudo now fails is not counted).
 | `P5unlink` | 0.0.1 | green | 1/1 |
 | `Pakku` | chou.5 | green | 4/4 |
 | `Parameterizable` | 0.0.4 | green | 2/2 |
-| `ParaSeq` | 0.2.7 | green | 46/46 |
+| `ParaSeq` | 0.2.7 | green | 48/48 |
 | `Parse::Paths` | 0.1.3 | green | 1/1 |
 | `Pastebin::Gist` | 1.004002 | no_baseline | — |
 | `Pastebin::Shadowcat` | 2.001003 | no_baseline | — |
@@ -1202,7 +1201,7 @@ lost parity (a file rakudo now fails is not counted).
 | `PDF::Document` | 0.0.10 | no_baseline | — |
 | `PDF::Extract` | 0.0.4 | no_baseline | — |
 | `PDF::Font::Loader` | 0.8.15 | green | 4/4 |
-| `PDF::Font::Loader::CSS` | 0.0.1 | no_baseline | — |
+| `PDF::Font::Loader::CSS` | 0.0.1 | green | 1/1 |
 | `PDF::Font::Loader::HarfBuzz` | 0.0.2 | no_baseline | — |
 | `PDF::Grammar` | 0.3.6 | green | 10/10 |
 | `PDF::ISO_32000` | 0.0.13 | green | 2/2 |
@@ -1474,7 +1473,7 @@ lost parity (a file rakudo now fails is not counted).
 | `Template::Mojo` | 0.2.2 | green | 5/5 |
 | `Template::Mustache` | 1.2.7 | green | 13/13 |
 | `Template::Nest::Fast` | 0.3.0 | green | 10/10 |
-| `Template::Nest::XS` | 0.1.10 | green | 8/8 |
+| `Template::Nest::XS` | 0.1.10 | no_baseline | — |
 | `Template::Protone` | 0.1.4 | green | 3/3 |
 | `Term::Choose` | 2.0.7 | green | 5/5 |
 | `Term::Choose::Util` | 1.4.8 | green | 3/3 |
