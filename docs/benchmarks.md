@@ -84,14 +84,14 @@ previous commit", because a one-commit move on this runner pool is mostly noise:
   point. A ratio above 1.0x is red; it is lighter (*marginal*) when a quarter or more of those
   commits were at or under parity. A ratio rakupp wins by something other than running the same
   Raku code faster (its native JSON parser, its non-PIE startup) is not coloured and does not
-  count as a loss: the card shows its note instead, in every metric. Wins are not coloured: the page stays a
-  trend view, and the losses read at a glance within it.
+  count as a loss: the card shows its note instead, in every metric. Wins are not coloured,
+  so the losses read at a glance.
 - A losing card links the issues that track it, from
   [`benchmarks/bench-tracking.toml`](../benchmarks/bench-tracking.toml). For a losing row with no
   entry the generator warns: file a `todo:perf` issue on `lane:perf`, close condition
   "ratio <= 1.0x vs <rakudo|rakupp> on the bench CI median", then add the entry.
-- A card's **trend** chip compares the median of the last 10 points with the median of the 10
-  before. It is shown only when the step exceeds twice the standard error of that difference,
-  estimated from the series' own spread (MAD); otherwise it reads *no change*.
+- The page shows no change figure, neither a single-commit delta nor a trend: run-to-run
+  motion on these runners is mostly the instance, not the commit. A card's big number is the
+  median of the last 10 points; the charts show the history.
 - `python3 scripts/bench-visualize.py --report bench-history.tsv` prints every losing row,
   worst first, with its tracking issues, as a Markdown table for an issue or a status report.

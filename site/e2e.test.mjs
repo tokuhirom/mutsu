@@ -92,11 +92,10 @@ const benchRows = [
   'date\tcommit\tbenchmark\tmutsu_median_s\tmutsu_min_s\traku_median_s\tratio_mutsu_over_raku\truns\trunner\trakudo'
     + '\trakupp_median_s\tratio_mutsu_over_rakupp\trakupp',
 ];
-// 24 commits, enough for the robust figures (a median of the last 10 against
-// the 10 before):
-// - bench-fib halves at commit 12, a step far outside its noise, so its trend
-//   is shown; it loses to rakupp (1.10x) and has no tracking entry;
-// - hash-access jitters by 1% around a flat line, so it has no trend; it loses
+// 24 commits, more than the 10 the robust figures (medians) read:
+// - bench-fib halves at commit 12; it loses to rakupp (1.10x) and has no
+//   tracking entry;
+// - hash-access jitters by 1% around a flat line; it loses
 //   to rakupp (1.05x) and is tracked (its entry is the real one in
 //   benchmarks/bench-tracking.toml);
 // - bench-json-fast is slower than rakupp only because rakupp parses JSON
@@ -257,19 +256,18 @@ try {
   assert(await json.locator('.standing .lose').count() === 0
          && await json.locator('.standing a').count() === 0,
          'and is neither flagged nor linked as a loss');
-  assert((await page.textContent('.bench-card[data-name="bench-fib"] .chip')).includes('faster'),
-         'a step far outside the noise is shown as a trend');
-  assert(await page.textContent('.bench-card[data-name="hash-access"] .chip') === 'no change',
-         'commit-to-commit jitter is not');
-  assert(!(await page.textContent('body')).includes('Δ latest'),
-         'no single-commit delta is presented anywhere');
+  // Run-to-run motion on the CI runners is instance noise, so the page shows
+  // no change figure at all -- neither a single-commit delta nor a trend.
+  assert(await page.locator('.bench-card .chip').count() === 0
+         && !(await page.textContent('body')).includes('Δ latest'),
+         'no change-since-earlier figure is presented anywhere');
 
   await page.click('#view button[data-v="table"]');
   assert(await page.locator('#tableWrap tbody tr').count() === 3,
          'and the table view still works');
-  assert(await page.locator('#tableWrap th[data-k="trend"]').count() === 1
+  assert(await page.locator('#tableWrap th[data-k="trend"]').count() === 0
          && await page.locator('#tableWrap tbody td.lose').count() === 2,
-         'with a robust trend column and the losing ratios flagged');
+         'with no trend column and the losing ratios flagged');
 
   // The controls are the page's whole state, so a link has to carry them --
   // otherwise "look at the instruction counts over the last 50 commits" cannot
