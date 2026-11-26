@@ -277,7 +277,7 @@ impl Interpreter {
         // package variable: its `__mutsu_sigilless_readonly::\type` shape
         // reads as a qualified name, and resolving its head as a package
         // alias cost ~24k Ir per write (#15688).
-        if rest.starts_with("__mutsu_") || !crate::qualified::is_qualified(Symbol::intern(rest)) {
+        if rest.starts_with("__mutsu_") || !crate::qualified::is_qualified_str(rest) {
             return None;
         }
         let real = self.resolve_package_alias_prefix(rest)?;

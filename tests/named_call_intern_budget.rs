@@ -164,10 +164,41 @@ fn test_assertion_does_not_intern_the_assertion_routine_names() {
     // coercion's lexical-class remap probe). The budget sits one intern above
     // that: the count no longer varies, so any headroom is for a deliberate
     // change, not for noise.
-    let limit = 10.0;
+    //
+    // Then 7.000, and 4.000 once a store to a unit-level lexical stopped
+    // interning the variable's name twice: `MetaNs::key_for_str` (the
+    // sigilless-alias probe, armed by any `:=` in the program) and the
+    // `constant`-package-alias probe of `package_alias_var_name` both looked
+    // the name up instead. rakudo 2026.11's `Test.rakumod` binds
+    // `my %ENV := %*ENV`, which armed the first probe and took this to 14.000
+    // (#19210); see `unit_lexical_store_does_not_intern_its_name` below.
+    let limit = 5.0;
     assert!(
         per_assertion <= limit,
         "a Test assertion re-interns its routine names per assertion \
          ({per_assertion:.3} interns/assertion, budget {limit}); see #7766"
+    );
+}
+
+/// A routine that writes a lexical of its own compunit's top level, in a unit
+/// that also binds a lexical to a dynamic variable (`my $out := $*OUT`, the
+/// shape of rakudo 2026.11's `my %ENV := %*ENV` in `Test.rakumod`). The bind
+/// arms the sigilless-alias probe for the whole program, and each store then
+/// interned the written name twice: once for that probe's key and once for the
+/// `constant`-package-alias check (#19210). The name is a compiled constant,
+/// already in the symbol table, so both now look it up.
+#[test]
+fn unit_lexical_store_does_not_intern_its_name() {
+    let per_call = interns_per_call(
+        "use lib 't/lib';\nuse InternBudgetDynBind;",
+        r#"$hits = bump-count(1);"#,
+    );
+    eprintln!("unit-lexical store after a dynamic bind: {per_call:.3} interns per call");
+    // Measured 2.000 before the fix and 0.000 after.
+    let limit = 0.0;
+    assert!(
+        per_call <= limit,
+        "a store to a unit-level lexical re-interns its name per call \
+         ({per_call:.3} interns/call, budget {limit}); see #19210"
     );
 }
