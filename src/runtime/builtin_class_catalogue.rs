@@ -8,14 +8,18 @@
 //! built-in class copies it into that table first, so a slot is never written
 //! after it is filled.
 //!
-//! Two kinds of row share one index space:
+//! Three kinds of row share one index space:
 //!
 //! - rows `0..X_LEN` are the ~370 `X::` exception classes that
 //!   `build_builtin_registry` used to register one by one (`register_x`,
 //!   slice 1), each described by its name, parent and composed roles;
-//! - rows `X_LEN..LEN` are the attribute-less core classes whose `ClassDef`
-//!   literal moved into `builtin_class_catalogue_core` (slice 2), each built
-//!   by its own builder.
+//! - the core rows that follow are the attribute-less classes whose
+//!   `ClassDef` literal moved into `builtin_class_catalogue_core` (slice 2),
+//!   each built by its own builder;
+//! - the attribute rows that come last are the classes with attributes
+//!   (`Proc`, `IO::Handle`, the `Systemic` classes, the Pod object model, ...),
+//!   built together by `builtin_class_catalogue_attr` on the first lookup of
+//!   any of them. Their accessor rows are answered from their attributes.
 //!
 //! The rows are `&'static str`s plus `const`-computed `u32` offset tables, so
 //! the catalogue lives in `.rodata` and costs the dynamic loader no relocations
@@ -24,6 +28,7 @@
 use std::sync::OnceLock;
 
 use super::ClassDef;
+use super::builtin_class_catalogue_attr::{ATTR_CLASS_ROWS, build_attr_class};
 use super::builtin_class_catalogue_core::{CORE_CLASS_ROWS, build_core_class};
 use super::builtin_class_catalogue_x_rows::X_CLASS_ROWS;
 use super::registry_cow_table::CowTable;
@@ -31,21 +36,28 @@ use crate::symbol::Symbol;
 
 const X_ROWS: &[u8] = X_CLASS_ROWS.as_bytes();
 const CORE_ROWS: &[u8] = CORE_CLASS_ROWS.as_bytes();
+const ATTR_ROWS: &[u8] = ATTR_CLASS_ROWS.as_bytes();
 
 /// The number of `X::` rows; they come first.
 pub(crate) const X_LEN: usize = count_rows(X_ROWS);
 /// The number of core rows; they follow the `X::` rows.
 const CORE_LEN: usize = count_rows(CORE_ROWS);
+/// The first attribute row; they follow the core rows.
+const ATTR_START: usize = X_LEN + CORE_LEN;
+/// The number of attribute rows.
+const ATTR_LEN: usize = count_rows(ATTR_ROWS);
 /// The number of catalogue rows.
-pub(crate) const LEN: usize = X_LEN + CORE_LEN;
+pub(crate) const LEN: usize = ATTR_START + ATTR_LEN;
 
 /// Byte offset of each `X::` row's first byte.
 static ROW_START: [u32; X_LEN] = row_starts::<X_LEN>(X_ROWS);
 /// Byte offset of the tab that ends each `X::` row's name.
 static NAME_END: [u32; X_LEN] = name_ends::<X_LEN>(X_ROWS);
-/// The same two tables for the core rows.
+/// The same two tables for the core rows, and for the attribute rows.
 static CORE_ROW_START: [u32; CORE_LEN] = row_starts::<CORE_LEN>(CORE_ROWS);
 static CORE_NAME_END: [u32; CORE_LEN] = name_ends::<CORE_LEN>(CORE_ROWS);
+static ATTR_ROW_START: [u32; ATTR_LEN] = row_starts::<ATTR_LEN>(ATTR_ROWS);
+static ATTR_NAME_END: [u32; ATTR_LEN] = name_ends::<ATTR_LEN>(ATTR_ROWS);
 
 /// Each row's name as a `String`, built on the first whole-table walk (keys
 /// of the class table are `String`s; start-up never walks it).
@@ -158,11 +170,14 @@ const fn bytes_lt(s: &[u8], a0: usize, a1: usize, b0: usize, b1: usize) -> bool 
 /// The name of row `index`.
 // Cost: O(1).
 pub(crate) fn name(index: usize) -> &'static str {
-    match index.checked_sub(X_LEN) {
-        None => &X_CLASS_ROWS[ROW_START[index] as usize..NAME_END[index] as usize],
-        Some(core) => {
-            &CORE_CLASS_ROWS[CORE_ROW_START[core] as usize..CORE_NAME_END[core] as usize]
-        }
+    if index < X_LEN {
+        &X_CLASS_ROWS[ROW_START[index] as usize..NAME_END[index] as usize]
+    } else if index < ATTR_START {
+        let core = index - X_LEN;
+        &CORE_CLASS_ROWS[CORE_ROW_START[core] as usize..CORE_NAME_END[core] as usize]
+    } else {
+        let attr = index - ATTR_START;
+        &ATTR_CLASS_ROWS[ATTR_ROW_START[attr] as usize..ATTR_NAME_END[attr] as usize]
     }
 }
 
@@ -203,13 +218,14 @@ pub(crate) fn does(index: usize) -> impl Iterator<Item = &'static str> {
 /// The row of the built-in class `name`, if the catalogue has one.
 // Cost: O(|name| log LEN).
 pub(crate) fn index_of(name_: &str) -> Option<usize> {
-    // Every `X::` row's name starts with `X::`; core rows are searched too.
+    // Every `X::` row's name starts with `X::`; the core and attribute rows
+    // are searched too, each sorted on its own.
     if name_.starts_with("X::")
         && let Some(index) = search(0, X_LEN, name_)
     {
         return Some(index);
     }
-    search(X_LEN, LEN, name_)
+    search(X_LEN, ATTR_START, name_).or_else(|| search(ATTR_START, LEN, name_))
 }
 
 /// Binary search for `name_` among rows `lo..hi`, which are sorted by name.
@@ -247,6 +263,7 @@ fn parent_of(name_: &str) -> Option<&'static str> {
 pub(crate) fn materialize(index: usize) -> &'static CowTable<ClassDef> {
     SLOTS[index].get_or_init(|| match index.checked_sub(X_LEN) {
         None => build(index).into(),
+        Some(_) if index >= ATTR_START => build_attr_class(name(index)).into(),
         Some(core) => build_core(core, name(index)).into(),
     })
 }
@@ -254,7 +271,7 @@ pub(crate) fn materialize(index: usize) -> &'static CowTable<ClassDef> {
 /// Core row `core`'s class, as `build_builtin_registry` inserted it: its
 /// builder's literal, and -- for a built-in exception class -- its rakudo
 /// attributes marked for declaration on first access, as
-/// `BuiltinClassTable::insert` marks them (#18654, #18956).
+/// `build_builtin_registry` used to mark them (#18654, #18956).
 // Cost: O(s), s = the size of the class's literal sets.
 fn build_core(core: usize, name_: &str) -> ClassDef {
     let mut class_def = build_core_class(core);

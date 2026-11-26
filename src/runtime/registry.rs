@@ -1122,25 +1122,30 @@ impl Registry {
     /// [`Self::user_method_local_role_presence_sym`] for why the MRO walks
     /// need this form.
     ///
-    /// A built-in exception class declares its attributes on first access
-    /// (`class_attributes`), and `Interpreter::new` does not sync their
-    /// accessor rows, so a miss on such a class is answered from its
-    /// declaration, which is what the synced row would say (#18956).
-    // Cost: O(1) expected; O(a) on a miss for an `X::`/`CX::` owner, a = its
+    /// A built-in class's accessor rows are never synced into the method
+    /// table: the class is a row of the static catalogue, built on first
+    /// lookup (ADR-19206), and a built-in exception class declares its
+    /// attributes on first access too (`class_attributes`, #18956). So a miss
+    /// on a built-in class is answered from its declaration, which is what the
+    /// synced row would say. A class the program redeclared or augmented has
+    /// its rows synced as any user class does, and answers from them.
+    // Cost: O(1) expected; O(a) on a miss for a built-in owner, a = its
     // declared attributes.
     pub(crate) fn accessor_is_public_sym(&self, owner: Symbol, name: Symbol) -> Option<bool> {
         self.method_entries
             .get(&MethodEntryKey { owner, name })
             .and_then(|entry| entry.accessor)
-            .or_else(|| self.builtin_exception_accessor(owner, name))
+            .or_else(|| self.builtin_class_accessor(owner, name))
     }
 
-    // Cost: O(a), a = `owner`'s declared attributes; O(1) for an owner that
-    // is not an `X::`/`CX::` class.
+    // Cost: O(a), a = `owner`'s declared attributes; O(|owner| log R) for an
+    // owner that is not a built-in class, R = catalogue rows.
     #[cold]
-    fn builtin_exception_accessor(&self, owner: Symbol, name: Symbol) -> Option<bool> {
+    fn builtin_class_accessor(&self, owner: Symbol, name: Symbol) -> Option<bool> {
         let owner = owner.as_str();
-        if !super::builtin_exception_attrs::may_declare(owner) {
+        if !super::builtin_exception_attrs::may_declare(owner)
+            && super::builtin_class_catalogue::index_of(owner).is_none()
+        {
             return None;
         }
         let name = name.as_str();
