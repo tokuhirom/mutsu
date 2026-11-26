@@ -20,6 +20,7 @@ use crate::value::ValueMap;
 /// [`crate::env_tier::Tier`], which owns the map and is what `Env::inner`
 /// actually holds.
 pub(crate) use crate::env_tier::{CaptureWalk, SymMap, Tier};
+pub(crate) use crate::env_dyn_base::DynBase;
 
 mod activation_capture;
 mod eval_unit_capture;
@@ -48,7 +49,7 @@ pub(crate) mod stats;
 /// it, an O(env_size) cost. With ~70 of the ~119 entries hoisted into this
 /// shared, never-copied base, the per-call deep copy shrinks to the handful of
 /// real lexicals. See docs/vm-dual-store.md (Slice 4b).
-static GLOBAL_BASE: OnceLock<SymMap> = OnceLock::new();
+static GLOBAL_BASE: OnceLock<DynBase> = OnceLock::new();
 
 /// Install the immutable base tier. Idempotent: the first caller wins and
 /// later calls are ignored (the base is identical for every interpreter in a
@@ -66,7 +67,7 @@ pub(crate) fn set_global_base(map: HashMap<Symbol, Value>) {
     for key in map.keys() {
         crate::symbol::mark_env_key(*key);
     }
-    let _ = GLOBAL_BASE.set(map.into_iter().collect());
+    let _ = GLOBAL_BASE.set(DynBase::from(map.into_iter().collect::<SymMap>()));
 }
 
 /// Smallest tier whose system names a closure capture shares through a layer
@@ -76,7 +77,7 @@ pub(crate) fn set_global_base(map: HashMap<Symbol, Value>) {
 const CAPTURE_LAYER_MIN_KEYS: usize = 32;
 
 #[inline(always)]
-fn global_base() -> Option<&'static SymMap> {
+fn global_base() -> Option<&'static DynBase> {
     GLOBAL_BASE.get()
 }
 
@@ -729,7 +730,7 @@ pub struct Env {
     /// derived from one: [`Self::scoped_child`] deliberately does not copy it,
     /// so the `Arc` refcount is not touched on the per-call frame path, and a
     /// chain walk reaches the tail's copy anyway.
-    dyn_base: Option<Arc<SymMap>>,
+    dyn_base: Option<Arc<DynBase>>,
 }
 
 /// Per-frame identity an [`Env`] carries beside its name map (ADR-12529
@@ -925,7 +926,7 @@ impl Env {
     /// right after the built-in dynamics have been lifted out of the env's own
     /// map — once for an ordinary interpreter, and once more for each thread
     /// clone, which rebuilds some of them and so needs a tier of its own.
-    pub(crate) fn set_dyn_base(&mut self, mut base: SymMap) {
+    pub(crate) fn set_dyn_base(&mut self, mut base: DynBase) {
         debug_assert!(
             !base.contains_key(&file_key()),
             "the hoist moves `*`-twigil dynamics only, never `?FILE` (whose value is cached on the env)"
@@ -942,7 +943,7 @@ impl Env {
         // case that both hold a key.
         if let Some(global) = global_base() {
             for (k, v) in global.iter() {
-                base.entry(*k).or_insert_with(|| v.clone());
+                base.insert_if_absent(*k, || v.clone());
             }
         }
         // Same reason as `set_global_base`: this tier answers `get_sym`, so
@@ -956,7 +957,7 @@ impl Env {
     /// This env's per-interpreter base tier, or the one its chain bottoms out
     /// at. `None` for an env that was never given one (`Env::new()` and
     /// friends — those hold no built-in dynamics today either).
-    pub(crate) fn dyn_base(&self) -> Option<&Arc<SymMap>> {
+    pub(crate) fn dyn_base(&self) -> Option<&Arc<DynBase>> {
         let mut cur = self;
         while let Some(parent) = &cur.parent {
             cur = parent;
@@ -3439,7 +3440,7 @@ impl Env {
         // `$*REPO`. `GLOBAL_BASE` is deliberately not visited: it is a
         // process-lifetime `OnceLock` that is never reclaimed.
         if let Some(base) = &self.dyn_base {
-            for v in base.values() {
+            for v in base.built_values() {
                 visitor.visit_value(v);
             }
         }
