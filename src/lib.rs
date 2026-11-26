@@ -23,6 +23,7 @@ pub(crate) mod decl_doc;
 pub mod doc_mode;
 pub(crate) mod env;
 pub(crate) mod env_capture_view;
+pub(crate) mod env_dyn_base;
 pub(crate) mod env_tier;
 pub mod error_render;
 pub(crate) mod exit_handover;

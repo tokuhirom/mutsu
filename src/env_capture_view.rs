@@ -208,7 +208,7 @@ impl CaptureView {
     /// layers that resolve below it: what iterating the capture as itself
     /// shows.
     // Cost: O(e), e = entries over all layers.
-    pub(crate) fn fold_over_base(&self, base: Option<&SymMap>) -> SymMap {
+    pub(crate) fn fold_over_base(&self, base: Option<&crate::env::DynBase>) -> SymMap {
         let mut out = SymMap::default();
         for layer in self.layers.iter().rev() {
             for (k, v) in layer.tier.iter() {

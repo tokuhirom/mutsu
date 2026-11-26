@@ -158,8 +158,22 @@ impl Interpreter {
 
     /// Like [`Self::env_hash_var`], but before `%*ENV` exists (early start-up)
     /// it reads the process environment, which `%*ENV` is built from.
+    ///
+    /// So does a lookup while `%*ENV` is still an unbuilt lazy entry
+    /// (#19224): nothing has read it, so nothing has written it, and the hash
+    /// it would build holds exactly the process environment. Start-up asks
+    /// this for the module repository's directories, and building the whole
+    /// hash for those few names was the cost the laziness removes.
     // Cost: O(1) expected, one hash probe (or one `getenv`) plus stringification.
     pub(crate) fn env_var_or_process(&self, name: &str) -> Option<String> {
+        // A `PROCESS::` binding publishes a hash without reading the base.
+        if self.lexicals.process_dynamics.get("%*ENV").is_none()
+            && self
+                .env
+                .is_unbuilt_base_entry(crate::symbol::Symbol::intern("%*ENV"))
+        {
+            return std::env::var(name).ok();
+        }
         match self.process_env_hash().as_ref().map(Value::view) {
             Some(ValueView::Hash(map)) => map.get(name).map(Value::to_string_value),
             _ => std::env::var(name).ok(),
