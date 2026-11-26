@@ -133,6 +133,23 @@ The two large items left both come from data, not layout. One is the relocations
 link would remove them, but it lowers ASLR and needs the maintainer's approval (see AGENTS.md
 and #11158). The other is heap pages first touched during start-up.
 
+**Update (#19197, second slice): one heap item is gone.** `build_builtin_registry` used to build a
+scratch class table of ~570 KB: 1,024 inline buckets of ~530-byte `ClassDef`s. It now inserts
+each class straight into the registry's sharded table. Faults went from ~1,225 to ~1,107, and
+median wall time fell 5-8%. At the new heap peak (massif, `bench-startup`), these items remain:
+
+| allocation | bytes | faulted in? |
+|---|---:|---|
+| two crash-report signal stacks | 512 KB | no: `mmap`ed and never touched |
+| the registry's `ClassDef`s (~450 × ~530 B) | 238 KB | yes |
+| ~1,000 small allocation sites | ~325 KB | yes |
+| hash-table buckets of other registry tables | ~220 KB | yes |
+| `Symbol`'s id → string chunk (4,096 × 24 B) | 98 KB | yes |
+
+`.data.rel.ro` is 1.45 MB, and its relocations are why its pages are copied. Named symbols
+cover 724 KB of it, of which 572 KB is anonymous constants. The unnamed rest is mostly vtables.
+No single table dominates.
+
 ## Cross-cutting cause 2: instruction speed
 
 Instructions, whole run, both interpreters under callgrind:
