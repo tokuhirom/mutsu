@@ -672,6 +672,7 @@ impl NanBox {
 /// with ordinary, well-predicted branches. Release still needs the type
 /// (it may run `T`'s destructor) and keeps `payload_op`.
 #[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
 enum CloneLane {
     /// `Arc<T>` with `align_of::<T>() == 8`: bump through `Arc<u64>`.
     Arc8,
@@ -813,24 +814,53 @@ const fn clone_lane(kind: Kind) -> CloneLane {
     }
 }
 
+/// The kinds in each fast [`CloneLane`], as bit sets over `Kind as u8`
+/// (`KIND_COUNT` fits in 128). `NanBox::clone` tests a bit instead of
+/// `match`ing on the lane: a `match` there compiles back into a jump table,
+/// which is the indirect branch this exists to avoid.
+const fn clone_lane_mask(lane: CloneLane) -> u128 {
+    let mut mask = 0u128;
+    let mut k = 0u8;
+    while k < KIND_COUNT {
+        // SAFETY: `k < KIND_COUNT` is a valid `Kind` discriminant.
+        let kind = unsafe { std::mem::transmute::<u8, Kind>(k) };
+        if kind_owns_payload(kind) && clone_lane_eq(clone_lane(kind), lane) {
+            mask |= 1u128 << k;
+        }
+        k += 1;
+    }
+    mask
+}
+
+const fn clone_lane_eq(a: CloneLane, b: CloneLane) -> bool {
+    a as u8 == b as u8
+}
+
+const ARC8_KINDS: u128 = clone_lane_mask(CloneLane::Arc8);
+const GC8_KINDS: u128 = clone_lane_mask(CloneLane::Gc8);
+const _: () = assert!(KIND_COUNT <= 128 && ARC8_KINDS & GC8_KINDS == 0);
+
 impl Clone for NanBox {
     fn clone(&self) -> Self {
         let bits = self.0.get();
         if let Classified::Kind(kind) = classify(bits)
             && kind_owns_payload(kind)
         {
+            let bit = 1u128 << (kind as u8);
             // SAFETY (all arms): `self` is live, so the word owns one
             // reference of its payload; each arm adds one for the new word.
-            // The Arc8/Gc8 lanes are exactly the kinds whose payload type
+            // The Arc8/Gc8 sets hold exactly the kinds whose payload type
             // passed the alignment asserts above.
-            match clone_lane(kind) {
-                CloneLane::Arc8 => unsafe {
+            if ARC8_KINDS & bit != 0 {
+                unsafe {
                     Arc::increment_strong_count(std::ptr::with_exposed_provenance::<u64>(
                         addr_of_payload(bits),
                     ));
-                },
-                CloneLane::Gc8 => unsafe { crate::gc::clone_bump_erased(addr_of_payload(bits)) },
-                CloneLane::Typed => unsafe { payload_op(kind, bits, PayloadOp::CloneBump) },
+                }
+            } else if GC8_KINDS & bit != 0 {
+                unsafe { crate::gc::clone_bump_erased(addr_of_payload(bits)) };
+            } else {
+                unsafe { payload_op(kind, bits, PayloadOp::CloneBump) };
             }
         }
         NanBox(self.0)
