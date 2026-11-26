@@ -70,13 +70,20 @@ The operations:
   It then mutates the overlay entry as today. The catalogue is never written.
 - `insert(name, def)`: writes the overlay. It shadows a catalogue row of the same name.
 - `remove(name)`: removes the overlay entry and hides the catalogue row. The set of hidden rows
-  is a small copy-on-write set, so snapshots and EVAL rollback restore it along with the rest.
+  is a small copy-on-write set, so snapshots and EVAL rollback (`retain_names`, `refill_from`)
+  restore it along with the rest.
 - `keys()`: the overlay's keys, then the visible catalogue names that the overlay does not
-  shadow. Keys are yielded as `&str`.
-- `len()` and `key_generation()`: also count catalogue rows and hidden-set changes, so the
-  type-name indexes (`type_keys_stamp`, `class_key_by_short_name`) stay coherent.
+  shadow. Keys stay `&String`, so no call site changes. The catalogue's names are built as
+  `String`s once per process, on the first walk.
+- `key_generation()`: also moves when the hidden set changes, so the type-name indexes
+  (`type_keys_stamp`, `class_key_by_short_name`, the mixin display index) stay coherent. Each
+  half is a process-unique registry generation, so the larger of the two moves whenever
+  either does. A size check (`len()`) is not offered, because it would cost a pass over the
+  catalogue. The one index that compared sizes now compares key generations.
 - Whole-table iteration materializes every visible row. It is allowed, but must not happen on
-  the start-up path, which a test pins.
+  the start-up path. `build_builtin_registry` reads only the overlay, and the composed-role
+  registries read the catalogue rows directly. A callgrind profile of start-up shows no
+  materialization.
 
 A materialized `ClassDef` is the same value the eager builder produced. Its parents and MRO come
 from the catalogue rows. Its built-in exception attributes are marked for deferral (#18956), as
@@ -113,8 +120,6 @@ repository wiring (~6%).
 - Start-up stops paying for built-ins the program never names. The cost moves to the first
   lookup of each class: one `OnceLock` initialization and one `ClassDef` per class, once per
   process.
-- `ClassTable` keys become `&str` on iteration. The ~32 `keys()` call sites that clone the key
-  change from `.cloned()` to `.map(str::to_owned)`.
 - The `OnceLock` slots are shared by every interpreter and thread in the process. A
   materialized `ClassDef` is immutable there, and writes go to the overlay. This is the same
   rule as ADR-17216's copy-on-write world, one level down.
