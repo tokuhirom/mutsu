@@ -89,6 +89,8 @@ pub(crate) struct RoutineStack {
     /// The language revisions a frame's entry replaced, innermost last, as
     /// (frame index, revision to restore) -- see [`Self::enter_revision`].
     revision_saves: Vec<(usize, crate::symbol::Symbol)>,
+    /// The `EVAL`s running on this stack, for backtraces (#19242).
+    pub(crate) evals: super::eval_frames::EvalFrames,
 }
 
 impl RoutineStack {

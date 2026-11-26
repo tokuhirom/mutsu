@@ -21,6 +21,7 @@ pub(crate) mod return_target;
 mod builtin_candidates;
 mod routine_candidate_defs;
 pub(crate) mod routine_stack;
+pub(crate) mod eval_frames;
 mod run;
 mod run_dist;
 mod run_dist_meta6;

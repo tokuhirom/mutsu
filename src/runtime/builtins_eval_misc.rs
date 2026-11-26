@@ -585,6 +585,18 @@ impl Interpreter {
         {
             self.repl_compiler.session_units.insert(unit_sym);
         }
+        // The snippet's mainline is a `<unit>` frame of its own in a
+        // backtrace, called from here (#19242). Taken before `?FILE` moves on
+        // to the unit, so the call site is the caller's file.
+        let eval_frames_saved = {
+            let depth = self.routine_stack.len();
+            let line = self.current_source_line();
+            let file = self.executing_source_file_sym();
+            let package = self.current_package_sym();
+            self.routine_stack
+                .evals
+                .enter(depth, unit_sym, package, line, file)
+        };
         let saved_unit = std::mem::replace(&mut self.current_unit, unit_sym);
         self.env
             .insert("?FILE".to_string(), Value::str(unit_name.clone()));
@@ -651,6 +663,9 @@ impl Interpreter {
         // A diagnosis whose exception is not built yet (a typed
         // `X::Syntax::Confused: ...` message) carries the name on the error,
         // and the exception built from it later reports it.
+        // Left before the compile-failure handling below: a snippet that
+        // never compiled has no running frame of its own.
+        self.routine_stack.evals.leave(eval_frames_saved);
         if let Err(ref mut e) = result
             && e.code().is_some_and(|c| c.is_parse())
         {
@@ -671,6 +686,15 @@ impl Interpreter {
                 attributes
                     .insert_if_absent("filename".to_string(), Value::str(compile_name.clone()));
                 attributes.insert_if_absent("file".to_string(), Value::str(compile_name));
+                // rakudo's compile failure carries the backtrace of the `EVAL`
+                // call that compiled it (under the compiler's own frames), so
+                // `.backtrace` is defined; it is not a runtime one (#19242).
+                if !attributes.contains_key("backtrace") {
+                    attributes.insert(
+                        "backtrace".to_string(),
+                        self.build_backtrace_value_with_runtime(false),
+                    );
+                }
             }
         }
         crate::parser::set_parser_source_file(saved_source_file);
