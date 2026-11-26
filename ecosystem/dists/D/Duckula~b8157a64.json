@@ -28,30 +28,32 @@
   "files": [],
   "load": {
     "Duckula": "raku_also_fails",
-    "Duckula::Accessor": "expected statement: expected expected statement: expected expression after comparison operator or expression after infix operator or '.' or digits or generic radix literal or ... [at lib/Duckula/Accessor.rakumod:674]",
+    "Duckula::Accessor": "expected statement: expected expected statement: expected expression statement or expected statement: expected condition expression after 'if' or expression after infix operator or '.' or digits or ge [at lib/Duckula/Accessor.rakumod:695]",
     "Duckula::Arrow": "ok",
     "Duckula::ArrowIPC": "ok",
-    "Duckula::ArrowRead": "expected statement: expected expected statement: expected expression after comparison operator or expression after infix operator or '.' or digits or generic radix literal or ... [at lib/Duckula/ArrowRead.rakumod:674]",
-    "Duckula::AsOf": "expected statement: expected expected statement: expected expression after comparison operator or expression after infix operator or '.' or digits or generic radix literal or ... [at lib/Duckula/AsOf.rakumod:674]",
+    "Duckula::ArrowRead": "/home/runner/.cache/mutsu-ecosystem/deps/DB__DuckDB/resources/duckdb-result-shim.c:20:10: fatal error: duckdb.h: No such file or directory",
+    "Duckula::AsOf": "expected statement: expected expected statement: expected expression statement or expected statement: expected condition expression after 'if' or expression after infix operator or '.' or digits or ge [at lib/Duckula/AsOf.rakumod:695]",
     "Duckula::Clean": "ok",
-    "Duckula::Dtype": "expected statement: expected expected statement: expected expression after comparison operator or expression after infix operator or '.' or digits or generic radix literal or ... [at lib/Duckula/Dtype.rakumod:674]",
+    "Duckula::Decode": "ok",
+    "Duckula::Dtype": "expected statement: expected expected statement: expected expression statement or expected statement: expected condition expression after 'if' or expression after infix operator or '.' or digits or ge [at lib/Duckula/Dtype.rakumod:695]",
     "Duckula::ExcelRead": "ok",
     "Duckula::ExcelWrite": "ok",
-    "Duckula::Expr": "expected statement: expected expected statement: expected expression after comparison operator or expression after infix operator or '.' or digits or generic radix literal or ... [at lib/Duckula/Expr.rakumod:674]",
-    "Duckula::Frame": "expected statement: expected expected statement: expected expression after comparison operator or expression after infix operator or '.' or digits or generic radix literal or ... [at lib/Duckula/Frame.rakumod:674]",
-    "Duckula::FrameOps": "expected statement: expected expected statement: expected expression after comparison operator or expression after infix operator or '.' or digits or generic radix literal or ... [at lib/Duckula/FrameOps.rakumod:674]",
-    "Duckula::GroupBy": "expected statement: expected expected statement: expected expression after comparison operator or expression after infix operator or '.' or digits or generic radix literal or ... [at lib/Duckula/GroupBy.rakumod:674]",
+    "Duckula::Expr": "expected statement: expected expected statement: expected expression statement or expected statement: expected condition expression after 'if' or expression after infix operator or '.' or digits or ge [at lib/Duckula/Expr.rakumod:695]",
+    "Duckula::Frame": "/home/runner/.cache/mutsu-ecosystem/deps/DB__DuckDB/resources/duckdb-result-shim.c:20:10: fatal error: duckdb.h: No such file or directory",
+    "Duckula::FrameOps": "expected statement: expected expected statement: expected expression statement or expected statement: expected condition expression after 'if' or expression after infix operator or '.' or digits or ge [at lib/Duckula/FrameOps.rakumod:695]",
+    "Duckula::GroupBy": "expected statement: expected expected statement: expected expression statement or expected statement: expected condition expression after 'if' or expression after infix operator or '.' or digits or ge [at lib/Duckula/GroupBy.rakumod:695]",
     "Duckula::GroupOps": "ok",
     "Duckula::Guard": "ok",
     "Duckula::IO": "ok",
     "Duckula::Index": "ok",
-    "Duckula::IndexLabels": "expected statement: expected expected statement: expected expression after comparison operator or expression after infix operator or '.' or digits or generic radix literal or ... [at lib/Duckula/IndexLabels.rakumod:674]",
+    "Duckula::IndexLabels": "expected statement: expected expected statement: expected expression statement or expected statement: expected condition expression after 'if' or expression after infix operator or '.' or digits or ge [at lib/Duckula/IndexLabels.rakumod:695]",
     "Duckula::Join": "ok",
-    "Duckula::LazyFrame": "expected statement: expected expected statement: expected expression after comparison operator or expression after infix operator or '.' or digits or generic radix literal or ... [at lib/Duckula/LazyFrame.rakumod:674]",
+    "Duckula::LazyFrame": "expected statement: expected expected statement: expected expression statement or expected statement: expected condition expression after 'if' or expression after infix operator or '.' or digits or ge [at lib/Duckula/LazyFrame.rakumod:695]",
     "Duckula::Plan": "ok",
     "Duckula::Reshape": "ok",
+    "Duckula::RowsView": "ok",
     "Duckula::SQL": "ok",
-    "Duckula::Series": "expected statement: expected expected statement: expected expression after comparison operator or expression after infix operator or '.' or digits or generic radix literal or ... [at lib/Duckula/Series.rakumod:674]",
+    "Duckula::Series": "/home/runner/.cache/mutsu-ecosystem/deps/DB__DuckDB/resources/duckdb-result-shim.c:20:10: fatal error: duckdb.h: No such file or directory",
     "Duckula::Session": "/home/runner/.cache/mutsu-ecosystem/deps/DB__DuckDB/resources/duckdb-result-shim.c:20:10: fatal error: duckdb.h: No such file or directory",
     "Duckula::SqlDb": "ok",
     "Duckula::Stats": "ok",
@@ -67,7 +69,7 @@
     "date": "2026-11-26",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "4f1c7bbf",
+    "mutsu_commit": "5ef2787e",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -76,7 +78,7 @@
   "schema": 1,
   "source": {
     "index": "fez",
-    "url": "https://360.zef.pm/D/UC/DUCKULA/de81470d665bc13bfa6cbfaf5e4e56bec07a3861.tar.gz"
+    "url": "https://360.zef.pm/D/UC/DUCKULA/34fe1b7fd290775bb8e8401fb58e6e844da4f237.tar.gz"
   },
   "status": "blocked_load",
   "totals": {
@@ -86,5 +88,5 @@
     "parity_files": 0,
     "regressed_files": 0
   },
-  "version": "0.35.5"
+  "version": "0.51.3"
 }
