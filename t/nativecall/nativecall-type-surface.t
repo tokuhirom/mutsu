@@ -74,5 +74,8 @@ is-deeply surface-names(),
     ('NativeCall::Types::bool', 'NativeCall::Types::ssize_t', 'NativeCall::Types::void', 'NativeCall::Types::Pointer'),
     'the type objects are the global ones inside a unit module';
 ok opaque-is-pointer(), 'and OpaquePointer is still Pointer there';
-is managed-name(), 'NativeCall::CStr', 'explicitly-manage works inside a unit module';
+# rakudo 2026.11's `explicitly-manage` returns the managed string itself (with
+# `ExplicitlyManagedString` mixed in); 2026.06 returned the `CStr` box (#19210).
+is managed-name(), 'Str+{NativeCall::Types::ExplicitlyManagedString}',
+    'explicitly-manage works inside a unit module';
 is refreshed(), 1, 'and so does refresh';
