@@ -22,8 +22,9 @@
 //!   intermediate results stays alive.
 //! - A strand list has at most [`MAX_STRANDS`] entries (MoarVM's bound);
 //!   a concatenation that would exceed it is built flat instead.
-//! - A slice's base is always a [`StrBody::Flat`] body ([`StrBody::slice_of`]
-//!   re-bases a slice of a slice and copies a piece of a strand list), so
+//! - A slice's base is a [`StrBody::Flat`] body or a strand list already
+//!   flattened into its cache, never a slice ([`StrBody::slice_of`] re-bases a
+//!   slice of a slice and copies a piece of an unflattened strand list), so
 //!   reading a slice is O(1) and never recurses.
 //!   Its range lies on `char` boundaries of the base.
 //! - The concatenation of the strands is NFC. The producers only strand a
@@ -53,7 +54,8 @@ pub enum StrBody {
 
 /// The substring form of a [`StrBody`]: `base[start..end]`.
 pub struct StrSlice {
-    /// Always a [`StrBody::Flat`] body.
+    /// A [`StrBody::Flat`] body or a flattened strand list (see the module
+    /// invariants).
     base: Arc<StrBody>,
     start: usize,
     end: usize,
@@ -99,7 +101,7 @@ impl StrBody {
     /// at most [`SLICE_SHARE_MAX_BASE`] bytes or the piece is at least an
     /// eighth of it; an empty piece is always a (non-allocating) flat body.
     /// A slice of a slice re-bases onto the underlying body; a piece of a
-    /// strand list is copied.
+    /// strand list not yet flattened is copied.
     ///
     /// Cost: O(1) when shared; O(m) when copied, m = bytes of the piece.
     pub(crate) fn slice_of(base: &Arc<StrBody>, start: usize, end: usize) -> StrBody {
@@ -113,9 +115,10 @@ impl StrBody {
             _ => (base, 0),
         };
         let root_len = root.byte_len();
-        // Only a flat root is shared: a slice of a strand list could chain back
-        // into strands and lose the one-hop read.
-        if root.flat_buf().is_none() || (root_len > SLICE_SHARE_MAX_BASE && len < root_len / 8) {
+        // Only a root whose read is O(1) is shared: a flat body, or a strand
+        // list already flattened into its cache. An unflattened strand list
+        // would make the first read of the slice pay the flatten.
+        if !root.reads_in_place() || (root_len > SLICE_SHARE_MAX_BASE && len < root_len / 8) {
             return StrBody::Flat(base.as_str()[start..end].to_owned());
         }
         StrBody::Slice(StrSlice {
@@ -123,6 +126,16 @@ impl StrBody {
             start: offset + start,
             end: offset + end,
         })
+    }
+
+    /// Whether reading this body as a `&str` is O(1) and touches no other
+    /// body: a flat buffer, or a strand list whose flattening is cached.
+    fn reads_in_place(&self) -> bool {
+        match self {
+            StrBody::Flat(_) => true,
+            StrBody::Lazy(l) => l.flat.get().is_some(),
+            StrBody::Slice(_) => false,
+        }
     }
 
     /// The flat buffer if this body is flat, without flattening a strand list.
@@ -297,7 +310,8 @@ impl Deref for StrBody {
         match self {
             StrBody::Flat(s) => s,
             StrBody::Lazy(l) => l.flat.get_or_init(|| l.flatten()),
-            // The base is flat, so this is one hop.
+            // The base reads in place (flat or a cached flattening), so this
+            // is one hop.
             StrBody::Slice(sl) => &sl.base.as_str()[sl.start..sl.end],
         }
     }
@@ -475,11 +489,22 @@ mod tests {
     }
 
     #[test]
-    fn piece_of_a_strand_list_is_copied() {
+    fn piece_of_an_unflattened_strand_list_is_copied() {
         let lazy = Arc::new(StrBody::repeated(&flat("ab"), 3));
         let piece = StrBody::slice_of(&lazy, 1, 4);
         assert!(matches!(piece, StrBody::Flat(_)));
         assert_eq!(piece.as_str(), "bab");
+    }
+
+    #[test]
+    fn piece_of_a_flattened_strand_list_is_shared() {
+        let lazy = Arc::new(StrBody::repeated(&flat("ab"), 3));
+        assert_eq!(lazy.as_str(), "ababab");
+        let piece = StrBody::slice_of(&lazy, 1, 4);
+        assert!(matches!(piece, StrBody::Slice(_)));
+        assert_eq!(piece.as_str(), "bab");
+        let inner = StrBody::slice_of(&Arc::new(piece), 1, 2);
+        assert_eq!(inner.as_str(), "a");
     }
 
     #[test]

@@ -139,6 +139,11 @@ impl MatchNode {
         self.target.span_str(self.cap.from, self.cap.to)
     }
 
+    /// [`Self::span_text`] as a `Str` value, sharing an ASCII subject's buffer.
+    fn span_value(&self) -> Value {
+        self.target.span_value(self.cap.from, self.cap.to)
+    }
+
     /// Read one attribute, without forcing when it is derivable from the
     /// capture node. Structural attributes (`list`, `named`, `silent_caps`,
     /// `reduce_time_vars`, `capture_alias_map`) force the materialization.
@@ -147,7 +152,7 @@ impl MatchNode {
             return attrs.as_map().get(name).cloned();
         }
         match name {
-            "str" => Some(Value::str(self.span_text())),
+            "str" => Some(self.span_value()),
             "from" => Some(Value::Int(self.cap.from as i64)),
             "to" => Some(Value::Int(self.cap.to as i64)),
             "orig" => Some(Value::str_arc(Arc::clone(self.target.text()))),
@@ -217,7 +222,7 @@ impl MatchNode {
                 Value::Bool(true),
             );
         }
-        attrs.insert(wk::match_str(), Value::str(self.span_text()));
+        attrs.insert(wk::match_str(), self.span_value());
         attrs.insert(wk::match_from(), Value::Int(cap.from as i64));
         attrs.insert(wk::match_to(), Value::Int(cap.to as i64));
         if let Some(pos) = kids.pos {
@@ -465,7 +470,7 @@ fn span_leaf_match(from: usize, to: usize, target: &MatchTarget) -> Value {
         return Value::lazy_match(Arc::new(caps.into_cap_node()), target.clone());
     }
     let mut attrs = AttrMap::new();
-    attrs.insert("str", Value::str(target.span_str(from, to)));
+    attrs.insert("str", target.span_value(from, to));
     attrs.insert("from", Value::Int(from as i64));
     attrs.insert("to", Value::Int(to as i64));
     attrs.insert("list", Value::array(Vec::new()));

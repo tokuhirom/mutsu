@@ -128,7 +128,8 @@ impl Interpreter {
         let total_len = idx.len();
         let slice = |start: usize, end: usize| {
             let (b0, b1) = idx.byte_range(&s, start, end.saturating_sub(start));
-            Value::str(s[b0..b1].to_string())
+            // Shares the invocant's buffer (`StrBody::slice_of`).
+            Value::str_from_body(crate::value::StrBody::slice_of(&s, b0, b1))
         };
 
         // Check if first arg is a Range — handle substr($str, 6..8) form

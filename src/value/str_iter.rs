@@ -172,11 +172,15 @@ impl StrIterSpec {
         Some(range)
     }
 
-    /// Rakudo's `pull-one`: the next element, or `None` at the end.
-    // Cost: O(k), k = bytes the cursor moves over, plus the copy of the element.
+    /// Rakudo's `pull-one`: the next element, or `None` at the end. The
+    /// element shares the invocant's buffer ([`StrBody::slice_of`]).
+    // Cost: O(k), k = bytes the cursor moves over (plus a copy of the element
+    // only when `slice_of` declines to share).
     pub(crate) fn pull_one(&mut self) -> Option<Value> {
         let (start, end) = self.advance()?;
-        Some(Value::str(self.text[start..end].to_string()))
+        Some(Value::str_from_body(StrBody::slice_of(
+            &self.text, start, end,
+        )))
     }
 
     /// Append up to `n` more elements to `out` (Rakudo's `push-exactly`;
