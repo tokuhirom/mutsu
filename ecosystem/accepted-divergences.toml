@@ -135,6 +135,7 @@ shape = { verdict = "die", ok = 2, nok = 0, first_failure = [
   "free(): invalid pointer",
   "double free or corruption (out)",
   "free(): double free detected in tcache 2",
+  "munmap_chunk(): invalid pointer",
   "mutsu crash report",
   "re:Internal error: index out of bounds: the len is \\d+ but the index is \\d+",
   "re:thread 'mutsu-main' \\(\\d+\\) panicked at .*",
