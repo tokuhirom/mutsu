@@ -208,7 +208,7 @@ impl StrIterSpec {
 /// The invocant's payload as a shared `Arc<StrBody>`: a `Str` hands out its
 /// own `Arc` (no copy), anything else is stringified once.
 // Cost: O(1) for a `Str`; O(n) to stringify anything else.
-fn shared_text(target: &Value) -> Arc<StrBody> {
+pub(crate) fn shared_text(target: &Value) -> Arc<StrBody> {
     match target.view() {
         crate::value::ValueView::Str(s) => Arc::clone(&s),
         _ => Arc::new(target.to_string_value().into()),

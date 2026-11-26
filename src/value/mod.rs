@@ -716,7 +716,7 @@ pub(crate) mod split_lines;
 pub(crate) mod state_scope_reaper;
 mod str_body;
 pub(crate) mod str_increment;
-mod str_iter;
+pub(crate) mod str_iter;
 pub(crate) mod str_numeric;
 pub(crate) mod supply_class;
 mod sync_cell;

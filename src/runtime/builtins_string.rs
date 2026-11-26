@@ -29,9 +29,9 @@ impl Interpreter {
             opts.limit = parse_split_limit(positional[1])?;
         }
 
-        let text = target.to_string_value();
-        let parts = self.split_with_splitter(&text, &splitter, opts.limit)?;
-        let result = apply_split_opts(parts, &opts);
+        let base = crate::value::str_iter::shared_text(&target);
+        let parts = self.split_with_splitter(&base, &splitter, opts.limit)?;
+        let result = apply_split_opts(parts, &opts, &base);
         Ok(Value::seq(result))
     }
 
@@ -55,9 +55,9 @@ impl Interpreter {
             opts.limit = parse_split_limit(positional[2])?;
         }
 
-        let text = target.to_string_value();
-        let parts = self.split_with_splitter(&text, &splitter, opts.limit)?;
-        let result = apply_split_opts(parts, &opts);
+        let base = crate::value::str_iter::shared_text(&target);
+        let parts = self.split_with_splitter(&base, &splitter, opts.limit)?;
+        let result = apply_split_opts(parts, &opts, &base);
         Ok(Value::seq(result))
     }
 
@@ -67,7 +67,7 @@ impl Interpreter {
         text: &str,
         splitter: &Value,
         limit: Option<usize>,
-    ) -> Result<Vec<(String, Option<SplitMatch>)>, RuntimeError> {
+    ) -> Result<Vec<(Piece, Option<SplitMatch>)>, RuntimeError> {
         match splitter.view() {
             ValueView::Regex(pattern) => self.split_by_regex(text, &pattern, limit),
             ValueView::RegexWithAdverbs(a) => self.split_by_regex(text, &a.pattern, limit),
@@ -119,7 +119,7 @@ impl Interpreter {
         text: &str,
         pattern: &str,
         limit: Option<usize>,
-    ) -> Result<Vec<(String, Option<SplitMatch>)>, RuntimeError> {
+    ) -> Result<Vec<(Piece, Option<SplitMatch>)>, RuntimeError> {
         if limit == Some(0) {
             return Ok(Vec::new());
         }
@@ -132,7 +132,7 @@ impl Interpreter {
         let mut result = Vec::new();
 
         if text.is_empty() {
-            result.push((String::new(), None));
+            result.push((Piece::Range(0, 0), None));
             return Ok(result);
         }
 
@@ -146,7 +146,7 @@ impl Interpreter {
                 && splits_done >= max
             {
                 let remaining: String = chars[pos..].iter().collect();
-                result.push((remaining, None));
+                result.push((Piece::Owned(remaining), None));
                 return Ok(result);
             }
 
@@ -162,7 +162,7 @@ impl Interpreter {
                 let segment: String = chars[pos..from].iter().collect();
                 let match_obj = self.split_separator_match(caps, text);
                 result.push((
-                    segment,
+                    Piece::Owned(segment),
                     Some(SplitMatch {
                         from,
                         to,
@@ -186,14 +186,14 @@ impl Interpreter {
                 }
             } else {
                 let remaining: String = chars[pos..].iter().collect();
-                result.push((remaining, None));
+                result.push((Piece::Owned(remaining), None));
                 return Ok(result);
             }
         }
 
         if pos <= chars.len() {
             let remaining: String = chars[pos..].iter().collect();
-            result.push((remaining, None));
+            result.push((Piece::Owned(remaining), None));
         }
         Ok(result)
     }
@@ -211,7 +211,7 @@ impl Interpreter {
         text: &str,
         splitters: &[Value],
         limit: Option<usize>,
-    ) -> Result<Vec<(String, Option<SplitMatch>)>, RuntimeError> {
+    ) -> Result<Vec<(Piece, Option<SplitMatch>)>, RuntimeError> {
         if limit == Some(0) {
             return Ok(Vec::new());
         }
@@ -225,7 +225,7 @@ impl Interpreter {
         let mut result = Vec::new();
 
         if text.is_empty() {
-            result.push((String::new(), None));
+            result.push((Piece::Range(0, 0), None));
             return Ok(result);
         }
 
@@ -246,7 +246,7 @@ impl Interpreter {
                 && splits_done >= max
             {
                 let remaining: String = chars[pos..].iter().collect();
-                result.push((remaining, None));
+                result.push((Piece::Owned(remaining), None));
                 return Ok(result);
             }
 
@@ -301,7 +301,7 @@ impl Interpreter {
                     let is_regex = caps.is_some();
                     let match_obj = caps.map(|c| self.split_separator_match(c, text));
                     result.push((
-                        segment,
+                        Piece::Owned(segment),
                         Some(SplitMatch {
                             from,
                             to,
@@ -324,7 +324,7 @@ impl Interpreter {
                 }
                 None => {
                     let remaining: String = chars[pos..].iter().collect();
-                    result.push((remaining, None));
+                    result.push((Piece::Owned(remaining), None));
                     return Ok(result);
                 }
             }
@@ -420,5 +420,5 @@ impl Interpreter {
 }
 
 /// SplitMatch from the builtins split module (re-export for local use).
-use crate::builtins::split::SplitMatch;
+use crate::builtins::split::{Piece, SplitMatch};
 

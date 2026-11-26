@@ -606,7 +606,7 @@ impl Compiler {
                 && let Some(Expr::Literal(lit)) = args.first()
                 && let crate::value::ValueView::Str(vn) = lit.view()
             {
-                return Some(String::clone(&vn));
+                return Some(vn.to_string());
             }
             None
         });

@@ -209,7 +209,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
         ValueView::Int(n) => Ok(SerValue::Int(n)),
         ValueView::BigInt(n) => Ok(SerValue::BigInt((**n).clone())),
         ValueView::Num(n) => Ok(SerValue::Num(n)),
-        ValueView::Str(s) => Ok(SerValue::Str((**s).clone())),
+        ValueView::Str(s) => Ok(SerValue::Str(s.to_string())),
         ValueView::Bool(b) => Ok(SerValue::Bool(b)),
         ValueView::Range(a, b) => Ok(SerValue::Range(a, b)),
         ValueView::RangeExcl(a, b) => Ok(SerValue::RangeExcl(a, b)),

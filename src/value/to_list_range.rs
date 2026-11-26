@@ -207,7 +207,7 @@ pub(super) fn generic_range_to_list(
                 ValueView::Whatever | ValueView::HyperWhatever
             );
         let end_str = match end.as_ref().view() {
-            ValueView::Str(s) => (**s).clone(),
+            ValueView::Str(s) => s.to_string(),
             _ => end.as_ref().to_string_value(),
         };
         let end_f64 = end.as_ref().to_f64();
@@ -258,7 +258,7 @@ pub(super) fn generic_range_to_list(
         } else if end.is_numeric() {
             Some(end.as_ref().clone())
         } else if let ValueView::Str(s) = end.as_ref().view() {
-            let coerced = coerce_to_numeric(Value::str((**s).clone()));
+            let coerced = coerce_to_numeric(Value::str(s.to_string()));
             if coerced.is_numeric() {
                 Some(coerced)
             } else {

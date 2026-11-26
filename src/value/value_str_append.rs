@@ -65,7 +65,8 @@ impl Value {
             super::StrBody::Flat(buf) => append_nfc(buf, plan),
             // As in `str_appended_nfc`: a unique strand list is flattened
             // first (ADR-0120 §2.6), and the appends after it are in place.
-            super::StrBody::Lazy(_) => {
+            // A slice is copied out the same way: its base is shared.
+            super::StrBody::Lazy(_) | super::StrBody::Slice(_) => {
                 let mut buf = body.take_flat();
                 append_nfc(&mut buf, plan);
                 *body = super::StrBody::Flat(buf);

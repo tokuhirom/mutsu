@@ -767,7 +767,7 @@ pub(crate) fn wrap_colonpair_sink_source(expr: Expr, source: &str) -> Expr {
             Expr::Literal(v) | Expr::LiteralSrc(v, _) => v.clone(),
             _ => return expr,
         };
-        let pair = Value::pair((**key).clone(), val);
+        let pair = Value::pair(key.to_string(), val);
         return Expr::LiteralSrc(pair, trimmed.into());
     }
     expr
