@@ -99,30 +99,20 @@ pub(crate) fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Opt
         // `Type (short gist)`; a type object shows as its name.
         "X::TypeCheck" => {
             let operation = attr_str(attrs, "operation");
-            let type_name = |v: &Value| match v.view() {
-                ValueView::Package(name) => name.resolve().to_string(),
-                _ => crate::value::type_name::value_type_name(v).to_string(),
-            };
-            let expected = attrs.get("expected").map(type_name).unwrap_or_default();
-            let got = attrs.get("got").cloned().unwrap_or(Value::NIL);
-            let got_name = if got.is_nil() {
-                "Nil".to_string()
-            } else {
-                type_name(&got)
-            };
-            let mut gist = crate::value::raku_repr::raku_value(&got);
-            if gist.chars().count() > 23 {
-                gist = format!("{}...", gist.chars().take(20).collect::<String>());
-            }
-            let got_text = if got_name == expected {
-                gist
-            } else {
-                format!("{got_name} ({gist})")
-            };
-            let msg =
-                format!("Type check failed in {operation}; expected {expected} but got {got_text}");
-            Some(msg)
+            Some(format!("Type check failed in {operation}; {}", type_check_detail(attrs)))
         }
+        // Rakudo's subclasses fix the operation (`X::TypeCheck::Binding`'s is
+        // `binding`) or word the message themselves (`X::TypeCheck::Return`),
+        // so a hand-built one -- NativeCall's return-constraint check throws
+        // `X::TypeCheck::Return.new(:got, :expected)` -- has a message too.
+        "X::TypeCheck::Binding" => Some(format!(
+            "Type check failed in binding; {}",
+            type_check_detail(attrs)
+        )),
+        "X::TypeCheck::Return" => Some(format!(
+            "Type check failed for return value; {}",
+            type_check_detail(attrs)
+        )),
         "X::ControlFlow::Return" => Some("Attempt to return outside of any Routine".to_string()),
         "X::OutOfRange" => {
             let what = attr_str_or(attrs, "what", "Argument");
@@ -301,6 +291,35 @@ pub(crate) fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Opt
 /// that live status when present and fall back to an explicit `status`
 /// attribute (which a hand-built `X::Promise::Resolved.new(:status<Kept>)`
 /// or a `throws-like ... status => 'Kept'` check supplies instead).
+/// The `expected T but got U (gist)` tail of rakudo's `X::TypeCheck` messages
+/// (its `expectedn` / `gotn`): a got value that already has the expected type
+/// shows as its short gist alone, anything else as `Type (short gist)`; a type
+/// object shows as its name.
+// Cost: O(g), g = chars of the got value's `.raku` (cut to 23).
+fn type_check_detail(attrs: &AttrMap) -> String {
+    let type_name = |v: &Value| match v.view() {
+        ValueView::Package(name) => name.resolve().to_string(),
+        _ => crate::value::type_name::value_type_name(v).to_string(),
+    };
+    let expected = attrs.get("expected").map(type_name).unwrap_or_default();
+    let got = attrs.get("got").cloned().unwrap_or(Value::NIL);
+    let got_name = if got.is_nil() {
+        "Nil".to_string()
+    } else {
+        type_name(&got)
+    };
+    let mut gist = crate::value::raku_repr::raku_value(&got);
+    if gist.chars().count() > 23 {
+        gist = format!("{}...", gist.chars().take(20).collect::<String>());
+    }
+    let got_text = if got_name == expected {
+        gist
+    } else {
+        format!("{got_name} ({gist})")
+    };
+    format!("expected {expected} but got {got_text}")
+}
+
 fn promise_status(attrs: &AttrMap) -> String {
     if let Some(p) = attrs.get("promise")
         && let ValueView::Promise(shared) = p.view()
