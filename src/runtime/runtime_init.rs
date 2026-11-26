@@ -1055,64 +1055,28 @@ impl Interpreter {
             "X::Role::Attribute".to_string(),
             vec!["X::RoleApplier".to_string()],
         );
-        // ADR-0029: write the catalogue rows' `does` lists into the
-        // composed-role registries that `.^roles`, `~~`, qualified
-        // `self.Role::meth` dispatch, and method-candidate collection
-        // already read (`class_composed_roles` /
-        // `class_direct_composed_roles` / `class_does_only_roles`).
-        // `class_composed_roles` is documented as the FLATTENED set, so
-        // walk `role_parents` here to pull in roles reached
-        // transitively through a composed role's own `does` (a class
-        // doing `X::Syntax` also does `X::Comp`).
-        let catalogue_does: Vec<(usize, Vec<String>)> = (0..super::builtin_class_catalogue::LEN)
-            .filter_map(|row| {
-                let does: Vec<String> = super::builtin_class_catalogue::does(row)
-                    .map(str::to_string)
-                    .collect();
-                (!does.is_empty()).then_some((row, does))
-            })
-            .collect();
-        let added = catalogue_does.len();
-        registry.class_composed_roles.reserve(added);
-        registry.class_direct_composed_roles.reserve(added);
-        registry.class_does_only_roles.reserve(added);
-        for (row, does) in catalogue_does {
-            let class_name = super::builtin_class_catalogue::name(row).to_string();
-            let mut flattened: Vec<String> = does.clone();
-            let mut i = 0;
-            while i < flattened.len() {
-                if let Some(parents) = registry.role_parents.get(flattened[i].as_str()) {
-                    for p in parents {
-                        if !flattened.contains(p) {
-                            flattened.push(p.clone());
-                        }
-                    }
-                }
-                i += 1;
-            }
-            // `does`-ONLY: a role that is ALSO this class's declared PARENT is
-            // a role-as-superclass pun, not a pure composition, and must stay
-            // in the class's MRO. rakudo has exactly one in this vocabulary --
-            // `X::TooLateForREPR`, whose parent AND composed role are both
-            // `X::Comp`, and whose `.^mro` really is
-            // `(X::TooLateForREPR X::Comp Exception Any Mu)` there. Recording
-            // it here dropped `X::Comp` from `.^mro_unhidden` (and, once
-            // `.^mro` started consulting this set, from `.^mro` too).
-            // The row's parent, read from the catalogue rather than the
-            // class table, so writing these registries materializes nothing.
-            let parent = super::builtin_class_catalogue::parent(row);
-            let does_only: Vec<String> = does
-                .iter()
-                .filter(|r| r.as_str() != parent)
-                .cloned()
-                .collect();
+        // ADR-0029: the catalogue rows' `does` lists answer the composed-role
+        // registries that `.^roles`, `~~`, qualified `self.Role::meth`
+        // dispatch, and method-candidate collection read
+        // (`class_composed_roles` / `class_direct_composed_roles` /
+        // `class_does_only_roles`). Each row's entries are computed on first
+        // lookup (ADR-19206 slice 3, `registry_composed_role_table`), the
+        // flattened set walking `role_parents` as it stands here, frozen now.
+        // `X::TooLateForREPR` is the one row whose composed role is also its
+        // parent (a role-as-superclass pun that stays in its MRO), so its
+        // `does`-only set leaves `X::Comp` out.
+        super::registry_composed_role_table::freeze_builtin_role_parents(&registry.role_parents);
+        {
+            use super::registry_composed_role_table::ComposedRoleKind;
             registry
                 .class_composed_roles
-                .insert(class_name.clone(), flattened);
+                .add_builtin_catalogue(ComposedRoleKind::Flattened);
             registry
                 .class_direct_composed_roles
-                .insert(class_name.clone(), does);
-            registry.class_does_only_roles.insert(class_name, does_only);
+                .add_builtin_catalogue(ComposedRoleKind::Direct);
+            registry
+                .class_does_only_roles
+                .add_builtin_catalogue(ComposedRoleKind::DoesOnly);
         }
         // Only a class with attributes has accessor rows to add, and a fresh
         // registry has none to clear, so attribute-less classes (most of the

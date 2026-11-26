@@ -621,7 +621,7 @@ pub(crate) struct Registry {
     /// Roles composed into each class: class -> [role names]. This is the
     /// FLATTENED set (includes roles reached transitively through a composed
     /// role's own `does`), used for `~~`/role-membership checks.
-    pub(crate) class_composed_roles: Sharded<String, Vec<String>>,
+    pub(crate) class_composed_roles: super::registry_composed_role_table::ComposedRoleTable,
     /// Roles DIRECTLY declared on each class's `does` list (NOT the transitive
     /// closure): class -> [role names]. Qualified `self.Role::method` resolution
     /// of a parametric role uses this so a concretization reached only
@@ -629,11 +629,11 @@ pub(crate) struct Registry {
     /// `R2[::T] does R1[::T]`) does not make a directly-declared `R1[Int]`
     /// ambiguous (Raku resolves a qualified role call against the immediate
     /// roles of the consumer).
-    pub(crate) class_direct_composed_roles: Sharded<String, Vec<String>>,
+    pub(crate) class_direct_composed_roles: super::registry_composed_role_table::ComposedRoleTable,
     /// Roles composed PURELY via `does` (not `is Role` puns): class -> [role names].
     /// A `does`-composed role provides methods but is NOT an MRO entry in Rakudo's
     /// `.^mro_unhidden`, so this set is filtered out of that introspection.
-    pub(crate) class_does_only_roles: Sharded<String, Vec<String>>,
+    pub(crate) class_does_only_roles: super::registry_composed_role_table::ComposedRoleTable,
     /// Roles implicitly composed by enums: enum -> [role names].
     pub(crate) class_enum_roles: Sharded<String, Vec<String>>,
     /// Subs declared inside a class body: class -> (sub name -> value).
