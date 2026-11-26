@@ -185,12 +185,19 @@ fn test_assertion_does_not_intern_the_assertion_routine_names() {
 /// shape of rakudo 2026.11's `my %ENV := %*ENV` in `Test.rakumod`). The bind
 /// arms the sigilless-alias probe for the whole program, and each store then
 /// interned the written name twice: once for that probe's key and once for the
-/// `constant`-package-alias check (#19210). The name is a compiled constant,
+/// `constant`-package-alias check (#19215). The name is a compiled constant,
 /// already in the symbol table, so both now look it up.
 #[test]
 fn unit_lexical_store_does_not_intern_its_name() {
+    let preamble = "use lib 't/lib';\nuse InternBudgetDynBind;";
+    // The first load of the fixture in this process interns a couple of names
+    // the later loads do not (the module is compiled once per process and
+    // looked up afterwards), and which test of this file ran before decides
+    // whether that lands inside the measured LOW run. Load it once here so
+    // both lengths measure the same, cached load.
+    interns_for(&format!("{preamble}\nbump-count(1);"));
     let per_call = interns_per_call(
-        "use lib 't/lib';\nuse InternBudgetDynBind;",
+        preamble,
         r#"$hits = bump-count(1);"#,
     );
     eprintln!("unit-lexical store after a dynamic bind: {per_call:.3} interns per call");
@@ -199,6 +206,7 @@ fn unit_lexical_store_does_not_intern_its_name() {
     assert!(
         per_call <= limit,
         "a store to a unit-level lexical re-interns its name per call \
-         ({per_call:.3} interns/call, budget {limit}); see #19210"
+         ({per_call:.3} interns/call, budget {limit}); see #19215"
     );
 }
+
