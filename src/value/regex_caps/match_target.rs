@@ -241,14 +241,21 @@ impl MatchTarget {
     /// the subject cache so the engine's [`MatchTarget::new`] on it shares one
     /// target. A `Str` hands back its own payload (a refcount bump), which is
     /// what lets repeated matches on one string find the same entry.
-    // Cost: O(1) for a cached `Str`; otherwise O(n), n = chars of the
-    // subject's string form, to build it once.
+    // Cost: O(1) for a cached `Str` or a subject too short to cache;
+    // otherwise O(n), n = chars of the subject's string form, to build it once.
     pub(crate) fn primed_subject(subject: &crate::value::Value) -> Arc<crate::value::StrBody> {
         let arc = match subject.view() {
             crate::value::ValueView::Str(arc) => Arc::clone(&arc),
             _ => Arc::new(subject.to_string_value().into()),
         };
-        Self::of_subject(&arc);
+        // Priming only pays off for a subject the cache will keep. A shorter
+        // one is not cached, so `of_subject` would build a target only to
+        // drop it, and the engine's `MatchTarget::new` builds its own anyway:
+        // that was a second full build (chars, three `Arc`s) on every `~~`
+        // against a short line.
+        if arc.len() >= SUBJECT_CACHE_MIN_BYTES {
+            Self::of_subject(&arc);
+        }
         arc
     }
 
