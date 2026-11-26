@@ -1347,6 +1347,13 @@ pub(crate) struct NativeCtorPlan {
     /// parameterized constraint, whose seed may come from a user
     /// `^parameterize`.
     pub(crate) deferred_seeds: Box<[std::sync::OnceLock<Value>]>,
+    /// Per attribute (same order as `class_attrs`): whether a `bless` store
+    /// into it has anything to check, i.e. it has a declared type constraint
+    /// or a `where` clause (`check_attr_store_type`). Both are class shape,
+    /// so the answer is computed on the first store and reused: an untyped,
+    /// unconstrained attribute (`has $.x`) no longer walks the MRO by name on
+    /// every construction (#18267 stage 5).
+    pub(crate) store_check_needed: Box<[std::sync::OnceLock<bool>]>,
     pub(crate) class_attrs: Arc<Vec<ClassAttributeDef>>,
     /// Interned attribute names, same order as `class_attrs`. Construction
     /// inserts attributes by Symbol so the per-bless per-attribute
