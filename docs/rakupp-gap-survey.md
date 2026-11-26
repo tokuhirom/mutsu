@@ -356,6 +356,24 @@ What this says:
   breakdown under cause 1 names what is left: ~400 copy-on-write faults from the PIE's
   relocations, which only a non-PIE link removes (#11158, needs the maintainer), and heap pages
   first touched during start-up (ADR-19206 targets the built-in registry).
+- **How much of startup is the PIE?** The same source (`ef5fd793`, no `src/` change since
+  `5f44cb0d`) linked as a non-PIE executable (`cargo rustc --release --bin mutsu -- -C
+  relocation-model=static`: `EXEC`, no relative relocations) against the normal PIE build. Each
+  figure is the median of 21 interleaved runs:
+
+  | benchmark | PIE | non-PIE | rakupp | vs rakupp, PIE → non-PIE |
+  |---|---:|---:|---:|---|
+  | empty program | 6.13 ms, 1,086 faults | 5.22 ms, 697 | 4.74 ms, 534 | 1.29 → 1.10 |
+  | bench-startup | 7.08 ms, 1,123 | 5.48 ms, 727 | 4.96 ms, 576 | 1.43 → 1.10 |
+  | string-concat | 9.69 ms, 1,340 | 8.54 ms, 918 | 7.57 ms, 633 | 1.28 → 1.13 |
+  | bench-grammar-parse | 16.27 ms | 14.98 ms | 9.80 ms | 1.66 → 1.53 |
+  | bench-grammar-parse-deep | 13.65 ms | 12.80 ms | 6.96 ms | 1.96 → 1.84 |
+
+  On the startup-bound rows the link mode is about three quarters of the gap: non-PIE leaves
+  mutsu ~1.1x rakupp. The grammar rows barely move, because their gap is first-parse work
+  (#17640), not startup. The dashboard's **ratio vs rakupp** cards for `bench-startup` and
+  `string-concat` now say this. Whether to link non-PIE (giving up ASLR for the binary's own
+  code) is the maintainer's decision, tracked in #11158.
 - **word-count** has drawn level with rakupp. The split and for-loop allocation work removed most
   of its gap.
 - **The jemalloc preload no longer helps across the board (#19198).** It now costs startup-bound
