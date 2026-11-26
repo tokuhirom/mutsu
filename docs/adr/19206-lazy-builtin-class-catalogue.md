@@ -1,6 +1,6 @@
 # ADR-19206: Built-in classes are a static catalogue, materialized on first lookup
 
-- **Status**: Proposed
+- **Status**: Accepted (by the maintainer, 2026-11-26); slice 1 landed
 - **Date**: 2026-11-26
 - **Carrier issue**: #19206, a sub-issue of #19197 (start-up is slower than Raku++ in kernel
   time and instructions)
