@@ -40,7 +40,7 @@ pub(crate) use collect::collect_cycles;
 #[cfg(test)]
 pub(crate) use gc_ptr::drain_candidates;
 pub(crate) use gc_ptr::{
-    ContainerMakeMut, ErasedGc, Gc, GcBox, Trace, WeakGc, enter_mutator_worker,
+    ContainerMakeMut, ErasedGc, Gc, GcBox, Trace, WeakGc, clone_bump_erased, enter_mutator_worker,
     exit_mutator_worker, gc_contents_mut, gc_enabled,
 };
 pub(crate) use interpreter_thread::register_interpreter_thread;

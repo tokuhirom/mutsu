@@ -661,15 +661,177 @@ impl NanBox {
     pub(in crate::value) const FALSE: NanBox = NanBox(pack_inline(Kind::Bool, 0));
 }
 
+/// How [`NanBox::clone`] bumps a kind's payload.
+///
+/// `payload_op` reaches the right `Arc<T>`/`Gc<T>` through a `match` over
+/// ~70 kinds, compiled to a jump table whose one indirect jump is shared by
+/// every clone in the process. On `bench-ctor` that jump was ~14% of all
+/// indirect-branch mispredicts. A clone only bumps counters whose location
+/// depends on the payload's alignment, not its type, so it can skip the
+/// table: this lane, a small constant per kind, picks one of three paths
+/// with ordinary, well-predicted branches. Release still needs the type
+/// (it may run `T`'s destructor) and keeps `payload_op`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CloneLane {
+    /// `Arc<T>` with `align_of::<T>() == 8`: bump through `Arc<u64>`.
+    Arc8,
+    /// `Gc<T>` with `align_of::<GcBox<T>>() == align_of::<GcBox<u64>>()`.
+    Gc8,
+    /// Everything else (a weak handle, a payload of other alignment, and the
+    /// payload-free kinds, which the caller filters out first).
+    Typed,
+}
+
+/// The payload types the fast clone lanes rely on, checked at compile time:
+/// a type whose alignment changes drops out of the build, not into UB.
+const _: () = {
+    use std::mem::align_of;
+    macro_rules! arc8 { ($($t:ty),* $(,)?) => { $(assert!(align_of::<$t>() == 8);)* }; }
+    macro_rules! gc8 {
+        ($($t:ty),* $(,)?) => {
+            $(assert!(align_of::<GcBox<$t>>() == align_of::<GcBox<u64>>());)*
+        };
+    }
+    arc8!(
+        crate::value::StrBody,
+        String,
+        NumBigInt,
+        i64,
+        crate::value::SeqBody,
+        Vec<Value>,
+        MixinBox,
+        Value,
+        LazyThunkData,
+        UniData,
+        crate::rakuast::RakuAstNode,
+        RegexAdverbs,
+        crate::value::RegexClosure,
+        CustomTypeData,
+        CustomTypeInstanceData,
+        I64Pair,
+        BigRatBox,
+        F64Pair,
+        EnumBox,
+        GenericRangeBox,
+        VersionBox,
+        CaptureBox,
+        ProxyBox,
+        ParametricRoleBox,
+        RoutineBox,
+        HashEntryRefBox,
+        VarRefBox,
+    );
+    gc8!(
+        PairData,
+        SubData,
+        LazyList,
+        crate::value::ContainerCell,
+        InstanceAttrs,
+        ArrayData,
+        BufData,
+        HashData,
+        SetData,
+        BagData,
+        MixData,
+        MatchNode,
+    );
+};
+
+/// The [`CloneLane`] of a payload-owning kind. Must agree with `payload_op`'s
+/// mapping; `clone_lane_matches_payload_op` checks every kind.
+#[inline(always)]
+const fn clone_lane(kind: Kind) -> CloneLane {
+    match kind {
+        Kind::Str
+        | Kind::Regex
+        | Kind::BigInt
+        | Kind::IntBoxed
+        | Kind::Seq
+        | Kind::HyperSeq
+        | Kind::RaceSeq
+        | Kind::Slip
+        | Kind::SlipItemized
+        | Kind::JunctionAny
+        | Kind::JunctionAll
+        | Kind::JunctionOne
+        | Kind::JunctionNone
+        | Kind::Mixin
+        | Kind::Scalar
+        | Kind::LazyThunk
+        | Kind::Uni
+        | Kind::RakuAst
+        | Kind::RegexWithAdverbs
+        | Kind::RegexCaptured
+        | Kind::CustomType
+        | Kind::CustomTypeInstance
+        | Kind::Range
+        | Kind::RangeExcl
+        | Kind::RangeExclStart
+        | Kind::RangeExclBoth
+        | Kind::Rat
+        | Kind::FatRat
+        | Kind::BigRat
+        | Kind::Complex
+        | Kind::Enum
+        | Kind::GenericRange
+        | Kind::Version
+        | Kind::Capture
+        | Kind::Proxy
+        | Kind::ParametricRole
+        | Kind::Routine
+        | Kind::HashEntryRef
+        | Kind::VarRef => CloneLane::Arc8,
+        Kind::Pair
+        | Kind::ValuePair
+        | Kind::Sub
+        | Kind::LazyList
+        | Kind::ContainerRef
+        | Kind::ContainerRefItemized
+        | Kind::ContainerRefBoundItemized
+        | Kind::ContainerView
+        | Kind::Instance
+        | Kind::ArrayList
+        | Kind::ArrayArray
+        | Kind::ArrayItemList
+        | Kind::ArrayItemArray
+        | Kind::ArrayShaped
+        | Kind::ArrayLazy
+        | Kind::VmArray
+        | Kind::VmIterBuf
+        | Kind::BufStorage
+        | Kind::HashPlain
+        | Kind::HashItemized
+        | Kind::VmHash
+        | Kind::SetImm
+        | Kind::SetMut
+        | Kind::BagImm
+        | Kind::BagMut
+        | Kind::MixImm
+        | Kind::MixMut
+        | Kind::Match => CloneLane::Gc8,
+        _ => CloneLane::Typed,
+    }
+}
+
 impl Clone for NanBox {
     fn clone(&self) -> Self {
         let bits = self.0.get();
         if let Classified::Kind(kind) = classify(bits)
             && kind_owns_payload(kind)
         {
-            // SAFETY: `self` is live, so the word owns its payload reference;
-            // CloneBump adds one for the new word.
-            unsafe { payload_op(kind, bits, PayloadOp::CloneBump) };
+            // SAFETY (all arms): `self` is live, so the word owns one
+            // reference of its payload; each arm adds one for the new word.
+            // The Arc8/Gc8 lanes are exactly the kinds whose payload type
+            // passed the alignment asserts above.
+            match clone_lane(kind) {
+                CloneLane::Arc8 => unsafe {
+                    Arc::increment_strong_count(std::ptr::with_exposed_provenance::<u64>(
+                        addr_of_payload(bits),
+                    ));
+                },
+                CloneLane::Gc8 => unsafe { crate::gc::clone_bump_erased(addr_of_payload(bits)) },
+                CloneLane::Typed => unsafe { payload_op(kind, bits, PayloadOp::CloneBump) },
+            }
         }
         NanBox(self.0)
     }

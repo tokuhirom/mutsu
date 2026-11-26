@@ -200,9 +200,38 @@ impl GcHeader {
 /// The residual cross-thread data race (a genuinely-shared node mutated from two
 /// OS threads) is unchanged — still governed by the `__mutsu_atomic_arr::` /
 /// `shared_vars` lane discipline and deferred to ADR-0001 layer 3c.
+///
+/// `#[repr(C)]` pins `header` at offset 0 for every `T`, which is what lets
+/// [`clone_bump_erased`] bump a node's counts without knowing `T`.
+#[repr(C)]
 pub(crate) struct GcBox<T: ?Sized> {
     header: GcHeader,
     value: UnsafeCell<T>,
+}
+
+/// `Gc::clone`'s bookkeeping on a node known only by its address: the same
+/// GC-visible strong bump and Black recolor, plus the backing `Arc`'s strong
+/// bump, without the `T` a typed `Gc<T>` handle needs. The NaN-box `Clone`
+/// uses it so that cloning a `Gc`-backed value does not go through a
+/// per-kind jump table.
+///
+/// # Safety
+/// `addr` must be the address of a live `GcBox<T>` obtained from
+/// [`Gc::into_raw`] whose handle is still owned elsewhere, and
+/// `align_of::<GcBox<T>>()` must equal `align_of::<GcBox<u64>>()` (then
+/// `Arc::<GcBox<u64>>::increment_strong_count` addresses the same counter,
+/// as `Arc::from_raw` allows for a same-alignment `U`).
+#[inline]
+pub(crate) unsafe fn clone_bump_erased(addr: usize) {
+    let p = std::ptr::with_exposed_provenance::<GcBox<u64>>(addr);
+    // SAFETY: `header` is at offset 0 of every `GcBox<T>` (`repr(C)`), and
+    // the node is live per the caller's contract.
+    let header = unsafe { &*std::ptr::addr_of!((*p).header) };
+    header.strong.fetch_add(1, Ordering::Relaxed);
+    header.color.store(Color::Black as u8, Ordering::Relaxed);
+    // SAFETY: same-alignment pun of the `Arc<GcBox<T>>` this address came
+    // from (caller's contract); only the strong count is touched.
+    unsafe { Arc::increment_strong_count(p) };
 }
 
 // `UnsafeCell<T>` is `!Sync`, which would strip `GcBox` (and thus `ErasedGc =
