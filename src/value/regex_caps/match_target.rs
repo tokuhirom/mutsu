@@ -65,6 +65,14 @@ pub(crate) struct MatchTarget {
     /// a byte slice of `text` (a straight memcpy) instead of re-encoding
     /// chars one by one.
     ascii: bool,
+    /// The per-engine-run state every clone of this target shares.
+    run: Arc<RunState>,
+}
+
+/// What one engine run's targets share beyond the subject itself, in ONE
+/// allocation: a target is built on every match attempt, hit or miss, and
+/// these used to be two `Arc`s of their own.
+struct RunState {
     /// The grammar class every cursor of this parse reports as its type, held
     /// as the interned `Symbol` id BIASED BY ONE so that 0 means "none" (a
     /// plain `Match`) — symbol id 0 is itself a legitimate symbol.
@@ -77,15 +85,42 @@ pub(crate) struct MatchTarget {
     /// is: one target per engine entry, shared by every node of the resulting
     /// tree.
     ///
-    /// It lives behind a shared `Arc<AtomicU32>` rather than a plain field so
+    /// It lives in the shared [`RunState`] rather than in a plain field so
     /// the grammar entry point can stamp it on the finished result *after* the
     /// engine ran, with every already-cloned child target seeing the same
     /// value. Threading a class down through the regex engine instead would
     /// touch every matcher entry point for a value the engine never uses.
-    cursor_class: Arc<AtomicU32>,
-    /// Lazily materialized once per subject, then shared by all scoped
-    /// `:ignoremark` entries and repeated scans against this target.
-    stripped: Arc<std::sync::OnceLock<StrippedMatchTarget>>,
+    cursor_class: AtomicU32,
+    /// The mark-stripped view, materialized once per subject on the first
+    /// scoped `:ignoremark` use, then shared by every later one.
+    stripped: StrippedSlot,
+}
+
+/// Where a run's mark-stripped view lives.
+enum StrippedSlot {
+    /// Built at most once for this run.
+    Own(std::sync::OnceLock<StrippedMatchTarget>),
+    /// Shared with the subject cache, so every run on a cached subject builds
+    /// it at most once between them.
+    Shared(Arc<std::sync::OnceLock<StrippedMatchTarget>>),
+}
+
+impl StrippedSlot {
+    fn cell(&self) -> &std::sync::OnceLock<StrippedMatchTarget> {
+        match self {
+            StrippedSlot::Own(cell) => cell,
+            StrippedSlot::Shared(cell) => cell,
+        }
+    }
+}
+
+impl RunState {
+    fn new(stripped: StrippedSlot) -> Arc<Self> {
+        Arc::new(RunState {
+            cursor_class: AtomicU32::new(0),
+            stripped,
+        })
+    }
 }
 
 /// How many recently matched subjects [`MatchTarget::of_subject`] remembers.
@@ -263,7 +298,11 @@ impl MatchTarget {
         if let Some(hit) = Self::cached(subject.as_str()) {
             return hit;
         }
-        let target = Self::build(Arc::clone(subject));
+        let stripped = Arc::new(std::sync::OnceLock::new());
+        let target = Self::build_with(
+            Arc::clone(subject),
+            StrippedSlot::Shared(Arc::clone(&stripped)),
+        );
         SUBJECT_CACHE.with(|cache| {
             let mut cache = cache.borrow_mut();
             cache.retain(|entry| entry.subject.strong_count() > 0);
@@ -278,7 +317,7 @@ impl MatchTarget {
                     len: subject.len(),
                     chars: Arc::clone(&target.chars),
                     ascii: target.ascii,
-                    stripped: Arc::clone(&target.stripped),
+                    stripped,
                 },
             );
         });
@@ -328,21 +367,24 @@ impl MatchTarget {
                     text: live,
                     chars: Arc::clone(&entry.chars),
                     ascii: entry.ascii,
-                    cursor_class: Arc::new(AtomicU32::new(0)),
-                    stripped: Arc::clone(&entry.stripped),
+                    run: RunState::new(StrippedSlot::Shared(Arc::clone(&entry.stripped))),
                 })
             })
         })
     }
 
     fn build(text: Arc<crate::value::StrBody>) -> Self {
+        Self::build_with(text, StrippedSlot::Own(std::sync::OnceLock::new()))
+    }
+
+    fn build_with(text: Arc<crate::value::StrBody>, stripped: StrippedSlot) -> Self {
         super::stats::record_regex_match_target_built();
+        let ascii = text.is_ascii();
         Self {
-            chars: text.chars().collect(),
-            ascii: text.is_ascii(),
+            chars: collect_chars(&text, ascii),
+            ascii,
             text,
-            cursor_class: Arc::new(AtomicU32::new(0)),
-            stripped: Arc::new(std::sync::OnceLock::new()),
+            run: RunState::new(stripped),
         }
     }
 
@@ -357,21 +399,20 @@ impl MatchTarget {
             text: Arc::new(text.into()),
             chars: chars.into(),
             ascii,
-            cursor_class: Arc::new(AtomicU32::new(0)),
-            stripped: Arc::new(std::sync::OnceLock::new()),
+            run: RunState::new(StrippedSlot::Own(std::sync::OnceLock::new())),
         }
     }
 
     /// The mark-stripped view when a `:m` use already built it, else `None`.
     // Cost: O(1).
     pub(crate) fn stripped_if_built(&self) -> Option<&StrippedMatchTarget> {
-        self.stripped.get()
+        self.run.stripped.cell().get()
     }
 
     /// Return the subject with combining marks removed, building it only on
     /// the first `:ignoremark` use for this match target.
     pub(crate) fn stripped(&self) -> &StrippedMatchTarget {
-        self.stripped.get_or_init(|| {
+        self.run.stripped.cell().get_or_init(|| {
             let (chars, stripped_to_original) = super::marks::strip_marks_text(&self.chars);
             let stripped_len = chars.len();
             let mut original_to_stripped = Vec::with_capacity(self.chars.len() + 1);
@@ -396,7 +437,7 @@ impl MatchTarget {
     /// The grammar class cursors of this parse report, or `None` for a plain
     /// regex match (a bare `Match`).
     pub(crate) fn cursor_class(&self) -> Option<Symbol> {
-        match self.cursor_class.load(Ordering::Relaxed) {
+        match self.run.cursor_class.load(Ordering::Relaxed) {
             0 => None,
             biased => Some(Symbol::from_raw(biased - 1)),
         }
@@ -409,7 +450,7 @@ impl MatchTarget {
     /// by the outer parse (and vice versa — first stamp wins, which is the
     /// innermost completed parse).
     pub(crate) fn set_cursor_class(&self, class: Symbol) {
-        let _ = self.cursor_class.compare_exchange(
+        let _ = self.run.cursor_class.compare_exchange(
             0,
             class.raw() + 1,
             Ordering::Relaxed,
@@ -422,8 +463,7 @@ impl MatchTarget {
     /// against one answers exactly as one built against the other.
     // Cost: O(1).
     pub(crate) fn same_run(&self, other: &MatchTarget) -> bool {
-        Arc::ptr_eq(&self.chars, &other.chars)
-            && Arc::ptr_eq(&self.cursor_class, &other.cursor_class)
+        Arc::ptr_eq(&self.chars, &other.chars) && Arc::ptr_eq(&self.run, &other.run)
     }
 
     /// The whole subject as a string (`.orig`).
@@ -463,6 +503,27 @@ impl MatchTarget {
         }
         self.chars[a..b].iter().collect()
     }
+}
+
+/// `text`'s chars in one exactly-sized allocation.
+///
+/// `text.chars().collect::<Arc<[char]>>()` costs several: `Chars` reports a
+/// lower size bound of a quarter of the byte length, so the intermediate `Vec`
+/// regrows, and the `Arc` is then a fresh allocation the `Vec` is copied into.
+/// On a short subject that was four of the six allocations of every
+/// [`MatchTarget::build`], i.e. of every match attempt.
+// Cost: O(n), n = bytes of `text` (one extra counting pass, and a second
+// allocation, when not ASCII).
+fn collect_chars(text: &str, ascii: bool) -> Arc<[char]> {
+    if ascii {
+        // `Map<Bytes>` is `TrustedLen`, so this collects straight into one
+        // allocation of the right size.
+        return text.bytes().map(char::from).collect();
+    }
+    // Sized exactly: no regrowth, just the one copy into the `Arc`.
+    let mut chars = Vec::with_capacity(text.chars().count());
+    chars.extend(text.chars());
+    chars.into()
 }
 
 impl std::fmt::Debug for MatchTarget {

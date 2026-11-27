@@ -1702,9 +1702,10 @@ impl Interpreter {
     /// the established string parser path.
     pub(super) fn parse_regex_value(&self, value: &Value) -> Option<std::sync::Arc<RegexPattern>> {
         let _independent = super::regex_parse_numbering::IndependentParseScope::enter();
-        let pattern = match value.view() {
-            ValueView::Regex(pattern) => pattern.to_string(),
-            ValueView::RegexWithAdverbs(adverbs) => adverbs.pattern.to_string(),
+        // A refcount bump: this runs on every match attempt.
+        let pattern: std::sync::Arc<String> = match value.view() {
+            ValueView::Regex(pattern) => std::sync::Arc::clone(&pattern),
+            ValueView::RegexWithAdverbs(adverbs) => std::sync::Arc::clone(&adverbs.pattern),
             _ => return None,
         };
         let Some(tree) = value.regex_source_tree() else {
@@ -1819,7 +1820,7 @@ impl Interpreter {
             c.borrow_mut()
                 .entry(cache_key)
                 .or_default()
-                .insert(pattern, (tok_gen, std::sync::Arc::clone(&parsed)));
+                .insert(pattern.to_string(), (tok_gen, std::sync::Arc::clone(&parsed)));
         });
         facts.store_plan(pkg, tok_gen, std::sync::Arc::clone(&parsed));
         Some(parsed)
