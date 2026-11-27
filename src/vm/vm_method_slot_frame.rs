@@ -66,7 +66,22 @@ pub(super) fn slot_frame_body_ok(
         | OpCode::LoadFalse
         | OpCode::Add
         | OpCode::Sub
-        | OpCode::Mul => true,
+        | OpCode::Mul
+        // Unwraps the value on the stack; reads and writes no name.
+        | OpCode::DerefContainer => true,
+        // A method call on a stack value with no arguments (`($r * 4).Int`):
+        // like an arithmetic op on an object, it may run user code, which
+        // builds its own frame over the unchanged caller env. With no
+        // arguments, no slot of this frame is passed to the callee, so no
+        // readonly parameter can be bound `is rw` (ADR-18393 D2
+        // `READONLY_OBS`). A call on a *variable* (`CallMethodMut`) stays
+        // refused: its writeback reads and writes the receiver by name.
+        OpCode::CallMethod {
+            arity: 0,
+            modifier_idx: None,
+            arg_sources_idx: None,
+            ..
+        } => true,
         OpCode::GetLocal(idx) => cc.local_read_plain(*idx as usize),
         _ => false,
     });
