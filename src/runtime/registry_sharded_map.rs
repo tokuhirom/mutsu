@@ -25,10 +25,14 @@ use rustc_hash::{FxBuildHasher, FxHashMap};
 /// The number of shards. A power of two, so the shard index is a mask.
 pub(crate) const SHARDS: usize = 16;
 
+type Shards<K, V> = [Arc<FxHashMap<K, V>>; SHARDS];
+
 /// See the module docs.
 #[derive(Debug)]
 pub(crate) struct ShardedMap<K, V> {
-    shards: Box<[Arc<FxHashMap<K, V>>; SHARDS]>,
+    /// `None` until the first write: an empty map, the common case for most
+    /// of a fresh registry's ~40 tables, allocates nothing (#19197).
+    shards: Option<Box<Shards<K, V>>>,
     len: usize,
     /// Replaced by a process-unique value whenever a key is added or
     /// removed: an index derived from the key set is current exactly while
@@ -37,10 +41,13 @@ pub(crate) struct ShardedMap<K, V> {
 }
 
 impl<K, V> Clone for ShardedMap<K, V> {
-    // Cost: O(SHARDS), one reference-count increment per shard.
+    // Cost: O(SHARDS), one reference-count increment per shard; O(1) empty.
     fn clone(&self) -> Self {
         Self {
-            shards: Box::new(std::array::from_fn(|i| Arc::clone(&self.shards[i]))),
+            shards: self
+                .shards
+                .as_ref()
+                .map(|shards| Box::new(std::array::from_fn(|i| Arc::clone(&shards[i])))),
             len: self.len,
             key_gen: self.key_gen,
         }
@@ -48,19 +55,26 @@ impl<K, V> Clone for ShardedMap<K, V> {
 }
 
 impl<K, V> Default for ShardedMap<K, V> {
-    // Cost: O(SHARDS), one allocation.
+    // Cost: O(1), no allocation: the shards are created on the first write.
     fn default() -> Self {
         Self {
-            shards: {
-                // One empty table shared by every shard: a shard is copied
-                // (allocated) on its first write.
-                let empty = Arc::new(FxHashMap::default());
-                Box::new(std::array::from_fn(|_| Arc::clone(&empty)))
-            },
+            shards: None,
             len: 0,
             key_gen: crate::runtime::registry_gen::next_generation(),
         }
     }
+}
+
+/// `shards`, created if absent: one empty table shared by every shard, each
+/// copied (allocated) on its own first write. A free function so a caller can
+/// borrow the map's other fields alongside.
+// Cost: O(1), or O(SHARDS) and one allocation the first time.
+#[inline]
+fn create_shards<K, V>(shards: &mut Option<Box<Shards<K, V>>>) -> &mut Shards<K, V> {
+    shards.get_or_insert_with(|| {
+        let empty = Arc::new(FxHashMap::default());
+        Box::new(std::array::from_fn(|_| Arc::clone(&empty)))
+    })
 }
 
 /// The shard holding `key`.
@@ -73,6 +87,22 @@ fn shard_of<Q: Hash + ?Sized>(key: &Q) -> usize {
 }
 
 impl<K: Hash + Eq, V> ShardedMap<K, V> {
+    /// Shard `index`, or `None` while the map has never been written.
+    // Cost: O(1).
+    #[inline]
+    fn shard(&self, index: usize) -> Option<&FxHashMap<K, V>> {
+        self.shards.as_ref().map(|shards| &*shards[index])
+    }
+
+    /// Every shard that exists (none for a never-written map).
+    // Cost: O(1) to create.
+    #[inline]
+    fn shard_iter(&self) -> impl Iterator<Item = &FxHashMap<K, V>> {
+        self.shards
+            .iter()
+            .flat_map(|shards| shards.iter().map(|shard| &**shard))
+    }
+
     // Cost: O(|key|) expected.
     #[inline]
     pub(crate) fn get<Q>(&self, key: &Q) -> Option<&V>
@@ -80,7 +110,7 @@ impl<K: Hash + Eq, V> ShardedMap<K, V> {
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        self.shards[shard_of(key)].get(key)
+        self.shard(shard_of(key))?.get(key)
     }
 
     // Cost: O(|key|) expected.
@@ -90,7 +120,8 @@ impl<K: Hash + Eq, V> ShardedMap<K, V> {
         K: Borrow<Q>,
         Q: Hash + Eq + ?Sized,
     {
-        self.shards[shard_of(key)].contains_key(key)
+        self.shard(shard_of(key))
+            .is_some_and(|shard| shard.contains_key(key))
     }
 
     /// Names the current key set: equal values mean the same keys (values
@@ -115,17 +146,17 @@ impl<K: Hash + Eq, V> ShardedMap<K, V> {
 
     // Cost: O(1) to create; walking it is O(n + SHARDS).
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
-        self.shards.iter().flat_map(|shard| shard.iter())
+        self.shard_iter().flat_map(|shard| shard.iter())
     }
 
     // Cost: O(1) to create; walking it is O(n + SHARDS).
     pub(crate) fn keys(&self) -> impl Iterator<Item = &K> {
-        self.shards.iter().flat_map(|shard| shard.keys())
+        self.shard_iter().flat_map(|shard| shard.keys())
     }
 
     // Cost: O(1) to create; walking it is O(n + SHARDS).
     pub(crate) fn values(&self) -> impl Iterator<Item = &V> {
-        self.shards.iter().flat_map(|shard| shard.values())
+        self.shard_iter().flat_map(|shard| shard.values())
     }
 }
 
@@ -134,7 +165,14 @@ impl<K: Hash + Eq + Clone, V: Clone> ShardedMap<K, V> {
     // Cost: O(1), or O(n / SHARDS) when the shard is shared (the copy).
     #[inline]
     fn shard_mut(&mut self, index: usize) -> &mut FxHashMap<K, V> {
-        Arc::make_mut(&mut self.shards[index])
+        Arc::make_mut(&mut self.shards_mut()[index])
+    }
+
+    /// The shards, created on the map's first write (see [`create_shards`]).
+    // Cost: O(1), or O(SHARDS) and one allocation on the map's first write.
+    #[inline]
+    fn shards_mut(&mut self) -> &mut Shards<K, V> {
+        create_shards(&mut self.shards)
     }
 
     // Cost: O(|key|) expected, plus the shard copy when shared.
@@ -145,7 +183,7 @@ impl<K: Hash + Eq + Clone, V: Clone> ShardedMap<K, V> {
     {
         let index = shard_of(key);
         // Probe first: a miss must not copy the shard.
-        if !self.shards[index].contains_key(key) {
+        if !self.shard(index).is_some_and(|shard| shard.contains_key(key)) {
             return None;
         }
         self.shard_mut(index).get_mut(key)
@@ -155,7 +193,7 @@ impl<K: Hash + Eq + Clone, V: Clone> ShardedMap<K, V> {
     // Cost: O(n + SHARDS), copying every shared shard.
     pub(crate) fn reserve(&mut self, additional: usize) {
         let per_shard = additional / SHARDS + 1;
-        for shard in self.shards.iter_mut() {
+        for shard in self.shards_mut().iter_mut() {
             Arc::make_mut(shard).reserve(per_shard);
         }
     }
@@ -177,7 +215,7 @@ impl<K: Hash + Eq + Clone, V: Clone> ShardedMap<K, V> {
         Q: Hash + Eq + ?Sized,
     {
         let index = shard_of(key);
-        if !self.shards[index].contains_key(key) {
+        if !self.shard(index).is_some_and(|shard| shard.contains_key(key)) {
             return None;
         }
         let old = self.shard_mut(index).remove(key);
@@ -191,7 +229,7 @@ impl<K: Hash + Eq + Clone, V: Clone> ShardedMap<K, V> {
     /// The entry for `key` (see [`ShardedEntry`]).
     // Cost: O(|key|) expected, plus the shard copy when shared.
     pub(crate) fn entry(&mut self, key: K) -> ShardedEntry<'_, K, V> {
-        let shard = Arc::make_mut(&mut self.shards[shard_of(&key)]);
+        let shard = Arc::make_mut(&mut create_shards(&mut self.shards)[shard_of(&key)]);
         ShardedEntry {
             entry: shard.entry(key),
             len: &mut self.len,
@@ -201,8 +239,11 @@ impl<K: Hash + Eq + Clone, V: Clone> ShardedMap<K, V> {
 
     // Cost: O(n + SHARDS); copies every shared shard `f` keeps or drops from.
     pub(crate) fn retain(&mut self, mut f: impl FnMut(&K, &mut V) -> bool) {
+        let Some(shards) = self.shards.as_mut() else {
+            return;
+        };
         let mut len = 0;
-        for shard in self.shards.iter_mut() {
+        for shard in shards.iter_mut() {
             if shard.is_empty() {
                 continue;
             }
@@ -263,7 +304,10 @@ impl<K: Hash + Eq + Clone, V: Clone> IntoIterator for ShardedMap<K, V> {
     type IntoIter = std::iter::Flatten<std::vec::IntoIter<FxHashMap<K, V>>>;
     // Cost: O(SHARDS), plus a copy of each shard another version shares.
     fn into_iter(self) -> Self::IntoIter {
-        let shards: Vec<FxHashMap<K, V>> = Vec::from(self.shards as Box<[_]>)
+        let shards: Vec<FxHashMap<K, V>> = self
+            .shards
+            .map(|shards| Vec::from(shards as Box<[_]>))
+            .unwrap_or_default()
             .into_iter()
             .map(Arc::unwrap_or_clone)
             .collect();
@@ -308,6 +352,25 @@ mod tests {
     use super::*;
 
     #[test]
+    fn an_empty_map_has_no_shards_until_its_first_write() {
+        let mut a: ShardedMap<String, u32> = ShardedMap::default();
+        assert!(a.shards.is_none());
+        let copy = a.clone();
+        assert!(copy.shards.is_none());
+        assert_eq!(a.get("x"), None);
+        assert!(!a.contains_key("x"));
+        assert_eq!(a.get_mut("x"), None);
+        assert_eq!(a.remove("x"), None);
+        a.retain(|_, _| true);
+        assert_eq!(a.iter().count(), 0);
+        assert!(a.shards.is_none(), "reads and no-op writes allocate nothing");
+        a.insert("x".to_string(), 1);
+        assert_eq!(a.get("x"), Some(&1));
+        assert!(copy.is_empty());
+        assert_eq!(copy.into_iter().count(), 0);
+    }
+
+    #[test]
     fn a_write_copies_only_the_shared_shard_it_touches() {
         let mut a: ShardedMap<String, u32> = ShardedMap::default();
         for i in 0..200 {
@@ -322,7 +385,12 @@ mod tests {
         assert_eq!(a.get("k3"), Some(&99));
         assert!(!b.contains_key("new"));
         let shared = (0..SHARDS)
-            .filter(|&i| Arc::ptr_eq(&a.shards[i], &b.shards[i]))
+            .filter(|&i| {
+                Arc::ptr_eq(
+                    &a.shards.as_ref().unwrap()[i],
+                    &b.shards.as_ref().unwrap()[i],
+                )
+            })
             .count();
         assert!(shared >= SHARDS - 2, "only the written shards were copied");
         *a.entry("k5".to_string()).or_insert(0) += 1;
