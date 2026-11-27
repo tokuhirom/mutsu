@@ -59,6 +59,9 @@ pub(super) fn slot_frame_body_ok(
     {
         return false;
     }
+    let plan = def.frame_plan(owner, cc);
+    let is_param_slot =
+        |slot: u32| matches!(plan.locals.get(slot as usize), Some(LocalInit::Param(_)));
     let ops_ok = cc.ops.iter().all(|op| match op {
         OpCode::LoadConst(_)
         | OpCode::LoadNil
@@ -74,23 +77,72 @@ pub(super) fn slot_frame_body_ok(
         // builds its own frame over the unchanged caller env. With no
         // arguments, no slot of this frame is passed to the callee, so no
         // readonly parameter can be bound `is rw` (ADR-18393 D2
-        // `READONLY_OBS`). A call on a *variable* (`CallMethodMut`) stays
-        // refused: its writeback reads and writes the receiver by name.
+        // `READONLY_OBS`).
         OpCode::CallMethod {
             arity: 0,
             modifier_idx: None,
             arg_sources_idx: None,
             ..
         } => true,
+        // The same call on one of this method's parameters (`$s.chars`).
+        // `CallMethodMut` treats its receiver as a variable it may rebind,
+        // which it does by name; a lean parameter is a readonly binding that
+        // nothing may rebind, so the slot frame's copy of the body
+        // (`slot_frame_body_code`) holds it as the `CallMethod` on the
+        // parameter's value it is, which never reaches the by-name machinery.
+        // `.VAR` asks about the variable itself and keeps the lean frame
+        // (#19266).
+        OpCode::CallMethodMut {
+            name_idx,
+            arity: 0,
+            target_slot: Some(slot),
+            modifier_idx: None,
+            quoted: false,
+            arg_sources_idx: None,
+            ..
+        } => is_param_slot(*slot) && cc.const_sym(*name_idx) != crate::sym!("VAR"),
         OpCode::GetLocal(idx) => cc.local_read_plain(*idx as usize),
         _ => false,
     });
     ops_ok
-        && def
-            .frame_plan(owner, cc)
+        && plan
             .locals
             .iter()
             .all(|init| !matches!(init, LocalInit::Outer))
+}
+
+/// The body a slot frame runs for `cc`, which [`slot_frame_body_ok`] admitted:
+/// a copy whose admitted `CallMethodMut` on a parameter is the `CallMethod` on
+/// the value it is (same name, no arguments, receiver on the stack, as the
+/// `GetLocal` before it left it), marked [`CompiledCode::slot_frame_body`].
+/// Built once per call plan. The copy starts with cold per-chunk caches
+/// (`MethodSiteCaches` clone cold), and nothing keys on its address except
+/// those caches and the JIT, which compiles it as its own chunk.
+// Cost: O(n), n = ops, once per plan.
+pub(super) fn slot_frame_body_code(cc: &CompiledCode) -> CompiledCode {
+    let mut body = cc.clone();
+    for op in &mut body.ops {
+        if let OpCode::CallMethodMut {
+            name_idx,
+            arity: 0,
+            target_slot: Some(_),
+            modifier_idx: None,
+            quoted: false,
+            arg_sources_idx: None,
+            ..
+        } = *op
+        {
+            *op = OpCode::CallMethod {
+                name_idx,
+                arity: 0,
+                modifier_idx: None,
+                quoted: false,
+                arg_sources_idx: None,
+            };
+        }
+    }
+    body.slot_frame_body = true;
+    body
 }
 
 impl Interpreter {
@@ -233,7 +285,8 @@ impl Interpreter {
             explicit_return,
             fail_bypass,
         } = self.run_compiled_method_body(
-            cc,
+            // The slot frame's own copy of the body (`slot_frame_body_code`).
+            call.slot_body.unwrap_or(cc),
             compiled_fns,
             super::vm_method_body_run::MethodBodyFrame {
                 owner_sym,
@@ -255,9 +308,15 @@ impl Interpreter {
         self.dispatch.method_dispatch_pure = true;
         // The env handle was never replaced, so there is nothing to restore.
         let _frame = self.pop_call_frame();
+        // Only a body without calls can promise this: a callee's writes, and
+        // those of a caller's CATCH run inline at a throw in the body
+        // (ADR-0072, `write_throw_env`), land in the env the frame shares with
+        // its caller. That is where the lean frame's exit merge hands them,
+        // so the handle may move. The body's own ops still write no name:
+        // `slot_frame_body_ok` admits none that does.
         #[cfg(debug_assertions)]
         debug_assert!(
-            self.env().ptr_eq(&entry_env),
+            cc.has_calls || self.env().ptr_eq(&entry_env),
             "slot frame: the env handle changed under a slot frame (missing ADR-18393 D2 refusal)"
         );
 

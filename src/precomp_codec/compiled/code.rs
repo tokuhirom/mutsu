@@ -146,6 +146,8 @@ impl Encode for CompiledCode {
             needs_cell_free_vars,
             has_calls,
             has_once,
+            // A run-time copy for a slot frame; never encoded.
+            slot_frame_body: _,
             uses_callframe,
             uses_capture,
             uses_samewith,
@@ -489,6 +491,7 @@ impl Decode<DecodeCtx> for CompiledCode {
             needs_cell_free_vars: Decode::decode(decoder)?,
             has_calls: Decode::decode(decoder)?,
             has_once: Decode::decode(decoder)?,
+            slot_frame_body: false,
             uses_callframe: Decode::decode(decoder)?,
             uses_capture: Decode::decode(decoder)?,
             uses_samewith: Decode::decode(decoder)?,

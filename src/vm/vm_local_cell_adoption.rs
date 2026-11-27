@@ -42,6 +42,13 @@ impl Interpreter {
         code: &CompiledCode,
         idx: usize,
     ) -> Option<Value> {
+        // A slot frame has no overlay of its own: the one on top is its
+        // caller's (ADR-18393 D1), whose same-named variable is not this slot's
+        // -- the very confusion described above. No name lookup starts in a
+        // slot frame, so there is nothing to adopt.
+        if code.slot_frame_body {
+            return None;
+        }
         let slot = &self.locals[idx];
         if slot.is_container_ref()
             || slot.is_proxy_value()

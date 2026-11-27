@@ -8124,6 +8124,12 @@ pub(crate) struct CompiledCode {
     /// fast/light call paths, which skip the routine clone-id setup the `once`
     /// store keys on (see `once_scope_key`).
     pub(crate) has_once: bool,
+    /// This is a slot frame's copy of a method body (ADR-18393,
+    /// `vm_method_slot_frame::slot_frame_body_code`), built at run time per
+    /// call plan and run only in a slot frame. Such a frame has no env overlay
+    /// of its own, so nothing in this code may look up a name in the top
+    /// overlay as its own (`local_cell_adoption_target`). Never precompiled.
+    pub(crate) slot_frame_body: bool,
     /// True if this code observes its caller frame: a `callframe`/`callframes`
     /// call, a `CALLER::` pseudo-package read/write op, or a read of `&?BLOCK` /
     /// `&?ROUTINE`. Set during `emit()`.
@@ -8926,6 +8932,7 @@ impl CompiledCode {
             sets_routine_state: false,
             mentions_native_scalar_type_name: false,
             has_once: false,
+            slot_frame_body: false,
             uses_callframe: false,
             uses_capture: false,
             uses_samewith: false,

@@ -168,6 +168,10 @@ pub(super) struct LeanMethodCall<'a> {
     /// the overlay; otherwise it carries the frame's pending runtime-name
     /// writes out, as the fast binder's non-skip exit does.
     pub(super) can_skip_merge: bool,
+    /// The body a slot frame runs (`MethodCallPlan::slot_body`); `None` runs
+    /// `cc`. Only the ops run from it: frame plans and facts stay keyed on
+    /// `cc`, the method's own code.
+    pub(super) slot_body: Option<&'a CompiledCode>,
 }
 
 impl Interpreter {
@@ -233,6 +237,8 @@ impl Interpreter {
             compiled_fns,
             body_package,
             can_skip_merge,
+            // The lean frame runs the method's own code.
+            slot_body: _,
         } = call;
         // A non-multi winner: nothing to skip (see the general binder).
         self.pending_skip_constraint_recheck = false;
