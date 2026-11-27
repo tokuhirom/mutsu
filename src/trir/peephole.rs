@@ -35,6 +35,11 @@
 //!   [`TrOp::OrdAtLocalSlot`] and `GetRefI(r); OrdAtLocal(t)` is
 //!   [`TrOp::OrdAtLocalRef`]: the position comes straight from the slot or
 //!   through the reference, with no int-bank round trip.
+//! - **Step by one.** `LoadI(s) ConstI(1) AddI StoreI(s)` is
+//!   [`TrOp::IncIVoid`], and through an `is rw` reference
+//!   (`GetRefI`/`SetRefI`) [`TrOp::IncRefIVoid`]; `SubI` gives the `Dec`
+//!   forms. That is `$pos = nqp::add_i($pos, 1)`, JSON::Fast's way of
+//!   stepping past a character.
 //! - **Discarded push.** `PushILocal(n); PopObj` is [`TrOp::PushILocalVoid`].
 //! - **Slot-to-slot list ops.** `ShiftILocal(l); [WrapI;] StoreI(s)` is
 //!   [`TrOp::ShiftIStoreLocal`] and `LoadI(s); PushILocalVoid(l)` is
@@ -226,6 +231,28 @@ fn cond_jump(op: Option<&TrOp>) -> Option<(bool, u32)> {
     }
 }
 
+/// Whether `ops[i..i + 4]` steps a native slot (or the variable an `is rw`
+/// reference names) by one and stores it back with nothing left on the
+/// bank: `LoadI(s) ConstI(1) AddI StoreI(s)`, or `GetRefI(r) ConstI(1) AddI
+/// SetRefI(r)`. `Some(true)` for an increment, `Some(false)` for a
+/// decrement (`SubI`). The `*IVoid` op it becomes does the same wrapping
+/// `nat::add_i` / `nat::sub_i`.
+fn step_by_one(ops: &[TrOp], i: usize) -> Option<bool> {
+    let [load, TrOp::ConstI(1), step, store] = ops.get(i..i + 4)? else {
+        return None;
+    };
+    let up = match step {
+        TrOp::AddI => true,
+        TrOp::SubI => false,
+        _ => return None,
+    };
+    let same = match (load, store) {
+        (TrOp::LoadI(a), TrOp::StoreI(b)) | (TrOp::GetRefI(a), TrOp::SetRefI(b)) => a == b,
+        _ => false,
+    };
+    same.then_some(up)
+}
+
 fn fuse(ops: &[TrOp], i: usize) -> Option<(usize, Vec<TrOp>)> {
     let at = |k: usize| ops.get(i + k);
     match &ops[i] {
@@ -263,6 +290,19 @@ fn fuse(ops: &[TrOp], i: usize) -> Option<(usize, Vec<TrOp>)> {
                 vec![TrOp::OrdAtLocalRef {
                     text: *text,
                     pos_ref: *pos_ref,
+                }],
+            ))
+        }
+        // ---- `$i = nqp::add_i($i, 1)` and its `sub_i` twin ----
+        TrOp::LoadI(slot) | TrOp::GetRefI(slot) if step_by_one(ops, i).is_some() => {
+            let up = step_by_one(ops, i)?;
+            Some((
+                4,
+                vec![match (&ops[i], up) {
+                    (TrOp::LoadI(_), true) => TrOp::IncIVoid(*slot),
+                    (TrOp::LoadI(_), false) => TrOp::DecIVoid(*slot),
+                    (_, true) => TrOp::IncRefIVoid(*slot),
+                    (_, false) => TrOp::DecRefIVoid(*slot),
                 }],
             ))
         }
@@ -369,6 +409,42 @@ mod tests {
         ));
         assert!(matches!(out[1], TrOp::IncIVoid(1)));
         assert!(matches!(out[2], TrOp::ReturnNil));
+    }
+
+    #[test]
+    fn stepping_a_slot_or_reference_by_one_is_one_op() {
+        let ops = vec![
+            TrOp::GetRefI(0),
+            TrOp::ConstI(1),
+            TrOp::AddI,
+            TrOp::SetRefI(0),
+            TrOp::LoadI(2),
+            TrOp::ConstI(1),
+            TrOp::SubI,
+            TrOp::StoreI(2),
+            TrOp::ReturnNil,
+        ];
+        let out = optimize(ops);
+        assert!(matches!(out[0], TrOp::IncRefIVoid(0)));
+        assert!(matches!(out[1], TrOp::DecIVoid(2)));
+        assert!(matches!(out[2], TrOp::ReturnNil));
+        assert_eq!(out.len(), 3);
+    }
+
+    #[test]
+    fn a_step_stored_elsewhere_or_by_two_is_left_alone() {
+        let ops = vec![
+            TrOp::LoadI(1),
+            TrOp::ConstI(1),
+            TrOp::AddI,
+            TrOp::StoreI(2),
+            TrOp::GetRefI(0),
+            TrOp::ConstI(2),
+            TrOp::AddI,
+            TrOp::SetRefI(0),
+            TrOp::ReturnNil,
+        ];
+        assert_eq!(optimize(ops).len(), 9);
     }
 
     #[test]
