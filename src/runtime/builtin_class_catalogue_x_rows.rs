@@ -317,6 +317,8 @@ pub(super) const X_CLASS_ROWS: &str = concat!(
     "X::Syntax::Extension::Null\tException\tX::Syntax\n",
     "X::Syntax::Extension::SpecialForm\tException\tX::Syntax\n",
     "X::Syntax::Extension::TooComplex\tException\tX::Syntax\n",
+    "X::Syntax::Heredoc::AmbiguousName\tException\tX::Syntax\n",
+    "X::Syntax::Heredoc::HiddenName\tX::Undeclared\tX::Comp\n",
     "X::Syntax::InfixInTermPosition\tException\tX::Syntax\n",
     "X::Syntax::KeywordAsFunction\tException\tX::Syntax\n",
     "X::Syntax::Malformed\tException\tX::Syntax\n",

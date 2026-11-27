@@ -55,6 +55,36 @@ pub(crate) fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Opt
                 .unwrap_or_default();
             Some(undeclared_message(&what, &symbol, &items))
         }
+        // Rakudo 2026.11's heredoc-body name checks; both texts go through
+        // `naive-word-wrapper`.
+        "X::Syntax::Heredoc::AmbiguousName" => Some(crate::word_wrap::naive_word_wrap(
+            &format!(
+                "Name '{}' in a heredoc body is ambiguous: it means one declaration where the \
+                 heredoc starts and another where its body is written",
+                attr_str(attrs, "symbol")
+            ),
+            72,
+        )),
+        "X::Syntax::Heredoc::HiddenName" => Some(crate::word_wrap::naive_word_wrap(
+            &format!(
+                "Name '{}' in a heredoc body is declared only inside a block that closes on the \
+                 heredoc's line, before the body. Move the closing brace of the block after the \
+                 body to use it",
+                attr_str(attrs, "symbol")
+            ),
+            72,
+        )),
+        // The worry `* && 1` draws (rakudo 2026.11): `what` is `Whatever` or
+        // `HyperWhatever`, `operator` the short-circuit operator.
+        "X::Whatever::ShortCircuit" => {
+            let what = attr_str(attrs, "what");
+            let op = attr_str(attrs, "operator");
+            Some(format!(
+                "{what} tested first by {op} does not curry the {op} expression,\n\
+                 and is always true and defined.\n\
+                 Try a block using $_ instead if results are not as expected."
+            ))
+        }
         "X::Cannot::Lazy" => {
             let action = attr_str(attrs, "action");
             Some(format!("Cannot {} a lazy list", action))
