@@ -27,7 +27,7 @@
   "dist": "Duckula",
   "files": [],
   "load": {
-    "Duckula": "raku_also_fails",
+    "Duckula": "/home/runner/.cache/mutsu-ecosystem/deps/DB__DuckDB/resources/duckdb-result-shim.c:20:10: fatal error: duckdb.h: No such file or directory",
     "Duckula::Accessor": "expected statement: expected expected statement: expected expression statement or expected statement: expected condition expression after 'if' or expression after infix operator or '.' or digits or ge [at lib/Duckula/Accessor.rakumod:695]",
     "Duckula::Arrow": "ok",
     "Duckula::ArrowIPC": "ok",
@@ -66,10 +66,10 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-26",
+    "date": "2026-11-27",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "5ef2787e",
+    "mutsu_commit": "3f0f4e81",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
