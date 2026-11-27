@@ -470,7 +470,7 @@ impl Interpreter {
     pub(crate) fn caller_stash_depth(name: &str) -> Option<usize> {
         let trimmed = name.trim_end_matches("::");
         let parts = crate::qualified::segments(Symbol::intern(trimmed));
-        (!parts.is_empty() && parts.iter().all(|part| part.as_str() == "CALLER"))
+        (!parts.is_empty() && parts.iter().all(|part| *part == crate::sym!("CALLER")))
             .then_some(parts.len())
     }
 

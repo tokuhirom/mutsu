@@ -1534,10 +1534,7 @@ impl Interpreter {
         // exactly the flags the named arguments set (the others read False).
         if method == "new"
             && let ValueView::Package(name) = target.view()
-            && matches!(
-                name.as_str(),
-                "Metamodel::Archetypes" | "Perl6::Metamodel::Archetypes"
-            )
+            && crate::sym_in!(name, "Metamodel::Archetypes" | "Perl6::Metamodel::Archetypes")
         {
             let mut attrs = std::collections::HashMap::new();
             for arg in &args {

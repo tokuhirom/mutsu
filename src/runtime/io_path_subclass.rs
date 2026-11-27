@@ -50,7 +50,7 @@ impl Interpreter {
         let inherits = self
             .class_mro(class)
             .iter()
-            .any(|c| c.as_str() == "IO::Path" || c.as_str().starts_with("IO::Path::"));
+            .any(|c| *c == crate::sym!("IO::Path") || c.as_str().starts_with("IO::Path::"));
         if !inherits || self.has_user_method(class, method) {
             return None;
         }

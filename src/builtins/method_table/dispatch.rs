@@ -1075,8 +1075,8 @@ pub(crate) fn shapeless_row(
     // list with no settled shape (lazy, shaped, a `Seq`, a `Slip`, a buffer)
     // indexes its elements through the interpreter, though it has no keys
     // either (§9.106).
-    let positional = matches!(method.as_str(), "AT-POS" | "EXISTS-POS");
-    if (positional || matches!(method.as_str(), "AT-KEY" | "EXISTS-KEY"))
+    let positional = crate::sym_in!(method, "AT-POS" | "EXISTS-POS");
+    if (positional || crate::sym_in!(method, "AT-KEY" | "EXISTS-KEY"))
         && match target.descalarize().view() {
             ValueView::Array(..)
             | ValueView::BufStorage(..)
@@ -1203,7 +1203,7 @@ pub(crate) fn shapeless_row(
         // the built-in classes' instances they know (a `Signature`, a `Stash`)
         // and decline every other instance, whose class may declare its own.
         ValueView::Instance { .. }
-            if mu && interp.is_none() && matches!(method.as_str(), "gist" | "raku") =>
+            if mu && interp.is_none() && crate::sym_in!(method, "gist" | "raku") =>
         {
             mu_owner
         }
@@ -1229,7 +1229,7 @@ pub(crate) fn shapeless_row(
             // subclass's: an `Exception` subclass renders its own `message`,
             // a `Str` subclass keeps its type. The interpreter answers those
             // (§9.93).
-            if matches!(method.as_str(), "Str" | "Stringy" | "gist" | "raku") && owner != mu_owner {
+            if crate::sym_in!(method, "Str" | "Stringy" | "gist" | "raku") && owner != mu_owner {
                 return None;
             }
             owner
@@ -1251,7 +1251,7 @@ pub(crate) fn shapeless_row(
         // `pairs`, `hash` and `elems` read as such (`any_views`, §9.109,
         // §9.163); its MRO has no row that does.
         ValueView::Instance { class_name, .. }
-            if matches!(method.as_str(), "kv" | "pairs" | "hash" | "list" | "elems")
+            if crate::sym_in!(method, "kv" | "pairs" | "hash" | "list" | "elems")
                 && crate::value::types::is_stash_class_name(&class_name.resolve()) =>
         {
             any
@@ -1274,10 +1274,8 @@ pub(crate) fn shapeless_row(
                 return None;
             }
             let mut owner = None;
-            let subscript = matches!(
-                method.as_str(),
-                "AT-POS" | "EXISTS-POS" | "AT-KEY" | "EXISTS-KEY"
-            );
+            let subscript =
+                crate::sym_in!(method, "AT-POS" | "EXISTS-POS" | "AT-KEY" | "EXISTS-KEY");
             let mro = interp.class_mro(class_name.as_str());
             let mut exhausted = true;
             for &class in mro.iter() {
@@ -1382,7 +1380,7 @@ pub(crate) fn shapeless_row(
         // A hash or a quant hash with no settled shape (a `Map` subclass's raw
         // storage) answers its type's associative rows (§9.154).
         ValueView::Hash(_) | ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..)
-            if matches!(method.as_str(), "AT-KEY" | "EXISTS-KEY") =>
+            if crate::sym_in!(method, "AT-KEY" | "EXISTS-KEY") =>
         {
             match target.view() {
                 ValueView::Hash(_) => Symbol::intern("Hash"),

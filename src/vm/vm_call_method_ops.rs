@@ -362,7 +362,7 @@ impl Interpreter {
                 .iter()
                 .any(|a| !matches!(a.view(), ValueView::Pair(..) | ValueView::ValuePair(..)))
             && let ValueView::Instance { class_name, .. } = target.view()
-            && class_name.as_str() == "Failure"
+            && class_name == crate::sym!("Failure")
             && !target.is_failure_handled()
         {
             return Some(Self::print_routine_no_match_error(method, target, args));
@@ -1646,7 +1646,7 @@ impl Interpreter {
 
         // Deprecation.report — return the accumulated deprecation report
         if method == "report"
-            && matches!(target.view(), ValueView::Package(name) if name.as_str() == "Deprecation")
+            && matches!(target.view(), ValueView::Package(name) if name == crate::sym!("Deprecation"))
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethod",
@@ -1668,12 +1668,10 @@ impl Interpreter {
         // .../multi-no-match.t).
         if method == "protect" {
             let is_lock_type_object = matches!(target.view(), ValueView::Package(name)
-                if matches!(name.as_str(),
-                    "Lock" | "Lock::Async" | "Lock::Soft"));
+                if crate::sym_in!(name, "Lock" | "Lock::Async" | "Lock::Soft"));
             let is_lock_instance_bad_arg = matches!(target.view(),
                 ValueView::Instance { class_name, .. }
-                if matches!(class_name.as_str(),
-                    "Lock" | "Lock::Async" | "Lock::Soft"))
+                if crate::sym_in!(class_name, "Lock" | "Lock::Async" | "Lock::Soft"))
                 && (args.len() != 1
                     || !matches!(args[0].view(), ValueView::Sub(..) | ValueView::WeakSub(..)));
             if is_lock_type_object || is_lock_instance_bad_arg {
@@ -1696,7 +1694,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = target.view()
-            && (class_name.as_str() == "Lock::Async" || class_name.as_str() == "Lock")
+            && (class_name == crate::sym!("Lock::Async") || class_name == crate::sym!("Lock"))
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethod", "lock-protect");
             let lock_id = match attributes.as_map().get("lock-id").map(Value::view) {
@@ -1738,7 +1736,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = target.view()
-            && class_name.as_str() == "Lock::Async"
+            && class_name == crate::sym!("Lock::Async")
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethod",

@@ -769,7 +769,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if matches!(class_name.as_str(), "Method" | "Submethod") => {
+            } if crate::sym_in!(class_name, "Method" | "Submethod") => {
                 attributes.as_map().get("__mutsu_method_callable").cloned()
             }
             _ => None,

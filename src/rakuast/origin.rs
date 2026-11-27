@@ -158,8 +158,8 @@ fn line_in(value: &Value) -> Option<i64> {
 // Cost: O(1).
 pub(crate) fn set_origin(node: &mut RakuAstNode, origin: &Value) -> Result<Value, RuntimeError> {
     let is_origin = match origin.view() {
-        ValueView::Instance { class_name, .. } => class_name.as_str() == "RakuAST::Origin",
-        ValueView::Package(name) => name.as_str() == "RakuAST::Origin",
+        ValueView::Instance { class_name, .. } => class_name == crate::sym!("RakuAST::Origin"),
+        ValueView::Package(name) => name == crate::sym!("RakuAST::Origin"),
         _ => false,
     };
     if !is_origin {

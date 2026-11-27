@@ -100,7 +100,7 @@ pub(crate) fn export_stash_entries(
         .filter(|(key, _)| !functions.contains_key(key))
         .filter(|(key, _)| {
             crate::qualified::package_ancestors(**key)
-                .any(|package| crate::qualified::last_segment(package).as_str() == "EXPORT")
+                .any(|package| crate::qualified::last_segment(package) == crate::sym!("EXPORT"))
         })
         .map(|(key, def)| (*key, def.clone()))
         .collect()

@@ -45,7 +45,7 @@ class GLOBAL::ContainerDescriptor::Untyped is ContainerDescriptor { }
 /// The type a descriptor's `of` names, when it constrains anything.
 fn constraint_name(of: &Value) -> Option<String> {
     match of.view() {
-        ValueView::Package(sym) if !matches!(sym.as_str(), "Mu" | "Any") => {
+        ValueView::Package(sym) if !crate::sym_in!(sym, "Mu" | "Any") => {
             Some(sym.as_str().to_string())
         }
         _ => None,

@@ -180,7 +180,7 @@ impl Interpreter {
         }
         let mro = self.class_mro(class_sym.as_str());
         let from_mu = Self::builtin_method_level(&mro, method_sym.as_str())
-            .is_some_and(|level| mro[level].as_str() == "Mu");
+            .is_some_and(|level| mro[level] == crate::sym!("Mu"));
         self.caches.builtin_method_from_mu.insert(key, from_mu);
         from_mu
     }

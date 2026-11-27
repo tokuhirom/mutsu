@@ -90,7 +90,7 @@ impl Interpreter {
             _ => return None,
         };
         let (base, path) = match leading.split_first() {
-            Some((head, rest)) if head.as_str() == "OUR" => (self.current_package(), rest),
+            Some((head, rest)) if *head == crate::sym!("OUR") => (self.current_package(), rest),
             Some((head, rest)) if crate::qualified::is_global_name(*head) => (String::new(), rest),
             // Lexical (`MY`, `OUTER`, `CALLER`, ...), dynamic and setting
             // pseudo-packages are not package stashes.

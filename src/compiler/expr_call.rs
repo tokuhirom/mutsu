@@ -471,7 +471,7 @@ impl Compiler {
         // routine the free-var analysis never sees -- so keep `$s` env-synced
         // like any other rw-arg sink, or the STORE of a later `$r = v` on a
         // bound `$r` reads a stale (undefined) `$s` (#9200).
-        if matches!(name.as_str(), "substr-rw" | "subbuf-rw")
+        if crate::sym_in!(*name, "substr-rw" | "subbuf-rw")
             && let Some(Expr::Var(var_name)) = args.first()
         {
             self.note_atomic_env_sync_target(var_name, false);

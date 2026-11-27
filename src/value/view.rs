@@ -971,7 +971,7 @@ impl Value {
     /// Nil seed (two distinct uninitialized scalars are not `=:=`).
     #[inline]
     pub fn is_any_type_object(&self) -> bool {
-        matches!(self.view(), ValueView::Package(sym) if sym.as_str() == "Any")
+        matches!(self.view(), ValueView::Package(sym) if sym == crate::sym!("Any"))
     }
 
     /// Whether a positional subscript sees this value as a *one-element list

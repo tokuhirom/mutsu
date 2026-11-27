@@ -963,7 +963,7 @@ impl Interpreter {
         let defer_exit_phasers = body_result.is_ok()
             && !self.explicit_run_main
             && body_main.iter().any(|s| {
-                matches!(s, Stmt::SubDecl { name, multi: false, .. } if name.as_str() == "MAIN")
+                matches!(s, Stmt::SubDecl { name, multi: false, .. } if *name == crate::sym!("MAIN"))
             });
         let success_queue = Self::should_run_success_queue_vm(&body_result, self.env.get("_"));
         let queue_result = if defer_exit_phasers || superseded {

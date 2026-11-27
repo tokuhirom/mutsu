@@ -474,7 +474,7 @@ impl Interpreter {
     fn is_range_mro_instance(&mut self, v: &Value) -> bool {
         let v = v.descalarize();
         matches!(v.view(), ValueView::Instance { class_name, .. }
-            if self.class_mro(&class_name.resolve()).iter().any(|s| s.as_str() == "Range"))
+            if self.class_mro(&class_name.resolve()).iter().any(|s| *s == crate::sym!("Range")))
     }
 
     /// `(min, max, excludes-min, excludes-max)` for a range-like value: a
@@ -497,7 +497,7 @@ impl Interpreter {
         if !self
             .class_mro(&class_name.resolve())
             .iter()
-            .any(|s| s.as_str() == "Range")
+            .any(|s| *s == crate::sym!("Range"))
         {
             return Ok(None);
         }

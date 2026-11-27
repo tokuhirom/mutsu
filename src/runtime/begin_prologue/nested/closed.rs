@@ -136,7 +136,7 @@ pub(crate) fn begin_body_core_names(
         return None;
     }
     for callee in &scan.callees {
-        if matches!(callee.as_str(), "require" | "EVAL" | "EVALFILE") {
+        if crate::sym_in!(*callee, "require" | "EVAL" | "EVALFILE") {
             return None;
         }
         if is_core_routine(*callee) {

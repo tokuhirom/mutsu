@@ -410,10 +410,7 @@ impl Compiler {
             e,
             Expr::Call { name, args, .. }
                 if matches!(args.len(), 2 | 3)
-                    && matches!(
-                        name.as_str(),
-                        "nqp::while" | "nqp::until" | "nqp::repeat_while" | "nqp::repeat_until"
-                    )
+                    && crate::sym_in!(*name, "nqp::while" | "nqp::until" | "nqp::repeat_while" | "nqp::repeat_until")
         )
     }
 

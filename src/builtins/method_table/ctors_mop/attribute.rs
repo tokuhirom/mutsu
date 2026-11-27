@@ -257,7 +257,7 @@ fn auto_viv_container(
                     .trim_start_matches(['$', '@', '%', '&', '!', '.'])
                     .to_string();
                 let of = match meta.as_map().get("type").map(Value::view) {
-                    Some(ValueView::Package(name)) if !matches!(name.as_str(), "Mu" | "Any") => {
+                    Some(ValueView::Package(name)) if !crate::sym_in!(name, "Mu" | "Any") => {
                         Some(name.as_str().to_string())
                     }
                     _ => None,

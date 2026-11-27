@@ -113,7 +113,7 @@ pub(crate) fn invoke(
                 ))
             })));
     }
-    if flags.contains(RowFlags::INDEX_COERCES) || method.as_str() == "AT-POS" {
+    if flags.contains(RowFlags::INDEX_COERCES) || method == crate::sym!("AT-POS") {
         return invoke_in(id, interp, target, &[index]);
     }
     // `Any.EXISTS-POS`: the one-element list `Any` is has only index 0, which

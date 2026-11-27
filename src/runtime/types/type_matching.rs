@@ -1536,10 +1536,7 @@ impl Interpreter {
         // `set-socket(IO::Socket $s)` receives a plain INET socket) accept them.
         if constraint == "IO::Socket"
             && let ValueView::Instance { class_name, .. } = value.view()
-            && matches!(
-                class_name.as_str(),
-                "IO::Socket::INET" | "IO::Socket::Async"
-            )
+            && crate::sym_in!(class_name, "IO::Socket::INET" | "IO::Socket::Async")
         {
             return true;
         }
@@ -1555,7 +1552,7 @@ impl Interpreter {
             // values. Needed so `multi method m(Nil)` out-narrows a coercion
             // candidate like `m(Str() $s)` for a literal Nil argument.
             return matches!(value.view(), ValueView::Nil)
-                || matches!(value.view(), ValueView::Instance { class_name, .. } if class_name.as_str() == "Failure")
+                || matches!(value.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("Failure"))
                 || matches!(value.view(), ValueView::Package(name) if name == crate::sym!("Nil"));
         }
         // The type object of an `Int`-based enum is an `Int` type
@@ -2415,8 +2412,8 @@ impl Interpreter {
             // and so is not an `Any`. Its MRO is authoritative.
             if constraint == "Any" && self.registry().classes.contains_key(cn) {
                 let mro = self.class_mro(cn);
-                if mro.iter().any(|p| p.as_str() == "Mu")
-                    && !mro.iter().any(|p| p.as_str() == "Any")
+                if mro.iter().any(|p| *p == crate::sym!("Mu"))
+                    && !mro.iter().any(|p| *p == crate::sym!("Any"))
                 {
                     return false;
                 }

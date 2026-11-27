@@ -591,7 +591,7 @@ pub(crate) fn join_items(items: &[Value], sep: &str) -> Option<Value> {
             // its identity text, which no user method can change: a subclass
             // or a role mixin has another class name.
             if let ValueView::Instance { class_name, .. } = inner.view()
-                && matches!(class_name.as_str(), "ObjAt" | "ValueObjAt")
+                && crate::sym_in!(class_name, "ObjAt" | "ValueObjAt")
             {
                 return false;
             }

@@ -420,7 +420,7 @@ impl Interpreter {
                     // answers.
                     ValueView::Hash(h) => h.declared_type.as_deref() != Some("PseudoStash"),
                     ValueView::Array(..) => true,
-                    ValueView::Instance { class_name, .. } => class_name.as_str() == "Stash",
+                    ValueView::Instance { class_name, .. } => class_name == crate::sym!("Stash"),
                     _ => false,
                 }
             });

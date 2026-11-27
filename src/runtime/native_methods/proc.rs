@@ -19,7 +19,7 @@ pub(crate) fn proc_unsuccessful_sink_error(val: &Value) -> Option<RuntimeError> 
     else {
         return None;
     };
-    if class_name.as_str() != "Proc" {
+    if class_name != crate::sym!("Proc") {
         return None;
     }
     let attrs = attributes.as_map();

@@ -87,7 +87,7 @@ impl Compiler {
             args: margs,
             ..
         } = arg
-            && method.as_str() == "VAR"
+            && *method == crate::sym!("VAR")
             && margs.is_empty()
             && op != "iscont"
         {

@@ -38,7 +38,7 @@ pub(crate) fn str_needs_dispatch(value: &Value) -> bool {
             // A plain `ObjAt` / `ValueObjAt` (a `.WHICH` result) stringifies
             // to its identity text; no user method can change that (a subclass
             // or a role mixin has another class name).
-            return !matches!(class_name.as_str(), "ObjAt" | "ValueObjAt");
+            return !crate::sym_in!(class_name, "ObjAt" | "ValueObjAt");
         }
         if matches!(v.view(), ValueView::Mixin(..)) {
             return true;

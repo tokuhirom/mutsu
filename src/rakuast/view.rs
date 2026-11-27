@@ -2655,7 +2655,7 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
             .ok_or_else(|| unsupported("dynamic match regex without a source tree"))
             .and_then(|node| quoted_regex_node(names, node)),
         Expr::Call { name, args, .. } | Expr::UserRoutineCall { name, args, .. } => {
-            if name.as_str() == "require"
+            if *name == crate::sym!("require")
                 && let Some(require) = super::use_stmt::view_require(names, args)?
             {
                 return Ok(require);

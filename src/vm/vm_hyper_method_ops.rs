@@ -212,7 +212,7 @@ fn method_value_callable_name(v: &Value) -> Option<String> {
             class_name,
             attributes,
             ..
-        } if matches!(class_name.as_str(), "Method" | "Submethod" | "Regex") => {
+        } if crate::sym_in!(class_name, "Method" | "Submethod" | "Regex") => {
             let am = attributes.as_map();
             am.get("__mutsu_lookup_method")
                 .map(|v| v.to_string_value())

@@ -27,7 +27,7 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if method_sym.as_str() != "clone"
+        if method_sym != crate::sym!("clone")
             || self.registry().method_name_ever_wrapped("clone")
             || crate::runtime::find_method_intercept::any_user_find_method()
             || !args.iter().all(|a| matches!(a.view(), ValueView::Pair(..)))

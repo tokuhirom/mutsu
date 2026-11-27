@@ -1846,6 +1846,36 @@ mod tests {
     }
 
     #[test]
+    fn sym_macro_names_the_interned_symbol() {
+        const NAME: &str = "sym_macro_test_const";
+        assert_eq!(
+            crate::sym!("sym_macro_test_lit"),
+            Symbol::intern("sym_macro_test_lit")
+        );
+        assert_eq!(crate::sym!(NAME), Symbol::intern(NAME));
+        // One call site keeps answering the same symbol.
+        assert!(
+            (0..3)
+                .all(|_| crate::sym!("sym_macro_test_lit") == Symbol::intern("sym_macro_test_lit"))
+        );
+        // Across threads too: interned ids are global.
+        let other = std::thread::spawn(|| crate::sym!("sym_macro_test_lit"))
+            .join()
+            .unwrap();
+        assert_eq!(other, Symbol::intern("sym_macro_test_lit"));
+    }
+
+    #[test]
+    fn sym_in_macro_tests_membership() {
+        let s = Symbol::intern("Duration");
+        assert!(crate::sym_in!(s, "Instant" | "Duration"));
+        assert!(!crate::sym_in!(s, "Instant" | "Date"));
+        assert!(crate::sym_in!(s, "Duration"));
+        let r = &s;
+        assert!(crate::sym_in!(*r, "Duration" | "Instant",));
+    }
+
+    #[test]
     fn as_str_resolves_across_threads_and_chunks() {
         // Symbols interned on one thread resolve on another through the global
         // slot table, including ids that land in a later chunk than the first.

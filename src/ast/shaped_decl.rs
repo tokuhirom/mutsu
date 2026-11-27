@@ -70,7 +70,8 @@ pub(crate) fn split(expr: &Expr) -> Option<(Vec<Expr>, Option<&Expr>)> {
     else {
         return None;
     };
-    if !matches!(target.as_ref(), Expr::BareWord(t) if t == "Array") || name.as_str() != "new" {
+    if !matches!(target.as_ref(), Expr::BareWord(t) if t == "Array") || *name != crate::sym!("new")
+    {
         return None;
     }
     let value_of = |at: usize, key: &str| match args.get(at) {

@@ -189,7 +189,7 @@ pub(crate) fn where_(target: &Value, _args: &[Value]) -> Option<Result<Value, Ru
         attributes,
         ..
     } = target.view()
-        && crate::qualified::last_segment(class_name).as_str() == "Pointer"
+        && crate::qualified::last_segment(class_name) == crate::sym!("Pointer")
     {
         let addr = attributes
             .as_map()

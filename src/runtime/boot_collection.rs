@@ -137,7 +137,7 @@ pub(crate) fn repr_is_vm_array(v: &Value) -> bool {
 /// `BOOTHash` type object. A Raku `Hash`, `Map` or stash is P6opaque: 0.
 // Cost: O(1).
 pub(crate) fn repr_is_vm_hash(v: &Value) -> bool {
-    v.is_vm_hash() || matches!(v.view(), ValueView::Package(name) if name.as_str() == "BOOTHash")
+    v.is_vm_hash() || matches!(v.view(), ValueView::Package(name) if name == crate::sym!("BOOTHash"))
 }
 
 impl Interpreter {

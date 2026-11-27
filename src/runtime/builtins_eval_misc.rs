@@ -413,7 +413,7 @@ impl Interpreter {
                 node.class,
                 crate::rakuast::RakuAstClass::CompUnit | crate::rakuast::RakuAstClass::StatementList
             ) && stmts.iter().any(|s| {
-                matches!(s, Stmt::SubDecl { name, multi: false, .. } if name.as_str() == "MAIN")
+                matches!(s, Stmt::SubDecl { name, multi: false, .. } if *name == crate::sym!("MAIN"))
             }) {
                 stmts.push(Stmt::Expr(crate::ast::Expr::Call {
                     name: crate::symbol::Symbol::intern("__mutsu_dispatch_main"),

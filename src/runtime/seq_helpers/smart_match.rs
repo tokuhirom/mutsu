@@ -541,12 +541,12 @@ impl Interpreter {
             (_, ValueView::Nil) => match left.view() {
                 ValueView::Nil => true,
                 ValueView::Instance { class_name, .. } => {
-                    class_name.as_str() == "Failure"
-                        || self.class_mro(class_name.as_str()).iter().any(|c| c.as_str() == "Nil")
+                    class_name == crate::sym!("Failure")
+                        || self.class_mro(class_name.as_str()).iter().any(|c| *c == crate::sym!("Nil"))
                 }
                 ValueView::Package(name) => {
                     name == crate::sym!("Nil")
-                        || self.class_mro(name.as_str()).iter().any(|c| c.as_str() == "Nil")
+                        || self.class_mro(name.as_str()).iter().any(|c| *c == crate::sym!("Nil"))
                 }
                 _ => false,
             },

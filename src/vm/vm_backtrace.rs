@@ -419,7 +419,7 @@ impl BacktraceCapture {
             // caller by skipping to the first setting frame (Proc::Easier)
             // depends on them.
             // TODO: a user `bless` call has `Mu.bless` here, not `Mu.new`.
-            if frame.is_method && matches!(frame.name.as_str(), "BUILD" | "TWEAK") {
+            if frame.is_method && crate::sym_in!(frame.name, "BUILD" | "TWEAK") {
                 let own_file = frame_file_value(&frames);
                 frames.push(setting_frame("POPULATE", own_file, Value::int(0)));
                 frames.push(setting_frame(

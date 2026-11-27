@@ -405,7 +405,7 @@ mod tests {
         };
         assert!(
             !stmts.iter().any(
-                |s| matches!(s, Stmt::Expr(Expr::Call { name, .. }) if name.as_str() == "pass?")
+                |s| matches!(s, Stmt::Expr(Expr::Call { name, .. }) if *name == crate::sym!("pass?"))
             ),
             "must not parse as a single Call named \"pass?\", got {stmts:?}"
         );

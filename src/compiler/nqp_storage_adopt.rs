@@ -31,7 +31,7 @@ impl Compiler {
         let fresh = bind
             && !name.starts_with(['@', '%', '&'])
             && matches!(init, Expr::Call { name: callee, args, .. }
-                if callee.as_str() == "nqp::create"
+                if *callee == crate::sym!("nqp::create")
                     && matches!(args.as_slice(), [Expr::Literal(v)]
                         if matches!(v.view(), crate::value::ValueView::Package(p) if p == crate::sym!("Hash"))));
         if fresh {
@@ -56,7 +56,7 @@ impl Compiler {
                 name: callee,
                 args: inner,
                 ..
-            } if callee.as_str() == "nqp::decont" => match inner.as_slice() {
+            } if *callee == crate::sym!("nqp::decont") => match inner.as_slice() {
                 [Expr::Var(v)] => v,
                 _ => return false,
             },

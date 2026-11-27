@@ -153,7 +153,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if matches!(class_name.as_str(), "Method" | "Submethod") => attributes
+            } if crate::sym_in!(class_name, "Method" | "Submethod") => attributes
                 .as_map()
                 .get("rw")
                 .is_some_and(Value::truthy),

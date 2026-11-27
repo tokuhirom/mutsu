@@ -175,7 +175,7 @@ impl Interpreter {
             || !self
                 .class_mro(&name)
                 .iter()
-                .any(|parent| matches!(parent.as_str(), "ObjAt" | "ValueObjAt"))
+                .any(|parent| crate::sym_in!(*parent, "ObjAt" | "ValueObjAt"))
         {
             return None;
         }

@@ -217,7 +217,7 @@ impl Interpreter {
                 if self.has_class(owner.as_str()) && !Self::is_builtin_type(owner.as_str())
         );
         if !user_owner
-            || !matches!(class_name.as_str(), "Method" | "Submethod")
+            || !crate::sym_in!(class_name, "Method" | "Submethod")
             || self.has_any_wrap_chains()
             || crate::runtime::find_method_intercept::any_user_find_method()
             || self.has_user_method(class_name.as_str(), "CALL-ME")

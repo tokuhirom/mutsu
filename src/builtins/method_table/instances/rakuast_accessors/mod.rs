@@ -70,7 +70,7 @@ pub(crate) fn pure_answer(target: &Value, method: Symbol) -> Option<Result<Value
     let ValueView::RakuAst(node) = target.view() else {
         return None;
     };
-    if method.as_str() == "sunk"
+    if method == crate::sym!("sunk")
         && crate::rakuast::hierarchy::does(node.class.printed_name(), "RakuAST::Sinkable")
             == Some(true)
     {

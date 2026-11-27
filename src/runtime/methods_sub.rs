@@ -551,7 +551,7 @@ impl Interpreter {
         // A `Method`/`Submethod` (`.^lookup`, `.^methods`) is an `Instance`
         // whose own `name` method answers the name.
         let name = if let ValueView::Instance { class_name, .. } = target.view()
-            && matches!(class_name.as_str(), "Method" | "Submethod")
+            && crate::sym_in!(class_name, "Method" | "Submethod")
         {
             match self.try_compiled_method_or_interpret(target.clone(), "name", Vec::new()) {
                 Ok(name) => name,

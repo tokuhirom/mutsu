@@ -617,7 +617,7 @@ impl Interpreter {
             && self
                 .class_mro(&class_name.resolve())
                 .iter()
-                .any(|c| c.as_str() == "IO::Handle")
+                .any(|c| *c == crate::sym!("IO::Handle"))
         {
             let mut new_attrs = attributes.to_map();
             new_attrs.insert("chomp".to_string(), value.clone());

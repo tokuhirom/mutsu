@@ -618,7 +618,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if matches!(class_name.as_str(), "Method" | "Submethod") => attributes
+            } if crate::sym_in!(class_name, "Method" | "Submethod") => attributes
                 .as_map()
                 .get("__mutsu_method_callable")
                 .is_some_and(|callable| {
@@ -1521,7 +1521,7 @@ impl Interpreter {
             && self
                 .class_mro(class_name.as_str())
                 .iter()
-                .any(|c| c.as_str() == "Cool")
+                .any(|c| *c == crate::sym!("Cool"))
             && let Ok(numeric) = self.call_method_with_values(target.clone(), "Numeric", vec![])
             && numeric != target
         {
@@ -1834,7 +1834,7 @@ impl Interpreter {
             && self
                 .class_mro(&class_name.resolve())
                 .iter()
-                .any(|s| s.as_str() == "Range")
+                .any(|s| *s == crate::sym!("Range"))
         {
             return Ok(Value::FALSE);
         }
@@ -2619,7 +2619,7 @@ impl Interpreter {
                 .class_mro(&class_name.resolve())
                 .iter()
                 .enumerate()
-                .filter(|(i, s)| *i == 0 || (s.as_str() != "Any" && s.as_str() != "Mu"))
+                .filter(|(i, s)| *i == 0 || (**s != crate::sym!("Any") && **s != crate::sym!("Mu")))
                 .map(|(_, s)| s.resolve())
                 .collect(),
             // ADR-0019 E1b: authoritative TypeId classifier owner (was

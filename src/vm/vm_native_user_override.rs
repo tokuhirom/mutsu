@@ -25,7 +25,7 @@ impl Interpreter {
         };
         // A `handles <clone>` forwarder is a method of the user class, and
         // the method resolver must see it before the inherited `Mu.clone` row.
-        if method_sym.as_str() == "clone"
+        if method_sym == crate::sym!("clone")
             && let Some(class_name) = inst_class
             && self.has_user_method_sym(class_name, method_sym)
         {
