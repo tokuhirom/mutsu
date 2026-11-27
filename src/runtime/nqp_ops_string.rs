@@ -55,8 +55,7 @@ pub(super) fn refill_codes(
     let codes = normalized(op, text, mode)?;
     // A `Uni` target (`nqp::create(NFD)`, JSON::Fast's string scanner) takes
     // the codepoints straight into its packed store.
-    // Codepoints ARE the result here. str-prim: allow
-    if super::nqp_backing::with_uni_codes_mut(target, |store| store.replace(codes.chars().map(u32::from)))
+    if super::nqp_backing::with_uni_codes_mut(target, |store| store.replace_with_str(&codes))
         .is_some()
     {
         return Ok(());
@@ -75,8 +74,15 @@ pub(super) fn refill_codes(
 pub(super) fn codes_to_string(op: &str, codes: &Value) -> Result<String, RuntimeError> {
     // A `Uni` is read in place: its store is already `uint32` codepoints.
     if let Some(out) = super::nqp_backing::with_uni_codes(codes, |store| {
-        let mut out = String::with_capacity(store.len());
-        for &code in store.as_slice() {
+        let slice = store.as_slice();
+        // All ASCII (every JSON key and URL): each codepoint is its byte, so
+        // the bytes are valid UTF-8 and need no per-char encoding.
+        if slice.iter().all(|&code| code < 0x80) {
+            let bytes: Vec<u8> = slice.iter().map(|&code| code as u8).collect();
+            return Ok(String::from_utf8(bytes).unwrap_or_default());
+        }
+        let mut out = String::with_capacity(slice.len());
+        for &code in slice {
             match char::from_u32(code) {
                 Some(ch) => out.push(ch),
                 None => return Err(not_a_codepoint(op, &code.to_string())),

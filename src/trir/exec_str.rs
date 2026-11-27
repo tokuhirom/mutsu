@@ -66,6 +66,14 @@ impl Interpreter {
     /// `src` is the string it holds, and remembering `src`'s otherwise.
     // Cost: O(1) on a memo hit, plus `char_at`.
     pub(super) fn trir_ord_at_memo(memo: &mut super::frame::StrMemo, src: &Value, pos: i64) -> i64 {
+        // A hit by identity: `src` is the very body the memo holds. One
+        // pointer compare, where reading either side's text matches on the
+        // body's representation first.
+        if let (Some((s, idx)), Some(body)) = (memo.as_ref(), src.as_str_body())
+            && std::ptr::eq(std::sync::Arc::as_ptr(s), body)
+        {
+            return crate::builtins::str_prim::ordat_in(s.as_str(), idx, pos);
+        }
         // A hit by the text's address: the memo's string and `src` read the
         // same buffer, so the index describes it. A tag probe, where `view()`
         // decodes through the out-of-line kind match and bumps the refcount.

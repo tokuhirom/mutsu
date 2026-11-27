@@ -465,9 +465,25 @@ impl Interpreter {
                 | TrOp::ElemsLocal(_)
                 | TrOp::ShiftILocal(_)
                 | TrOp::PushILocal(_)
-                | TrOp::PushILocalVoid(_)
-                | TrOp::ShiftIStoreLocal { .. }
-                | TrOp::PushISlotLocalVoid { .. } => self.trir_list_op(&ops[ip], nbase, obase)?,
+                | TrOp::PushILocalVoid(_) => self.trir_list_op(&ops[ip], obase)?,
+                // The two ops of a codepoint-copying loop (JSON::Fast's
+                // `unjsonify-string` runs one of each per character) get arms
+                // of their own: routed through `trir_list_op` they paid a
+                // second jump-table dispatch on the op they had just matched.
+                TrOp::ShiftIStoreLocal {
+                    list,
+                    slot,
+                    bits,
+                    signed,
+                } => {
+                    let v = self.trir_shift_int_local(obase + *list as usize)?;
+                    self.trir.nl[nbase + *slot as usize] =
+                        super::exec_str::wrap_sized(v, *bits, *signed);
+                }
+                TrOp::PushISlotLocalVoid { list, slot } => {
+                    let i = self.trir.nl[nbase + *slot as usize];
+                    self.trir_push_int_local(obase + *list as usize, i)?;
+                }
                 TrOp::JumpIfNonEmptyLocal { slot, target } => {
                     if self.trir_local_elems(obase + *slot as usize)? != 0 {
                         ip = *target as usize;

@@ -196,10 +196,10 @@ impl Interpreter {
             self.try_trir_gen_link(chunk, site, call, frame, compiled_fns)
         );
         // A parameter type check can resolve a type name, whose miss path
-        // reads the top frame: push the deferred entries first.
-        if callee.params.iter().any(|p| p.check.is_some()) {
-            self.trir_observe();
-        }
+        // reads the top frame: the deferred entries are pushed before the
+        // first check that cannot be decided from the type tables alone
+        // (`uni_accepts_by_own_type`, JSON::Fast's `Uni:D \codes`).
+        let mut observed = false;
         let n_values = call
             .args
             .iter()
@@ -254,6 +254,13 @@ impl Interpreter {
                     v
                 }
             };
+            if !observed
+                && let Some(check) = &p.check
+                && !self.uni_accepts_by_own_type(&check.base, &val)
+            {
+                self.trir_observe();
+                observed = true;
+            }
             // A junction autothreads and an aggregate shares its container
             // into a `$` parameter; both are the generic binder's business.
             let declines = matches!(

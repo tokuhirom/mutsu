@@ -9,7 +9,9 @@
 # sink-position `nqp::if` arms of different kinds, and the
 # `unjsonify-string` drain loop (`elems` / `shift_i` / `push_i`), whose body
 # fuses to slot-to-slot list ops and whose back edge is rotated onto the
-# emptiness test, once plain and once through a wrapping `uint8`.
+# emptiness test, once plain and once through a wrapping `uint8`; and
+# `$x = nqp::add_i($x, 1)` (and `sub_i`) on a local and through an `is rw`
+# reference, fused to one constant-add op, across the int64 wrap.
 #
 # Pinned: TRIR on == TRIR off == the transcript (checked against rakudo), the
 # routines are accepted, and the chunks really contain the fused ops, so the
@@ -65,15 +67,17 @@ is $on-out, q:to/END/, 'the transcript carries the expected answers';
 
 
     250,251,252,253,254,255,0,1,2
+    9223372036854775806:5
+    -9223372036854775807:2
     END
 
-my @routines = <cmp-slot cmp-computed chains sink-arms drain drain-u8>;
+my @routines = <cmp-slot cmp-computed chains sink-arms drain drain-u8 up-rw down-rw steps>;
 my @accepted = $on-err.lines.map({ m/^ 'trir: ' (\S+) ' accepted'/ ?? ~$0 !! Empty }).grep(* (elem) @routines);
 is-deeply @accepted.sort.List, @routines.sort.List, 'every shape routine is accepted into TRIR'
     or diag $on-err;
 
 my @fused = <JumpCmpLC JumpCmpC JumpCmp JumpIfEmptyLocal PushILocalVoid
-    JumpIfNonEmptyLocal ShiftIStoreLocal PushISlotLocalVoid>;
+    JumpIfNonEmptyLocal ShiftIStoreLocal PushISlotLocalVoid AddRefICVoid>;
 my @seen = @fused.grep(-> $op { $on-err.contains($op ~ ' {') || $on-err.contains($op ~ '(') });
 is-deeply @seen.List, @fused.List, 'the chunks carry every fused op form'
     or diag $on-err;

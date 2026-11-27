@@ -83,6 +83,24 @@ sub drain-u8(int $n) {
     nqp::join(',', $r)
 }
 
+# `$x = nqp::add_i($x, 1)` / `nqp::sub_i($x, 1)` on a local and through an
+# `is rw` reference: each is one step op, wrapping like `add_i` does.
+sub up-rw(int $p is rw, int $n) {
+    my int $k = $n;
+    nqp::while($k, nqp::stmts(($p = nqp::add_i($p, 1)), ($k = nqp::sub_i($k, 1))));
+}
+sub down-rw(int $p is rw, int $n) {
+    my int $k = 0;
+    nqp::while(nqp::islt_i($k, $n), nqp::stmts(($p = nqp::sub_i($p, 1)), ($k = nqp::add_i($k, 1))));
+}
+sub steps(int $n) {
+    my int $p = 9223372036854775806;
+    up-rw($p, $n);
+    my int $q = 5;
+    down-rw($q, $n);
+    $p ~ ':' ~ $q
+}
+
 say cmp-slot($_) for -4, -3, 0, 5, 6, 7, 8;
 say cmp-computed($_, 10 - $_) for 0, 3, 7;
 say cmp-computed(9, 2);
@@ -91,3 +109,4 @@ say sink-arms($_) for 0, 1, 2, 3;
 say drain("a-b\tc\nd--e");
 say drain("");
 say drain-u8($_) for 0, 9;
+say steps($_) for 0, 3;
