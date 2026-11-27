@@ -941,14 +941,14 @@ impl Env {
         // `Interpreter::new` before any `run()`, so this copy is complete, and
         // `or_insert` keeps a hoisted dynamic ahead of it in the impossible
         // case that both hold a key.
+        // The enum constants both tiers answer are not copied: every tier
+        // answers them, and their symbols are born latched as env keys.
         if let Some(global) = global_base() {
-            for (k, v) in global.iter() {
-                base.insert_if_absent(*k, || v.clone());
-            }
+            base.absorb(global);
         }
         // Same reason as `set_global_base`: this tier answers `get_sym`, so
-        // every key in it has to be latched.
-        for key in base.keys() {
+        // every key it holds has to be latched.
+        for key in base.stored_keys() {
             crate::symbol::mark_env_key(*key);
         }
         self.dyn_base = Some(Arc::new(base));

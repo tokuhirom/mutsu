@@ -354,8 +354,8 @@ fn total_memory(_: &Value, _: &[Value]) -> Answer {
 fn signal(_: &Value, args: &[Value]) -> Answer {
     Some(Ok(Value::int(match args[0].view() {
         ValueView::Int(n) => n,
-        ValueView::Str(s) => crate::runtime::signal_table::signal_number(&s),
-        ValueView::Enum { key, .. } => crate::runtime::signal_table::signal_number(&key.resolve()),
+        ValueView::Str(s) => crate::signal_table::signal_number(&s),
+        ValueView::Enum { key, .. } => crate::signal_table::signal_number(&key.resolve()),
         _ => 0,
     })))
 }

@@ -22,6 +22,14 @@
 //!
 //! A clone shares a built value (a `Value` clone is a handle) and carries an
 //! unbuilt entry unbuilt, as the `Arc`'d map shared its values before.
+//!
+//! Every base tier also answers the core enums' constants (`Order`, `Less`,
+//! `Order::Less`, ...) from [`crate::builtin_enum_consts`], below its map:
+//! they are the same in every tier of the process, built on first lookup into
+//! process-wide slots, and recognized by a symbol flag, so a miss on any other
+//! name costs one flag load. Like the lazy entries, they count for
+//! `contains_key` and the whole-tier walks; [`DynBase::absorb`] and
+//! [`DynBase::stored_keys`] leave them out, since every tier has them anyway.
 
 use std::sync::OnceLock;
 
@@ -66,8 +74,11 @@ impl DynBase {
     pub(crate) fn get(&self, key: &Symbol) -> Option<&Value> {
         match self.map.get(key) {
             Some(value) => Some(value),
-            None if self.lazy.is_empty() => None,
-            None => self.lazy_get(*key),
+            None => match crate::builtin_enum_consts::get(*key) {
+                Some(value) => Some(value),
+                None if self.lazy.is_empty() => None,
+                None => self.lazy_get(*key),
+            },
         }
     }
 
@@ -83,7 +94,9 @@ impl DynBase {
     // Cost: O(1) expected, plus O(l); never builds.
     #[inline]
     pub(crate) fn contains_key(&self, key: &Symbol) -> bool {
-        self.map.contains_key(key) || self.lazy.iter().any(|entry| entry.key == *key)
+        self.map.contains_key(key)
+            || crate::builtin_enum_consts::contains(*key)
+            || self.lazy.iter().any(|entry| entry.key == *key)
     }
 
     /// Whether `key` is a lazy entry that has not been built yet.
@@ -96,25 +109,57 @@ impl DynBase {
                 .any(|entry| entry.key == *key && entry.value.get().is_none())
     }
 
-    /// Every key, lazy ones included, without building any.
-    // Cost: O(1) to create; walking it is O(n + l).
+    /// Every key, lazy ones and the enum constants included, without building
+    /// any (the constants' names are interned on the first such walk).
+    // Cost: O(1) to create; walking it is O(n + l + C), C = enum constants.
     pub(crate) fn keys(&self) -> impl Iterator<Item = &Symbol> {
+        let consts = crate::builtin_enum_consts::keys()
+            .filter(|key| !self.map.contains_key(*key))
+            .map(|key| -> &Symbol { key });
+        self.stored_keys().chain(consts)
+    }
+
+    /// The keys this tier holds itself: its map and its lazy entries, not the
+    /// enum constants every tier answers.
+    // Cost: O(1) to create; walking it is O(n + l).
+    pub(crate) fn stored_keys(&self) -> impl Iterator<Item = &Symbol> {
         self.map
             .keys()
             .chain(self.lazy.iter().map(|entry| &entry.key))
     }
 
-    /// Every entry, building the lazy ones.
-    // Cost: O(1) to create; walking it is O(n + l), plus each lazy entry's
-    // first build.
+    /// Every entry, building the lazy ones and the enum constants.
+    // Cost: O(1) to create; walking it is O(n + l + C), plus each lazy entry's
+    // and constant's first build.
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&Symbol, &Value)> {
+        let consts = crate::builtin_enum_consts::iter()
+            .filter(|(key, _)| !self.map.contains_key(*key))
+            .map(|(key, value)| -> (&Symbol, &Value) { (key, value) });
         self.map
             .iter()
             .chain(self.lazy.iter().map(|entry| (&entry.key, entry.value())))
+            .chain(consts)
+    }
+
+    /// Copy `other`'s own entries (its map and its lazy entries, unbuilt ones
+    /// staying unbuilt) into this tier, keeping the keys it already has.
+    // Cost: O(n + l) of `other`.
+    pub(crate) fn absorb(&mut self, other: &DynBase) {
+        for (key, value) in other.map.iter() {
+            if !self.contains_key(key) {
+                self.map.insert(*key, value.clone());
+            }
+        }
+        for entry in &other.lazy {
+            if !self.contains_key(&entry.key) {
+                self.lazy.push(entry.clone());
+            }
+        }
     }
 
     /// The values that exist: every map entry and the lazy entries already
-    /// built (the GC's roots; an unbuilt entry holds nothing yet).
+    /// built (the GC's roots; an unbuilt entry holds nothing yet). The enum
+    /// constants are plain enum data in process-wide slots, nothing to trace.
     // Cost: O(1) to create; walking it is O(n + l).
     pub(crate) fn built_values(&self) -> impl Iterator<Item = &Value> {
         self.map
@@ -127,14 +172,6 @@ impl DynBase {
     pub(crate) fn insert(&mut self, key: Symbol, value: Value) {
         self.lazy.retain(|entry| entry.key != key);
         self.map.insert(key, value);
-    }
-
-    /// Set `key` unless the tier already has it.
-    // Cost: O(1) expected, plus O(l).
-    pub(crate) fn insert_if_absent(&mut self, key: Symbol, value: impl FnOnce() -> Value) {
-        if !self.contains_key(&key) {
-            self.map.insert(key, value());
-        }
     }
 
     /// Give `key` a value built by `build` on its first lookup, unless the
