@@ -11,10 +11,13 @@ caller's same-named variable.
 A lean parameter is a readonly binding, and nothing may rebind it. So
 `slot_frame_body_ok` now admits that call when it has no arguments, no
 modifier and an unquoted name other than `VAR`, and its receiver slot is a
-parameter. `exec_call_method_mut_site` then runs it as the call on the
-parameter's value it is, as long as the op belongs to the innermost slot
-frame's own body (`VmCallFrame.slot_body`). A built-in row answers it through
-the `CallMethod` site lane, so `$s.chars` costs what it does on a value.
+parameter. The call plan builds the slot frame its own copy of the body once
+(`slot_frame_body_code`). In the copy, that op is the `CallMethod` on the
+parameter's value it is, and the copy is marked `CompiledCode.slot_frame_body`.
+Nothing is decided per call, so other method calls pay nothing for it. A first
+version decided at every `CallMethodMut` and cost `method-call` and its kin
+0.2-0.4%. The copy's call takes the `CallMethod` site lane as is, so
+`$s.chars` costs what it does on a value.
 
 The work found two problems that had been there since the slot frame first
 shipped:
