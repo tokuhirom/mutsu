@@ -191,19 +191,28 @@ fn constant(name: &str) -> Option<Constant> {
     if !name.as_bytes().first().is_some_and(u8::is_ascii_uppercase) {
         return None;
     }
-    if let Some((type_name, variant)) = name.split_once("::") {
-        let enum_index = enum_named(type_name)?;
-        let v = ENUMS[enum_index].variant_index(variant)?;
-        return Some(Constant {
-            enum_index,
-            slot: v + 1,
-        });
-    }
-    if let Some(enum_index) = enum_named(name) {
-        return Some(Constant {
-            enum_index,
-            slot: 0,
-        });
+    // A type name, or one of the known `Enum::Variant` texts: match the
+    // enum's name as a prefix, then nothing or the separator and a variant (this
+    // runs once per symbol, when its flags are computed, so it cannot reach
+    // for `qualified`, which interns).
+    for (enum_index, e) in ENUMS.iter().enumerate() {
+        let Some(rest) = name.strip_prefix(e.name) else {
+            continue;
+        };
+        if rest.is_empty() {
+            return Some(Constant {
+                enum_index,
+                slot: 0,
+            });
+        }
+        if let Some(variant) = rest.strip_prefix(':').and_then(|r| r.strip_prefix(':'))
+            && let Some(v) = e.variant_index(variant)
+        {
+            return Some(Constant {
+                enum_index,
+                slot: v + 1,
+            });
+        }
     }
     variant_named(name).map(|(enum_index, v)| Constant {
         enum_index,
