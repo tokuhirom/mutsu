@@ -1132,6 +1132,13 @@ impl Interpreter {
                     .map(|t| t.deref_container())
                     .unwrap_or_else(|| text_val.clone());
                 self.env.insert_sym(topic, subject_topic);
+                // The engine builds its target from this payload rather than
+                // copying `text` (`MatchTarget::pin_subject`); the pin also
+                // covers the `target_or_new` below.
+                let _pin = match text_val.view() {
+                    ValueView::Str(subject) => Some(crate::runtime::MatchTarget::pin_subject(&subject)),
+                    _ => None,
+                };
                 let match_result = self.regex_match_with_captures_value(right, text);
                 if let Some(v) = &saved_topic {
                     self.env.insert_sym(topic, v.clone());

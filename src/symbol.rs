@@ -163,6 +163,18 @@ pub(crate) fn for_each_capture_shaped_symbol(mut f: impl FnMut(Symbol)) {
     }
 }
 
+/// [`for_each_capture_shaped_symbol`] restricted to the numeric (`0`, `1`,
+/// ...) symbols. The same rule holds: `f` must not intern a symbol.
+// Cost: O(n), n = numeric capture symbols interned so far.
+pub(crate) fn for_each_numeric_capture_symbol(mut f: impl FnMut(Symbol)) {
+    let guard = capture_shaped()
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    for &sym in guard.0.iter() {
+        f(sym);
+    }
+}
+
 /// [`for_each_capture_shaped_symbol`] restricted to the `<name>`-shaped
 /// symbols. The same rule holds: `f` must not intern a symbol.
 // Cost: O(a), a = angle-shaped symbols interned so far.

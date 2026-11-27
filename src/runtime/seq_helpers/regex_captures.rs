@@ -23,16 +23,31 @@ impl Interpreter {
         // must be interned before it can be a key), so probing each of its
         // entries is O(capture names) -- a handful -- instead of O(env) with a
         // `String` allocation per key, which was 40% of `bench-string`.
-        let (numeric_keys, angle_keys) = crate::symbol::capture_shaped_symbols();
-        for key in numeric_keys {
+        //
+        // Only the keys this env actually holds are collected, under the
+        // registry's read lock, and the env is mutated after it is released.
+        // Copying the whole registry instead cost two `Vec` allocations and
+        // copies on every match attempt, to find -- in the common case of a
+        // regex with no captures in scope -- nothing to clear.
+        // `contains_key_sym` interns nothing, as `for_each_capture_shaped_symbol`
+        // requires.
+        let mut numeric = Vec::new();
+        crate::symbol::for_each_numeric_capture_symbol(|key| {
             if self.env.contains_key_sym(key) {
-                self.env.insert_sym(key, Value::NIL);
+                numeric.push(key);
             }
+        });
+        let mut angle = Vec::new();
+        crate::symbol::for_each_angle_capture_symbol(|key| {
+            if self.env.contains_key_sym(key) {
+                angle.push(key);
+            }
+        });
+        for key in numeric {
+            self.env.insert_sym(key, Value::NIL);
         }
-        for key in angle_keys {
-            if self.env.contains_key_sym(key) {
-                self.env.remove_sym(key);
-            }
+        for key in angle {
+            self.env.remove_sym(key);
         }
     }
 
