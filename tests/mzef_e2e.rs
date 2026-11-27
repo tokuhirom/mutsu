@@ -55,7 +55,13 @@ fn run_in(exe: &str, args: &[&str], home: &Path, cwd: &Path) -> Output {
         .env("TMPDIR", &tmp)
         .env_remove("MUTSULIB")
         .env_remove("RAKULIB");
-    for var in ["http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "all_proxy"] {
+    for var in [
+        "http_proxy",
+        "https_proxy",
+        "HTTP_PROXY",
+        "HTTPS_PROXY",
+        "all_proxy",
+    ] {
         cmd.env(var, "http://127.0.0.1:9");
     }
     cmd.output().expect("failed to spawn")
@@ -83,11 +89,18 @@ fn mzef_installs_tests_lists_and_uninstalls_a_local_dist() {
         &dist,
     );
     let dist_arg = dist.to_str().expect("utf-8 scratch path");
-    let use_it = ["-e", "use Mzef::E2E::Fixture; print fixture-greeting('e2e')"];
+    let use_it = [
+        "-e",
+        "use Mzef::E2E::Fixture; print fixture-greeting('e2e')",
+    ];
 
     // Not installed yet: `use` fails.
     let before = run_in(mutsu, &use_it, &home, &root);
-    assert!(!before.status.success(), "module loads before install:\n{}", text(&before));
+    assert!(
+        !before.status.success(),
+        "module loads before install:\n{}",
+        text(&before)
+    );
 
     // 1. Install with tests ON.
     let install = run_in(mzef, &["install", dist_arg], &home, &root);
@@ -97,16 +110,27 @@ fn mzef_installs_tests_lists_and_uninstalls_a_local_dist() {
         log.contains(&format!("Testing [OK] for {FIXTURE_IDENTITY}")),
         "the dist's own tests did not pass:\n{log}"
     );
-    assert!(log.contains(&format!("Installing: {FIXTURE_IDENTITY}")), "no install step:\n{log}");
+    assert!(
+        log.contains(&format!("Installing: {FIXTURE_IDENTITY}")),
+        "no install step:\n{log}"
+    );
 
     // 2. The installed module loads.
     let loaded = run_in(mutsu, &use_it, &home, &root);
-    assert!(loaded.status.success(), "installed module does not load:\n{}", text(&loaded));
+    assert!(
+        loaded.status.success(),
+        "installed module does not load:\n{}",
+        text(&loaded)
+    );
     assert_eq!(String::from_utf8_lossy(&loaded.stdout), "hello, e2e");
 
     // 3. It is listed.
     let list = run_in(mzef, &["list", "--installed"], &home, &root);
-    assert!(list.status.success(), "mzef list --installed failed:\n{}", text(&list));
+    assert!(
+        list.status.success(),
+        "mzef list --installed failed:\n{}",
+        text(&list)
+    );
     assert!(
         String::from_utf8_lossy(&list.stdout).contains(FIXTURE_IDENTITY),
         "installed dist not listed:\n{}",
@@ -115,9 +139,17 @@ fn mzef_installs_tests_lists_and_uninstalls_a_local_dist() {
 
     // 4. Uninstall, and it no longer loads.
     let uninstall = run_in(mzef, &["uninstall", "Mzef::E2E::Fixture"], &home, &root);
-    assert!(uninstall.status.success(), "mzef uninstall failed:\n{}", text(&uninstall));
+    assert!(
+        uninstall.status.success(),
+        "mzef uninstall failed:\n{}",
+        text(&uninstall)
+    );
     let after = run_in(mutsu, &use_it, &home, &root);
-    assert!(!after.status.success(), "module still loads after uninstall:\n{}", text(&after));
+    assert!(
+        !after.status.success(),
+        "module still loads after uninstall:\n{}",
+        text(&after)
+    );
     let after_err = String::from_utf8_lossy(&after.stderr);
     assert!(
         after_err.contains("Could not find Mzef::E2E::Fixture"),
@@ -157,16 +189,20 @@ fn mzef_install_with_failing_tests_exits_nonzero() {
     let install = run_in(mzef, &["install", dist.to_str().unwrap()], &home, &root);
     let log = text(&install);
     assert_eq!(install.status.code(), Some(1), "expected exit 1:\n{log}");
-    assert!(log.contains("Testing [FAIL]"), "no test failure reported:\n{log}");
-    assert!(!log.contains("Unknown function"), "&*EXIT did not resolve:\n{log}");
-
-    let loaded = run_in(
-        mutsu,
-        &["-e", "use Mzef::E2E::Fixture"],
-        &home,
-        &root,
+    assert!(
+        log.contains("Testing [FAIL]"),
+        "no test failure reported:\n{log}"
     );
-    assert!(!loaded.status.success(), "a dist that failed its tests was installed");
+    assert!(
+        !log.contains("Unknown function"),
+        "&*EXIT did not resolve:\n{log}"
+    );
+
+    let loaded = run_in(mutsu, &["-e", "use Mzef::E2E::Fixture"], &home, &root);
+    assert!(
+        !loaded.status.success(),
+        "a dist that failed its tests was installed"
+    );
 
     let _ = std::fs::remove_dir_all(&root);
 }
