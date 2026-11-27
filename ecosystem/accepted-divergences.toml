@@ -256,3 +256,16 @@ reason = """the test runs a child with `MVM_SPESH_LOG=<file>` and expects MoarVM
 write that log. `MVM_SPESH_LOG` is a MoarVM implementation artefact the language does not specify \
 and mutsu has no spesh; the issue recommended accepting the divergence and the maintainer closed it \
 as completed (2026-11-08, #16953)."""
+
+[[divergence]]
+dist = "Rakuish"
+file = "t/82-errors-recall.t"
+shape = { verdict = "fail", ok = 87, nok = 1, plan = 88, first_failure = "full 模式给出完整回放（11 行）" }
+issue = 19244
+reason = """test 52 counts the lines Rakuish's `errors full` prints from `$ex.backtrace.list`, and \
+that count pins rakudo's internal backtrace shape: `throw`/`die` frames living in \
+`SETTING::src/core.c/{Exception,control}.rakumod`, a frame for an inlined `do { }` block, and module \
+frame files spelled `"/path/Mod.rakumod (Mod)"` (a precompilation artefact also visible through \
+`$?FILE`). mutsu prints 16 lines to rakudo's 11; the other 87 assertions match after #19242. \
+Matching that shape needs a hot-path frame push and a `$?FILE` spelling decision, tracked as \
+#19244 for after the release (maintainer decision 2026-11-27, option A)."""
