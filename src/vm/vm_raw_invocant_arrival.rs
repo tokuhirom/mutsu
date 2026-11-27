@@ -245,9 +245,7 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         pd: Option<&crate::ast::ParamDef>,
     ) -> Option<Value> {
-        if self.pending_raw_invocant.is_none() {
-            return None;
-        }
+        self.pending_raw_invocant.as_ref()?;
         self.take_implicit_self_invocant_arrival(method_sym.as_str(), pd)
     }
 }
