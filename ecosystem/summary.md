@@ -7,19 +7,18 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **99.9%** (1339/1340) |
-| file parity | 100.0% (5161/5162) |
+| **dist parity** (published headline) | **100.0%** (1340/1340) |
+| file parity | 100.0% (5161/5161) |
 | assertion parity | 100.0% |
-| accepted divergences (out of the KPI, ADR-0130) | 13 file(s) |
+| accepted divergences (out of the KPI, ADR-0130) | 14 file(s) |
 | out-of-scope distributions (`exclude.txt`, out of the KPI) | 14 |
 
 | status | distributions |
 |---|---|
 | `blocked_dep` | 3 |
 | `blocked_load` | 3 |
-| `green` | 1339 |
+| `green` | 1340 |
 | `no_baseline` | 328 |
-| `partial` | 1 |
 | out of scope (`exclude.txt`, any status) | 14 |
 
 ## Regressed since the previous ledger
@@ -1304,7 +1303,7 @@ _None._
 | `RakudoContainerfileBuilder` | 1.0.0 | no_baseline | — |
 | `RakudoPrereq` | 1.001005 | green | 2/2 |
 | `Rakuest` | 0.8.2 | green | 5/5 |
-| `Rakuish` | 0.141.1 | partial | 28/29 |
+| `Rakuish` | 0.141.1 | green | 28/28 |
 | `RakuPM` | 1.1.6 | green | 27/27 |
 | `RakuPMVerifyTmp` | 0.1.1 | green | 1/1 |
 | `RakupodObject` | 0.0.7 | no_baseline | — |
