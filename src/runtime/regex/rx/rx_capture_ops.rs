@@ -84,16 +84,11 @@ impl Interpreter {
                     // A body that captured nothing is a leaf sub-Match: the slot
                     // `capture_group_delta` builds over an empty level, pushed
                     // without the delta around it.
-                    let leaf = crate::runtime::CapNode {
-                        from,
-                        to: pos,
-                        ..Default::default()
-                    };
                     levels.edit(|s| {
                         s.push_positional(crate::runtime::PosSlot {
                             from,
                             to: pos,
-                            subcap: Some(std::sync::Arc::new(leaf)),
+                            subcap: None,
                             ..Default::default()
                         })
                     });

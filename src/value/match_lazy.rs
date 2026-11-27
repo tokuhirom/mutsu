@@ -454,29 +454,30 @@ pub(super) fn group_may_dispatch(sc: &CapNode) -> bool {
     (sc.children.is_some() || sc.action_name.is_some() || sc.sym.is_some()) && !sc.reduced.get()
 }
 
-/// Leaf Match for a quantified-capture entry with a recorded span.
+/// Leaf Match for a capture slot or quantified-capture entry that carries
+/// only its span (no inner capture node).
 ///
-/// Under a *grammar* parse this has to be a lazy `ValueRepr::Match` rather than
-/// the eager `Instance` the plain-regex path uses: the leaf reports the
-/// grammar's cursor class (raku: `G.parse(...)[0].^name` is `G`), and the repr
-/// — not the class name — is what tells every consumer "this is a Match".
+/// It is the same lazy `ValueRepr::Match` over a span-only node that a slot
+/// holding a leaf node renders as. Under a grammar parse it has to be lazy
+/// anyway: the leaf reports the grammar's cursor class (raku:
+/// `G.parse(...)[0].^name` is `G`), and the repr, not the class name, is what
+/// tells every consumer "this is a Match". A plain regex used to get an eager
+/// `Instance` here instead, which was dearer to build and to read than the
+/// node.
+///
+/// Rendering a span-only slot this way is what lets the compiled engine leave
+/// a capture group whose body captures nothing as a span-only slot
+/// (`rx_capture_op`'s `CloseCapture`). The node is built when the slot is
+/// read, once, rather than on every close of the group while the match
+/// backtracks.
+// Cost: O(1).
 fn span_leaf_match(from: usize, to: usize, target: &MatchTarget) -> Value {
-    if target.cursor_class().is_some() {
-        let caps = crate::value::regex_caps::RegexCaptures {
-            from,
-            to,
-            ..Default::default()
-        };
-        return Value::lazy_match(Arc::new(caps.into_cap_node()), target.clone());
-    }
-    let mut attrs = AttrMap::new();
-    attrs.insert("str", target.span_value(from, to));
-    attrs.insert("from", Value::Int(from as i64));
-    attrs.insert("to", Value::Int(to as i64));
-    attrs.insert("list", Value::array(Vec::new()));
-    attrs.insert("named", Value::hash_bare_values(ValueMap::default()));
-    attrs.insert("orig", Value::str_arc(Arc::clone(target.text())));
-    Value::make_instance(match_class_symbol(), attrs)
+    let caps = crate::value::regex_caps::RegexCaptures {
+        from,
+        to,
+        ..Default::default()
+    };
+    Value::lazy_match(Arc::new(caps.into_cap_node()), target.clone())
 }
 
 impl Value {
