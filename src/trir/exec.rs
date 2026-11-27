@@ -346,6 +346,23 @@ impl Interpreter {
                         Self::trir_ord_at_memo(&mut t.str_memo, &t.ol[obase + *text as usize], pos);
                     self.trir.ns.push(cp);
                 }
+                TrOp::AddLocalIC { slot, c } => {
+                    let v = nat::add_i(self.trir.nl[nbase + *slot as usize], *c as i64);
+                    self.trir.ns.push(v);
+                }
+                TrOp::AddLocalICVoid { slot, c } => {
+                    let s = nbase + *slot as usize;
+                    self.trir.nl[s] = nat::add_i(self.trir.nl[s], *c as i64);
+                }
+                TrOp::AddRefIC { pos_ref, c } => {
+                    let r = self.trir.nl[nbase + *pos_ref as usize] as usize;
+                    let v = nat::add_i(self.trir.nl[r], *c as i64);
+                    self.trir.ns.push(v);
+                }
+                TrOp::AddRefICVoid { pos_ref, c } => {
+                    let r = self.trir.nl[nbase + *pos_ref as usize] as usize;
+                    self.trir.nl[r] = nat::add_i(self.trir.nl[r], *c as i64);
+                }
                 TrOp::OrdAtOuter(n) => {
                     let pos = self.ipop();
                     // Read in place: the operand is not consumed, so cloning
