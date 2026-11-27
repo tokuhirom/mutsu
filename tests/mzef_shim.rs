@@ -6,8 +6,8 @@
 //! These tests exercise the resolution + hand-off offline (no network): if the
 //! shim can make the vendored `zef` print its version, then path resolution,
 //! the `-I` module search path, config-free `use Zef::CLI` loading, and exit
-//! code pass-through all work. The full install/`use` pipeline is covered by
-//! the manual E2E in `docs/mzef-install-pipeline.md`.
+//! code pass-through all work. The full install/`use`/uninstall pipeline is
+//! covered offline by `tests/mzef_e2e.rs`.
 
 use std::process::Command;
 

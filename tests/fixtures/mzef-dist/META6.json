@@ -1,0 +1,16 @@
+{
+  "meta-version": 1,
+  "name": "Mzef::E2E::Fixture",
+  "version": "0.0.1",
+  "auth": "zef:mutsu",
+  "api": "",
+  "description": "Offline fixture distribution for the mzef end-to-end test",
+  "license": "Artistic-2.0",
+  "depends": [],
+  "test-depends": [],
+  "build-depends": [],
+  "provides": {
+    "Mzef::E2E::Fixture": "lib/Mzef/E2E/Fixture.rakumod"
+  },
+  "resources": []
+}

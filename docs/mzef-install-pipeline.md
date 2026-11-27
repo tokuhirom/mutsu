@@ -31,8 +31,9 @@ Legend: ✅ works · ⏳ in progress · ⬜ not yet reached · 🔒 blocked
 | 3 | **Fetch** (download archive) | ✅ | Downloads via the **curl**/**wget** backends (`Proc::Async` shell-out — no native TLS). Unblocked by #4615 + #4617; the **concurrent** multi-candidate fetch `install` drives by #4658 (ADR-0010) — all 16 of Test::META's candidates now fetch their own archive |
 | 4 | **Extract** (untar) | ✅ | Single-dist: #4620 + #4622 + #4627 + #4635/#4641/#4642. Concurrent: fixed by restoring the #4650 `thread_redeclared_vars` gates on top of ADR-0010 (the "extract-matcher rejects the archive" symptom was a child `my` re-declaration clobbering the parent's staged path through the lineage chain) |
 | 5 | Build | ✅ | reached; a pure-Raku dist has nothing to build and passes through |
-| 6 | Test | ⏳ | The phase RUNS: `zef install JSON::OptIn` (no `--/test`) does `Testing [OK] → Installing`, and `zef install Test::META` runs all 16 dists' suites concurrently. But **13/16 suites FAIL** — see "Test-phase frontier" below |
+| 6 | Test | ✅ | `mzef install <dist>` with tests ON stages the dist and runs its own suite against the staged repo (`-I CompUnit::Repository::Staging#name(site)#PATH`), then installs. This had regressed (#19246, 2026-11-27: since #14914 the staged repo's `path-spec` spells its class out, and `-I` ignored that spelling) and a failing suite then died with `Unknown function: EXIT` instead of exiting 1 (#19247). Both pinned offline by `tests/mzef_e2e.rs`. Per-suite standing of real dists: "Test-phase frontier" below |
 | 7 | Install into site repo | ✅ | **a dependency-free dist installs and is then `use`-able**; a dependency-ful one too: `zef install --/test Test::META` installs **all 13 dists** end-to-end |
+| 8 | List / uninstall | ✅ | `mzef list --installed` lists the site repo; `mzef uninstall <dist>` removes the dist's index entry, sources, resources and scripts so `use` fails afterwards (it used to report success and leave everything loadable — #19248). Pinned by `tests/mzef_e2e.rs` |
 
 **So: the whole install pipeline works, including for a dependency-ful dist.**
 A real dist from the live fez ecosystem downloads, extracts, installs into the
@@ -454,7 +455,9 @@ Verified E2E (fresh `$HOME`, release build): `mzef info JSON::OptIn` returns
 full fez metadata, and `mzef install JSON::OptIn` (tests ON) runs
 `Testing [OK] → Installing`, after which `mutsu -e 'use JSON::OptIn'` loads it
 from the fresh site repo. Pin: `tests/mzef_shim.rs` (offline `--version`
-resolution) + this manual install E2E. **B3 leftover:** the release packaging
+resolution) and `tests/mzef_e2e.rs` (offline install with tests ON → `use` →
+`list --installed` → `uninstall` → `use` fails, over the fixture dist in
+`tests/fixtures/mzef-dist`, plus a failing-suite install that must exit 1). **B3 leftover:** the release packaging
 must place `vendor/zef` at `<prefix>/share/mutsu/zef` next to `bin/mutsu` and
 `bin/mzef` (the shim already probes that path first).
 
