@@ -21,14 +21,20 @@ oracle; install the prebuilt instead.
 ```
 
 It takes a few seconds and needs no compiler: the rakudo.org archive is a self-contained,
-relocatable tree. The script is idempotent — if a working `raku` is already on `PATH` it
-reports the version and exits 0, so it is safe to run at the start of any session.
+relocatable tree. It installs the release pinned in **`.rakudo-version`** at the repository
+root — the one rakudo release the oracle, the bench CI's ratio baseline (`bench.yml`) and the
+ecosystem sweep all use, so an expected output checked here is the rakudo the numbers are
+measured against. The script is idempotent: if `raku` of that release is already on `PATH` it
+reports the version and exits 0, so it is safe to run at the start of any session. A `raku` of
+another release is not replaced in place; the pinned one is installed next to it and symlinked
+into the bindir.
 
 What it does:
 
 1. Fetches the JSON release index from `https://rakudo.org/dl/rakudo`.
-2. Selects the newest entry with `type: archive`, `backend: moar`, and this machine's
-   `platform`/`arch`, ordered by `(ver, build_rev)`.
+2. Selects the entries with `type: archive`, `backend: moar`, this machine's
+   `platform`/`arch` and the pinned `ver`, and takes the highest `build_rev` (with `--latest`:
+   the newest entry, ordered by `(ver, build_rev)`).
 3. Downloads the tarball and verifies its SHA256 against the published `.checksums.txt`.
 4. Unpacks it to `~/.local/rakudo/<release>/` and symlinks `bin/*` into `~/.local/bin/`.
 5. Runs `raku -e 'say $*RAKU.compiler.version'` to prove the install works, and warns if the
@@ -45,10 +51,20 @@ over the filtered archive entries is the correct selection.
 | --- | --- |
 | `--prefix DIR` | Unpack location (default `~/.local/rakudo`, or `$RAKUDO_PREFIX`) |
 | `--bindir DIR` | Symlink location (default `~/.local/bin`, or `$RAKUDO_BINDIR`) |
-| `--version VER` | Pin a release, e.g. `--version 2026.07` |
-| `--force` | Reinstall even when `raku` is already on `PATH` |
+| `--version VER` | Install another release than the pin, e.g. `--version 2026.07` |
+| `--latest` | Install the newest prebuilt instead of the pin |
+| `--force` | Reinstall even when the wanted `raku` is already on `PATH` |
 | `--no-verify` | Skip the SHA256 check |
 | `--print-url` | Print the selected tarball URL and exit (useful for a dry run) |
+| `--print-pin` | Print the release in `.rakudo-version` and exit |
+
+## Moving to a new Rakudo release
+
+Edit `.rakudo-version` (one line, e.g. `2026.11`) and nothing else: `bench.yml`, the ecosystem
+sweep and the session-start hook all read it through this script, and `make check-rakudo-pin`
+fails on a workflow, hook or script that names a release of its own. A bump steps every bench
+ratio at once; bench-trend marks the change on its ratio charts. Re-measure before raising
+`RAKUDO_COMPAT_VERSION` (ADR-0104): it is a compatibility claim, not an install pin.
 
 ## Platform limits
 

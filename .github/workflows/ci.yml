@@ -147,6 +147,12 @@ jobs:
         # workflow other than this one is docs-only and skips `test-check`.
         run: make check-runner-pins
 
+      - name: One rakudo pin
+        # Same reason: a PR that edits only bench.yml, the ecosystem sweep or
+        # the session-start hook is docs-only. `.rakudo-version` is the one
+        # rakudo release they all install (scripts/check-rakudo-pin.sh).
+        run: make check-rakudo-pin
+
       - name: Lane table parses
         # scripts/next-issue reads its lane order from the table in
         # docs/lanes.md, so a malformed row would silently drop a lane. Here

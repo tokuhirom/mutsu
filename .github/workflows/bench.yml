@@ -150,20 +150,19 @@ jobs:
         # NOT `apt-get install rakudo`: Ubuntu noble's universe repo is
         # pinned to the ancient v2022.12 and is never updated, which made the
         # ratio baseline compare mutsu against a ~4-year-old Rakudo instead of
-        # a current one. Pull a pinned prebuilt Linux x86_64 archive straight
-        # from rakudo.org instead. Bump RAKUDO_VERSION/RAKUDO_ARCHIVE by hand
-        # occasionally to track new Rakudo releases (see
-        # https://rakudo.org/downloads/rakudo for the current filename).
-        env:
-          RAKUDO_VERSION: "2026.11"
-          RAKUDO_ARCHIVE: "rakudo-moar-2026.11-01-linux-x86_64-gcc.tar.gz"
+        # a current one. Install the rakudo.org prebuilt of the release pinned
+        # in `.rakudo-version` instead: the same pin the agents' oracle
+        # (install-raku.sh, the session-start hook) and the ecosystem sweep
+        # use, so the ratio baseline cannot drift from them. To move to a new
+        # Rakudo release, bump that file, not this step. install-raku.sh
+        # verifies the archive's SHA256 against rakudo.org's checksum file.
         run: |
-          set +e
-          mkdir -p "$HOME/rakudo"
-          curl -fsSL "https://rakudo.org/dl/rakudo/${RAKUDO_ARCHIVE}" \
-            | tar -xz -C "$HOME/rakudo" --strip-components 1 \
-            && echo "$HOME/rakudo/bin" >> "$GITHUB_PATH"
-          exit 0
+          if .agents/skills/install-raku/install-raku.sh \
+              --prefix "$HOME/rakudo" --bindir "$HOME/rakudo/bin"; then
+            echo "$HOME/rakudo/bin" >> "$GITHUB_PATH"
+          else
+            echo "::warning title=rakudo unavailable::could not install rakudo $(.agents/skills/install-raku/install-raku.sh --print-pin); rakudo columns will be NA"
+          fi
 
       - name: Install rakupp (second reference implementation)
         if: needs.plan.outputs.wall == 'true'
