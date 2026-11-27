@@ -322,6 +322,17 @@ impl Interpreter {
         target: Option<&MatchTarget>,
         rule_name: Option<&str>,
     ) {
+        // No grammar declares a `:my $*x`: the dynvar install, the child walk
+        // and the restore below would all return at once (each tests the same
+        // table), and only the `.made` republish is left. A `~~` hit takes this
+        // path on every match, and the walk's setup (cloning the node's
+        // `regex_vars` for the install) was ~150 instructions of it.
+        if self.regex_state.grammar_rule_dynvar_decls.is_empty() {
+            if let Some(v) = caps.ast.clone() {
+                self.env.insert("made".to_string(), v);
+            }
+            return;
+        }
         // The binding for THIS match, installed before the subtree reduces so a
         // child's *action* accumulates into this match's binding (the
         // `:my %*PLAYED = (); <card>+` shape) rather than a sibling match's.

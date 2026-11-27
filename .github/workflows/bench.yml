@@ -150,20 +150,19 @@ jobs:
         # NOT `apt-get install rakudo`: Ubuntu noble's universe repo is
         # pinned to the ancient v2022.12 and is never updated, which made the
         # ratio baseline compare mutsu against a ~4-year-old Rakudo instead of
-        # a current one. Pull a pinned prebuilt Linux x86_64 archive straight
-        # from rakudo.org instead. Bump RAKUDO_VERSION/RAKUDO_ARCHIVE by hand
-        # occasionally to track new Rakudo releases (see
-        # https://rakudo.org/downloads/rakudo for the current filename).
-        env:
-          RAKUDO_VERSION: "2026.07"
-          RAKUDO_ARCHIVE: "rakudo-moar-2026.07-01-linux-x86_64-gcc.tar.gz"
+        # a current one. Install the rakudo.org prebuilt of the release pinned
+        # in `.rakudo-version` instead: the same pin the agents' oracle
+        # (install-raku.sh, the session-start hook) and the ecosystem sweep
+        # use, so the ratio baseline cannot drift from them. To move to a new
+        # Rakudo release, bump that file, not this step. install-raku.sh
+        # verifies the archive's SHA256 against rakudo.org's checksum file.
         run: |
-          set +e
-          mkdir -p "$HOME/rakudo"
-          curl -fsSL "https://rakudo.org/dl/rakudo/${RAKUDO_ARCHIVE}" \
-            | tar -xz -C "$HOME/rakudo" --strip-components 1 \
-            && echo "$HOME/rakudo/bin" >> "$GITHUB_PATH"
-          exit 0
+          if .agents/skills/install-raku/install-raku.sh \
+              --prefix "$HOME/rakudo" --bindir "$HOME/rakudo/bin"; then
+            echo "$HOME/rakudo/bin" >> "$GITHUB_PATH"
+          else
+            echo "::warning title=rakudo unavailable::could not install rakudo $(.agents/skills/install-raku/install-raku.sh --print-pin); rakudo columns will be NA"
+          fi
 
       - name: Install rakupp (second reference implementation)
         if: needs.plan.outputs.wall == 'true'
@@ -175,15 +174,24 @@ jobs:
         # unannounced engine upgrade would otherwise read as a mutsu change in
         # the ratio series. See https://github.com/ash/rakupp/releases.
         env:
-          RAKUPP_VERSION: "v5.0.1"
+          RAKUPP_VERSION: "v5.9.0"
           RAKUPP_ARCHIVE: "rakupp-linux-x86_64.tar.gz"
+          # The archive's sha256, pinned here rather than only read from the
+          # release's own `.sha256` asset next to it: a checksum fetched from
+          # the same place as the archive proves the download is intact, not
+          # that it is the archive this workflow was reviewed against. Bump it
+          # together with RAKUPP_VERSION (sha256sum of the downloaded archive,
+          # which must also match the release's `.sha256`).
+          RAKUPP_SHA256: "809f11bb17e3baec3dc3a0c63b7887557a98d29efdd849a8537bf0b98839c239"
         run: |
           set +e
           url="https://github.com/ash/rakupp/releases/download/${RAKUPP_VERSION}/${RAKUPP_ARCHIVE}"
           dl=$(mktemp -d)
           if curl -fsSL -o "$dl/$RAKUPP_ARCHIVE" "$url" \
               && curl -fsSL -o "$dl/sum" "$url.sha256" \
-              && [ "$(grep -o '[0-9a-f]\{64\}' "$dl/sum" | head -1)" = "$(sha256sum "$dl/$RAKUPP_ARCHIVE" | cut -d' ' -f1)" ]; then
+              && got=$(sha256sum "$dl/$RAKUPP_ARCHIVE" | cut -d' ' -f1) \
+              && [ "$got" = "$RAKUPP_SHA256" ] \
+              && [ "$(grep -o '[0-9a-f]\{64\}' "$dl/sum" | head -1)" = "$got" ]; then
             mkdir -p "$HOME/rakupp"
             tar -xzf "$dl/$RAKUPP_ARCHIVE" -C "$HOME/rakupp" --strip-components 1 \
               && "$HOME/rakupp/bin/rakupp" --version \
@@ -251,7 +259,14 @@ jobs:
             echo "| benchmark | mutsu median (s) | mutsu min (s) | rakudo median (s) | ratio vs rakudo | rakupp median (s) | ratio vs rakupp | prev mutsu (s) | change |"
             echo "|---|---|---|---|---|---|---|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
-          while IFS=$'\t' read -r name m_med m_min r_med ratio runs p_med p_ratio; do
+          # bench-ci.sh's last two columns are the reference versions; the
+          # summary names them once, from the first row.
+          IFS=$'\t' read -r _ _ _ _ _ _ _ _ rk_ver pp_ver < tmp/bench-results.tsv || true
+          if [ -s tmp/bench-results.tsv ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "Measured against: ${rk_ver:-NA} / ${pp_ver:-NA}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          while IFS=$'\t' read -r name m_med m_min r_med ratio runs p_med p_ratio _; do
             prev="NA"; change="—"
             if [ -f "$HIST" ]; then
               prev=$(awk -F'\t' -v b="$name" '$3==b {v=$4} END {print (v=="" ? "NA" : v)}' "$HIST")
@@ -328,8 +343,6 @@ jobs:
           SHA=$(git rev-parse HEAD)
           DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
           RUNNER_INFO="$(nproc)c-$(uname -m)-${ImageOS:-unknown}"
-          RAKUDO_VER=$(raku --version 2>/dev/null | head -1 | tr '\t' ' ' || echo none)
-          RAKUPP_VER=$(rakupp --version 2>/dev/null | head -1 | tr '\t' ' ' || echo none)
           RUSTC_VER=$(rustc --version 2>/dev/null | tr '\t' ' ' || echo unknown)
           REPO_URL="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           # Retry loop: re-clone fresh each attempt so a concurrent writer's
@@ -354,10 +367,13 @@ jobs:
               # keeps its ten fields and simply has no eleventh.
               sed -i '1s/$/\trakupp_median_s\tratio_mutsu_over_rakupp\trakupp/' bench-history.tsv
             fi
-            while IFS=$'\t' read -r name m_med m_min r_med ratio runs p_med p_ratio; do
+            # The `rakudo` / `rakupp` columns are the versions bench-ci.sh
+            # read off the very binaries it measured (its last two columns),
+            # not a second `--version` of whatever is on PATH here.
+            while IFS=$'\t' read -r name m_med m_min r_med ratio runs p_med p_ratio rk_ver pp_ver; do
               printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-                "$DATE" "$SHA" "$name" "$m_med" "$m_min" "$r_med" "$ratio" "$runs" "$RUNNER_INFO" "$RAKUDO_VER" \
-                "${p_med:-NA}" "${p_ratio:-NA}" "$RAKUPP_VER" \
+                "$DATE" "$SHA" "$name" "$m_med" "$m_min" "$r_med" "$ratio" "$runs" "$RUNNER_INFO" "${rk_ver:-NA}" \
+                "${p_med:-NA}" "${p_ratio:-NA}" "${pp_ver:-NA}" \
                 >> bench-history.tsv
             done < "$GITHUB_WORKSPACE/tmp/bench-results.tsv"
             # The deterministic series lives in its own file (#8085): it has no

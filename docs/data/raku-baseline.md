@@ -8,9 +8,10 @@ failing `flunk`) is not worth chasing on mutsu.
 
 - **Data:** [`raku-baseline.tsv`](raku-baseline.tsv) — one row per roast `.t` file.
 - **Generator:** [`scripts/roast-raku-baseline.sh`](../../scripts/roast-raku-baseline.sh) — re-run to refresh.
-- **Captured:** 2026-10-24, against `Rakudo v2026.09` (default language **6.d**, MoarVM 2026.09).
-  Previous capture: 2026-09-02 against `Rakudo v2026.07` — see "v2026.09 refresh" below
-  for the diff; the one before that (2026-07-12, `v2026.06`) is in "v2026.07 refresh".
+- **Captured:** 2026-11-27, against `Rakudo v2026.11` (default language **6.d**, MoarVM 2026.11),
+  the release pinned in `.rakudo-version`. Previous captures: 2026-10-24 against `v2026.09`
+  ("v2026.11 refresh" below has the diff), 2026-09-02 against `v2026.07` ("v2026.09 refresh"),
+  2026-07-12 against `v2026.06` ("v2026.07 refresh").
 
 ## Columns
 
@@ -42,9 +43,9 @@ failing `flunk`) is not worth chasing on mutsu.
    runs *do* apply fudge (`MUTSU_FUDGE=1`). Therefore a **`raku FAIL`/`SORRY` on a
    whitelisted file is usually a fudge artifact, not raku being worse than
    mutsu** — the real roast harness would `skip`/`todo` those subtests. This is why
-   148 whitelisted files show `raku_status=FAIL` and 71 show `SORRY` (see below);
+   136 whitelisted files show `raku_status=FAIL` and 70 show `SORRY` (see below);
    they are noise for the comparison, not regressions.
-2. **The reference raku is now v2026.09** (default language 6.d), so the old
+2. **The reference raku is now v2026.11** (default language 6.d), so the old
    "6.e-only syntax on a 2022 raku" SORRY class is mostly gone. The remaining
    `SORRY` rows are removed constructs, rakudo-NYI syntax (`::=`, regex `::`),
    or unfudged fudge-dependent lines.
@@ -52,20 +53,43 @@ failing `flunk`) is not worth chasing on mutsu.
    lower bound (fudge only ever skips/todos, never turns a pass into a fail), so
    every `PASS` row is a test raku genuinely passes raw.
 
-## Summary (all 1454 roast `.t` files, unfudged raku v2026.09)
+## Summary (all 1455 roast `.t` files, unfudged raku v2026.11)
 
 | raku_status | count | of which whitelisted | not whitelisted |
 |---|---:|---:|---:|
-| PASS    | 1164 | 1163 | **1** |
-| FAIL    |  135 |  133 | 2 |
-| SORRY   |   82 |   63 | 19 |
-| ABORT   |   48 |   45 | 3 |
+| PASS    | 1166 | 1166 | **0** |
+| FAIL    |  136 |  136 | 0 |
+| SORRY   |   83 |   70 | 13 |
+| ABORT   |   45 |   44 | 1 |
 | TIMEOUT |   15 |   15 | 0 |
 | NOPLAN  |   10 |    9 | 1 |
 
-The 1163 `PASS ∧ whitelisted` are the healthy core (raku and mutsu both pass).
+Every file raku passes raw is now whitelisted: no `PASS ∧ not whitelisted` row is left.
+The 1166 `PASS ∧ whitelisted` are the healthy core (raku and mutsu both pass).
 The FAIL/SORRY/ABORT/TIMEOUT columns on whitelisted rows are dominated by the
 unfudged artifacts of caveat 1.
+
+### v2026.11 refresh (2026-11-27) — diff vs the v2026.09 capture
+
+Re-captured so that `Interpreter::RAKUDO_COMPAT_VERSION` (ADR-0104) can move to `2026.11`,
+the release `.rakudo-version` pins for the oracle, the bench baseline and the ecosystem sweep.
+The new TSV has 1455 rows (`S15-nfg/GraphemeBreakTest-4.t` is new in roast and passes). Status
+counts: 1166 PASS, 136 FAIL, 83 SORRY, 45 ABORT, 15 TIMEOUT, 10 NOPLAN. Only files whose
+`raku_status` changed are listed; every one of them is whitelisted, so none exposes a mutsu gap,
+and no mutsu behaviour changed in this refresh.
+
+- **Raku newly passes (3):** `S02-types/array-shapes.t` (`ABORT→PASS`; 2026.11's shaped-array
+  rework, the release that adds `Array::Jagged*`, `Array::ShapedView` and `Hash::Shaped`),
+  `S32-basics/xxKEY.t` and `S32-io/io-path-unix.t` (`FAIL→PASS`).
+- **Raku newly fails:** `S04-declarations/smiley.t` (`PASS→FAIL`: test 67, "can have untyped
+  variables with :D", dies with "Cannot iterate over a NQPMu type object");
+  `S32-str/CollationTest_NON_IGNORABLE-0.t` (`PASS→FAIL`, 4 of 2300);
+  `S02-types/multi_dimensional_array.t` (`ABORT→FAIL`, now runs to its plan with one
+  `.elems` failure on a partially bounded array); `S12-methods/syntax.t` (`ABORT→SORRY`:
+  "Confused" at `.doit(1): 2, 3`, line 24).
+- **Capture method:** 4 jobs on a 4-core container, then the files whose status differed were
+  re-run serially and the serial result kept. `S10-packages/precompilation.t` had timed out only
+  under the parallel load and stays `PASS`; every other change reproduced serially.
 
 ### v2026.09 refresh (2026-10-24) — diff vs the v2026.07 capture
 

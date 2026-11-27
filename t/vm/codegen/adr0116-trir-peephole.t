@@ -11,7 +11,7 @@
 # fuses to slot-to-slot list ops and whose back edge is rotated onto the
 # emptiness test, once plain and once through a wrapping `uint8`; and
 # `$x = nqp::add_i($x, 1)` (and `sub_i`) on a local and through an `is rw`
-# reference, fused to one step op, across the int64 wrap.
+# reference, fused to one constant-add op, across the int64 wrap.
 #
 # Pinned: TRIR on == TRIR off == the transcript (checked against rakudo), the
 # routines are accepted, and the chunks really contain the fused ops, so the
@@ -77,7 +77,7 @@ is-deeply @accepted.sort.List, @routines.sort.List, 'every shape routine is acce
     or diag $on-err;
 
 my @fused = <JumpCmpLC JumpCmpC JumpCmp JumpIfEmptyLocal PushILocalVoid
-    JumpIfNonEmptyLocal ShiftIStoreLocal PushISlotLocalVoid IncRefIVoid DecRefIVoid>;
+    JumpIfNonEmptyLocal ShiftIStoreLocal PushISlotLocalVoid AddRefICVoid>;
 my @seen = @fused.grep(-> $op { $on-err.contains($op ~ ' {') || $on-err.contains($op ~ '(') });
 is-deeply @seen.List, @fused.List, 'the chunks carry every fused op form'
     or diag $on-err;

@@ -80,7 +80,7 @@ Two consequences worth spelling out:
 
 `.claude/hooks/session-start.sh` (registered as a `SessionStart` hook in `.claude/settings.json`)
 installs the highest Rust version the repo declares, runs `.agents/skills/install-raku/install-raku.sh`
-when `raku` is missing, installs the C shared libraries the bundled batteries `dlopen`, installs and
+when `raku` of the release pinned in `.rakudo-version` is missing, installs the C shared libraries the bundled batteries `dlopen`, installs and
 verifies `bubblewrap`, and warms the crate cache with `cargo fetch`. It is idempotent (~0.3s when
 everything is in place) and does nothing on a local checkout unless `MUTSU_SETUP_FORCE=1` is set —
 a developer machine is pinned by `.mise.toml` and owns its own toolchain.

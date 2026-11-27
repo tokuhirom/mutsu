@@ -1714,6 +1714,20 @@ impl Interpreter {
         // What this tree says about itself is decided once per tree
         // (`regex_value_memo`), not on every match.
         let facts = super::regex::regex_value_memo::regex_value_facts(value, tree, &pattern);
+        self.parse_regex_value_with_facts(&pattern, tree, &facts)
+    }
+
+    /// [`Self::parse_regex_value`] for a caller that already holds the value's
+    /// pattern text, source tree and `regex_value_facts`: the facts lookup
+    /// (a thread-local probe and a compare of the pattern text) is then not
+    /// paid a second time on the same match attempt.
+    pub(super) fn parse_regex_value_with_facts(
+        &self,
+        pattern: &std::sync::Arc<String>,
+        tree: &crate::regex_tree::RegexTree,
+        facts: &super::regex::regex_value_memo::RegexValueFacts,
+    ) -> Option<std::sync::Arc<RegexPattern>> {
+        let _independent = super::regex_parse_numbering::IndependentParseScope::enter();
         // Array interpolation is retained in the source tree for RakuAST,
         // but the established parser resolves its elements at match time.
         // Do not cache the resulting execution plan under either the
@@ -1724,7 +1738,7 @@ impl Interpreter {
         // even though its inner plan was built from the old array value.
         if facts.contains_array_interpolation {
             return self
-                .parse_regex_uncached(&pattern, RegexParseMode::Match)
+                .parse_regex_uncached(pattern, RegexParseMode::Match)
                 .map(std::sync::Arc::new);
         }
         // Angle value interpolation is source-representable, but its lexical
@@ -1735,7 +1749,7 @@ impl Interpreter {
         // `parse_regex` keys such a plan by the values it read
         // (`regex_value_keyed_parse`), so a rebound lexical re-parses.
         if facts.contains_regex_value_interpolation {
-            return self.parse_regex_for_match(&pattern);
+            return self.parse_regex_for_match(pattern);
         }
         let interpolation_names = &facts.interpolation_names;
         // The direct tree plan's VarInterp atom intentionally handles the
@@ -1770,7 +1784,7 @@ impl Interpreter {
                     })
             })
         {
-            return self.parse_regex_for_match(&pattern);
+            return self.parse_regex_for_match(pattern);
         }
         let pkg = self.current_package_sym();
         let tok_gen =
@@ -1806,9 +1820,9 @@ impl Interpreter {
         // its VarInterp atoms read the lexical at match time. The parser
         // fallback interpolates the current value into the plan, so it goes
         // through `parse_regex`, whose caches key by the interpolated text.
-        let Some(parsed) = lower_static_execution_tree(&pattern, tree).map(std::sync::Arc::new)
+        let Some(parsed) = lower_static_execution_tree(pattern, tree).map(std::sync::Arc::new)
         else {
-            let parsed = self.parse_regex_for_match(&pattern);
+            let parsed = self.parse_regex_for_match(pattern);
             if facts.parse_plan_is_static
                 && let Some(plan) = &parsed
             {

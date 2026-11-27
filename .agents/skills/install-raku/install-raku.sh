@@ -3,14 +3,22 @@
 # oracle for mutsu development. No compilation: the archive from rakudo.org is a
 # self-contained, relocatable tree.
 #
-# Usage: install-raku.sh [--prefix DIR] [--bindir DIR] [--version VER]
-#                        [--force] [--no-verify] [--print-url] [--help]
+# Usage: install-raku.sh [--prefix DIR] [--bindir DIR] [--version VER | --latest]
+#                        [--force] [--no-verify] [--print-url] [--print-pin]
+#                        [--help]
+#
+# The release it installs defaults to the one pinned in `.rakudo-version` at
+# the repository root: the single rakudo pin shared by the agents' oracle, the
+# bench CI's ratio baseline and the ecosystem sweep, so they cannot drift apart.
 set -euo pipefail
 
 INDEX_URL="https://rakudo.org/dl/rakudo"
 PREFIX="${RAKUDO_PREFIX:-$HOME/.local/rakudo}"
 BINDIR="${RAKUDO_BINDIR:-$HOME/.local/bin}"
+PIN_FILE="$(cd "$(dirname "$0")/../../.." && pwd)/.rakudo-version"
 WANT_VERSION=""
+LATEST=0
+PRINT_PIN_ONLY=0
 FORCE=0
 VERIFY=1
 PRINT_URL_ONLY=0
@@ -28,10 +36,12 @@ Options:
                   or $RAKUDO_PREFIX)
   --bindir DIR    where `raku`/`rakudo` symlinks are created (default
                   ~/.local/bin, or $RAKUDO_BINDIR)
-  --version VER   install this release (e.g. 2026.07) instead of the newest
-  --force         reinstall even if a working `raku` is already on PATH
+  --version VER   install this release (e.g. 2026.07) instead of the pinned one
+  --latest        install the newest prebuilt instead of the pinned one
+  --force         reinstall even if the wanted `raku` is already on PATH
   --no-verify     skip the SHA256 checksum check
   --print-url     print the selected tarball URL and exit
+  --print-pin     print the release pinned in .rakudo-version and exit
 EOF
 }
 
@@ -40,6 +50,8 @@ while [ $# -gt 0 ]; do
     --prefix) PREFIX="${2:?--prefix needs a directory}"; shift 2 ;;
     --bindir) BINDIR="${2:?--bindir needs a directory}"; shift 2 ;;
     --version) WANT_VERSION="${2:?--version needs a release}"; shift 2 ;;
+    --latest) LATEST=1; shift ;;
+    --print-pin) PRINT_PIN_ONLY=1; shift ;;
     --force) FORCE=1; shift ;;
     --no-verify) VERIFY=0; shift ;;
     --print-url) PRINT_URL_ONLY=1; shift ;;
@@ -48,11 +60,42 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# ---------------------------------------------------------------- preflight --
-if [ "$FORCE" -eq 0 ] && [ "$PRINT_URL_ONLY" -eq 0 ] && command -v raku >/dev/null 2>&1; then
-  info "raku is already on PATH: $(command -v raku)"
-  raku --version >&2 || die "the existing raku is broken; rerun with --force"
+# ---------------------------------------------------------------------- pin --
+# `.rakudo-version` holds one release, e.g. `2026.11`, and nothing else.
+read_pin() {
+  local v
+  [ -f "$PIN_FILE" ] || die "no $PIN_FILE (pass --version VER or --latest)"
+  v="$(head -n1 "$PIN_FILE" | tr -d '[:space:]')"
+  printf '%s\n' "$v" | grep -Eq '^[0-9]{4}\.[0-9]{2}(\.[0-9]+)?$' \
+    || die "$PIN_FILE must hold one rakudo release such as 2026.11, not '$v'"
+  printf '%s' "$v"
+}
+if [ "$PRINT_PIN_ONLY" -eq 1 ]; then
+  read_pin
+  echo
   exit 0
+fi
+if [ -n "$WANT_VERSION" ] && [ "$LATEST" -eq 1 ]; then
+  die "--version and --latest exclude each other"
+fi
+if [ -z "$WANT_VERSION" ] && [ "$LATEST" -eq 0 ]; then
+  WANT_VERSION="$(read_pin)"
+fi
+
+# ---------------------------------------------------------------- preflight --
+# A working raku of the wanted release is left alone. One of another release is
+# not: the wanted release is installed next to it (its own directory under
+# PREFIX, symlinked into BINDIR), since an oracle that differs from the release
+# the bench and the ecosystem sweep measure against is the drift the pin exists
+# to prevent.
+if [ "$FORCE" -eq 0 ] && [ "$PRINT_URL_ONLY" -eq 0 ] && command -v raku >/dev/null 2>&1; then
+  HAVE="$(raku -e 'print $*RAKU.compiler.version' 2>/dev/null)" \
+    || die "the existing raku ($(command -v raku)) is broken; rerun with --force"
+  if [ -z "$WANT_VERSION" ] || [ "$HAVE" = "$WANT_VERSION" ]; then
+    info "raku $HAVE is already on PATH: $(command -v raku)"
+    exit 0
+  fi
+  info "raku on PATH is $HAVE, not $WANT_VERSION; installing $WANT_VERSION"
 fi
 
 command -v curl >/dev/null 2>&1 || die "curl is required"
@@ -185,4 +228,6 @@ if ! command -v raku >/dev/null 2>&1; then
 install-raku: $BINDIR is not on PATH. Add it, e.g.:
   export PATH="$BINDIR:\$PATH"
 EOF
+elif [ "$(command -v raku)" != "$BINDIR/raku" ]; then
+  info "note: raku on PATH is $(command -v raku), not $BINDIR/raku; put $BINDIR first"
 fi

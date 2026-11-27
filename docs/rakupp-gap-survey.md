@@ -34,7 +34,9 @@ on it.
 
 - mutsu: `main` at `13320ba6`, `cargo build --release`, and `--profile profiling` for valgrind.
   rustc 1.100.0. `MUTSU_JIT=off` (the plain series) unless stated.
-- rakupp: v5.0.1, the release pinned in `.github/workflows/bench.yml`, Linux x86_64 archive.
+- rakupp: v5.0.1, the release pinned in `.github/workflows/bench.yml` when this survey was made
+  (bench moved to v5.9.0 on 2026-11-27; re-measure on it before designing a fix), Linux x86_64
+  archive.
 - Box: the 4-core remote container. Wall clock on it is noisy. Each timing below is the minimum
   or median of 5-15 runs, alternating the binaries where a comparison matters. Instruction counts
   come from `valgrind --tool=callgrind` and cache numbers from `--tool=cachegrind --cache-sim=yes
@@ -387,7 +389,7 @@ What this says:
 ## Reproducing
 
 ```bash
-# rakupp, the pinned release
+# rakupp, the release this survey measured (bench.yml now pins v5.9.0)
 curl -fsSL -o r.tgz https://github.com/ash/rakupp/releases/download/v5.0.1/rakupp-linux-x86_64.tar.gz
 tar xzf r.tgz   # -> rakupp/bin/rakupp
 

@@ -99,15 +99,21 @@ setup_rust() {
 }
 
 # -------------------------------------------------------------------- raku --
-# The Rakudo oracle. install-raku.sh is a no-op when a working `raku` is
-# already on PATH, so this is safe to re-run.
+# The Rakudo oracle, at the release pinned in .rakudo-version (the one the bench
+# CI and the ecosystem sweep measure against). install-raku.sh is a no-op when
+# that release is already on PATH, so this is safe to re-run; a raku of another
+# release (a container image built before a pin bump) is replaced by the pinned
+# one in ~/.local/bin.
 setup_raku() {
   export PATH="$HOME/.local/bin:$PATH"
-  if command -v raku >/dev/null 2>&1; then
-    say "raku already present: $(command -v raku)"
+  local pin
+  pin=$(.agents/skills/install-raku/install-raku.sh --print-pin 2>/dev/null || true)
+  if command -v raku >/dev/null 2>&1 \
+      && [ -n "$pin" ] && [ "$(raku -e 'print $*RAKU.compiler.version' 2>/dev/null)" = "$pin" ]; then
+    say "raku $pin already present: $(command -v raku)"
     return 0
   fi
-  say "installing the Rakudo oracle (prebuilt archive, no compilation)"
+  say "installing the Rakudo oracle ${pin:-(newest)} (prebuilt archive, no compilation)"
   if ! .agents/skills/install-raku/install-raku.sh; then
     warn "could not install raku; work that needs the oracle will have to do without it"
     return 0

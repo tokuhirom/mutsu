@@ -74,7 +74,9 @@ expressed in the ecosystem's own units, not an identifier for this build.
 
 A single named constant carries it,
 `Interpreter::RAKUDO_COMPAT_VERSION` in `src/runtime/native_methods/system.rs`,
-currently `2026.09` (bumped from `2026.07` in #14851, together with the roast baseline re-capture).
+currently `2026.11` (bumped from `2026.07` to `2026.09` in #14851 and to `2026.11` on 2026-11-27,
+each time together with a roast baseline re-capture on that release; 2026.11 is also the
+repository's single rakudo pin, `.rakudo-version`).
 
 **mutsu's own identity stays truthful, and mutsu never claims to be Rakudo:**
 
@@ -82,7 +84,7 @@ currently `2026.09` (bumped from `2026.07` in #14851, together with the roast ba
 | --- | --- | --- |
 | `.name` | `mutsu` | *unchanged.* What `rakudo-only` and every `compiler.name ne 'rakudo'` check reads |
 | `.auth` | `github.com/tokuhirom` | unchanged |
-| `.version` | `v2026.09` | **changed.** The language-level coordinate |
+| `.version` | `v2026.11` | **changed.** The language-level coordinate |
 | `.release` | `0.23.0` (crate version) | mutsu's own release — where "which build is this" now lives |
 | `.id` | `mutsu-0.23.0` | unchanged; still the precomp-directory key |
 | `.verbose-config`'s `mutsu` section | crate version, target triple | unchanged build facts |
@@ -94,7 +96,7 @@ exits 1 under mutsu, and only under mutsu.
 
 ### Why the compatibility claim errs upward
 
-`v2026.09` over-claims: mutsu does not implement everything Rakudo 2026.09 does.
+`v2026.11` over-claims: mutsu does not implement everything Rakudo 2026.11 does.
 That is the right direction to err, for a reason specific to how the two failure
 modes present.
 

@@ -67,6 +67,14 @@ impl TrirCompiler<'_> {
                     pos_ref: t,
                 },
             },
+            TrOp::AddRefIC { pos_ref, c } => match reference(pos_ref)? {
+                RefTarget::Direct(t) => TrOp::AddLocalIC { slot: t, c: *c },
+                RefTarget::Ref(t) => TrOp::AddRefIC { pos_ref: t, c: *c },
+            },
+            TrOp::AddRefICVoid { pos_ref, c } => match reference(pos_ref)? {
+                RefTarget::Direct(t) => TrOp::AddLocalICVoid { slot: t, c: *c },
+                RefTarget::Ref(t) => TrOp::AddRefICVoid { pos_ref: t, c: *c },
+            },
             TrOp::SetRefI(s) => match reference(s)? {
                 RefTarget::Direct(t) => TrOp::StoreI(t),
                 RefTarget::Ref(t) => TrOp::SetRefI(t),
@@ -122,6 +130,14 @@ impl TrirCompiler<'_> {
             TrOp::OrdAtLocalSlot { text, pos } => TrOp::OrdAtLocalSlot {
                 text: m.o(*text)?,
                 pos: m.n(*pos)?,
+            },
+            TrOp::AddLocalIC { slot, c } => TrOp::AddLocalIC {
+                slot: m.n(*slot)?,
+                c: *c,
+            },
+            TrOp::AddLocalICVoid { slot, c } => TrOp::AddLocalICVoid {
+                slot: m.n(*slot)?,
+                c: *c,
             },
             // Free variables: after the caller's own (`apply_inline_outer_fixups`).
             TrOp::LoadOuter(n) => TrOp::LoadOuter(*n),
@@ -248,7 +264,9 @@ pub(super) fn native_slot(op: &TrOp) -> Option<u16> {
         | TrOp::JumpCmpLC { slot: s, .. }
         | TrOp::ShiftIStoreLocal { slot: s, .. }
         | TrOp::PushISlotLocalVoid { slot: s, .. }
-        | TrOp::OrdAtLocalSlot { pos: s, .. } => Some(*s),
+        | TrOp::OrdAtLocalSlot { pos: s, .. }
+        | TrOp::AddLocalIC { slot: s, .. }
+        | TrOp::AddLocalICVoid { slot: s, .. } => Some(*s),
         _ => None,
     }
 }
