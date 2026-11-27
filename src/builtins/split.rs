@@ -43,6 +43,13 @@ impl SplitOpts {
         (positional, opts)
     }
 
+    /// Whether the result reports each separator itself (`:v`/`:kv`/`:p`), so a
+    /// regex splitter has to build its separator `Match` objects. `:k` reports
+    /// only the splitter index.
+    pub(crate) fn reports_matches(&self) -> bool {
+        self.v || self.kv || self.p
+    }
+
     /// Check for conflicting adverbs. Returns Err with X::Adverb if conflicts found.
     pub(crate) fn check_conflicts(&self, source: &str) -> Result<(), RuntimeError> {
         let mut active = Vec::new();

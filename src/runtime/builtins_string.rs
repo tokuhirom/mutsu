@@ -30,7 +30,8 @@ impl Interpreter {
         }
 
         let base = crate::value::str_iter::shared_text(&target);
-        let parts = self.split_with_splitter(&base, &splitter, opts.limit)?;
+        let parts =
+            self.split_with_splitter(&base, &splitter, opts.limit, opts.reports_matches())?;
         let result = apply_split_opts(parts, &opts, &base);
         Ok(Value::seq(result))
     }
@@ -56,7 +57,8 @@ impl Interpreter {
         }
 
         let base = crate::value::str_iter::shared_text(&target);
-        let parts = self.split_with_splitter(&base, &splitter, opts.limit)?;
+        let parts =
+            self.split_with_splitter(&base, &splitter, opts.limit, opts.reports_matches())?;
         let result = apply_split_opts(parts, &opts, &base);
         Ok(Value::seq(result))
     }
@@ -67,10 +69,15 @@ impl Interpreter {
         text: &str,
         splitter: &Value,
         limit: Option<usize>,
+        want_matches: bool,
     ) -> Result<Vec<(Piece, Option<SplitMatch>)>, RuntimeError> {
         match splitter.view() {
-            ValueView::Regex(pattern) => self.split_by_regex(text, &pattern, limit),
-            ValueView::RegexWithAdverbs(a) => self.split_by_regex(text, &a.pattern, limit),
+            ValueView::Regex(pattern) => {
+                self.split_by_regex(text, &pattern, limit, want_matches)
+            }
+            ValueView::RegexWithAdverbs(a) => {
+                self.split_by_regex(text, &a.pattern, limit, want_matches)
+            }
             ValueView::Array(items, _) => {
                 // Check if any item is a regex
                 let has_regex = items.iter().any(|v| {
@@ -80,7 +87,7 @@ impl Interpreter {
                     )
                 });
                 if has_regex {
-                    self.split_by_regex_list(text, &items, limit)
+                    self.split_by_regex_list(text, &items, limit, want_matches)
                 } else {
                     let strings: Vec<String> = items.iter().map(|v| v.to_string_value()).collect();
                     Ok(crate::builtins::split::split_by_strings(
@@ -111,30 +118,37 @@ impl Interpreter {
             .with_match_cursor_pos(caps.narrowed_pos())
     }
 
-    /// Split by a single regex pattern.
+    /// Split by a single regex pattern. `want_matches` says whether the caller
+    /// reports the separators as `Match` objects (`:v`/`:kv`/`:p`); a plain
+    /// split never shows them, so none is built.
     // Cost: O(n + k) plus the engine's per-match cost, n = chars of the invocant,
-    // k = pieces; one shared MatchTarget, each separator Match shares it (O(1)).
+    // k = pieces; one shared MatchTarget, each separator Match shares it (O(1)),
+    // and each piece is a slice of the invocant (no copy).
     fn split_by_regex(
         &mut self,
         text: &str,
         pattern: &str,
         limit: Option<usize>,
+        want_matches: bool,
     ) -> Result<Vec<(Piece, Option<SplitMatch>)>, RuntimeError> {
         if limit == Some(0) {
             return Ok(Vec::new());
         }
-        let chars: Vec<char> = text.chars().collect();
+        let mut result = Vec::new();
+        if text.is_empty() {
+            result.push((Piece::Range(0, 0), None));
+            return Ok(result);
+        }
         // One target for the whole walk. Each `MatchTarget` copies the subject
         // and its char vector, so building one per separator made a regex split
         // O(separators x subject) -- 11.9 s on 80 KB against rakudo's 0.26 s
         // (#8247).
         let target = MatchTarget::new(text);
-        let mut result = Vec::new();
-
-        if text.is_empty() {
-            result.push((Piece::Range(0, 0), None));
-            return Ok(result);
-        }
+        let n_chars = target.chars().len();
+        // The engine reports char positions; pieces are byte ranges of `text`.
+        let mut bytes = crate::runtime::char_byte_cursor::CharByteCursor::new(text);
+        // A static pattern is parsed once for the whole walk.
+        let parsed = self.regex_walk_pattern(pattern);
 
         let max_splits = limit.map(|l| if l > 0 { l - 1 } else { 0 });
         let mut splits_done = 0;
@@ -145,55 +159,56 @@ impl Interpreter {
             if let Some(max) = max_splits
                 && splits_done >= max
             {
-                let remaining: String = chars[pos..].iter().collect();
-                result.push((Piece::Owned(remaining), None));
-                return Ok(result);
-            }
-
-            if search_from > chars.len() {
                 break;
             }
-
+            if search_from > n_chars {
+                break;
+            }
             // Try to match regex starting from search_from, using full text for context
-            if let Some(caps) =
-                self.regex_match_with_captures_from_target(pattern, &target, search_from)
-            {
-                let (from, to) = (caps.from, caps.to);
-                let segment: String = chars[pos..from].iter().collect();
-                let match_obj = self.split_separator_match(caps, text);
-                result.push((
-                    Piece::Owned(segment),
-                    Some(SplitMatch {
-                        from,
-                        to,
-                        // The separator Match is what `:v` reports; no copy of
-                        // its text is needed (#19201).
-                        matched: Value::NIL,
-                        splitter_index: 0,
-                        is_regex: true,
-                        match_obj: Some(match_obj),
+            let found = match &parsed {
+                Some(parsed) => self
+                    .regex_match_parsed_from_target(parsed, &target, search_from)
+                    .map(|mut caps| {
+                        if want_matches {
+                            caps.set_target(Some(target.clone()));
+                        }
+                        caps
                     }),
-                ));
-                splits_done += 1;
-                if from == to {
-                    // Zero-width match: next segment starts at from,
-                    // but search for next match from from+1
-                    pos = from;
-                    search_from = from + 1;
-                } else {
-                    pos = to;
-                    search_from = to;
-                }
+                None => self.regex_match_with_captures_from_target(pattern, &target, search_from),
+            };
+            let Some(caps) = found else {
+                break;
+            };
+            let (from, to) = (caps.from, caps.to);
+            let segment = Piece::Range(bytes.byte_of(pos), bytes.byte_of(from));
+            let match_obj = want_matches.then(|| self.split_separator_match(caps, text));
+            result.push((
+                segment,
+                Some(SplitMatch {
+                    from,
+                    to,
+                    // The separator Match is what `:v` reports; no copy of
+                    // its text is needed (#19201).
+                    matched: Value::NIL,
+                    splitter_index: 0,
+                    is_regex: true,
+                    match_obj,
+                }),
+            ));
+            splits_done += 1;
+            if from == to {
+                // Zero-width match: next segment starts at from,
+                // but search for next match from from+1
+                pos = from;
+                search_from = from + 1;
             } else {
-                let remaining: String = chars[pos..].iter().collect();
-                result.push((Piece::Owned(remaining), None));
-                return Ok(result);
+                pos = to;
+                search_from = to;
             }
         }
 
-        if pos <= chars.len() {
-            let remaining: String = chars[pos..].iter().collect();
-            result.push((Piece::Owned(remaining), None));
+        if pos <= n_chars {
+            result.push((Piece::Range(bytes.byte_of(pos), text.len()), None));
         }
         Ok(result)
     }
@@ -211,6 +226,7 @@ impl Interpreter {
         text: &str,
         splitters: &[Value],
         limit: Option<usize>,
+        want_matches: bool,
     ) -> Result<Vec<(Piece, Option<SplitMatch>)>, RuntimeError> {
         if limit == Some(0) {
             return Ok(Vec::new());
@@ -299,7 +315,9 @@ impl Interpreter {
                 )) => {
                     let segment: String = chars[pos..from].iter().collect();
                     let is_regex = caps.is_some();
-                    let match_obj = caps.map(|c| self.split_separator_match(c, text));
+                    let match_obj = caps
+                        .filter(|_| want_matches)
+                        .map(|c| self.split_separator_match(c, text));
                     result.push((
                         Piece::Owned(segment),
                         Some(SplitMatch {

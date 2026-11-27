@@ -3,6 +3,7 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 
 mod attr_per_owner;
+pub(crate) mod char_byte_cursor;
 pub(crate) mod class_body_statics_plan;
 mod complex_real;
 mod module_check_restart;

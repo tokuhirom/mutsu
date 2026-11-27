@@ -164,16 +164,19 @@ impl Interpreter {
         let selected: &[(usize, usize, Vec<String>, crate::runtime::RegexCaptures)] =
             if global { &matches } else { &matches[..1] };
 
-        let chars: Vec<char> = text.chars().collect();
+        // The kept text between matches is copied as byte slices of `text`;
+        // the cursor turns the engine's char positions into byte offsets.
+        let mut bytes = crate::runtime::char_byte_cursor::CharByteCursor::new(text);
         let mut result = String::with_capacity(text.len());
         let mut last_end = 0usize;
         for (start, end, _, _) in selected {
-            result.extend(chars[last_end..*start].iter());
+            let (kept_from, kept_to) = (bytes.byte_of(last_end), bytes.byte_of(*start));
+            result.push_str(&text[kept_from..kept_to]);
             // The replacement string is literal: `'$0'` stays `$0` (Rakudo).
             result.push_str(replacement_str);
             last_end = *end;
         }
-        result.extend(chars[last_end..].iter());
+        result.push_str(&text[bytes.byte_of(last_end)..]);
 
         // `$/` policy: a non-global `.subst` sets it to the single (first) Match;
         // a global `.subst` sets it to a List of every Match object (matching
