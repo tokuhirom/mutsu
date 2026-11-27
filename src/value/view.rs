@@ -758,6 +758,14 @@ impl Value {
         self.0.is_sub()
     }
 
+    /// Whether this is an `Instance` (a `Mixin` is not). A pure tag probe,
+    /// for a dispatch front that must refuse every other receiver cheaply.
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn is_instance_value(&self) -> bool {
+        self.0.is_instance()
+    }
+
     /// Whether this is a `Proxy`. A pure tag probe (see [`Self::is_junction_value`]).
     #[inline]
     pub(crate) fn is_proxy_value(&self) -> bool {

@@ -225,6 +225,27 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let name = self.perl_as_raku_name(name, modifier_idx, arity);
         let quoted = name.quoted;
+        // An ordinary instance receiver whose call the accessor or plain-method
+        // lane answers skips the probes below (`vm_instance_method_front`).
+        let front = self.try_instance_method_front(
+            code,
+            &name,
+            arity,
+            target_name_idx,
+            modifier_idx,
+            arg_sources_idx,
+        );
+        let instance_front_missed = match front {
+            super::vm_instance_method_front::InstanceFront::Done(result) => {
+                // The bookkeeping this function's own exit does.
+                self.set_pending_call_arg_sources(None);
+                self.pending_call_arg_source_slots.clear();
+                self.caches.ctor_lane_candidate = None;
+                return result;
+            }
+            super::vm_instance_method_front::InstanceFront::Missed => true,
+            super::vm_instance_method_front::InstanceFront::NotTried => false,
+        };
         // A parameterized role receiver whose call was re-dispatched to its
         // pun before goes to the pun directly (`parametric_role_pun_memo`).
         if modifier_idx.is_none()
@@ -297,6 +318,7 @@ impl Interpreter {
             modifier_idx,
             quoted,
             arg_sources_idx,
+            instance_front_missed,
         );
         if let Some(pending) = front_mutation
             && result.is_ok()
@@ -403,6 +425,7 @@ impl Interpreter {
         modifier_idx: Option<u32>,
         quoted: bool,
         arg_sources_idx: Option<u32>,
+        instance_front_missed: bool,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
         // A recorded argument-less `.?name` miss (#17987).
@@ -483,6 +506,7 @@ impl Interpreter {
         // receiver's layout reads it before the probe chain runs (see
         // `vm_accessor_lane`).
         if arity == 0
+            && !instance_front_missed
             && modifier_idx.is_none()
             && !Self::quoting_matters(quoted, name.raw)
             && !self.accessor_ref_pending
@@ -581,6 +605,7 @@ impl Interpreter {
         // #8880: the plain-method lane's early form for a call on an
         // ordinary object (`try_plain_method_early_lane`).
         if modifier_idx.is_none()
+            && !instance_front_missed
             && !Self::quoting_matters(quoted, name.raw)
             && let Some(result) = self.try_plain_method_early_lane(
                 code,

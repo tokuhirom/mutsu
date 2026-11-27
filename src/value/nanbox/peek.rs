@@ -532,6 +532,12 @@ impl NanBox {
         matches!(classify(self.0.get()), Classified::Kind(Kind::Sub))
     }
 
+    /// Whether this word is an `Instance` (not a `Mixin`) — a pure tag probe.
+    #[inline]
+    pub(in crate::value) fn is_instance(&self) -> bool {
+        matches!(classify(self.0.get()), Classified::Kind(Kind::Instance))
+    }
+
     /// Whether this word is a string-keyed `Pair` — a pure tag probe (the
     /// named-argument scans in dispatch use it; same motivation as
     /// [`Self::is_junction`]).

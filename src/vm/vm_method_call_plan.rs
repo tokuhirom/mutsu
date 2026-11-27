@@ -85,6 +85,11 @@ pub(crate) struct MethodCallPlan {
     /// re-asks `can_fast_dispatch_private_method_vm` on every call, as the
     /// private dispatch arm does.
     pub(crate) private: bool,
+    /// The method has a `*%h` the fast binder fills
+    /// (`method_has_light_named_slurpy`): a replay checks and promotes the
+    /// call's leftover named arguments. A function of the `MethodDef` alone,
+    /// so it is answered once here rather than by a parameter scan per call.
+    pub(crate) named_slurpy: bool,
     /// What the fast binder's prologue asks of the owner and the method on
     /// every call, answered once for this plan (#18267 D1a); `None` when the
     /// answer can change without a registry write (a published mixin owner).
@@ -459,6 +464,7 @@ impl Interpreter {
             slot_frame,
             container_params: def.has_container_params(),
             private,
+            named_slurpy: Self::method_has_light_named_slurpy(def),
             facts,
         }))
     }
@@ -513,7 +519,7 @@ impl Interpreter {
         // An explicit `*%h`'s leftover arguments, checked per call like the
         // container parameters above; promoted below, once the deferral
         // frame has recorded the arguments as they arrived.
-        if !self.method_named_slurpy_args_light(def, &args) {
+        if plan.named_slurpy && !self.method_named_slurpy_args_light(def, &args) {
             return self.run_plain_method_lane(code, target_name, target, method_sym, args);
         }
         self.dispatch.method_dispatch_pure = false;
@@ -538,7 +544,9 @@ impl Interpreter {
             }
         };
         // While the caller's frame is still current (`vm_method_named_slurpy`).
-        self.promote_method_named_slurpy_args(def, &mut args);
+        if plan.named_slurpy {
+            self.promote_method_named_slurpy_args(def, &mut args);
+        }
         // `arm_multi_method_winner_trust` for a non-multi winner, and
         // `call_compiled_method_in_unit`'s entry, which clears the rw
         // writeback list this call's site drains.
