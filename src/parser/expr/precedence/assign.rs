@@ -125,7 +125,7 @@ pub(crate) fn build_compound_assign_target_expr(target: Expr, op_name: &str, val
         }
         Expr::MethodCall {
             target, name, args, ..
-        } if name == "AT-POS" && args.len() == 1 => {
+        } if name == crate::sym!("AT-POS") && args.len() == 1 => {
             let index = args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL));
             build_compound_assign_target_expr(
                 Expr::Index {

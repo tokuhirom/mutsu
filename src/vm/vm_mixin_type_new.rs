@@ -31,7 +31,9 @@ impl Interpreter {
         method_sym: Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if method_sym != "new" || crate::runtime::find_method_intercept::any_user_find_method() {
+        if method_sym != crate::sym!("new")
+            || crate::runtime::find_method_intercept::any_user_find_method()
+        {
             return None;
         }
         let ValueView::Mixin(inner, mixins) = target.view() else {

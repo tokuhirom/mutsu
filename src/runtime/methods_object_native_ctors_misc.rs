@@ -247,7 +247,7 @@ impl Interpreter {
             // A Seq's `is-lazy` is its iterator's, so `say` renders an
             // infinite one as `(...)` instead of pulling forever.
             if matches!(iterator.view(), ValueView::Instance { class_name, attributes, .. }
-                if class_name == "Iterator" && attributes.contains_key("is_lazy"))
+                if class_name == crate::sym!("Iterator") && attributes.contains_key("is_lazy"))
             {
                 body.mark_lazy();
             }

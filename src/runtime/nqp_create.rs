@@ -309,7 +309,7 @@ impl Interpreter {
                     .any(|name| Self::is_positional_base(name.as_str()));
                 // Only a `VMArray` class has element storage: a plain
                 // `is IterationBuffer` subclass is `P6opaque` (#17627).
-                let iteration_buffer = class == "IterationBuffer"
+                let iteration_buffer = class == crate::sym!("IterationBuffer")
                     || (self
                         .class_mro(class.as_str())
                         .iter()

@@ -33,7 +33,7 @@ pub(crate) struct BacktraceCapture {
 }
 
 fn is_anonymous_block(frame: &RoutineFrame) -> bool {
-    frame.is_block && (frame.name.is_empty() || frame.name == "<pointy-block>")
+    frame.is_block && (frame.name.is_empty() || frame.name == crate::sym!("<pointy-block>"))
 }
 
 impl Interpreter {
@@ -59,7 +59,7 @@ impl Interpreter {
         }
         stack
             .first()
-            .is_some_and(|f| f.name == "<unit>" || (f.name.is_empty() && !f.is_block))
+            .is_some_and(|f| f.name == crate::sym!("<unit>") || (f.name.is_empty() && !f.is_block))
     }
 
     /// A callback run by a thread clone can leave only an anonymous block at
@@ -231,7 +231,10 @@ impl BacktraceCapture {
             // its defining file; the call-site line is within that file.
             let file = frame.def_file.map(|s| s.resolve()).or(file);
             let location = Self::format_location(file.as_deref(), line);
-            if frame.name.is_empty() || frame.name == "<unit>" || frame.name == "<pointy-block>" {
+            if frame.name.is_empty()
+                || frame.name == crate::sym!("<unit>")
+                || frame.name == crate::sym!("<pointy-block>")
+            {
                 lines.push(format!("  in block <unit>{}", location));
             } else {
                 let kind = if frame.is_submethod {
@@ -359,8 +362,8 @@ impl BacktraceCapture {
             let subname = if is_anon_block {
                 String::new()
             } else if frame.name.is_empty()
-                || frame.name == "<unit>"
-                || frame.name == "<pointy-block>"
+                || frame.name == crate::sym!("<unit>")
+                || frame.name == crate::sym!("<pointy-block>")
             {
                 "<unit>".to_string()
             } else {

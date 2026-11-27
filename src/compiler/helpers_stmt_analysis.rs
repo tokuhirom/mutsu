@@ -765,7 +765,7 @@ impl Compiler {
     pub(super) fn opens_import_scope(stmt: &Stmt) -> bool {
         match stmt {
             Stmt::Use { .. } | Stmt::Need { .. } | Stmt::Import { .. } | Stmt::No { .. } => true,
-            Stmt::Expr(crate::ast::Expr::Call { name, .. }) => *name == "require",
+            Stmt::Expr(crate::ast::Expr::Call { name, .. }) => *name == crate::sym!("require"),
             _ => false,
         }
     }

@@ -353,8 +353,8 @@ fn is_real_epsilon(arg: &Value) -> bool {
         // `Duration` and `Instant` keep their number in `value`; an instance of
         // a user subclass of `Int` / `Num` / `Rat` keeps it in a payload.
         ValueView::Instance { class_name, .. } => {
-            class_name == "Duration"
-                || class_name == "Instant"
+            class_name == crate::sym!("Duration")
+                || class_name == crate::sym!("Instant")
                 || crate::value::numeric_payload::numeric_subclass_payload(arg).is_some()
         }
         _ => false,

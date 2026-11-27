@@ -313,7 +313,7 @@ impl Compiler {
             && let Expr::Literal(n_lit) = right
             && let ValueView::Int(n) = n_lit.view()
             && let Expr::Call { name, .. } = left
-            && name == "start"
+            && *name == crate::sym!("start")
         {
             let count = n.max(0) as usize;
             for _ in 0..count {

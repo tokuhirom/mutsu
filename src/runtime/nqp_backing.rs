@@ -33,7 +33,7 @@ pub(crate) fn nqp_backing_array(v: &Value) -> Option<Value> {
             }
             // Only an IterationBuffer (or a subclass, which `create_instance`
             // seeds with storage) has an items slot to vivify.
-            if class_name != "IterationBuffer" {
+            if class_name != crate::sym!("IterationBuffer") {
                 return None;
             }
             // One key into the shared cell, not a copy of the whole map
@@ -224,7 +224,7 @@ pub(crate) fn setelems_items(target: &Value, items: &crate::value::GcRef<'_, Arr
         None if native => data.items_mut().resize(n, Value::int(0)),
         None if matches!(
             target.view(),
-            ValueView::Instance { class_name, .. } if class_name == "IterationBuffer"
+            ValueView::Instance { class_name, .. } if class_name == crate::sym!("IterationBuffer")
         ) =>
         {
             // A grown `IterationBuffer` slot is a null object: a hole

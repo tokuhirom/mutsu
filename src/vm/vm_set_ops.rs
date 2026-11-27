@@ -20,7 +20,7 @@ impl Interpreter {
     }
 
     pub(crate) fn is_failure_value(value: &Value) -> bool {
-        matches!(value.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+        matches!(value.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("Failure"))
     }
 
     fn range_contains(range: &Value, needle: &Value) -> bool {

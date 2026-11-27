@@ -25,7 +25,7 @@ impl Interpreter {
             let mut out: Vec<Value> = Vec::new();
             for (idx, item) in items.iter().enumerate() {
                 if matches!(item.view(), ValueView::Nil)
-                    || matches!(item.view(), ValueView::Package(n) if n == "Any")
+                    || matches!(item.view(), ValueView::Package(n) if n == crate::sym!("Any"))
                 {
                     continue;
                 }

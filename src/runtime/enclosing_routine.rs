@@ -21,7 +21,7 @@ impl Interpreter {
         if self
             .routine_stack
             .last()
-            .is_some_and(|frame| frame.name == "<pointy-block>")
+            .is_some_and(|frame| frame.name == crate::sym!("<pointy-block>"))
             && let Some(top) = self.block_stack_top()
             && let ValueView::Sub(data) = top.view()
             && let Some(bound) = data.env.get(Self::CAPTURED_ROUTINE_KEY)
@@ -33,11 +33,11 @@ impl Interpreter {
             .routine_stack
             .iter()
             .rev()
-            .find(|frame| frame.name != "<pointy-block>");
+            .find(|frame| frame.name != crate::sym!("<pointy-block>"));
         if let Some(frame) = entry {
             // Anonymous subs are pushed with "<anon>" as the sentinel name.
             // Return the block_stack Sub directly so callers can invoke it.
-            if frame.name.is_empty() || frame.name == "<anon>" {
+            if frame.name.is_empty() || frame.name == crate::sym!("<anon>") {
                 if let Some(val) = self.block_stack_top()
                     && matches!(val.view(), ValueView::Sub(_))
                 {

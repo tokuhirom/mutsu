@@ -802,7 +802,7 @@ impl Interpreter {
         // identical to an untagged compile.
         let mut args = if has_varref {
             let native_pair_new = method == "new"
-                && matches!(target.view(), ValueView::Package(cn) if cn == "Pair")
+                && matches!(target.view(), ValueView::Package(cn) if cn == crate::sym!("Pair"))
                 && !self.has_user_method("Pair", "new");
             args.into_iter()
                 .map(|a| match a.view() {

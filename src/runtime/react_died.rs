@@ -146,8 +146,8 @@ impl Interpreter {
                 items[0].view(),
                 ValueView::Instance { class_name, .. }
                     if crate::value::supply_class::is_supply_class(class_name)
-                        || class_name == "Supplier"
-                        || class_name == "Supplier::Preserving"
+                        || class_name == crate::sym!("Supplier")
+                        || class_name == crate::sym!("Supplier::Preserving")
             ) || matches!(
                 items[0].view(),
                 ValueView::Promise(_) | ValueView::Channel(_)
@@ -178,7 +178,7 @@ impl Interpreter {
             ..
         } = source.view()
         {
-            if class_name != "Supply" {
+            if class_name != crate::sym!("Supply") {
                 return None;
             }
             crate::runtime::builtins_system_async::rearm_signal_supply(&(attributes).as_map());

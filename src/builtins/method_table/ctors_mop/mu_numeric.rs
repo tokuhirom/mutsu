@@ -102,10 +102,12 @@ fn int(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
         ValueView::Array(items, ..) => Value::int(items.len() as i64),
         // A StrDistance's `.Int` is the edit distance between its before and
         // after strings, as `+$str-dist` / `.Numeric`.
-        ValueView::Instance { class_name, .. } if class_name == "StrDistance" => Value::int(
-            crate::builtins::methods_0arg::dispatch_core_math::cool_instance_numeric(target)
-                .unwrap_or(0.0) as i64,
-        ),
+        ValueView::Instance { class_name, .. } if class_name == crate::sym!("StrDistance") => {
+            Value::int(
+                crate::builtins::methods_0arg::dispatch_core_math::cool_instance_numeric(target)
+                    .unwrap_or(0.0) as i64,
+            )
+        }
         // A built-in class with a shape and no `Int` of its own (`DateTime`):
         // Rakudo's `Mu.Int` has no candidate for it.
         ValueView::Instance { class_name, .. } if target.dispatch_shape().is_some() => {
@@ -172,7 +174,7 @@ fn numeric(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError
         }
         // A StrDistance (`$str ~~ tr/a/b/`) numifies to the edit distance, so
         // `+($str ~~ tr/old/new/)` is the number of changes.
-        ValueView::Instance { class_name, .. } if class_name == "StrDistance" => {
+        ValueView::Instance { class_name, .. } if class_name == crate::sym!("StrDistance") => {
             match crate::builtins::methods_0arg::dispatch_core_math::cool_instance_numeric(target) {
                 Some(n) if n.fract() == 0.0 && n.is_finite() => Value::int(n as i64),
                 Some(n) => Value::num(n),

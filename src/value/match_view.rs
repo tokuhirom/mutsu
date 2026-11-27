@@ -132,7 +132,7 @@ impl Value {
             return true;
         }
         matches!(self.view(), ValueView::Instance { class_name, attributes, .. }
-            if class_name == "Match" || attributes.as_map().contains_key(cursor_match_marker()))
+            if class_name == crate::sym!("Match") || attributes.as_map().contains_key(cursor_match_marker()))
     }
 
     /// Is this value an instance mutsu classifies as an exception purely from
@@ -354,7 +354,7 @@ impl Value {
         else {
             return None;
         };
-        if class_name != "Backtrace"
+        if class_name != crate::sym!("Backtrace")
             || matches!(method, "first" | "map" | "flat" | "list" | "Hash")
             || !(is_capture_list_method(method)
                 || matches!(

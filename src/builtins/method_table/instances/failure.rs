@@ -103,7 +103,7 @@ pub(super) static ROWS: &[MethodRow] = &[
 pub(crate) fn is_failure(target: &Value) -> bool {
     // Tag-probed: `view()` of a lazy Match would materialize it (#12917).
     !target.is_lazy_match_value()
-        && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+        && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("Failure"))
 }
 
 /// The answer of the pure row for `method` on a `Failure`, or `None` when
@@ -315,7 +315,7 @@ fn raku_pure(target: &Value, _args: &[Value]) -> Answer {
     else {
         return None;
     };
-    if class_name != "X::AdHoc" {
+    if class_name != crate::sym!("X::AdHoc") {
         return None;
     }
     let payload = attributes.as_map().get("payload").cloned()?;

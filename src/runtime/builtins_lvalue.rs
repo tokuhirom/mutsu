@@ -594,7 +594,7 @@ impl Interpreter {
                     // while the callback runs; treating the temporary Proxy
                     // argument as a caller writeback would replace the real
                     // invocant with the assigned scalar.
-                    *k != "self"
+                    **k != crate::sym!("self")
                         && Self::is_writeback_safe_scalar(v)
                         && pre_env.get(*k).map(|p| p != *v).unwrap_or(true)
                 })

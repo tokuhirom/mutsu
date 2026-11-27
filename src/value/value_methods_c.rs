@@ -280,11 +280,13 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Instant" || class_name == "Duration" => attributes
-                .as_map()
-                .get("value")
-                .map(|v| v.to_f64())
-                .unwrap_or(0.0),
+            } if class_name == crate::sym!("Instant") || class_name == crate::sym!("Duration") => {
+                attributes
+                    .as_map()
+                    .get("value")
+                    .map(|v| v.to_f64())
+                    .unwrap_or(0.0)
+            }
             // A subclass of native Int or Num (e.g. `class Foo is Int`)
             // carries its payload in a reserved attribute.
             ValueView::Instance { attributes, .. }

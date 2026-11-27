@@ -450,7 +450,7 @@ impl Interpreter {
         !self
             .class_mro(&class_name)
             .iter()
-            .any(|c| c == "IO::Handle" || c == "IO::Path")
+            .any(|c| *c == crate::sym!("IO::Handle") || *c == crate::sym!("IO::Path"))
     }
 
     /// A mixin type the runtime synthesized for `$obj does R` over a built-in

@@ -222,7 +222,7 @@ impl Interpreter {
             "Real" | "Int" | "Rat" | "Num" | "FatRat" => {
                 let numeric = self.io_path_numeric(attributes)?;
                 let failed = matches!(numeric.view(), ValueView::Instance { class_name, .. }
-                    if class_name == "Failure");
+                    if class_name == crate::sym!("Failure"));
                 if failed || method == "Real" {
                     Ok(numeric)
                 } else {

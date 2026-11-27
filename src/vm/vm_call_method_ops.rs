@@ -316,7 +316,7 @@ impl Interpreter {
         // would otherwise answer before the dispatcher's gate sees it.
         // Tag-probed: `view()` of a lazy Match would materialize it.
         if target.is_package_value()
-            && matches!(target.view(), ValueView::Package(name) if name == "NQPMu")
+            && matches!(target.view(), ValueView::Package(name) if name == crate::sym!("NQPMu"))
             && matches!(
                 method,
                 "raku" | "gist" | "perl" | "Str" | "say" | "put" | "print"
@@ -2372,7 +2372,7 @@ impl Interpreter {
                             let converted: Vec<Value> = items
                                 .iter()
                                 .map(|v| {
-                                    if matches!(v.view(), ValueView::Package(name) if name == "Any")
+                                    if matches!(v.view(), ValueView::Package(name) if name == crate::sym!("Any"))
                                     {
                                         def.clone()
                                     } else {

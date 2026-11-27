@@ -21,7 +21,7 @@ impl Interpreter {
                     attributes,
                     ..
                 } = arg.view()
-                    && class_name == "IO::Path"
+                    && class_name == crate::sym!("IO::Path")
                 {
                     requested_opt = Some(
                         attributes
@@ -270,7 +270,7 @@ impl Interpreter {
                 Ok(()) => match args.first() {
                     Some(given)
                         if matches!(given.view(), ValueView::Instance { class_name, .. }
-                            if class_name == "IO::Path"
+                            if class_name == crate::sym!("IO::Path")
                                 || class_name.as_str().starts_with("IO::Path::")) =>
                     {
                         given.clone()

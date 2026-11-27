@@ -371,7 +371,7 @@ impl Value {
                 ValueView::Instance {
                     class_name: cn_b, ..
                 },
-            ) if cn_a == "Signature" && cn_b == "Signature" => {
+            ) if cn_a == crate::sym!("Signature") && cn_b == crate::sym!("Signature") => {
                 if let (Some(a), Some(b)) = (
                     super::signature::extract_sig_info(self),
                     super::signature::extract_sig_info(other),
@@ -406,7 +406,9 @@ impl Value {
                     attributes: b_attrs,
                     ..
                 },
-            ) if cn_a == cn_b && (cn_a == "ObjAt" || cn_a == "ValueObjAt") => {
+            ) if cn_a == cn_b
+                && (cn_a == crate::sym!("ObjAt") || cn_a == crate::sym!("ValueObjAt")) =>
+            {
                 a_attrs.as_map().objat_which() == b_attrs.as_map().objat_which()
             }
             (
@@ -486,7 +488,7 @@ impl Value {
                     attributes: b_attrs,
                     ..
                 },
-            ) if cn_a == "StrDistance" && cn_b == "StrDistance" => {
+            ) if cn_a == crate::sym!("StrDistance") && cn_b == crate::sym!("StrDistance") => {
                 let before_eq = match (
                     a_attrs.as_map().get("before"),
                     b_attrs.as_map().get("before"),
@@ -541,7 +543,7 @@ impl Value {
                     attributes: b_attrs,
                     ..
                 },
-            ) if a_class == "IO::Handle" && b_class == "IO::Handle" => {
+            ) if a_class == crate::sym!("IO::Handle") && b_class == crate::sym!("IO::Handle") => {
                 const COMPARABLE_KEYS: &[&str] =
                     &["path", "chomp", "nl-in", "nl-out", "encoding", "bin"];
                 let a_map = a_attrs.as_map();
@@ -568,7 +570,7 @@ impl Value {
                     attributes: b_attrs,
                     ..
                 },
-            ) if a_class == "Duration" && b_class == "Duration" => {
+            ) if a_class == crate::sym!("Duration") && b_class == crate::sym!("Duration") => {
                 let a_seconds = a_attrs
                     .as_map()
                     .get("value")
@@ -595,7 +597,7 @@ impl Value {
                     attributes: b_attrs,
                     ..
                 },
-            ) if a_class == "Instant" && b_class == "Instant" => {
+            ) if a_class == crate::sym!("Instant") && b_class == crate::sym!("Instant") => {
                 let a_seconds = a_attrs
                     .as_map()
                     .get("value")
@@ -681,7 +683,7 @@ impl Value {
             // via type lookup (`::('Nil')`) denotes the same singleton.
             (ValueView::Nil, ValueView::Package(name))
             | (ValueView::Package(name), ValueView::Nil)
-                if name == "Nil" =>
+                if name == crate::sym!("Nil") =>
             {
                 true
             }

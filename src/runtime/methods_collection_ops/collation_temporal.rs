@@ -17,7 +17,7 @@ impl Interpreter {
             .unwrap_or_default();
 
         match target.view() {
-            ValueView::Package(class_name) if class_name == "Supply" => {
+            ValueView::Package(class_name) if class_name == crate::sym!("Supply") => {
                 Ok(Value::seq(vec![Value::package(class_name)]))
             }
             ValueView::Instance {

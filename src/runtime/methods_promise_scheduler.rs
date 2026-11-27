@@ -44,7 +44,7 @@ impl Interpreter {
         let sched = self.env().get("*SCHEDULER")?.deref_container();
         matches!(
             sched.view(),
-            ValueView::Instance { class_name, .. } if class_name == "CurrentThreadScheduler"
+            ValueView::Instance { class_name, .. } if class_name == crate::sym!("CurrentThreadScheduler")
         )
         .then_some(sched)
     }
@@ -57,10 +57,10 @@ impl Interpreter {
             ValueView::Package(name) => name,
             _ => return false,
         };
-        name == "Scheduler"
-            || name == "ThreadPoolScheduler"
-            || name == "CurrentThreadScheduler"
-            || name == "FakeScheduler"
+        name == crate::sym!("Scheduler")
+            || name == crate::sym!("ThreadPoolScheduler")
+            || name == crate::sym!("CurrentThreadScheduler")
+            || name == crate::sym!("FakeScheduler")
     }
 
     /// The scheduler a new promise binds (ADR-0105 D1), as Rakudo's

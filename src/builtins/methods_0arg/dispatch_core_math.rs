@@ -44,7 +44,7 @@ pub(crate) fn str_distance_of(target: &Value) -> Option<usize> {
             class_name,
             attributes,
             ..
-        } if class_name == "StrDistance" => str_distance(&attributes),
+        } if class_name == crate::sym!("StrDistance") => str_distance(&attributes),
         _ => None,
     }
 }

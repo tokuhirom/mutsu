@@ -506,7 +506,7 @@ impl Interpreter {
             attributes,
             ..
         } = iterator.view()
-            && class_name == "Iterator"
+            && class_name == crate::sym!("Iterator")
         {
             if let Some(rest) = self.map_grep_stream_drain(&attributes) {
                 rest?

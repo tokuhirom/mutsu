@@ -30,7 +30,7 @@ impl Interpreter {
         let current = self.env.clone();
         let mut restored = saved_env.clone();
         let skip = |key: &Symbol| {
-            params.iter().any(|p| *key == p.as_str()) || *key == "_" || *key == "@_" || *key == "%_"
+            params.iter().any(|p| key.as_str() == p.as_str()) || *key == crate::sym!("_") || *key == crate::sym!("@_") || *key == crate::sym!("%_")
         };
         for key in saved_env.keys() {
             if skip(key) {

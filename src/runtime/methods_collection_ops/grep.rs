@@ -110,7 +110,7 @@ impl Interpreter {
         }
 
         match target.view() {
-            ValueView::Package(class_name) if class_name == "Supply" => Err(RuntimeError::new(
+            ValueView::Package(class_name) if class_name == crate::sym!("Supply") => Err(RuntimeError::new(
                 "Cannot call .grep on a Supply type object",
             )),
             ValueView::Instance {

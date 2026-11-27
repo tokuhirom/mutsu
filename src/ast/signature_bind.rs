@@ -150,7 +150,7 @@ fn signature_param_infos(literal: &Value) -> Option<Vec<ParamInfo>> {
     else {
         return None;
     };
-    if class_name != "Signature" {
+    if class_name != crate::sym!("Signature") {
         return None;
     }
     let attributes = attributes.as_map();

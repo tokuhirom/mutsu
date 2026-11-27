@@ -48,7 +48,7 @@ fn attrs(target: &Value) -> Option<crate::value::AttrMap> {
             class_name,
             attributes,
             ..
-        } if class_name == LABEL_CLASS => Some(attributes.as_map().clone()),
+        } if class_name == crate::sym!(LABEL_CLASS) => Some(attributes.as_map().clone()),
         _ => None,
     }
 }

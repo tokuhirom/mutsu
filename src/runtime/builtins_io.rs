@@ -101,14 +101,14 @@ impl Interpreter {
             attributes,
             ..
         } = arg.view()
-            && (class_name == "IO::Path"
+            && (class_name == crate::sym!("IO::Path")
                 // A `%?RESOURCES` entry shares the IO::Path rows without being
                 // an IO::Path: `slurp(%?RESOURCES<x.json>)` reads its file.
-                || class_name == "Distribution::Resource"
+                || class_name == crate::sym!("Distribution::Resource")
                 || self
                     .class_mro(&class_name.resolve())
                     .iter()
-                    .any(|n| n == "IO::Path"))
+                    .any(|n| *n == crate::sym!("IO::Path")))
         {
             let attrs = attributes.as_map();
             let p = attrs
@@ -290,7 +290,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = inst.view()
-            && class_name == "IO::Handle"
+            && class_name == crate::sym!("IO::Handle")
         {
             let content_value = args.get(1).cloned().unwrap_or(Value::str(String::new()));
             let method_args = std::iter::once(content_value)
@@ -384,7 +384,7 @@ impl Interpreter {
             attributes,
             ..
         }) = path_arg.map(|v| v.view())
-            && class_name == "IO::Special"
+            && class_name == crate::sym!("IO::Special")
             && let Some(what) = attributes.as_map().get("what")
         {
             let what = what.to_string_value();

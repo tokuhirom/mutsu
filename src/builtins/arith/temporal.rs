@@ -31,8 +31,8 @@ pub(crate) fn is_temporal_operand(value: &Value) -> bool {
             // Duck-typed like `is_date_like`: a `class G is DateTime` subclass
             // subtracts and adds exactly as `DateTime` does.
             ValueView::Instance { class_name, .. } => {
-                class_name == "Instant"
-                    || class_name == "Duration"
+                class_name == crate::sym!("Instant")
+                    || class_name == crate::sym!("Duration")
                     || instance_datetime_parts(value).is_some()
             }
             _ => false,
@@ -80,7 +80,7 @@ pub(crate) fn instance_instant_value(value: &Value) -> Option<f64> {
             class_name,
             attributes,
             ..
-        } if class_name == "Instant" => attributes
+        } if class_name == crate::sym!("Instant") => attributes
             .as_map()
             .get("value")
             .and_then(crate::runtime::to_float_value),
@@ -94,7 +94,7 @@ pub(crate) fn instance_instant_raw(value: &Value) -> Option<Value> {
             class_name,
             attributes,
             ..
-        } if class_name == "Instant" => attributes.as_map().get("value").cloned(),
+        } if class_name == crate::sym!("Instant") => attributes.as_map().get("value").cloned(),
         _ => None,
     }
 }
@@ -116,7 +116,7 @@ pub(crate) fn instance_duration_value(value: &Value) -> Option<f64> {
             class_name,
             attributes,
             ..
-        } if class_name == "Duration" => attributes
+        } if class_name == crate::sym!("Duration") => attributes
             .as_map()
             .get("value")
             .and_then(crate::runtime::to_float_value),
@@ -131,7 +131,7 @@ pub(crate) fn instance_duration_raw_value(value: &Value) -> Option<Value> {
             class_name,
             attributes,
             ..
-        } if class_name == "Duration" => attributes.as_map().get("value").cloned(),
+        } if class_name == crate::sym!("Duration") => attributes.as_map().get("value").cloned(),
         _ => None,
     }
 }

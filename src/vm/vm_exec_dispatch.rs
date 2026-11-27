@@ -15,7 +15,7 @@ impl Interpreter {
             id,
             attributes,
         }) = stack.last().map(Value::view)
-            && class_name == "Failure"
+            && class_name == crate::sym!("Failure")
         {
             attributes.insert("handled".to_string(), Value::TRUE);
             crate::value::mark_failure_handled(id);

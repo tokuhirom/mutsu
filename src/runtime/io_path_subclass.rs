@@ -37,7 +37,7 @@ impl Interpreter {
         else {
             return None;
         };
-        if class_name == "IO::Path"
+        if class_name == crate::sym!("IO::Path")
             || class_name.as_str().starts_with("IO::Path::")
             || !super::any_cool_method_gate::is_cool_only_method(method)
             // `lines`, `words`, `comb`, ... are `IO::Path`'s own, not `Cool`'s.

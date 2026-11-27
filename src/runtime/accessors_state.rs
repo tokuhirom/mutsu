@@ -946,7 +946,7 @@ impl Interpreter {
     /// A `List` subclass must be backed by an immutable `List`, not an `Array`,
     /// so `.push` on one still raises `X::Immutable` as raku does.
     pub(crate) fn positional_base_storage(&mut self, class_key: &str, items: Vec<Value>) -> Value {
-        if self.class_mro(class_key).iter().any(|n| n == "Array") {
+        if self.class_mro(class_key).iter().any(|n| *n == crate::sym!("Array")) {
             Value::real_array(items)
         } else {
             Value::array(items)
@@ -968,7 +968,7 @@ impl Interpreter {
         class_key: &str,
         args: Vec<Value>,
     ) -> Vec<Value> {
-        if args.len() != 1 || !self.class_mro(class_key).iter().any(|n| n == "Array") {
+        if args.len() != 1 || !self.class_mro(class_key).iter().any(|n| *n == crate::sym!("Array")) {
             return args;
         }
         match args[0].view() {
@@ -1045,7 +1045,7 @@ impl Interpreter {
             }
         }
         let result = Value::hash(map);
-        if self.class_mro(class_key).iter().any(|n| n == "Hash") {
+        if self.class_mro(class_key).iter().any(|n| *n == crate::sym!("Hash")) {
             result
         } else {
             self.tag_container_metadata(

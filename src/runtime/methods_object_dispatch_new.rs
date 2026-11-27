@@ -14,7 +14,7 @@ fn is_datetime_constructor_named_arg(key: &str) -> bool {
 fn is_normalized_datetime_subclass_ctor_args(args: &[Value]) -> bool {
     if !matches!(
         args.first().map(Value::view),
-        Some(ValueView::Instance { class_name, .. }) if class_name == "DateTime"
+        Some(ValueView::Instance { class_name, .. }) if class_name == crate::sym!("DateTime")
     ) {
         return false;
     }
@@ -30,7 +30,7 @@ fn is_normalized_datetime_subclass_ctor_args(args: &[Value]) -> bool {
 // Cost: O(m), m = the MRO's length.
 pub(crate) fn default_new_accepts_positionals(class_mro: &[Symbol]) -> bool {
     class_mro.iter().any(|n| {
-        *n == "Array" || *n == "List" || *n == "Int" || *n == "Num" || *n == "Rat" || *n == "Hash" || *n == "Map"
+        *n == crate::sym!("Array") || *n == crate::sym!("List") || *n == crate::sym!("Int") || *n == crate::sym!("Num") || *n == crate::sym!("Rat") || *n == crate::sym!("Hash") || *n == crate::sym!("Map")
             // A RakuAST node class takes its children positionally
             // (`Term::Declaration.new($declaration)`); its native constructor,
             // which builds the subclass's node (ADR-9761), checks them.
@@ -431,7 +431,7 @@ impl Interpreter {
         }
         // Collation.new — create a Collation instance with default settings
         if let ValueView::Package(name) = target.view()
-            && name == "Collation"
+            && name == crate::sym!("Collation")
         {
             return Ok(Self::make_collation_instance(1, 1, 1, 1));
         }
@@ -928,7 +928,7 @@ impl Interpreter {
                 && self
                     .class_mro(class_key)
                     .iter()
-                    .any(|name| name == "DateTime");
+                    .any(|name| *name == crate::sym!("DateTime"));
             // A user-declared `new` receives the raw arguments (Rakudo's `now`
             // calls `self.new(now, :$timezone, :&formatter)`), like the Date branch below.
             if is_datetime_subclass
@@ -987,7 +987,7 @@ impl Interpreter {
             // Date subclass handling: delegate Date-specific constructor logic
             // then merge custom attributes via the generic constructor.
             let is_date_subclass = cn_resolved != "Date"
-                && self.class_mro(class_key).iter().any(|name| name == "Date");
+                && self.class_mro(class_key).iter().any(|name| *name == crate::sym!("Date"));
             // Only delegate if the args don't already contain Date attrs
             // (prevents infinite recursion on second call)
             let has_date_named_args = args.iter().any(|a| {
@@ -1018,7 +1018,7 @@ impl Interpreter {
                 || self
                     .class_mro(class_key)
                     .iter()
-                    .any(|name| name == "IO::Path");
+                    .any(|name| *name == crate::sym!("IO::Path"));
             if is_io_path_like && !self.has_user_method(class_key, "new") {
                 // Pure path-string assembly (registry reads only) — shared with the
                 // VM's `try_native_io_path_construct`.
@@ -1031,7 +1031,7 @@ impl Interpreter {
                 || self
                     .class_mro(class_key)
                     .iter()
-                    .any(|name| name == "IO::CatHandle");
+                    .any(|name| *name == crate::sym!("IO::CatHandle"));
             if is_cathandle_like && !self.has_user_method(class_key, "new") {
                 return Ok(self.build_io_cathandle(*class_name, &args));
             }
@@ -1042,7 +1042,7 @@ impl Interpreter {
                 && self
                     .class_mro(class_key)
                     .iter()
-                    .any(|name| name == "Proc::Async");
+                    .any(|name| *name == crate::sym!("Proc::Async"));
             let has_proc_async_state = args.iter().any(|arg| {
                 matches!(arg.view(), ValueView::Pair(key, _) if key == "__mutsu_proc_async_state")
             });
@@ -1089,7 +1089,7 @@ impl Interpreter {
                 || self
                     .class_mro(class_key)
                     .iter()
-                    .any(|name| name == "Version");
+                    .any(|name| *name == crate::sym!("Version"));
             if is_version_like
                 && cn_resolved != "Version"
                 && !self.has_user_method(class_key, "new")
@@ -1110,7 +1110,7 @@ impl Interpreter {
                 && self
                     .class_mro(class_key)
                     .iter()
-                    .any(|name| name == "Pair");
+                    .any(|name| *name == crate::sym!("Pair"));
             if is_pair_subclass && (skip_user_new || !self.has_user_method(class_key, "new")) {
                 let mut attrs = HashMap::new();
                 attrs.insert(
@@ -1127,7 +1127,7 @@ impl Interpreter {
                 && self
                     .class_mro(class_key)
                     .iter()
-                    .any(|name| name == "Range");
+                    .any(|name| *name == crate::sym!("Range"));
             if is_range_subclass && (skip_user_new || !self.has_user_method(class_key, "new")) {
                 let mut attrs = HashMap::new();
                 attrs.insert(
@@ -1140,7 +1140,7 @@ impl Interpreter {
             // Seq `Seq.new($iterator)` builds under `__mutsu_seq_value`, as a
             // Range subclass does; `Seq`'s methods answer on it.
             let is_seq_subclass = cn_resolved != "Seq"
-                && self.class_mro(class_key).iter().any(|name| name == "Seq");
+                && self.class_mro(class_key).iter().any(|name| *name == crate::sym!("Seq"));
             if is_seq_subclass && (skip_user_new || !self.has_user_method(class_key, "new")) {
                 let seq = self.dispatch_new(Value::package(Symbol::intern("Seq")), args)?;
                 let mut attrs = HashMap::new();
@@ -1159,7 +1159,7 @@ impl Interpreter {
                 && self
                     .class_mro(class_key)
                     .iter()
-                    .any(|name| name == "Match");
+                    .any(|name| *name == crate::sym!("Match"));
             if is_match_subclass
                 && (skip_user_new || !self.has_user_method(class_key, "new"))
                 && let ValueView::Instance { attributes, .. } =
@@ -1340,7 +1340,7 @@ impl Interpreter {
                 // Check if this class is a Proxy subclass
                 {
                     let mro = self.class_mro(class_key);
-                    if mro.iter().any(|c| c == "Proxy") {
+                    if mro.iter().any(|c| *c == crate::sym!("Proxy")) {
                         return self.construct_proxy_subclass(class_key, &args);
                     }
                 }
@@ -1775,11 +1775,11 @@ impl Interpreter {
                 if matches!(
                     positional_ctor_args.first().map(Value::view),
                     Some(ValueView::Package(_))
-                ) && !class_mro.iter().any(|n| *n == "Array" || *n == "List")
+                ) && !class_mro.iter().any(|n| *n == crate::sym!("Array") || *n == crate::sym!("List"))
                 {
                     return Err(RuntimeError::new("Cannot convert type object to Int"));
                 }
-                if class_mro.iter().any(|n| *n == "Array" || *n == "List")
+                if class_mro.iter().any(|n| *n == crate::sym!("Array") || *n == crate::sym!("List"))
                     && !attrs.contains_key(crate::symbol::wk::array_storage())
                     && !positional_ctor_args.is_empty()
                 {
@@ -2080,7 +2080,7 @@ impl Interpreter {
                                 !matches!(attr_val.map(Value::view), Some(ValueView::Nil) | None)
                                     && !matches!(
                                         attr_val.map(Value::view),
-                                        Some(ValueView::Package(n)) if n == "Any"
+                                        Some(ValueView::Package(n)) if n == crate::sym!("Any")
                                     );
                             if !is_set {
                                 let attr_full_name = format!("{}!{}", attr.sigil, attr_name);
@@ -2243,7 +2243,7 @@ impl Interpreter {
                 if self
                     .class_mro(class_key)
                     .iter()
-                    .any(|n| *n == "Array" || *n == "List")
+                    .any(|n| *n == crate::sym!("Array") || *n == crate::sym!("List"))
                     && !attrs.contains_key(crate::symbol::wk::array_storage())
                 {
                     let storage = self.positional_base_storage(class_key, Vec::new());
@@ -2265,7 +2265,7 @@ impl Interpreter {
                 if self
                     .class_mro(class_key)
                     .iter()
-                    .any(|n| *n == "Hash" || *n == "Map")
+                    .any(|n| *n == crate::sym!("Hash") || *n == crate::sym!("Map"))
                     && !attrs.contains_key(crate::symbol::wk::hash_storage())
                 {
                     let has_positional = args.iter().any(|a| !a.is_string_pair_value());
@@ -2362,7 +2362,7 @@ impl Interpreter {
                 inv_cell.commit_attrs(attrs);
                 let mut instance = inv;
                 if let Some(type_args) = type_args.as_ref() {
-                    if self.class_mro(class_key).iter().any(|n| n == "Array") {
+                    if self.class_mro(class_key).iter().any(|n| *n == crate::sym!("Array")) {
                         let value_type = type_args
                             .first()
                             .cloned()
@@ -2375,7 +2375,7 @@ impl Interpreter {
                                 declared_type: Some(class_name.resolve()),
                             },
                         );
-                    } else if self.class_mro(class_key).iter().any(|n| n == "Hash") {
+                    } else if self.class_mro(class_key).iter().any(|n| *n == crate::sym!("Hash")) {
                         let value_type = type_args
                             .first()
                             .cloned()
@@ -2406,7 +2406,7 @@ impl Interpreter {
         }
         // Fallback .new on basic types
         match target.view() {
-            ValueView::Package(name) if name == "CallFrame" => {
+            ValueView::Package(name) if name == crate::sym!("CallFrame") => {
                 // CallFrame.new(depth) — equivalent to callframe(depth)
                 let depth = args
                     .first()
@@ -2499,7 +2499,7 @@ impl Interpreter {
                         let refused = resolved == "UInt"
                             || resolved == "Junction"
                             || resolved == "Failure"
-                            || mro.as_ref().is_some_and(|m| m.iter().any(|c| c == "Code"));
+                            || mro.as_ref().is_some_and(|m| m.iter().any(|c| *c == crate::sym!("Code")));
                         if !refused
                             && (mro.is_some()
                                 || crate::runtime::types::is_builtin_role_name(&resolved))

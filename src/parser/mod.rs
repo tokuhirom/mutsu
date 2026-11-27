@@ -1859,7 +1859,7 @@ mod tests {
         assert_eq!(stmts.len(), 2);
         match &stmts[1] {
             Stmt::Expr(Expr::Call { name, args, .. }) => {
-                assert_eq!(name, "f");
+                assert_eq!(*name, crate::sym!("f"));
                 assert_eq!(args.len(), 3);
                 assert!(
                     matches!(&args[0], Expr::Literal(v) if matches!(v.view(), ValueView::Str(s) if s.as_str() == "say 42"))

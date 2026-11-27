@@ -41,7 +41,7 @@ pub(in crate::runtime) fn positional_values_from_unpack_target(value: &Value) ->
             class_name,
             attributes,
             ..
-        } if class_name == "Match" => match attributes.as_map().get("list").map(Value::view) {
+        } if class_name == crate::sym!("Match") => match attributes.as_map().get("list").map(Value::view) {
             Some(ValueView::Array(data, _)) => data.items().to_vec(),
             _ => Vec::new(),
         },
@@ -548,7 +548,7 @@ pub(in crate::runtime) fn named_values_from_unpack_target(value: &Value) -> Valu
             class_name,
             attributes,
             ..
-        } if class_name == "Match" => match attributes.as_map().get("named").map(Value::view) {
+        } if class_name == crate::sym!("Match") => match attributes.as_map().get("named").map(Value::view) {
             Some(ValueView::Hash(map)) => map.map.clone(),
             _ => ValueMap::default(),
         },

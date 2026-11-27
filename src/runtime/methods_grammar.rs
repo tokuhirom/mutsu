@@ -1455,7 +1455,7 @@ impl Interpreter {
             // `view()`, which would materialize every capture (#12917).
             && !v.is_lazy_match_value()
             && let ValueView::Instance { class_name, .. } = v.view()
-            && class_name == "Failure"
+            && class_name == crate::sym!("Failure")
         {
             return Ok(Value::NIL);
         }

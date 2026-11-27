@@ -19,7 +19,7 @@ impl Interpreter {
         else {
             return None;
         };
-        if class_name != "Failure" {
+        if class_name != crate::sym!("Failure") {
             return None;
         }
         let map = attributes.as_map();

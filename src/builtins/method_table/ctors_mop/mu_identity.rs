@@ -62,7 +62,7 @@ fn unhandled_failure_exception(target: &Value) -> Option<Value> {
             class_name,
             attributes,
             ..
-        } if class_name == "Failure" && !target.is_failure_handled() => {
+        } if class_name == crate::sym!("Failure") && !target.is_failure_handled() => {
             attributes.as_map().get("exception").cloned()
         }
         _ => None,
@@ -73,7 +73,7 @@ fn unhandled_failure_exception(target: &Value) -> Option<Value> {
 // Cost: O(1).
 fn handle_failure(target: &Value) {
     if let ValueView::Instance { class_name, .. } = target.view()
-        && class_name == "Failure"
+        && class_name == crate::sym!("Failure")
     {
         target.mark_failure_handled();
     }
@@ -98,7 +98,7 @@ fn value_defined(v: &Value) -> bool {
     match v.view() {
         ValueView::Nil | ValueView::Package(_) | ValueView::ParametricRole { .. } => false,
         ValueView::Slip(items) if items.is_empty() => false,
-        ValueView::Instance { class_name, .. } if class_name == "Failure" => false,
+        ValueView::Instance { class_name, .. } if class_name == crate::sym!("Failure") => false,
         ValueView::VarRef { value, .. } => crate::runtime::types::value_is_defined(value),
         ValueView::Junction { kind, values } => {
             let mut answers = values.iter().map(value_defined);

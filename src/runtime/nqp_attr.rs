@@ -266,7 +266,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = obj.view()
-            && class_name != "Match"
+            && class_name != crate::sym!("Match")
         {
             let attrs = attributes.as_map();
             if !attrs.contains_key(crate::value::match_view::cursor_match_marker()) {
@@ -282,7 +282,7 @@ impl Interpreter {
                     .cloned();
                 // An attribute the instance does not store may still be a
                 // view the generic body computes (`IO::Path`'s `$!os-path`).
-                if found.is_some() || class_name != "IO::Path" {
+                if found.is_some() || class_name != crate::sym!("IO::Path") {
                     return found;
                 }
             }

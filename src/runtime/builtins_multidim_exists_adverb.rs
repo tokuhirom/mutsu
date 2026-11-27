@@ -193,7 +193,7 @@ impl Interpreter {
             };
             let raw_exists = i >= 0
                 && (i as usize) < items.len()
-                && !matches!(items[i as usize].view(), ValueView::Package(name) if name == "Any");
+                && !matches!(items[i as usize].view(), ValueView::Package(name) if name == crate::sym!("Any"));
             let exists = if negated { !raw_exists } else { raw_exists };
             let key = Value::int(i);
             match adverb {

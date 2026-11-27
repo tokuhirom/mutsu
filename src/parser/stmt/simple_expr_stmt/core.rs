@@ -323,7 +323,7 @@ pub(crate) fn expr_stmt(input: &str) -> PResult<'_, Stmt> {
     let item_form =
         matches!(expr, Expr::Contextualizer { .. }).then(|| expr.clone().contextualizer_call());
     if let Expr::MethodCall { name, args, .. } = item_form.as_ref().unwrap_or(&expr)
-        && name == "item"
+        && *name == crate::sym!("item")
         && args.is_empty()
         && rest.starts_with('=')
         && !rest.starts_with("==")

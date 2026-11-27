@@ -264,7 +264,7 @@ impl Interpreter {
         if !self
             .class_mro(&class_name)
             .iter()
-            .any(|c| c == "IO::Handle")
+            .any(|c| *c == crate::sym!("IO::Handle"))
         {
             return None;
         }

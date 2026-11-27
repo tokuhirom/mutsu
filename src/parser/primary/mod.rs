@@ -1281,7 +1281,7 @@ mod tests {
         assert_eq!(rest, "");
         match expr {
             Expr::Call { name, args, .. } => {
-                assert_eq!(name, "foo");
+                assert_eq!(name, crate::sym!("foo"));
                 assert_eq!(args.len(), 1);
             }
             _ => panic!("expected call expression"),
@@ -1336,7 +1336,7 @@ mod tests {
             Expr::MethodCall {
                 target, name, args, ..
             } => {
-                assert_eq!(name, "item");
+                assert_eq!(name, crate::sym!("item"));
                 assert!(args.is_empty());
                 assert!(matches!(*target, Expr::BracketArray(ref elems, _) if elems.len() == 2));
             }
@@ -1471,7 +1471,7 @@ mod tests {
         assert!(matches!(
             expr,
             Expr::Call { ref name, ref args, .. }
-                if name == "__mutsu_make_format"
+                if *name == crate::sym!("__mutsu_make_format")
                     && args.len() == 1
                     && matches!(&args[0], Expr::Literal(lit) if matches!(lit.view(), ValueView::Str(s) if s.as_str() == "%5s"))
         ));
@@ -1484,7 +1484,7 @@ mod tests {
         assert!(matches!(
             expr,
             Expr::Call { ref name, ref args, .. }
-                if name == "__mutsu_make_format"
+                if *name == crate::sym!("__mutsu_make_format")
                     && args.len() == 1
                     && matches!(args[0], Expr::StringInterpolation(_))
         ));
@@ -1713,7 +1713,7 @@ mod tests {
         assert_eq!(rest, "");
         match expr {
             Expr::Call { name, args, .. } => {
-                assert_eq!(name, "produce");
+                assert_eq!(name, crate::sym!("produce"));
                 assert_eq!(args.len(), 2);
             }
             _ => panic!("expected produce call expression"),
@@ -1733,7 +1733,7 @@ mod tests {
         assert_eq!(rest, "");
         match expr {
             Expr::Call { name, args, .. } => {
-                assert_eq!(name, "is");
+                assert_eq!(name, crate::sym!("is"));
                 match &args[0] {
                     Expr::Reduction { expr, .. } => {
                         assert!(matches!(&**expr, Expr::MethodCall { .. }));
@@ -1751,7 +1751,7 @@ mod tests {
         assert_eq!(rest, "");
         match expr {
             Expr::Call { name, args, .. } => {
-                assert_eq!(name, "is");
+                assert_eq!(name, crate::sym!("is"));
                 match &args[0] {
                     Expr::Reduction { expr, .. } => {
                         assert!(matches!(&**expr, Expr::ArrayLiteral(_)));
@@ -1780,15 +1780,15 @@ mod tests {
     fn primary_parses_keyword_named_sub_calls() {
         let (rest, sub_expr) = primary("sub('foobar')").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(sub_expr, Expr::Call { ref name, .. } if name == "sub"));
+        assert!(matches!(sub_expr, Expr::Call { ref name, .. } if *name == crate::sym!("sub")));
 
         let (rest, my_expr) = primary("my($x)").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(my_expr, Expr::Call { ref name, .. } if name == "my"));
+        assert!(matches!(my_expr, Expr::Call { ref name, .. } if *name == crate::sym!("my")));
 
         let (rest, loop_expr) = primary("loop(5)").unwrap();
         assert_eq!(rest, "");
-        assert!(matches!(loop_expr, Expr::Call { ref name, .. } if name == "loop"));
+        assert!(matches!(loop_expr, Expr::Call { ref name, .. } if *name == crate::sym!("loop")));
     }
 
     #[test]
@@ -1797,7 +1797,7 @@ mod tests {
         assert_eq!(rest, "");
         assert!(matches!(
             expr,
-            Expr::DoStmt(ref stmt) if matches!(**stmt, Stmt::SubDecl { ref name, .. } if name == "f")
+            Expr::DoStmt(ref stmt) if matches!(**stmt, Stmt::SubDecl { ref name, .. } if *name == crate::sym!("f"))
         ));
     }
 
@@ -1838,7 +1838,7 @@ mod tests {
         assert_eq!(rest, "");
         assert!(matches!(
             expr,
-            Expr::Call { ref name, ref args, .. } if name == "qx" && args.len() == 1
+            Expr::Call { ref name, ref args, .. } if *name == crate::sym!("qx") && args.len() == 1
         ));
     }
 
@@ -1851,7 +1851,7 @@ mod tests {
         assert_eq!(rest, "");
         match expr {
             Expr::Call { name, args, .. } => {
-                assert_eq!(name, "qx");
+                assert_eq!(name, crate::sym!("qx"));
                 assert_eq!(args.len(), 1);
                 assert!(matches!(args[0], Expr::Literal(_)));
             }

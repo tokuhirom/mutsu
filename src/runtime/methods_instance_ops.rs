@@ -893,7 +893,7 @@ impl Interpreter {
             // path methods are class methods). Repr methods stay on the
             // instance: `IO::Spec::Unix.new.gist` is `IO::Spec::Unix.new`
             // (the generic instance repr), not the type object's `(Unix)`.
-            if (class_name == "IO::Spec" || class_name.as_str().starts_with("IO::Spec::"))
+            if (class_name == crate::sym!("IO::Spec") || class_name.as_str().starts_with("IO::Spec::"))
                 && !matches!(method, "gist" | "raku" | "Str" | "Stringy")
             {
                 let pkg = Value::package(class_name);
@@ -1055,7 +1055,7 @@ impl Interpreter {
                         || self
                             .class_mro(&cn)
                             .iter()
-                            .any(|p| p == "Exception" || p == "Failure"));
+                            .any(|p| *p == crate::sym!("Exception") || *p == crate::sym!("Failure")));
                 if is_exception {
                     if method == "message"
                         && let Some(msg) = attributes.as_map().get("__mutsu_thrown_message")
@@ -1585,7 +1585,7 @@ impl Interpreter {
                     }
                 })
                 .collect();
-            if name == "Instant"
+            if name == crate::sym!("Instant")
                 && normalized_method == "from_posix"
                 && let Some(result) = Self::try_native_builtin_class_method(name, method, &args)
             {
@@ -2116,7 +2116,7 @@ impl Interpreter {
                 self.metamodel_new_type(&how_class, &args)
             }
             // Metamodel::Primitives static methods
-            _ if matches!(target.view(), ValueView::Package(n) if n == "Metamodel::Primitives") => {
+            _ if matches!(target.view(), ValueView::Package(n) if n == crate::sym!("Metamodel::Primitives")) => {
                 self.metamodel_primitives_dispatch(method, args)
             }
             _ => {

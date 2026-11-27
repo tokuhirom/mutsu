@@ -390,7 +390,11 @@ pub(crate) fn value_to_capture(target: &Value) -> Result<Value, RuntimeError> {
         } if matches!(class_name.resolve().as_str(), "IO::Path" | "Path") => {
             let mut named = ValueMap::default();
             for (k, v) in attributes.as_map().iter() {
-                let key = if k == "cwd" { "CWD" } else { k.as_str() };
+                let key = if *k == crate::sym!("cwd") {
+                    "CWD"
+                } else {
+                    k.as_str()
+                };
                 named.insert(key.to_string(), v.clone());
             }
             Ok(Value::capture(vec![], named))

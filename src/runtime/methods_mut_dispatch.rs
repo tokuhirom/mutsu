@@ -645,7 +645,7 @@ impl Interpreter {
             // A built-in iterator's protocol methods are rows of the `Iterator`
             // and `PredictiveIterator` roles, found by their owner; they commit
             // through the instance's shared cell (ADR-11276 §9.126).
-            if class_name == "Iterator" {
+            if class_name == crate::sym!("Iterator") {
                 crate::vm::vm_stats::record_dispatch_entry_intercept(
                     "callmethodmutwithvalues",
                     "iterator-protocol",

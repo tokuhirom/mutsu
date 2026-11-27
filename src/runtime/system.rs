@@ -793,7 +793,7 @@ impl Interpreter {
         // which for assignments is the assigned value.
         if let Ok(value) = &mut outcome
             && (value.is_nil()
-                || matches!(value.view(), ValueView::Package(name) if name == "Any"))
+                || matches!(value.view(), ValueView::Package(name) if name == crate::sym!("Any")))
             && let Some(Stmt::Assign { name, .. }) = stmts.last()
             && let Some(assigned) = self.env.get(name).cloned()
         {

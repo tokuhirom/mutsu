@@ -42,7 +42,7 @@ pub(super) static ROWS: &[MethodRow] = &[
 fn gist(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     // An `IO::Special`'s `gist` is its `raku` (`IO::Special.new("<STDOUT>")`).
     if let ValueView::Instance { class_name, .. } = target.view()
-        && class_name == "IO::Special"
+        && class_name == crate::sym!("IO::Special")
     {
         return crate::builtins::method_table::io_special_raku(target, &[]);
     }
@@ -96,7 +96,7 @@ fn render(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
         // Nil here is a genuine Nil, not an uninit placeholder.)
         ValueView::Nil => Some(Ok(Value::str_from("Nil"))),
         // The `Signature` rows' renderings (`method_table::signature`).
-        ValueView::Instance { class_name, .. } if class_name == "Signature" => {
+        ValueView::Instance { class_name, .. } if class_name == crate::sym!("Signature") => {
             let id = crate::builtins::method_table::owner_row(
                 crate::symbol::Symbol::intern("Signature"),
                 crate::symbol::Symbol::intern(method),
@@ -108,7 +108,7 @@ fn render(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
             class_name,
             attributes,
             ..
-        } if class_name == "Parameter" && matches!(method, "raku" | "gist") => {
+        } if class_name == crate::sym!("Parameter") && matches!(method, "raku" | "gist") => {
             Some(Ok(Value::str(crate::value::signature::parameter_to_raku(
                 &(attributes).as_map(),
             ))))
@@ -117,7 +117,7 @@ fn render(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
             class_name,
             attributes,
             ..
-        } if class_name == "Failure" => {
+        } if class_name == crate::sym!("Failure") => {
             // `gist`, `raku` and `Str` are rows (`method_table::failure`). Any other
             // method (`Numeric`, `Int`, ...) used in a value context throws the
             // wrapped exception.
@@ -133,7 +133,7 @@ fn render(target: &Value, method: &str) -> Option<Result<Value, RuntimeError>> {
             class_name,
             attributes,
             ..
-        } if class_name == "CallFrame" => {
+        } if class_name == crate::sym!("CallFrame") => {
             if method == "gist" {
                 let file = attributes
                     .as_map()

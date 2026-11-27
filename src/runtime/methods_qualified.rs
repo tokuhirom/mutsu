@@ -73,7 +73,7 @@ impl Interpreter {
         if qualifier == "Range"
             && class_name != "Range"
             && built.is_range()
-            && self.class_mro(&class_name).iter().any(|c| c == "Range")
+            && self.class_mro(&class_name).iter().any(|c| *c == crate::sym!("Range"))
         {
             let mut attrs = HashMap::new();
             attrs.insert(

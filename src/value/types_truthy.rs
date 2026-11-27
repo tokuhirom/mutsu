@@ -99,7 +99,7 @@ impl Value {
                 attributes,
                 ..
             } => {
-                if class_name == "Proc" {
+                if class_name == crate::sym!("Proc") {
                     // Proc is truthy when the child both exited with 0 and was
                     // not killed by a signal (a signal death reports
                     // `exitcode = 0`, so the exit code alone is not enough).
@@ -113,18 +113,18 @@ impl Value {
                     };
                     return exited_clean && signal == 0;
                 }
-                if class_name == "Failure" {
+                if class_name == crate::sym!("Failure") {
                     return false;
                 }
                 // `StrDistance.Bool` is its distance's: false when `tr///`
                 // changed nothing (`before` and `after` agree).
-                if class_name == "StrDistance" {
+                if class_name == crate::sym!("StrDistance") {
                     let map = attributes.as_map();
                     return map.get("before").map(Value::to_string_value)
                         != map.get("after").map(Value::to_string_value);
                 }
                 // `Duration` does `Real`: a zero Duration is false.
-                if class_name == "Duration"
+                if class_name == crate::sym!("Duration")
                     && let Some(v) = attributes.as_map().get("value")
                 {
                     return v.truthy();
@@ -135,7 +135,7 @@ impl Value {
                 }
                 // An `nqp::iterator` (runtime::nqp_iter): truthy while
                 // elements remain, so `while $it { nqp::shift($it) }` ends.
-                if class_name == "BOOTIter" {
+                if class_name == crate::sym!("BOOTIter") {
                     let map = attributes.as_map();
                     let len = match map.get("items").map(Value::view) {
                         Some(ValueView::Array(items, _)) => items.len() as i64,

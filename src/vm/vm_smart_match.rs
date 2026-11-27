@@ -216,7 +216,7 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
                 attributes: right_attrs,
                 ..
             },
-        ) if left_class == "DateTime" && right_class == "Date" => {
+        ) if left_class == crate::sym!("DateTime") && right_class == crate::sym!("Date") => {
             let (y, m, d, _, _, _, _) =
                 crate::builtins::methods_0arg::temporal::datetime_attrs(&(left_attrs).as_map());
             let (ry, rm, rd) =
@@ -377,7 +377,7 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
         {
             // `DateTime.ACCEPTS` is `==`: the same instant, whatever the time
             // zone (#18818).
-            if lc == "DateTime"
+            if lc == crate::sym!("DateTime")
                 && let (
                     ValueView::Instance { attributes: la, .. },
                     ValueView::Instance { attributes: ra, .. },
@@ -406,7 +406,7 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
                 class_name: rhs_class,
                 ..
             },
-        ) if rhs_class == "Mu" => Some(lhs_type == "Mu"),
+        ) if rhs_class == crate::sym!("Mu") => Some(lhs_type == crate::sym!("Mu")),
 
         // When LHS is a type object (Package) and RHS is not a Package/type,
         // return false (handled more completely in the interpreter for type hierarchy)
@@ -684,7 +684,12 @@ pub(crate) fn pure_smart_match(left: &Value, right: &Value) -> Option<bool> {
                 id: id_b,
                 ..
             },
-        ) if lc != "Signature" && rc != "Signature" && lc != "X::AdHoc" => Some(id_a == id_b),
+        ) if lc != crate::sym!("Signature")
+            && rc != crate::sym!("Signature")
+            && lc != crate::sym!("X::AdHoc") =>
+        {
+            Some(id_a == id_b)
+        }
 
         // Default: fall through to interpreter
         _ => None,

@@ -1355,7 +1355,7 @@ impl Interpreter {
             && self
                 .class_mro(&cn.resolve())
                 .iter()
-                .any(|parent| parent == "Exception")
+                .any(|parent| *parent == crate::sym!("Exception"))
             && attributes.contains_key(method_name)
         {
             results.push(Value::routine_parts(

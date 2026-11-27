@@ -174,7 +174,7 @@ fn keep_address(keep: &Value) -> Option<usize> {
 /// Whether `elem` is the `Str` type: its slots are `char*` read as strings.
 // Cost: O(1).
 fn is_str_type(elem: &Value) -> bool {
-    matches!(elem.view(), ValueView::Package(name) if name == "Str")
+    matches!(elem.view(), ValueView::Package(name) if name == crate::sym!("Str"))
 }
 
 impl Interpreter {

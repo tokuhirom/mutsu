@@ -45,7 +45,7 @@ pub(crate) fn is_iteration_buffer(v: &Value) -> bool {
             attributes,
             ..
         } => {
-            class_name == "IterationBuffer"
+            class_name == crate::sym!("IterationBuffer")
                 || attributes
                     .as_map()
                     .get(iteration_buffer_items_key())
@@ -71,7 +71,7 @@ fn repoint_backing_array(storage: &Value, array: &Value) -> bool {
         attributes,
         ..
     } = storage.view()
-        && class_name == "IterationBuffer"
+        && class_name == crate::sym!("IterationBuffer")
         && matches!(array.view(), ValueView::Array(..))
     {
         attributes.insert(iteration_buffer_items_key(), array.clone());
@@ -347,7 +347,7 @@ impl Interpreter {
                     attributes,
                     ..
                 } = storage.view()
-                    && class_name == "IterationBuffer"
+                    && class_name == crate::sym!("IterationBuffer")
                     && !attributes
                         .as_map()
                         .contains_key(iteration_buffer_items_key())

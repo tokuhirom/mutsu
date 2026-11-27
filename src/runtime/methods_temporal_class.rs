@@ -16,7 +16,7 @@ impl Interpreter {
         target: &Value,
         (y, m, d): (i64, i64, i64),
     ) -> Result<Value, RuntimeError> {
-        if matches!(target.view(), ValueView::Package(name) if name == "Date") {
+        if matches!(target.view(), ValueView::Package(name) if name == crate::sym!("Date")) {
             return Ok(temporal::make_date(y, m, d));
         }
         let date_args = vec![

@@ -48,6 +48,6 @@ pub(crate) fn declines(target: &crate::value::Value, method: crate::symbol::Symb
     matches!(
         target.view(),
         crate::value::ValueView::Instance { class_name, .. }
-            if class_name == "Distribution::Resource"
+            if class_name == crate::sym!("Distribution::Resource")
     ) && !resource_answers(method.as_str())
 }

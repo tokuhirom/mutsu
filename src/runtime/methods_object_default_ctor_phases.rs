@@ -122,7 +122,7 @@ impl Interpreter {
                         Some(ValueView::Nil) | None
                     ) && !matches!(
                         attrs.get(storage_key).map(Value::view),
-                        Some(ValueView::Package(n)) if n == "Any"
+                        Some(ValueView::Package(n)) if n == crate::sym!("Any")
                     );
                     if !is_set {
                         let attr_full_name = format!("{}!{}", attr.sigil, attr_name);

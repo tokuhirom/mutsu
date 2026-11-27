@@ -150,7 +150,7 @@ fn parse_postfix_colon_args_may_be_empty() {
     assert_eq!(rest, "");
     match expr {
         Expr::MethodCall { name, args, .. } => {
-            assert_eq!(name, "foo");
+            assert_eq!(name, crate::sym!("foo"));
             assert!(args.is_empty());
         }
         other => panic!("expected a MethodCall, got {other:?}"),
@@ -177,7 +177,7 @@ fn parse_private_postfix_colon_args() {
             modifier,
             ..
         } => {
-            assert_eq!(name, "SET-SELF");
+            assert_eq!(name, crate::sym!("SET-SELF"));
             assert_eq!(modifier, Some('!'));
             assert_eq!(args.len(), 2);
             assert!(matches!(args[0], Expr::BareWord(ref n) if n.as_str() == "pulled"));
@@ -188,7 +188,7 @@ fn parse_private_postfix_colon_args() {
                     name,
                     modifier: None,
                     ..
-                } if name == "bless"
+                } if name == crate::sym!("bless")
             ));
         }
         _ => panic!("expected private method call expression"),
@@ -219,7 +219,7 @@ fn parse_postfix_angle_index_zen_values_adverb() {
         Expr::MethodCall {
             target, name, args, ..
         } => {
-            assert_eq!(name, "values");
+            assert_eq!(name, crate::sym!("values"));
             assert!(args.is_empty());
             assert!(matches!(target.peel_parens(), Expr::HashVar(n) if n.as_str() == "h"));
         }
@@ -245,7 +245,7 @@ fn parse_postfix_call_adverb_block_as_arg() {
     assert_eq!(rest, "");
     match expr {
         Expr::Call { name, args, .. } => {
-            assert_eq!(name, "foo");
+            assert_eq!(name, crate::sym!("foo"));
             assert_eq!(args.len(), 2);
             assert!(args.iter().any(|arg| matches!(arg, Expr::AnonSub { .. })));
             assert!(args.iter().any(|arg| matches!(
@@ -264,7 +264,7 @@ fn parse_postfix_call_adverb_colonpairs_as_args() {
     assert_eq!(rest, "");
     match expr {
         Expr::Call { name, args, .. } => {
-            assert_eq!(name, "fiddle");
+            assert_eq!(name, crate::sym!("fiddle"));
             assert_eq!(args.len(), 3);
             assert!(
                 args.iter()
@@ -288,7 +288,7 @@ fn parse_subscript_adverb_does_not_become_call_adverb() {
     assert_eq!(rest, "");
     match expr {
         Expr::Call { name, args, .. } => {
-            assert_eq!(name, "say");
+            assert_eq!(name, crate::sym!("say"));
             assert_eq!(args.len(), 1);
             assert!(matches!(&args[0], Expr::Ast(node)
                 if matches!(node.as_ref(), crate::ast::parsed::ParsedExpr::SubscriptAdverbs(_))));
@@ -303,7 +303,7 @@ fn parse_hash_subscript_adverb_does_not_become_call_adverb() {
     assert_eq!(rest, "");
     match expr {
         Expr::Call { name, args, .. } => {
-            assert_eq!(name, "say");
+            assert_eq!(name, crate::sym!("say"));
             assert_eq!(args.len(), 1);
             assert!(matches!(&args[0], Expr::Ast(node)
                 if matches!(node.as_ref(), crate::ast::parsed::ParsedExpr::SubscriptAdverbs(_))));
@@ -320,7 +320,7 @@ fn parse_listop_block_then_colon_args() {
     assert_eq!(rest, "");
     match expr {
         Expr::MethodCall { name, args, .. } => {
-            assert_eq!(name, "map");
+            assert_eq!(name, crate::sym!("map"));
             assert_eq!(args.len(), 1);
             assert!(matches!(args[0], Expr::ArrayVar(ref n) if n.as_str() == "list"));
         }
@@ -334,7 +334,7 @@ fn parse_method_colon_arg_pointy_with_return_type() {
     assert_eq!(rest, "");
     match expr {
         Expr::MethodCall { name, args, .. } => {
-            assert_eq!(name, "map");
+            assert_eq!(name, crate::sym!("map"));
             assert_eq!(args.len(), 1);
             // A pointy block that declares a `--> T` return type keeps the
             // constraint, so it parses to the param_defs-carrying closure node
@@ -359,7 +359,7 @@ fn parse_method_colon_args_adjacent_colonpairs() {
     assert_eq!(rest, "");
     match expr {
         Expr::MethodCall { name, args, .. } => {
-            assert_eq!(name, "new");
+            assert_eq!(name, crate::sym!("new"));
             assert_eq!(args.len(), 4);
         }
         _ => panic!("expected method call expression"),
@@ -372,7 +372,7 @@ fn parse_indir_with_hyphenated_call_arg_and_block() {
     assert_eq!(rest, "");
     match expr {
         Expr::Call { name, args, .. } => {
-            assert_eq!(name, "indir");
+            assert_eq!(name, crate::sym!("indir"));
             assert_eq!(args.len(), 2);
         }
         _ => panic!("expected call expression"),
@@ -384,7 +384,7 @@ fn parse_paren_expr_with_space_dot_method_chain() {
     let (rest, expr) = expression("(^3 .map: -> \\x --> Int { $i++ }).sink").unwrap();
     assert_eq!(rest, "");
     match expr {
-        Expr::MethodCall { name, .. } => assert_eq!(name, "sink"),
+        Expr::MethodCall { name, .. } => assert_eq!(name, crate::sym!("sink")),
         _ => panic!("expected outer method call"),
     }
 }

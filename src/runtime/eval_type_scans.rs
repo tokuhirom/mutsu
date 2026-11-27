@@ -146,7 +146,7 @@ impl<'ast> Visit<'ast> for TypeDecls<'_> {
                 // NativeCall's `CArray`), whose `C[T]` calls that meta-method.
                 insert_declared_name(&mut out.types, &name.resolve());
                 let parametric = body.iter().any(
-                    |s| matches!(s, Stmt::MethodDecl { name, .. } if *name == "^parameterize"),
+                    |s| matches!(s, Stmt::MethodDecl { name, .. } if *name == crate::sym!("^parameterize")),
                 );
                 if !parametric {
                     insert_declared_name(&mut out.classes, &name.resolve());

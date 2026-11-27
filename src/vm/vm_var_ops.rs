@@ -137,7 +137,7 @@ impl Interpreter {
                 // reads back `Any`, not the `Mu` default) -- `hole_at` is the
                 // canonical discriminator.
                 ValueView::Package(name)
-                    if name == "Any" && !default.is_nil() && items.hole_at(idx) =>
+                    if name == crate::sym!("Any") && !default.is_nil() && items.hole_at(idx) =>
                 {
                     default
                 }
@@ -145,7 +145,9 @@ impl Interpreter {
                 // nqp null): the `Mu` slot a Match's `.list` view leaves for
                 // an unbound positional capture (`match_list_view`).
                 ValueView::Package(name)
-                    if kind == ArrayKind::List && name == "Mu" && items.hole_at(idx) =>
+                    if kind == ArrayKind::List
+                        && name == crate::sym!("Mu")
+                        && items.hole_at(idx) =>
                 {
                     Value::NIL
                 }
@@ -559,7 +561,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Failure" => {
+            } if class_name == crate::sym!("Failure") => {
                 if let Some(ex) = attributes.as_map().get("exception") {
                     return Err(Self::failure_to_error(ex));
                 }

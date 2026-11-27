@@ -447,11 +447,11 @@ impl Interpreter {
         if self.registry().enum_types.contains_key(base_type) {
             let enum_match = matches!(
                 left.view(),
-                ValueView::Enum { enum_type, .. } if enum_type == base_type
+                ValueView::Enum { enum_type, .. } if enum_type.as_str() == base_type
             );
             let own_type_object = matches!(
                 left.view(),
-                ValueView::Package(lhs_name) if lhs_name == base_type
+                ValueView::Package(lhs_name) if lhs_name.as_str() == base_type
             );
             return match smiley {
                 Some(":U") => own_type_object,
@@ -545,7 +545,7 @@ impl Interpreter {
                         || self.class_mro(class_name.as_str()).iter().any(|c| c.as_str() == "Nil")
                 }
                 ValueView::Package(name) => {
-                    name == "Nil"
+                    name == crate::sym!("Nil")
                         || self.class_mro(name.as_str()).iter().any(|c| c.as_str() == "Nil")
                 }
                 _ => false,
@@ -626,7 +626,7 @@ impl Interpreter {
                     attributes: right_attrs,
                     ..
                 },
-            ) if left_class == "DateTime" && right_class == "Date" => {
+            ) if left_class == crate::sym!("DateTime") && right_class == crate::sym!("Date") => {
                 let (y, m, d, _, _, _, _) =
                     crate::builtins::methods_0arg::temporal::datetime_attrs(&(left_attrs).as_map());
                 let (ry, rm, rd) =
@@ -1859,7 +1859,7 @@ impl Interpreter {
                     class_name: rhs_class,
                     ..
                 },
-            ) if rhs_class == "Mu" => lhs_type == "Mu",
+            ) if rhs_class == crate::sym!("Mu") => lhs_type == crate::sym!("Mu"),
             // A Bool RHS is the match result regardless of the topic — also for
             // a type-object topic (rakudo: "Smartmatch against True always
             // matches"). Must precede the Package catch-all below;
@@ -1961,7 +1961,7 @@ impl Interpreter {
                 | ValueView::Rat(..)
                 | ValueView::FatRat(..)
                 | ValueView::Complex(..),
-            ) if class_name == "Duration" => {
+            ) if class_name == crate::sym!("Duration") => {
                 let n = attributes
                     .as_map()
                     .get("value")
@@ -1981,7 +1981,7 @@ impl Interpreter {
                     attributes,
                     ..
                 },
-            ) if class_name == "Duration" => {
+            ) if class_name == crate::sym!("Duration") => {
                 let n = attributes
                     .as_map()
                     .get("value")
@@ -2116,7 +2116,7 @@ impl Interpreter {
                     id: id_b,
                     ..
                 },
-            ) if cn_a == "Signature" && cn_b == "Signature" => {
+            ) if cn_a == crate::sym!("Signature") && cn_b == crate::sym!("Signature") => {
                 if let (Some(info_a), Some(info_b)) =
                     (extract_sig_info(left), extract_sig_info(right))
                 {
@@ -2137,7 +2137,7 @@ impl Interpreter {
                 }
             }
             // Value ~~ Signature: signature ACCEPTS value
-            (_, ValueView::Instance { class_name: cn, .. }) if cn == "Signature" => {
+            (_, ValueView::Instance { class_name: cn, .. }) if cn == crate::sym!("Signature") => {
                 if let Some(info) = extract_sig_info(right) {
                     self.signature_accepts_value(left, &info)
                 } else {
@@ -2198,7 +2198,7 @@ impl Interpreter {
                     ..
                 },
                 _,
-            ) if class_name == "X::AdHoc" => {
+            ) if class_name == crate::sym!("X::AdHoc") => {
                 if let Some(payload) = attributes.as_map().get("payload") {
                     self.smart_match_into(payload, right, err)
                 } else {

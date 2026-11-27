@@ -1624,7 +1624,7 @@ pub(crate) fn make_parameter_value_from_param_def(
 /// Extract SigInfo from a Signature Instance value.
 pub(crate) fn extract_sig_info(val: &Value) -> Option<SigInfo> {
     if let ValueView::Instance { class_name, id, .. } = val.view() {
-        if class_name != "Signature" {
+        if class_name != crate::sym!("Signature") {
             return None;
         }
         if let Some(info) = lookup_sig_info(id) {

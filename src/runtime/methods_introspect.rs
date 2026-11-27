@@ -995,7 +995,7 @@ impl Interpreter {
                         k.push(attr_name.to_string());
                     }
                     k
-                } else if class_name == "Parameter" {
+                } else if class_name == crate::sym!("Parameter") {
                     // Parameter objects: look up by "owner_sub::param_name"
                     let mut k = Vec::new();
                     let param_name = attributes

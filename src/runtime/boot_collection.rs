@@ -126,7 +126,7 @@ pub(crate) fn repr_is_vm_array(v: &Value) -> bool {
                     .is_some_and(|t| t.starts_with("array"))
         }
         ValueView::Instance { class_name, .. } => {
-            class_name == "IterationBuffer"
+            class_name == crate::sym!("IterationBuffer")
                 || crate::runtime::utils::is_buf_or_blob_class(class_name.as_str())
         }
         _ => false,

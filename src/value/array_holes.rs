@@ -42,9 +42,12 @@ impl ArrayData {
             // `Mu` is the marker a Match's `.list` view leaves in an
             // unbound positional capture slot (`match_list_view`).
             crate::value::ValueView::Package(name) => {
-                name == "Any"
-                    || name == "Mu"
-                    || self.value_type.as_deref().is_some_and(|t| name == t)
+                name == crate::sym!("Any")
+                    || name == crate::sym!("Mu")
+                    || self
+                        .value_type
+                        .as_deref()
+                        .is_some_and(|t| name.as_str() == t)
             }
             _ => self
                 .stored_default()

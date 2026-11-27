@@ -5554,13 +5554,13 @@ pub(super) fn view_literal(names: &NameScope, v: &Value) -> Result<RakuAstNode, 
         // `:(Int $x)`: the parser folds a signature literal to a `Signature`
         // value, which keeps the declared parameters it was built from;
         // rakudo wraps them in a `FakeSignature`.
-        ValueView::Instance { class_name, .. } if class_name == "Signature" => {
+        ValueView::Instance { class_name, .. } if class_name == crate::sym!("Signature") => {
             signature_literal(names, v)
         }
         // The parser defers a Perl 5 construct's `X::Obsolete` into the unit as
         // `die(<instance>)`; rakudo throws it while compiling, so it is the
         // unit's compile error, not a conversion gap.
-        ValueView::Instance { class_name, .. } if class_name == "X::Obsolete" => {
+        ValueView::Instance { class_name, .. } if class_name == crate::sym!("X::Obsolete") => {
             Err(RuntimeError::from_exception_value(v.clone()))
         }
         // `regex { }` / `token { }` / `rule { }` as a term: the parser keeps

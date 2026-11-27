@@ -342,7 +342,7 @@ fn value_to_ser(v: &Value) -> Result<SerValue, String> {
                 .iter()
                 .map(|(k, v)| value_to_ser(v).map(|sv| (k.resolve(), sv)))
                 .collect();
-            let sig_info = (class_name == "Signature")
+            let sig_info = (class_name == crate::sym!("Signature"))
                 .then(|| crate::value::signature::lookup_sig_info(id))
                 .flatten();
             // A sig-info `Signature` is rebuilt under a fresh id on decode, so

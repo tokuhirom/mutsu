@@ -221,7 +221,7 @@ impl Interpreter {
         method: &str,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
-        if class_name != "IO::Notification" || method != "watch-path" {
+        if class_name != crate::sym!("IO::Notification") || method != "watch-path" {
             return None;
         }
         let Some(path) = args
@@ -247,7 +247,7 @@ impl Interpreter {
 
     pub(crate) fn is_io_path_value(value: &Value) -> bool {
         matches!(value.view(), ValueView::Instance { class_name, .. }
-            if class_name == "IO::Path" || class_name.as_str().starts_with("IO::Path::"))
+            if class_name == crate::sym!("IO::Path") || class_name.as_str().starts_with("IO::Path::"))
     }
 
     /// Methods of an `IO::Notification::Change` beyond its generated `path` /

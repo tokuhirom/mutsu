@@ -33,7 +33,7 @@ impl Compiler {
             && matches!(init, Expr::Call { name: callee, args, .. }
                 if callee.as_str() == "nqp::create"
                     && matches!(args.as_slice(), [Expr::Literal(v)]
-                        if matches!(v.view(), crate::value::ValueView::Package(p) if p == "Hash")));
+                        if matches!(v.view(), crate::value::ValueView::Package(p) if p == crate::sym!("Hash"))));
         if fresh {
             self.nqp_fresh_hash_vars.insert(name.to_string());
         } else if !self.nqp_fresh_hash_vars.is_empty() {
@@ -68,7 +68,7 @@ impl Compiler {
         let is_lit = |e: &Expr, want: &str| match e {
             Expr::Literal(v) => match v.view() {
                 crate::value::ValueView::Str(s) => s.as_str() == want,
-                crate::value::ValueView::Package(p) => p == want,
+                crate::value::ValueView::Package(p) => p.as_str() == want,
                 _ => false,
             },
             _ => false,

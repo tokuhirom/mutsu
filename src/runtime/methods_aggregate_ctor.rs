@@ -595,7 +595,7 @@ impl Interpreter {
         let resolved = name.resolve();
         let (base, type_args) = Self::parse_parametric_type_name(&resolved)?;
         if !self.registry().classes.contains_key(&base)
-            || !self.class_mro(&base).iter().any(|n| *n == "Array")
+            || !self.class_mro(&base).iter().any(|n| *n == crate::sym!("Array"))
         {
             return None;
         }

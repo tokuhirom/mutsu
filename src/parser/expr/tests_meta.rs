@@ -71,7 +71,7 @@ fn parse_parenthesized_slip_prefix_with_method_chain() {
     assert_eq!(rest, "");
     assert!(matches!(
         expr,
-        Expr::MethodCall { name, .. } if name == "Seq"
+        Expr::MethodCall { name, .. } if name == crate::sym!("Seq")
     ));
 }
 
@@ -79,7 +79,7 @@ fn parse_parenthesized_slip_prefix_with_method_chain() {
 fn parse_take_listop_with_xx_expression_argument() {
     let (rest, expr) = expression("take (@b.shift xx 2) xx 2").unwrap();
     assert_eq!(rest, "");
-    assert!(matches!(expr, Expr::Call { name, .. } if name == "take"));
+    assert!(matches!(expr, Expr::Call { name, .. } if name == crate::sym!("take")));
 }
 
 #[test]

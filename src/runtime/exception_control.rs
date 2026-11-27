@@ -55,7 +55,7 @@ impl Interpreter {
             has_row(owner)
                 && (class == owner
                     || (owner == "Exception" && builtin_exception)
-                    || mro.iter().any(|p| p == owner))
+                    || mro.iter().any(|p| p.as_str() == owner))
         })?;
         crate::builtins::method_table::invoke_mro_late(self, &[owner], method, args, target)
     }
@@ -218,7 +218,7 @@ impl Interpreter {
             || self
                 .class_mro(&cn)
                 .iter()
-                .any(|p| p == "X::Control" || p == "CX::Warn");
+                .any(|p| *p == crate::sym!("X::Control") || *p == crate::sym!("CX::Warn"));
         let target = self.stamp_thrown_exception_dynamics(&target);
         // A hand-built `X::TypeCheck::Assignment` without a `symbol` has a
         // `message` that dies (rakudo); it is no message to stamp, and
@@ -253,7 +253,7 @@ impl Interpreter {
         // A control exception of a user-declared class runs the active CONTROL
         // handlers at the throw site, so a handler's `.resume` continues after
         // the `.throw` (the built-in `CX::*` signals unwind as before).
-        let warn_subclass = cn != "CX::Warn" && self.class_mro(&cn).iter().any(|p| p == "CX::Warn");
+        let warn_subclass = cn != "CX::Warn" && self.class_mro(&cn).iter().any(|p| *p == crate::sym!("CX::Warn"));
         if does_x_control
             && method == "throw"
             && !self.control.control_handlers.is_empty()

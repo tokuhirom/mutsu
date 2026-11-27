@@ -4947,15 +4947,15 @@ impl Compiler {
             Expr::MethodCall {
                 target, name, args, ..
             } if args.is_empty()
-                && (*name == "keys"
-                    || *name == "List"
-                    || *name == "pairs"
-                    || *name == "antipairs"
-                    || *name == "kv") =>
+                && (*name == crate::sym!("keys")
+                    || *name == crate::sym!("List")
+                    || *name == crate::sym!("pairs")
+                    || *name == crate::sym!("antipairs")
+                    || *name == crate::sym!("kv")) =>
             {
                 matches!(target.as_ref(), Expr::ArrayVar(_) | Expr::HashVar(_))
-                    || (*name != "keys"
-                        && *name != "List"
+                    || (*name != crate::sym!("keys")
+                        && *name != crate::sym!("List")
                         && Self::is_literal_list_receiver(target)
                         && Self::for_iterable_yields_bare_items(target))
             }
@@ -4968,7 +4968,9 @@ impl Compiler {
             // its target's verdict.
             Expr::MethodCall {
                 target, name, args, ..
-            } if args.is_empty() && *name == "Seq" => Self::for_iterable_yields_bare_items(target),
+            } if args.is_empty() && *name == crate::sym!("Seq") => {
+                Self::for_iterable_yields_bare_items(target)
+            }
             // A view of a LITERAL receiver (`(1,2).values`, `(1,2).kv`,
             // `(1,2).reverse`, `(1,2).sort`): the literal has no element
             // containers to hand out, so the view inherits its bareness. A
@@ -4978,10 +4980,10 @@ impl Compiler {
             Expr::MethodCall {
                 target, name, args, ..
             } if args.is_empty()
-                && (*name == "values"
-                    || *name == "list"
-                    || *name == "reverse"
-                    || *name == "sort")
+                && (*name == crate::sym!("values")
+                    || *name == crate::sym!("list")
+                    || *name == crate::sym!("reverse")
+                    || *name == crate::sym!("sort"))
                 && Self::is_literal_list_receiver(target) =>
             {
                 Self::for_iterable_yields_bare_items(target)
@@ -5136,14 +5138,19 @@ impl Compiler {
             Expr::MethodCall {
                 target, name, args, ..
             } if args.is_empty()
-                && (*name == "values" || *name == "kv" || *name == "value" || *name == "pairs") =>
+                && (*name == crate::sym!("values")
+                    || *name == crate::sym!("kv")
+                    || *name == crate::sym!("value")
+                    || *name == crate::sym!("pairs")) =>
             {
                 Self::for_iterable_source_name(target)
             }
             // Handle @a.reverse → source is @a (reversed)
             Expr::MethodCall {
                 target, name, args, ..
-            } if args.is_empty() && (*name == "reverse" || *name == "sort") => {
+            } if args.is_empty()
+                && (*name == crate::sym!("reverse") || *name == crate::sym!("sort")) =>
+            {
                 Self::for_iterable_source_name(target)
             }
             // `@$h` desugars to `($h).list`: the loop iterates the scalar's
@@ -5155,7 +5162,7 @@ impl Compiler {
             // `@a.list` re-tags the array itself, same as bare `for @a`.
             Expr::MethodCall {
                 target, name, args, ..
-            } if args.is_empty() && *name == "list" => {
+            } if args.is_empty() && *name == crate::sym!("list") => {
                 let inner = match target.as_ref() {
                     Expr::Grouped(g) => g.as_ref(),
                     other => other,
@@ -5183,7 +5190,7 @@ impl Compiler {
             Expr::MethodCall {
                 target, name, args, ..
             } if args.is_empty()
-                && *name == "list"
+                && *name == crate::sym!("list")
                 && matches!(target.as_ref(), Expr::Var(_))
         )
     }
@@ -5193,7 +5200,7 @@ impl Compiler {
         matches!(
             iterable,
             Expr::MethodCall { name, args, .. }
-                if args.is_empty() && *name == "reverse"
+                if args.is_empty() && *name == crate::sym!("reverse")
         )
     }
 
@@ -5277,7 +5284,7 @@ impl Compiler {
         matches!(
             iterable,
             Expr::MethodCall { name, args, .. }
-                if args.is_empty() && *name == "kv"
+                if args.is_empty() && *name == crate::sym!("kv")
         )
     }
 
@@ -5292,7 +5299,7 @@ impl Compiler {
         matches!(
             iterable,
             Expr::MethodCall { name, args, .. }
-                if args.is_empty() && (*name == "pairs" || *name == "antipairs")
+                if args.is_empty() && (*name == crate::sym!("pairs") || *name == crate::sym!("antipairs"))
         )
     }
 
@@ -5310,7 +5317,7 @@ impl Compiler {
             target, name, args, ..
         } = iterable
             && args.is_empty()
-            && *name == "values"
+            && *name == crate::sym!("values")
         {
             return Self::for_iterable_source_name(target).is_some();
         }

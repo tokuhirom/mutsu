@@ -122,7 +122,7 @@ impl Interpreter {
         // threw "No such method 'pull-one'" instead of running the body once
         // and stopping on the labeled `last`).
         if let ValueView::Instance { class_name, .. } = iterator.view()
-            && class_name == "FromLoopIterator"
+            && class_name == crate::sym!("FromLoopIterator")
         {
             let items = self.pull_from_loop_iterator_to_vec(iterator, limit)?;
             out.produced.extend(items);
@@ -136,7 +136,7 @@ impl Interpreter {
             attributes,
             ..
         } = iterator.view()
-            && class_name == "HeadIterator"
+            && class_name == crate::sym!("HeadIterator")
         {
             let (src, left) = {
                 let attrs = attributes.as_map();
@@ -1565,7 +1565,7 @@ impl Interpreter {
         };
         matches!(
             body.unpulled_iterator().as_ref().map(Value::view),
-            Some(ValueView::Instance { class_name, .. }) if class_name == "HeadIterator"
+            Some(ValueView::Instance { class_name, .. }) if class_name == crate::sym!("HeadIterator")
         )
     }
 

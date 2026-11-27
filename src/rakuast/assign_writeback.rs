@@ -287,7 +287,7 @@ pub(crate) fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Optio
         let Expr::Call { name, args, .. } = expr else {
             return None;
         };
-        if name != "__mutsu_subscript_adverb" || args.len() < 3 {
+        if *name != crate::sym!("__mutsu_subscript_adverb") || args.len() < 3 {
             return None;
         }
         let Expr::Literal(lit) = &args[2] else {
@@ -300,7 +300,7 @@ pub(crate) fn subscript_adverb_lvalue_assign_expr(lhs: Expr, rhs: Expr) -> Optio
     match lhs {
         Expr::MethodCall {
             target, name, args, ..
-        } if name == "value" && args.is_empty() => {
+        } if name == crate::sym!("value") && args.is_empty() => {
             if let Some((base_target, base_index, mode)) = subscript_parts(target.as_ref())
                 && (mode == "p" || mode == "not-p")
             {

@@ -4302,7 +4302,7 @@ mod tests {
         caller.insert("?FILE".into(), Value::str("outer.raku".to_string()));
         let mut flat = scoped_with(caller, &[("mine", 2), ("escapes", 3)]).flattened_for_frame();
 
-        let ran = flat.retain_frame_writes(|k| k != "mine");
+        let ran = flat.retain_frame_writes(|k| k != crate::sym!("mine"));
         assert!(ran, "a flattened frame env reports its log");
         // The frame's own local is gone; its captured-outer write stays, and so
         // does everything the flatten merely swept in from the caller.

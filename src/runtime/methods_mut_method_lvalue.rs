@@ -256,7 +256,7 @@ impl Interpreter {
         // requires a raw-invocant declaration, which `.SPEC` is not.
         if method_args.is_empty()
             && matches!(method, "SPEC" | "CWD")
-            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Path")
+            && matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("IO::Path"))
         {
             let cur = self
                 .call_method_with_values(target.clone(), method, vec![])
@@ -277,11 +277,11 @@ impl Interpreter {
                 ValueView::Mixin(inner, _) => matches!(
                     inner.view(),
                     ValueView::Instance { class_name, attributes, .. }
-                        if class_name == "Variable"
+                        if class_name == crate::sym!("Variable")
                             && attributes.as_map().contains_key("__mutsu_var_target")
                 ),
                 ValueView::Instance { class_name, attributes, .. } => {
-                    class_name == "Variable"
+                    class_name == crate::sym!("Variable")
                         && attributes.as_map().contains_key("__mutsu_var_target")
                 }
                 _ => false,
@@ -443,7 +443,7 @@ impl Interpreter {
             return Ok(stored);
         }
         if let ValueView::Instance { class_name, .. } = target.view()
-            && (class_name == "Date" || class_name == "DateTime")
+            && (class_name == crate::sym!("Date") || class_name == crate::sym!("DateTime"))
         {
             return Err(RuntimeError::new(format!(
                 "X::Assignment::RO: {} is immutable",
@@ -506,7 +506,7 @@ impl Interpreter {
         }
         if method == "out-buffer"
             && let ValueView::Instance { class_name, .. } = target.view()
-            && class_name == "IO::Handle"
+            && class_name == crate::sym!("IO::Handle")
             && method_args.is_empty()
         {
             let _ = self.call_method_with_values(target.clone(), method, vec![value.clone()])?;
@@ -519,7 +519,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = target.view()
-            && (class_name == "IO::Socket::INET" || class_name == "IO::Handle")
+            && (class_name == crate::sym!("IO::Socket::INET") || class_name == crate::sym!("IO::Handle"))
             && let Some(ValueView::Int(handle_id)) =
                 attributes.as_map().get("handle").map(Value::view)
         {
@@ -550,7 +550,7 @@ impl Interpreter {
             && self
                 .class_mro(&class_name.resolve())
                 .iter()
-                .any(|c| c == "IO::Handle")
+                .any(|c| *c == crate::sym!("IO::Handle"))
             && class_name.resolve() != "IO::Handle"
         {
             attributes.insert(method.to_string(), value.clone());
@@ -563,7 +563,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = target.view()
-            && class_name == "IO::Handle"
+            && class_name == crate::sym!("IO::Handle")
             && let Some(ValueView::Int(handle_id)) =
                 attributes.as_map().get("handle").map(Value::view)
         {
@@ -580,7 +580,7 @@ impl Interpreter {
                 attributes,
                 id: inst_id,
             } = target.view()
-            && class_name == "IO::Handle"
+            && class_name == crate::sym!("IO::Handle")
             && let Some(ValueView::Int(handle_id)) =
                 attributes.as_map().get("handle").map(Value::view)
         {
@@ -612,7 +612,7 @@ impl Interpreter {
                 attributes,
                 id: inst_id,
             } = target.view()
-            && class_name != "IO::Handle"
+            && class_name != crate::sym!("IO::Handle")
             && !self.class_has_user_method(&class_name.resolve(), "chomp")
             && self
                 .class_mro(&class_name.resolve())

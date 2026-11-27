@@ -8,9 +8,13 @@ use std::sync::{OnceLock, RwLock};
 /// An interned symbol — a lightweight handle that supports O(1) equality
 /// comparison instead of byte-by-byte string comparison.
 ///
-/// Symbol-to-Symbol comparison is O(1) integer comparison.
-/// Symbol-to-`&str` comparison falls back to a table lookup (for migration
-/// convenience — prefer Symbol-to-Symbol where possible).
+/// There is deliberately no `PartialEq<str>` / `PartialEq<&str>`: comparing a
+/// symbol with text resolved the symbol back to its string and compared bytes
+/// on every execution (#19232). Compare with a constant name through
+/// [`sym!`](crate::sym) (one `OnceLock` load and an integer compare) or
+/// [`sym_in!`](crate::sym_in) for several names. Use `sym.as_str()` only where
+/// the text itself is the point: a prefix or substring test, a split, a
+/// message, or a compare against text that exists only at run time.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Symbol(u32);
 
@@ -41,16 +45,36 @@ impl<'de> Deserialize<'de> for Symbol {
     }
 }
 
-impl PartialEq<&str> for Symbol {
-    fn eq(&self, other: &&str) -> bool {
-        self.as_str() == *other
-    }
+/// The [`Symbol`] of a constant name, interned once per call site.
+///
+/// `sym!("Failure")` or `sym!(SOME_CONST)`: the argument must be a `&'static
+/// str` constant expression (it initializes a `const`), so a run-time string
+/// can never be cached here by mistake. After the first evaluation it costs
+/// one `OnceLock` load, so `class_name == sym!("Failure")` is an integer
+/// compare. Interned ids are global and append-only, so the cache is valid
+/// for the process and across threads.
+// Cost: O(1) after the first evaluation; O(n) once to intern n bytes.
+#[macro_export]
+macro_rules! sym {
+    ($name:expr) => {{
+        const SYM_TEXT: &str = $name;
+        static SYM_CELL: ::std::sync::OnceLock<$crate::symbol::Symbol> =
+            ::std::sync::OnceLock::new();
+        *SYM_CELL.get_or_init(|| $crate::symbol::Symbol::intern(SYM_TEXT))
+    }};
 }
 
-impl PartialEq<str> for Symbol {
-    fn eq(&self, other: &str) -> bool {
-        self.as_str() == other
-    }
+/// Whether a [`Symbol`] is one of several constant names:
+/// `sym_in!(class_name, "Instant" | "Duration")`. It expands to one
+/// [`sym!`](crate::sym) compare per name, so it never resolves the symbol's
+/// text.
+// Cost: O(k), k = names listed.
+#[macro_export]
+macro_rules! sym_in {
+    ($sym:expr, $($name:literal)|+ $(,)?) => {{
+        let sym_in_subject: $crate::symbol::Symbol = $sym;
+        false $(|| sym_in_subject == $crate::sym!($name))+
+    }};
 }
 
 /// Interned strings are leaked (`Box::leak`) so a `Symbol` can hand out a

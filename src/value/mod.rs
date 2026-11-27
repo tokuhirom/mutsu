@@ -88,7 +88,7 @@ pub(crate) fn seq_consumed_error() -> RuntimeError {
 pub(crate) fn is_seq_consumed_error(err: &RuntimeError) -> bool {
     matches!(
         err.exception.as_deref().map(Value::view),
-        Some(ValueView::Instance { class_name, .. }) if class_name == "X::Seq::Consumed"
+        Some(ValueView::Instance { class_name, .. }) if class_name == crate::sym!("X::Seq::Consumed")
     )
 }
 

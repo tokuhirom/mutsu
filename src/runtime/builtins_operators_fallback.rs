@@ -740,9 +740,9 @@ impl Interpreter {
                         if !k.starts_with("__mutsu_")
                             && !k.starts_with("?")
                             && !k.starts_with("!")
-                            && k != "_"
-                            && k != "@_"
-                            && k != "%_"
+                            && *k != crate::sym!("_")
+                            && *k != crate::sym!("@_")
+                            && *k != crate::sym!("%_")
                         {
                             self.env.insert_sym(*k, v.clone());
                         }
@@ -870,9 +870,9 @@ impl Interpreter {
                             | ValueView::WeakSub(..)
                             | ValueView::Routine { .. }
                     );
-                if k != "_"
-                    && k != "@_"
-                    && k != "%_"
+                if *k != crate::sym!("_")
+                    && *k != crate::sym!("@_")
+                    && *k != crate::sym!("%_")
                     && ((restored_env.contains_key_sym(*k)
                         && !excluded_names.contains(&k_str)
                         && matches!(v.view(), ValueView::Array(..) | ValueView::Hash(..)))

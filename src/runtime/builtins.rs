@@ -441,7 +441,7 @@ impl Interpreter {
         let by_view = match value.view() {
             ValueView::Enum {
                 enum_type, index, ..
-            } if enum_type == enum_name => Some(by_index(index)),
+            } if enum_type.as_str() == enum_name => Some(by_index(index)),
             ValueView::Enum { key, .. } => {
                 // For foreign enum types, look up by string name, not numeric value
                 Some(
@@ -1274,7 +1274,7 @@ impl Interpreter {
                         attributes,
                         ..
                     } = value.view()
-                        && class_name == "Failure"
+                        && class_name == crate::sym!("Failure")
                         && let Some(ex) = attributes.as_map().get("exception")
                     {
                         let mut err = RuntimeError::new(ex.to_string_value());
@@ -1286,7 +1286,7 @@ impl Interpreter {
                     attributes,
                     ..
                 }) = args.first().map(Value::view)
-                    && class_name == "Failure"
+                    && class_name == crate::sym!("Failure")
                     && let Some(ex) = attributes.as_map().get("exception")
                 {
                     let mut err = RuntimeError::new(ex.to_string_value());

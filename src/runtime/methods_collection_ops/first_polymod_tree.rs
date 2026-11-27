@@ -455,7 +455,7 @@ impl Interpreter {
             // `7.polymod(0.5)`) ends the decomposition, leaving the number as it
             // stood, as in Rakudo.
             let failed = |v: &Value| {
-                matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+                matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("Failure"))
             };
             if failed(&rem) || failed(&quot) {
                 break;

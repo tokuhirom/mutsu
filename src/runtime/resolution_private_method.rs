@@ -420,7 +420,7 @@ impl Interpreter {
             .types
             .method_class_stack
             .last()
-            .is_some_and(|caller| caller.name == owner_class)
+            .is_some_and(|caller| caller.name.as_str() == owner_class)
         {
             return true;
         }

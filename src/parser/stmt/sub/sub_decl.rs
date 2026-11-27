@@ -47,7 +47,7 @@ pub(crate) fn top_level_main_semicolon_decl(input: &str) -> PResult<'_, Stmt> {
     let consumed = &rest_after_prefix[..consumed_len];
     let has_semicolon_terminator = consumed.trim_end().ends_with(';');
     if has_semicolon_terminator
-        && matches!(&stmt, Stmt::SubDecl { name, multi, .. } if name == "MAIN" && !*multi)
+        && matches!(&stmt, Stmt::SubDecl { name, multi, .. } if *name == crate::sym!("MAIN") && !*multi)
     {
         // `class A { }; unit sub MAIN();` is too late, as for a package (#18588).
         if has_unit && crate::parser::stmt::simple::package_declared() {

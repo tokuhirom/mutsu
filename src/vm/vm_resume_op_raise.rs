@@ -113,7 +113,7 @@ impl Interpreter {
             || err.catch_inline_verdict().is_some()
             || !err.exception.as_deref().is_some_and(|exception| {
                 matches!(exception.view(), ValueView::Instance { class_name, .. }
-                    if class_name == "X::TypeCheck::Assignment")
+                    if class_name == crate::sym!("X::TypeCheck::Assignment"))
             })
         {
             return Err(err);

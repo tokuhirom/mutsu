@@ -90,10 +90,10 @@ impl crate::Interpreter {
         else {
             return None;
         };
-        if class_name == "FromLoopIterator" {
+        if class_name == crate::sym!("FromLoopIterator") {
             return Some(self.step_loop_iterator(target, op));
         }
-        if class_name == "HeadIterator" {
+        if class_name == crate::sym!("HeadIterator") {
             return Some(self.step_head_iterator(target, op, args));
         }
         if let Some(result) = self.map_grep_stream_protocol_call(&attributes, op, args) {

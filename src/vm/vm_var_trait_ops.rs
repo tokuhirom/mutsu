@@ -263,7 +263,8 @@ impl Interpreter {
                     && let ValueView::Array(items, kind) = container.view()
                 {
                     let is_hole = |v: &Value| {
-                        v.is_nil() || matches!(v.view(), ValueView::Package(n) if n == "Any")
+                        v.is_nil()
+                            || matches!(v.view(), ValueView::Package(n) if n == crate::sym!("Any"))
                     };
                     let has_holes = items.iter().any(is_hole);
                     if has_holes {
@@ -298,7 +299,8 @@ impl Interpreter {
                     && let ValueView::Hash(h) = container.view()
                 {
                     let is_hole = |v: &Value| {
-                        v.is_nil() || matches!(v.view(), ValueView::Package(n) if n == "Any")
+                        v.is_nil()
+                            || matches!(v.view(), ValueView::Package(n) if n == crate::sym!("Any"))
                     };
                     let has_holes = h.map.values().any(is_hole);
                     if has_holes {
@@ -881,7 +883,10 @@ impl Interpreter {
                 .read_var_trait_target(code, slot, &name_str)
                 .or_else(|| self.get_env_with_main_alias(&name_str));
             let store_arg = Self::custom_container_store_arg(stashed_init, init_source.clone());
-            let is_array_subclass = self.class_mro(&trait_name).iter().any(|n| n == "Array");
+            let is_array_subclass = self
+                .class_mro(&trait_name)
+                .iter()
+                .any(|n| *n == crate::sym!("Array"));
             let init_values: Vec<Value> = match init_source.as_ref().map(Value::view) {
                 Some(ValueView::Array(a, _)) if !a.is_empty() => a.iter().cloned().collect(),
                 Some(ValueView::Seq(s)) if !s.is_empty() => s.iter().cloned().collect(),
@@ -994,7 +999,7 @@ impl Interpreter {
                 || self
                     .class_mro(&trait_name)
                     .iter()
-                    .any(|n| n == "Hash" || n == "Map")
+                    .any(|n| *n == crate::sym!("Hash") || *n == crate::sym!("Map"))
                 // A QuantHash subclass (`my %b is AccountableBagHash = ...`)
                 // is populated through the same `STORE(list, :INITIALIZE)`
                 // protocol, delegated to its `__baggy_data__` backing store —
@@ -1172,7 +1177,7 @@ impl Interpreter {
         };
         matches!(
             inner.view(),
-            ValueView::Instance { class_name, .. } if class_name == "Variable"
+            ValueView::Instance { class_name, .. } if class_name == crate::sym!("Variable")
         )
     }
 

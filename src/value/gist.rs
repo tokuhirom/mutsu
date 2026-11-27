@@ -609,7 +609,7 @@ fn gist_value_node(value: &Value) -> String {
             class_name,
             attributes,
             ..
-        } if class_name == crate::value::label::LABEL_CLASS => {
+        } if class_name == crate::sym!(crate::value::label::LABEL_CLASS) => {
             crate::value::label::label_gist(&attributes.as_map())
         }
         ValueView::Instance { attributes, .. } if value.is_match_instance() => {

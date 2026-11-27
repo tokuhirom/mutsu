@@ -111,7 +111,7 @@ impl Interpreter {
         else {
             return false;
         };
-        if class_name != "__SupplyChildTapDone" {
+        if class_name != crate::sym!("__SupplyChildTapDone") {
             return false;
         }
         let attrs = attributes.as_map();
@@ -140,7 +140,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = tap.view()
-                && (class_name == "Tap" || class_name == "IO::Socket::Async::ListenSocket")
+                && (class_name == crate::sym!("Tap") || class_name == crate::sym!("IO::Socket::Async::ListenSocket"))
             {
                 let attrs = attributes.as_map().clone();
                 self.tap_close(&attrs)?;
