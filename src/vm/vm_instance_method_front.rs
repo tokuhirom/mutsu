@@ -59,15 +59,18 @@ impl Interpreter {
         modifier_idx: Option<u32>,
         arg_sources_idx: Option<u32>,
     ) -> InstanceFront {
-        if modifier_idx.is_some()
+        // The receiver's tag first: every other receiver is refused by one
+        // probe, so this front costs the calls it cannot serve next to nothing.
+        let Some(target_idx) = self.stack.len().checked_sub(arity as usize + 1) else {
+            return InstanceFront::NotTried;
+        };
+        if !self.stack[target_idx].is_instance_value()
+            || modifier_idx.is_some()
             || name.quoted
             || crate::sym_in!(name.sym, "new" | "take" | "WHAT" | "HOW" | "VAR")
         {
             return InstanceFront::NotTried;
         }
-        let Some(target_idx) = self.stack.len().checked_sub(arity as usize + 1) else {
-            return InstanceFront::NotTried;
-        };
         let ValueView::Instance { class_name, .. } = self.stack[target_idx].view() else {
             return InstanceFront::NotTried;
         };
