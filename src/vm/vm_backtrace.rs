@@ -8,6 +8,7 @@
 //! reads it. So a `die` inside a `try` that never asks for `.backtrace` no
 //! longer pays for the whole stack (#9172); Rakudo's backtraces are lazy too.
 
+use crate::runtime::eval_frames::{EvalFrame, EvalFrames};
 use crate::runtime::routine_stack::FrameNode;
 use crate::runtime::{Interpreter, RoutineFrame};
 use crate::value::{Value, ValueView};
@@ -27,6 +28,8 @@ pub(crate) struct BacktraceCapture {
     thread_origin: Option<(String, u32)>,
     /// See `Interpreter::stack_bottom_is_mainline_unit`.
     bottom_is_mainline: bool,
+    /// The `EVAL`s running at the throw, spliced into the frames (#19242).
+    evals: Vec<EvalFrame>,
 }
 
 fn is_anonymous_block(frame: &RoutineFrame) -> bool {
@@ -78,14 +81,39 @@ impl Interpreter {
     // (`executing_source_file`).
     pub(crate) fn capture_backtrace(&self) -> Arc<BacktraceCapture> {
         let stack = self.routine_stack();
+        let evals = self.running_eval_frames();
         Arc::new(BacktraceCapture {
             top: self.routine_stack_snapshot(),
             current_line: self.current_source_line(),
             current_file: self.current_source_file(),
-            executing_file: self.executing_source_file(),
+            executing_file: self.executing_file_within_eval(stack, evals.last()),
             thread_origin: self.thread_origin_frame(stack),
             bottom_is_mainline: self.stack_bottom_is_mainline_unit(stack),
+            evals,
         })
+    }
+
+    /// [`Self::executing_source_file`], except that a walk reaching the
+    /// innermost running `EVAL`'s entry depth answers that `EVAL`'s unit: the
+    /// code there runs in the snippet, not in the routine that called `EVAL`
+    /// (a module method's frame would otherwise name the module).
+    // Cost: O(b), b = frames above the innermost EVAL's entry depth.
+    fn executing_file_within_eval(
+        &self,
+        stack: &[RoutineFrame],
+        innermost: Option<&EvalFrame>,
+    ) -> Option<String> {
+        let Some(eval) = innermost else {
+            return self.executing_source_file();
+        };
+        for frame in stack[eval.depth.min(stack.len())..].iter().rev() {
+            match frame.def_file {
+                Some(file) => return Some(file.resolve()),
+                None if frame.is_block => continue,
+                None => return self.executing_source_file(),
+            }
+        }
+        eval.frame.def_file.map(|f| f.resolve())
     }
 
     /// Build a backtrace string from the interpreter's routine stack (see
@@ -165,7 +193,7 @@ impl BacktraceCapture {
     ///   - `<unit>` (outermost): use the outermost routine frame's stored
     ///     call-site (where `<unit>` called the first function)
     pub(crate) fn render_text(&self) -> String {
-        let stack_frames = FrameNode::frames(self.top.as_ref());
+        let stack_frames = EvalFrames::splice(FrameNode::frames(self.top.as_ref()), &self.evals);
         let stack: &[RoutineFrame] = &stack_frames;
         let current_line = self.current_line;
         let current_file = self.current_file.clone();
@@ -266,7 +294,7 @@ impl BacktraceCapture {
         use crate::symbol::Symbol;
         use std::collections::HashMap;
 
-        let stack_frames = FrameNode::frames(self.top.as_ref());
+        let stack_frames = EvalFrames::splice(FrameNode::frames(self.top.as_ref()), &self.evals);
         let stack: &[RoutineFrame] = &stack_frames;
         let current_line = self.current_line;
         let current_file = self.current_file.clone();
