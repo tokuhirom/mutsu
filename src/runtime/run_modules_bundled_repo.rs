@@ -46,10 +46,10 @@ impl Interpreter {
     /// `IO::Path` each) was ~9% of `say "hello"`'s instructions; the links are
     /// built on the first read of the tail's `next-repo` instead (see
     /// [`Interpreter::repo_next_link`]).
+    ///
+    /// The marker is set whether or not the bundle has any distribution: the
+    /// first read finds out, and a bundle with none links nothing.
     pub(super) fn add_bundled_repos(&mut self) {
-        if self.module.bundled_lib_paths.is_empty() {
-            return;
-        }
         let Some(tail) = self.repo_chain_tail() else {
             return;
         };
@@ -90,7 +90,7 @@ impl Interpreter {
     fn build_bundled_chain(&self) -> Value {
         // Build the sub-chain back to front so each link can point at the next.
         let mut head = Value::NIL;
-        for lib in self.module.bundled_lib_paths.iter().rev() {
+        for lib in self.bundled_lib_paths().iter().rev() {
             head = self.bundled_repo_link(lib, head);
         }
         head
@@ -146,6 +146,18 @@ impl Interpreter {
         Value::make_instance(Symbol::intern("CompUnit::Repository::FileSystem"), attrs)
     }
 
+    /// Whether the bundle holds the Rakudo-Core distribution: its `lib/`, as
+    /// the bundled search paths would list it, and its `META6.json`. Asked at
+    /// start-up, so it stats the two paths instead of scanning the bundle or
+    /// building [`Self::bundled_core_distribution`].
+    // Cost: O(1), a few `stat`s.
+    pub(super) fn has_bundled_core_distribution() -> bool {
+        Self::bundle_base().is_some_and(|base| {
+            let root = base.join(CORE_DIST_DIR);
+            root.join("lib").is_dir() && root.join("META6.json").is_file()
+        })
+    }
+
     /// Whether `prefix` is the prefix of the `core` Installation repository.
     pub(crate) fn is_core_repo_prefix(&self, prefix: &str) -> bool {
         self.default_repo_dir("core")
@@ -164,7 +176,7 @@ impl Interpreter {
     // Cost: O(f), f = files named by the distribution's META6.json; the
     // `name`/`ver` overwrite is O(1).
     pub(crate) fn bundled_core_distribution(&self) -> Option<Value> {
-        let lib = self.module.bundled_lib_paths.iter().find(|lib| {
+        let lib = self.bundled_lib_paths().iter().find(|lib| {
             Path::new(lib.as_str())
                 .parent()
                 .and_then(|p| p.file_name())
@@ -241,7 +253,7 @@ impl Interpreter {
     /// `core.candidates` / `.installed` (what zef's `list-installed` and its
     /// ignore list read) keep describing the repository itself.
     pub(crate) fn bundled_core_repo(&self) -> Option<Value> {
-        let lib = self.module.bundled_lib_paths.iter().find(|lib| {
+        let lib = self.bundled_lib_paths().iter().find(|lib| {
             Path::new(lib.as_str())
                 .parent()
                 .and_then(|p| p.file_name())
