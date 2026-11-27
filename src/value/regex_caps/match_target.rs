@@ -120,6 +120,27 @@ thread_local! {
 }
 
 thread_local! {
+    /// The subject a regex entry point is matching right now, pinned by
+    /// [`MatchTarget::pin_subject`] for the duration of one match so the
+    /// engine's [`MatchTarget::new`] on its `&str` builds from the payload
+    /// instead of copying it.
+    static PINNED_SUBJECT: std::cell::RefCell<Option<Arc<crate::value::StrBody>>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// While alive, [`MatchTarget::new`] on exactly the pinned payload's `&str`
+/// shares that payload as the target's text. Dropping it restores whatever
+/// was pinned before, so nested matches (a code block's own `~~`) stack.
+pub(crate) struct SubjectPin(Option<Arc<crate::value::StrBody>>);
+
+impl Drop for SubjectPin {
+    fn drop(&mut self) {
+        let prev = self.0.take();
+        PINNED_SUBJECT.with(|p| *p.borrow_mut() = prev);
+    }
+}
+
+thread_local! {
     /// The grammar parses in progress on this thread, innermost last: each
     /// parse's subject (its buffer's address and length) and its grammar
     /// class (a `Symbol` id). See [`CursorClassScope`].
@@ -195,9 +216,36 @@ impl MatchTarget {
     pub(crate) fn new(text: &str) -> Self {
         let target = match Self::cached(text) {
             Some(hit) => hit,
-            None => Self::build(Arc::new(text.to_string().into())),
+            None => match Self::pinned(text) {
+                Some(subject) => Self::build(subject),
+                None => Self::build(Arc::new(text.to_string().into())),
+            },
         };
         target.stamp_parse_class(text)
+    }
+
+    /// Pin `subject` as the payload the next [`MatchTarget::new`] calls on its
+    /// `&str` build from, until the returned guard drops. For a subject too
+    /// short for the subject cache, this is what saves copying it into a
+    /// fresh `String` and `Arc` on every match.
+    // Cost: O(1).
+    pub(crate) fn pin_subject(subject: &Arc<crate::value::StrBody>) -> SubjectPin {
+        let prev = PINNED_SUBJECT.with(|p| p.borrow_mut().replace(Arc::clone(subject)));
+        SubjectPin(prev)
+    }
+
+    /// The pinned payload, when `text` is exactly its bytes. An identity test,
+    /// as in [`Self::cached`]: the pin holds a strong reference, so the
+    /// payload cannot be mutated in place (`str_appended_nfc` needs it unique)
+    /// and an equal pointer and length name the same bytes.
+    // Cost: O(1).
+    fn pinned(text: &str) -> Option<Arc<crate::value::StrBody>> {
+        PINNED_SUBJECT.with(|p| {
+            p.borrow()
+                .as_ref()
+                .filter(|s| s.as_ptr() == text.as_ptr() && s.len() == text.len())
+                .map(Arc::clone)
+        })
     }
 
     /// The target for a `Str` payload, built at most once while the payload
