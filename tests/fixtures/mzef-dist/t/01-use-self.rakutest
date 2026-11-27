@@ -1,0 +1,7 @@
+use Test;
+# The distribution's own tests `use` the distribution itself: zef runs them
+# with the staged repository on `-I`, so this must resolve.
+use Mzef::E2E::Fixture;
+
+plan 1;
+is fixture-greeting("mzef"), "hello, mzef", "the dist under test loads itself";
