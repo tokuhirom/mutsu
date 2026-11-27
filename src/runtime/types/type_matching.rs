@@ -800,6 +800,11 @@ impl Interpreter {
             }
             return false;
         };
+        // A bare `Uni` against its own core type: decided by the type
+        // tables alone (`uni_type_check`), without the resolution walk.
+        if self.uni_accepts_by_own_type(constraint, value) {
+            return true;
+        }
         // An object reblessed on another thread may carry a mixin type this
         // thread has not composed yet (#11456).
         match value.view() {

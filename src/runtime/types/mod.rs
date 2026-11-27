@@ -35,6 +35,7 @@ mod signature;
 mod subset_predicate_call;
 mod topic_compare;
 mod type_matching;
+mod uni_type_check;
 pub(crate) use type_matching::is_core_scalar_check_name;
 mod type_matching_static;
 mod type_registry;
