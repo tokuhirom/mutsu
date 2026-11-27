@@ -74,6 +74,32 @@ DET_COLUMNS = [
 ]
 
 
+# The `rakudo` and `rakupp` columns hold the first line of the reference's
+# `--version` as the bench job ran it ("Welcome to Rakudo(TM) v2026.11.",
+# "Raku++ 5.9.0 (2026-11-18) x86_64-linux"), empty or `none` when it was not
+# on PATH, and are absent from rows written before the column existed.
+_REF_VERSION = {
+    "rakudo": (re.compile(r"\bv?(\d{4}\.\d{2}(?:\.\d+)?)\b"), "Rakudo {}"),
+    "rakupp": (re.compile(r"\bv?(\d+\.\d+\.\d+)\b"), "Raku++ v{}"),
+}
+
+
+def ref_version(raw, kind):
+    """The short label of the reference a row was measured against, or None.
+
+    The page shows it, so an unrecognised string is reduced to a bounded run of
+    plain characters rather than passed through: it still tells two versions
+    apart, and it can carry nothing but text."""
+    raw = (raw or "").strip()
+    if not raw or raw in ("none", "NA"):
+        return None
+    pat, label = _REF_VERSION[kind]
+    m = pat.search(raw)
+    if m:
+        return label.format(m.group(1))
+    return re.sub(r"[^A-Za-z0-9 .+_()-]", "", raw)[:48].strip() or None
+
+
 def parse_rows(text):
     rows = []
     for i, line in enumerate(text.splitlines()):
@@ -96,6 +122,12 @@ def parse_rows(text):
             # Absent before rakupp was measured, NA when its run failed: no
             # point either way.
             rec["ratio_pp"] = None
+        # Which reference each ratio was measured against. Only a ratio that
+        # exists has one: a row whose rakupp run failed says nothing about which
+        # rakupp the series is on.
+        rec["ref_ratio"] = ref_version(rec.get("rakudo"), "rakudo")
+        rec["ref_ratiopp"] = (None if rec["ratio_pp"] is None
+                              else ref_version(rec.get("rakupp"), "rakupp"))
         rows.append(rec)
     return rows
 
@@ -241,7 +273,33 @@ def robust(values):
             "hi": round(_quantile(vals, .75), 4), "n": len(vals)}
 
 
-def standing(entry, n_commits):
+RATIO_SLOTS = (("ratio", 2), ("ratiopp", 5))
+
+
+def ref_changes(rows, idx):
+    """{ratio key: [[first commit index, label], ...]} -- each reference
+    version's first commit, oldest first.
+
+    A ratio is mutsu's time over the reference's, so a new rakudo or rakupp
+    steps every ratio at once without mutsu changing at all. These are the
+    points where that happened: the charts mark them, and a median does not
+    read across the newest one. A commit whose rows disagree (a re-run after a
+    bump) counts as its last row's version."""
+    out = {}
+    for key, _ in RATIO_SLOTS:
+        per_commit = {}
+        for r in rows:
+            if r["ref_" + key] is not None:
+                per_commit[idx[r["commit"]]] = r["ref_" + key]
+        changes = []
+        for i in sorted(per_commit):
+            if not changes or changes[-1][1] != per_commit[i]:
+                changes.append([i, per_commit[i]])
+        out[key] = changes
+    return out
+
+
+def standing(entry, n_commits, changes=None):
     """Where mutsu stands against each reference on this benchmark, read from
     the shipped configuration's series (+jit, the default) and falling back to
     the interpreter series for a benchmark recorded only without it.
@@ -249,17 +307,30 @@ def standing(entry, n_commits):
     Each ratio is the median of the per-commit ratios over the newest RECENT
     points -- not the latest point -- with its interquartile range, so a row is
     "losing" because it has been slower for days, and "marginal" when a quarter
-    or more of those points were at or under parity anyway."""
+    or more of those points were at or under parity anyway.
+
+    The window never reaches back past the reference's latest version change
+    (`changes`, from `ref_changes`): a median over both sides of a bump would
+    blend two different baselines. A window that the change cut short says so
+    (`since`, the version it starts at), since it reads fewer points."""
     lane = "jit" if entry["jit"] else "base"
     pts = entry[lane]
     if not pts or pts[-1][0] < n_commits - STALE_AFTER:
         return None
     out = {"lane": lane}
-    for key, slot in (("ratio", 2), ("ratiopp", 5)):
-        r = robust([p[slot] for p in pts if p[slot] is not None])
+    for key, slot in RATIO_SLOTS:
+        latest = (changes or {}).get(key) or [[0, None]]
+        start, ref = latest[-1]
+        vals = [p[slot] for p in pts if p[slot] is not None]
+        since = [p[slot] for p in pts if p[slot] is not None and p[0] >= start]
+        r = robust(since)
         if r is not None:
             r["losing"] = r["med"] > 1.0
             r["marginal"] = r["losing"] and r["lo"] <= 1.0
+            if ref is not None:
+                r["ref"] = ref
+            if len(since) < min(len(vals), RECENT):
+                r["since"] = ref
         out[key] = r
     return out
 
@@ -347,6 +418,7 @@ def build_model(rows, det_rows=(), tracking=None):
         b = benches.setdefault(base_name, {"base": {}, "jit": {}})
         b[lane].setdefault(idx[commit], [idx[commit], None, None, instr, allocs, None])
 
+    changes = ref_changes(rows, idx)
     out = []
     for name in sorted(benches):
         base = [benches[name]["base"][k] for k in sorted(benches[name]["base"])]
@@ -354,7 +426,7 @@ def build_model(rows, det_rows=(), tracking=None):
         entry = {"name": name, "base": base, "jit": jit}
         if name in BENCH_NOTES:
             entry["notes"] = BENCH_NOTES[name]
-        st = standing(entry, len(order))
+        st = standing(entry, len(order), changes)
         if st:
             entry["standing"] = st
         if tracking and name in tracking:
@@ -365,6 +437,10 @@ def build_model(rows, det_rows=(), tracking=None):
         "benches": out,
         "losers": losers(out),
         "recent": RECENT,
+        # The reference versions behind each ratio, as change points (see
+        # `ref_changes`). The last entry of each list is the version the
+        # current ratios are measured against.
+        "refs": changes,
         # When the newest measurement was recorded -- the latest row date across
         # both series, not the last commit's first-seen date, which a re-run of an
         # already-recorded commit would leave behind. Shown in the page header so
@@ -485,6 +561,12 @@ tbody tr:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
 .standing a { color: var(--muted); }
 .standing a:hover { color: var(--ink); }
 .foot { color: var(--muted); font-size: 11.5px; margin-top: 22px; }
+/* A reference version change (a new rakudo or rakupp), drawn on the ratio
+   charts: every ratio steps there without mutsu changing. */
+.refchange { stroke: var(--jit); stroke-width: 1; stroke-dasharray: 2 2; opacity: .85; }
+.swatch.refmark { width: 0; height: 12px; border-left: 1px dashed var(--jit); border-radius: 0; }
+.legend .hidden { display: none; }
+.since { font-size: 10px; color: var(--muted); font-weight: 400; }
 </style>
 __CHROME_NAV__
 <div class="bench-head">
@@ -492,6 +574,7 @@ __CHROME_NAV__
     <h1>Benchmark trend</h1>
     <span class="sub" id="meta"></span>
     <time class="sub" id="updated"></time>
+    <span class="sub" id="refs"></span>
   </div>
   <div class="controls">
     <span class="ctl-label">Metric</span>
@@ -521,6 +604,7 @@ __CHROME_NAV__
     <div class="legend">
       <span><i class="swatch" style="background:var(--base)"></i>interpreter</span>
       <span><i class="swatch" style="background:var(--jit)"></i>+jit</span>
+      <span id="legendRef" class="hidden"><i class="swatch refmark"></i>reference version changed</span>
     </div>
   </div>
 </div>
@@ -600,7 +684,9 @@ const stripTags = (h) => h.replace(/<[^>]*>/g, '');
 const ratioClass = (r) => !r ? '' : r.losing ? (r.marginal ? 'lose marginal' : 'lose') : 'win';
 const ratioTitle = (r) => `median of the last ${r.n} commits; interquartile range `
   + `${r.lo.toFixed(2)}-${r.hi.toFixed(2)}×`
-  + (r.marginal ? '; a quarter or more of them at or under 1.0×' : '');
+  + (r.marginal ? '; a quarter or more of them at or under 1.0×' : '')
+  + (r.ref ? `; against ${r.ref}` : '')
+  + (r.since ? `; only ${r.n} commits since the switch to ${r.since}, none before it` : '');
 function ratioCell(b, key) {
   const r = b.standing && b.standing[key];
   if (!r) return el('td', { class: 'mono' }, '—');
@@ -610,13 +696,29 @@ function ratioCell(b, key) {
 
 function windowStart() { return windowN > 0 ? Math.max(0, N - windowN) : 0; }
 
+// The reference versions behind the shown ratio, as [first commit index,
+// label] change points (`ref_changes` in the generator); empty for a metric
+// that is not a ratio. The first entry is where the series starts, the rest
+// are the commits where a new rakudo or rakupp stepped every ratio at once.
+const refSeries = () => isRatio() ? (DATA.refs[metric] || []) : [];
+const refChanges = () => refSeries().slice(1);
+// "Rakudo 2026.07 → Rakudo 2026.11" for a change point's commit, or null.
+function refChangeAt(i) {
+  const ch = refSeries(), k = ch.findIndex(c => c[0] === i);
+  return k > 0 ? `${ch[k - 1][1]} → ${ch[k][1]}` : null;
+}
+// A ratio's median reads no point from before its reference's latest change.
+function sinceIdx() { const ch = refSeries(); return ch.length ? ch[ch.length - 1][0] : 0; }
+
 // The newest RECENT points of a series, as values. Deliberately not limited to
 // the commit window: the window shapes the charts, but a median has to read
 // the same points whatever is zoomed in -- and a 50- or 150-commit window can
 // hold only a handful of wall-clock points, since the deterministic series
-// records more commits than the wall-clock one.
+// records more commits than the wall-clock one. A ratio's points stop at its
+// reference's latest version change (see `sinceIdx`).
 function recentVals(pts) {
-  return pts.filter(defined).slice(-RECENT).map(yval);
+  const s = sinceIdx();
+  return pts.filter(p => p[0] >= s && defined(p)).slice(-RECENT).map(yval);
 }
 
 const W = 300, H = 96, PADL = 6, PADR = 10, PADT = 10, PADB = 16;
@@ -641,7 +743,9 @@ function chart(b) {
   if (yaxis !== 'zero' || hi > 0) hi += pad;
   const sy = (v) => PADT + (1 - (v - lo) / (hi - lo)) * (H - PADT - PADB);
 
-  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${b.name} trend">`;
+  // Numbers and fixed labels only: the caller parses this string, so nothing
+  // read from the data (the benchmark's name, a version) may appear in it.
+  let svg = `<svg viewBox="0 0 ${W} ${H}" role="img">`;
   for (const t of [0.5]) { const y = PADT + t * (H - PADT - PADB);
     svg += `<line class="gridline" x1="${PADL}" x2="${W - PADR}" y1="${y}" y2="${y}"/>`; }
   if (isRatio() && 1 >= lo && 1 <= hi) {
@@ -658,48 +762,76 @@ function chart(b) {
     const last = pts[pts.length - 1];
     svg += `<circle class="dot-end ${k}" cx="${sx(last[0]).toFixed(1)}" cy="${sy(yval(last)).toFixed(1)}" r="2.6"/>`;
   }
+  // Reference version changes: midway between the last commit measured
+  // against the old version and the first against the new one.
+  for (const [i] of refChanges()) {
+    if (i <= x0) continue;
+    const x = sx(i - 0.5).toFixed(1);
+    svg += `<line class="refchange" data-i="${+i}" x1="${x}" x2="${x}" y1="${PADT - 4}" y2="${H - PADB}"/>`;
+  }
   svg += `<line class="crosshair" x1="0" x2="0" y1="${PADT}" y2="${H - PADB}" style="opacity:0"/>`;
   svg += `</svg>`;
   return { svg, sx, sy, x0, span };
 }
 
-function cardHTML(b) {
+function card(b) {
   const c = chart(b);
   // The shipped configuration (+jit) when it has points in the window.
   const nowLane = recentVals(b.jit).length ? 'jit' : 'base';
   const vals = recentVals(b[nowLane]);
-  const now = vals.length
-    ? `<span class="now mono" title="median of the last ${vals.length} points">${fmt(median(vals))}<span class="unit">${unit()}${nowLane==='jit'?' (+jit)':''}</span></span>`
-    : '';
-  // Where mutsu stands against each reference, whatever metric is shown.
+  const readout = el('div', { class: 'readout' });
+  if (vals.length) {
+    readout.append(el('span', { class: 'now mono', title: `median of the last ${vals.length} points` },
+      fmt(median(vals)), el('span', { class: 'unit' }, unit() + (nowLane === 'jit' ? ' (+jit)' : ''))));
+  }
+  // Where mutsu stands against each reference, whatever metric is shown. A
+  // median cut short by a reference version change shows how few points it
+  // read.
   const st = b.standing || {};
-  const esc = (t) => t.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-  let standingLine = REFS.filter(([k]) => st[k]).map(([k, ref]) =>
-    `<span title="${ratioTitle(st[k])}">vs ${ref} <b class="mono ${caveated(b, k) ? '' : ratioClass(st[k])}">${st[k].med.toFixed(2)}×</b></span>`
-  ).join('');
+  const standing = el('div', { class: 'standing' });
+  for (const [k, ref] of REFS) {
+    if (!st[k]) continue;
+    standing.append(el('span', { title: ratioTitle(st[k]) }, `vs ${ref} `,
+      el('b', { class: 'mono ' + (caveated(b, k) ? '' : ratioClass(st[k])) }, st[k].med.toFixed(2) + '×'),
+      st[k].since ? el('span', { class: 'since' }, ` n=${st[k].n}`) : null));
+  }
   // A losing card names the issues that track the gap (bench-tracking.toml;
   // numbers only, validated by the generator), quietly, after its ratios.
   const losing = REFS.some(([k]) => st[k] && st[k].losing && !caveated(b, k));
   if (losing && b.tracking) {
-    standingLine += `<span title="${b.tracking.note ? esc(b.tracking.note) : 'tracking issues'}">`
-      + b.tracking.issues.map(n => `<a href="${ISSUE_URL}${n}" rel="noopener">#${n}</a>`).join(' ')
-      + '</span>';
+    const links = el('span', { title: b.tracking.note || 'tracking issues' });
+    b.tracking.issues.forEach((n, i) => {
+      if (i) links.append(' ');
+      links.append(el('a', { href: ISSUE_URL + Number(n), rel: 'noopener' }, '#' + Number(n)));
+    });
+    standing.append(links);
   }
   const note = cardNoteFor(b);
-  return `<div class="bench-card" data-name="${b.name}">
-    <div class="head"><h2>${b.name}</h2></div>
-    <div class="readout">${now}</div>
-    ${standingLine ? `<div class="standing">${standingLine}</div>` : ''}
-    ${note ? `<p class="bench-note">${note}</p>` : ''}
-    ${c.svg}
-    <div class="tip"></div>
-  </div>`;
+  let noteEl = null;
+  if (note) {
+    noteEl = el('p', { class: 'bench-note' });
+    // The generator's own markup (BENCH_NOTES), not data read from the history.
+    noteEl.innerHTML = note;
+  }
+  const holder = el('div');
+  holder.innerHTML = c.svg;   // numbers and fixed labels only (see `chart`)
+  const svg = holder.firstElementChild;
+  svg.setAttribute('aria-label', `${b.name} trend`);
+  for (const line of svg.querySelectorAll('line.refchange')) {
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+    t.textContent = `${refChangeAt(+line.dataset.i)}: every ratio steps here without mutsu changing`;
+    line.append(t);
+  }
+  return el('div', { class: 'bench-card', 'data-name': b.name },
+    el('div', { class: 'head' }, el('h2', {}, b.name)), readout,
+    standing.childNodes.length ? standing : null, noteEl, svg, el('div', { class: 'tip' }));
 }
 
 function renderCharts() {
   const grid = document.getElementById('grid');
-  grid.innerHTML = benches.map(cardHTML).join('');
+  grid.replaceChildren(...benches.map(card));
   benches.forEach((b, i) => wireHover(grid.children[i], b));
+  document.getElementById('legendRef').classList.toggle('hidden', !refChanges().length);
 }
 
 function wireHover(card, b) {
@@ -724,7 +856,10 @@ function wireHover(card, b) {
     let rows = '';
     if (bp) rows += `interp ${fmt(yval(bp))}${unit()}`;
     if (jp) rows += `${bp ? '  ' : ''}+jit ${fmt(yval(jp))}${unit()}`;
-    tip.innerHTML = `<span class="mono">${cm.sha}</span> <span class="r">${cm.date.slice(5,10)}</span><br><span class="mono">${rows}</span>`;
+    const change = refChangeAt(best);
+    tip.replaceChildren(el('span', { class: 'mono' }, cm.sha), ' ',
+      el('span', { class: 'r' }, cm.date.slice(5, 10)), el('br'), el('span', { class: 'mono' }, rows),
+      change ? el('br') : null, change ? el('span', { class: 'r' }, change) : null);
     tip.style.left = (bx / W * 100) + '%';
     tip.style.top = '48px';
     tip.style.opacity = 1;
@@ -772,6 +907,7 @@ function render() {
   document.getElementById('grid').classList.toggle('hidden', view !== 'charts');
   document.getElementById('tableWrap').classList.toggle('hidden', view !== 'table');
   if (view === 'charts') renderCharts(); else renderTable();
+  if (view !== 'charts') document.getElementById('legendRef').classList.add('hidden');
 }
 
 /* ---- URL state ----------------------------------------------------------
@@ -896,6 +1032,17 @@ window.addEventListener('hashchange', () => {
 
 adoptHash();
 
+// The reference versions the current ratios are measured against, with each
+// one's history as a tooltip. Text only: a version string comes from the
+// runner's `--version` output.
+{
+  const series = REFS.map(([k]) => DATA.refs[k] || []).filter(ch => ch.length);
+  const refs = document.getElementById('refs');
+  if (series.length) {
+    refs.textContent = 'vs ' + series.map(ch => ch[ch.length - 1][1]).join(' · ');
+    refs.title = series.map(ch => ch.map(c => c[1]).join(' → ')).join('\n');
+  }
+}
 const last = commits[N - 1], first = commits[0];
 document.getElementById('meta').textContent =
   `${N} commits · ${first.date.slice(0,10)} → ${last.date.slice(0,10)} · latest ${last.sha}`;
@@ -939,7 +1086,10 @@ document.getElementById('foot').innerHTML =
   `the table are the median of mutsu ÷ the reference over the last ${RECENT} commits; red ` +
   `means mutsu is slower (lighter red: a quarter or more of those commits were at or under ` +
   `parity), and a losing card links its tracking issues from ` +
-  `<span class="mono">benchmarks/bench-tracking.toml</span>.`;
+  `<span class="mono">benchmarks/bench-tracking.toml</span>. ` +
+  `A dashed vertical line on a ratio chart is a new rakudo or rakupp release on the bench ` +
+  `runner: every ratio steps there without mutsu changing, so no ratio median reads across ` +
+  `the latest one (<b>n=</b> next to a ratio says how few commits it has read since).`;
 render();
 </script>
 """
@@ -1020,7 +1170,10 @@ def report_markdown(model):
         note = b.get("notes", {}).get(key)
         return f"{txt} ({note['tag']})" if note else txt
 
-    lines = [f"Median of the last {model['recent']} commits, +jit series.", "",
+    current = [ch[-1][1] for ch in (model["refs"].get(k) for k, _ in RATIO_SLOTS) if ch]
+    refs = f" Measured against {' and '.join(current)}." if current else ""
+    lines = [f"Median of the last {model['recent']} commits (none from before the "
+             f"reference's latest version change), +jit series.{refs}", "",
              "| # | benchmark | vs rakudo | vs rakupp | tracked by |",
              "|---:|---|---:|---:|---|"]
     names = model["losers"]["ranked"] + model["losers"]["other"]
