@@ -1126,7 +1126,11 @@ impl Interpreter {
             // are resolved at call time and not listed in
             // is_builtin_function. Any other `&*name` that nothing bound is
             // unbound (`so &*NOPE` is False, `&*NOPE // 1` takes the default).
-            Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
+            // Rakudo's process-level `&*EXIT` is the `exit` routine itself
+            // (`&*EXIT.name` is `exit`), so `&*EXIT(1)` — zef's `MAIN` `CATCH`
+            // — exits. A caller's own `my &*EXIT` was found in the env above.
+            let routine = if lookup_name == "EXIT" { "exit" } else { lookup_name };
+            Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(routine), false)
         } else {
             Value::NIL
         }
