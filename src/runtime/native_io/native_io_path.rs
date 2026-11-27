@@ -169,6 +169,71 @@ impl Interpreter {
         Ok(Value::make_instance(class_name, new_attrs))
     }
 
+    /// `IO::Path.resolve-inside($io)` (rakudo 2026.11): the invocant resolved
+    /// completely, when it lies strictly inside `$io`, an existing directory
+    /// that is also resolved completely; `Nil` otherwise (a path that does not
+    /// resolve, `$io` itself, or anything outside it).
+    // Cost: O(p + q) plus one filesystem query per segment of either path,
+    // p, q = lengths of the two paths.
+    pub(crate) fn io_path_resolve_inside(
+        &mut self,
+        attributes: &AttrMap,
+        class_name: Symbol,
+        root: &Value,
+    ) -> Result<Value, RuntimeError> {
+        if !Self::is_io_path_value(root) {
+            return Err(crate::runtime::utils::typecheck_binding_parameter_with_hint(
+                "$io",
+                "IO::Path",
+                root,
+                &crate::runtime::utils::value_short_repr(root),
+                None,
+            ));
+        }
+        let ValueView::Instance {
+            attributes: root_attributes,
+            ..
+        } = root.view()
+        else {
+            return Ok(Value::NIL);
+        };
+        let root_attributes = AttrMap::clone(&root_attributes.as_map());
+        let root_p = root_attributes
+            .get("path")
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let root_buf = self.resolve_io_path_buf(&root_attributes, &root_p);
+        if !root_buf.is_dir() {
+            return Ok(Value::NIL);
+        }
+        let Ok(outside) = Self::resolve_io_path(&root_buf, true, &root_p) else {
+            return Ok(Value::NIL);
+        };
+        let p = attributes
+            .get("path")
+            .map(|v| v.to_string_value())
+            .unwrap_or_default();
+        let target_buf = self.resolve_io_path_buf(attributes, &p);
+        let Ok(inside) = Self::resolve_io_path(&target_buf, true, &p) else {
+            return Ok(Value::NIL);
+        };
+        let sep = Self::io_path_sep(attributes);
+        let prefix = if outside.ends_with(sep) {
+            outside.clone()
+        } else {
+            format!("{outside}{sep}")
+        };
+        if inside == outside || !inside.starts_with(&prefix) {
+            return Ok(Value::NIL);
+        }
+        // The resolved path is absolute, so its CWD is the volume root, as
+        // `.resolve` builds it.
+        let mut new_attrs = attributes.clone();
+        new_attrs.insert("path".to_string(), Value::str(inside));
+        new_attrs.insert("cwd".to_string(), Value::str(sep.to_string()));
+        Ok(Value::make_instance(class_name, new_attrs))
+    }
+
     /// `IO::Path.dir(:test)`: the entries of the directory. `sub dir` and this
     /// method are one body (`dir_listing`).
     // Cost: O(n), n = directory entries (plus the `test` smartmatch per entry).
