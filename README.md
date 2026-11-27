@@ -26,7 +26,7 @@ PATH:
 ```bash
 mise use -g github:tokuhirom/mutsu       # latest release
 # or pin a version:
-mise use -g github:tokuhirom/mutsu@0.26.1
+mise use -g github:tokuhirom/mutsu@1.0.0
 
 mutsu -e 'say "Hello, World!"'
 mzef --version                            # the bundled Zef package manager
@@ -68,7 +68,7 @@ docker run --rm -v mutsu-home:/root ghcr.io/tokuhirom/mutsu \
     mutsu -e 'use JSON::OptIn; say "loaded"'
 ```
 
-Pin a version with a tag (`ghcr.io/tokuhirom/mutsu:0.26.1`); `:latest` tracks the
+Pin a version with a tag (`ghcr.io/tokuhirom/mutsu:1.0.0`); `:latest` tracks the
 newest release. Images are built from release tags only, so there is no
 development-branch tag.
 
