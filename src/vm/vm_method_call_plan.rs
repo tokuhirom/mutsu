@@ -90,6 +90,10 @@ pub(crate) struct MethodCallPlan {
     /// call's leftover named arguments. A function of the `MethodDef` alone,
     /// so it is answered once here rather than by a parameter scan per call.
     pub(crate) named_slurpy: bool,
+    /// The body a slot frame runs, when `slot_frame` is set
+    /// (`vm_method_slot_frame::slot_frame_body_code`): built once with the
+    /// plan, so the per-call path makes no decision about it.
+    pub(crate) slot_body: Option<std::sync::Arc<CompiledCode>>,
     /// What the fast binder's prologue asks of the owner and the method on
     /// every call, answered once for this plan (#18267 D1a); `None` when the
     /// answer can change without a registry write (a published mixin owner).
@@ -470,6 +474,9 @@ impl Interpreter {
             container_params: def.has_container_params(),
             private,
             named_slurpy: Self::method_has_light_named_slurpy(def),
+            slot_body: slot_frame.then(|| {
+                std::sync::Arc::new(super::vm_method_slot_frame::slot_frame_body_code(cc))
+            }),
             facts,
         }))
     }
@@ -569,6 +576,7 @@ impl Interpreter {
                 compiled_fns: fns_ref,
                 body_package: plan.facts.map(|facts| facts.body_package),
                 can_skip_merge: plan.can_skip_merge,
+                slot_body: plan.slot_body.as_deref(),
             };
             if plan.slot_frame && self.slot_frame_entry_ok() {
                 self.call_compiled_method_slot(&call, args, target.clone())

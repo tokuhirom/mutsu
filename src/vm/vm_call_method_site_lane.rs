@@ -60,22 +60,6 @@ impl Interpreter {
         else {
             return None;
         };
-        self.try_value_site_lane(code, ip, name_idx, arity)
-    }
-
-    /// [`Self::try_call_method_site_lane`] for a call on the value on the
-    /// stack whose operands are given: a `CallMethod`, or a slot frame's call
-    /// on its own parameter (`slot_body_value_call`), which is the same call.
-    /// The caller has checked that the op has no modifier and an unquoted
-    /// name.
-    // Cost: O(1) to decline; the row's cost otherwise.
-    pub(super) fn try_value_site_lane(
-        &mut self,
-        code: &CompiledCode,
-        ip: usize,
-        name_idx: u32,
-        arity: u32,
-    ) -> Option<SiteLaneAnswer> {
         // The names this lane leaves to the full path are part of the site's
         // static verdict (`vm_method_site_static`).
         if !Self::method_site_static_ok(code, ip) || self.retype_receiver_needed(code, name_idx) {

@@ -151,7 +151,6 @@ mod vm_call_site_ops;
 mod vm_call_zero_param;
 mod vm_core_routine_autothread;
 mod vm_eval_unit_capture;
-mod vm_flow_site_ops;
 mod vm_frame_lexical;
 mod vm_frame_type_aliases;
 mod vm_lex_import_builtin_op;

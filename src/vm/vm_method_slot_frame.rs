@@ -87,10 +87,11 @@ pub(super) fn slot_frame_body_ok(
         // The same call on one of this method's parameters (`$s.chars`).
         // `CallMethodMut` treats its receiver as a variable it may rebind,
         // which it does by name; a lean parameter is a readonly binding that
-        // nothing may rebind, so in a slot frame this op runs as the call on
-        // the parameter's value it is (`Interpreter::slot_body_value_call`),
-        // and never reaches the by-name machinery. `.VAR` asks about the
-        // variable itself and keeps the lean frame (#19266).
+        // nothing may rebind, so the slot frame's copy of the body
+        // (`slot_frame_body_code`) holds it as the `CallMethod` on the
+        // parameter's value it is, which never reaches the by-name machinery.
+        // `.VAR` asks about the variable itself and keeps the lean frame
+        // (#19266).
         OpCode::CallMethodMut {
             name_idx,
             arity: 0,
@@ -110,35 +111,18 @@ pub(super) fn slot_frame_body_ok(
             .all(|init| !matches!(init, LocalInit::Outer))
 }
 
-impl Interpreter {
-    /// Whether the op now running belongs to the body of the innermost slot
-    /// frame, not to code a callee runs on top of it without a frame of its
-    /// own.
-    // Cost: O(1).
-    #[inline]
-    pub(super) fn in_slot_frame_body(&self, code: &CompiledCode) -> bool {
-        self.call_frames
-            .last()
-            .is_some_and(|f| f.slot_body == std::ptr::from_ref(code) as usize)
-    }
-
-    /// A `CallMethodMut` on one of the slot frame's own parameters, run as the
-    /// call on the parameter's value it is. `slot_frame_body_ok` admitted the
-    /// op only in that shape: no arguments, no modifier, an unquoted name that
-    /// is not `VAR`, and a receiver slot that is a lean (readonly, plain `$`)
-    /// parameter. Such a binding cannot be rebound, so the variable half of
-    /// `CallMethodMut` (the rebind check, the writeback, the raw-invocant
-    /// cell, all by name) has nothing to do. In a slot frame, which runs on
-    /// its caller's env, those by-name steps would reach the caller's
-    /// same-named variable instead (#19266). `None` for every other op.
-    // Cost: O(1) to decline.
-    #[inline]
-    pub(super) fn slot_body_value_call(
-        &mut self,
-        code: &CompiledCode,
-        ip: usize,
-    ) -> Option<Result<(), RuntimeError>> {
-        let OpCode::CallMethodMut {
+/// The body a slot frame runs for `cc`, which [`slot_frame_body_ok`] admitted:
+/// a copy whose admitted `CallMethodMut` on a parameter is the `CallMethod` on
+/// the value it is (same name, no arguments, receiver on the stack, as the
+/// `GetLocal` before it left it), marked [`CompiledCode::slot_frame_body`].
+/// Built once per call plan. The copy starts with cold per-chunk caches
+/// (`MethodSiteCaches` clone cold), and nothing keys on its address except
+/// those caches and the JIT, which compiles it as its own chunk.
+// Cost: O(n), n = ops, once per plan.
+pub(super) fn slot_frame_body_code(cc: &CompiledCode) -> CompiledCode {
+    let mut body = cc.clone();
+    for op in &mut body.ops {
+        if let OpCode::CallMethodMut {
             name_idx,
             arity: 0,
             target_slot: Some(_),
@@ -146,26 +130,22 @@ impl Interpreter {
             quoted: false,
             arg_sources_idx: None,
             ..
-        } = code.ops[ip]
-        else {
-            return None;
-        };
-        if !self.in_slot_frame_body(code) {
-            return None;
-        }
-        // A built-in row on an immutable scalar answers as at a `CallMethod`
-        // site (`vm_call_method_site_lane`), on the value: no receiver place.
-        // The static verdict at this op was taken for a variable receiver, so
-        // the names an inline receiver leaves to the full path are refused
-        // here as a `CallMethod` site's verdict would.
-        if !Self::inline_receiver_full_path(Self::const_str(code, name_idx))
-            && let Some(answer) = self.try_value_site_lane(code, ip, name_idx, 0)
+        } = *op
         {
-            return Some(self.finish_call_method_site_lane(code, ip, answer));
+            *op = OpCode::CallMethod {
+                name_idx,
+                arity: 0,
+                modifier_idx: None,
+                quoted: false,
+                arg_sources_idx: None,
+            };
         }
-        Some(self.exec_call_method_value_site(code, ip, name_idx, 0, None, false, None))
     }
+    body.slot_frame_body = true;
+    body
+}
 
+impl Interpreter {
     /// The per-call half of the slot frame's admission (module docs).
     // Cost: O(1).
     #[inline]
@@ -220,7 +200,7 @@ impl Interpreter {
         // writes no name (module docs), so it runs on the caller's handle.
         #[cfg(debug_assertions)]
         let entry_env = self.env().clone();
-        self.push_slot_call_frame(cc);
+        self.push_slot_call_frame();
         let saved_stack_depth = self.stack.len();
         self.push_method_class_sym(owner_sym, Some(false));
 
@@ -305,7 +285,8 @@ impl Interpreter {
             explicit_return,
             fail_bypass,
         } = self.run_compiled_method_body(
-            cc,
+            // The slot frame's own copy of the body (`slot_frame_body_code`).
+            call.slot_body.unwrap_or(cc),
             compiled_fns,
             super::vm_method_body_run::MethodBodyFrame {
                 owner_sym,
@@ -357,7 +338,7 @@ impl Interpreter {
     /// line, the slot window and the stack depth. Nothing else is moved out
     /// of the interpreter, which `VmCallFrame::slot` tells `pop_call_frame`.
     // Cost: O(1).
-    fn push_slot_call_frame(&mut self, body: &CompiledCode) {
+    fn push_slot_call_frame(&mut self) {
         crate::vm::vm_poll::poll(crate::gc::SafepointKind::Call, 0);
         let frame = VmCallFrame {
             saved_env: self.env().clone(),
@@ -374,7 +355,6 @@ impl Interpreter {
             saved_active_loop_param_names: None,
             saved_active_loop_rw_param_names: None,
             slot: true,
-            slot_body: std::ptr::from_ref(body) as usize,
         };
         self.call_frames.push(frame);
     }

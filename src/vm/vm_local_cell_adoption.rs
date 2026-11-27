@@ -46,7 +46,7 @@ impl Interpreter {
         // caller's (ADR-18393 D1), whose same-named variable is not this slot's
         // -- the very confusion described above. No name lookup starts in a
         // slot frame, so there is nothing to adopt.
-        if self.in_slot_frame_body(code) {
+        if code.slot_frame_body {
             return None;
         }
         let slot = &self.locals[idx];
