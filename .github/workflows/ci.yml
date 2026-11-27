@@ -114,7 +114,8 @@ jobs:
           # scripts the build names to tell whether they are allowlisted, and
           # with only the classifier checked out it silently checked nothing.
           # All of .github/workflows/, not just this file: the runner-pin check
-          # below scans every workflow.
+          # below scans every workflow. `.rakudo-version`, .claude/ and
+          # .agents/ are what the rakudo-pin check reads and scans.
           sparse-checkout: |
             /scripts/
             /docs/adr/
@@ -122,6 +123,9 @@ jobs:
             /Makefile
             /.github/workflows/
             /.github/scripts/
+            /.rakudo-version
+            /.claude/
+            /.agents/
           sparse-checkout-cone-mode: false
 
       - name: Classifier self-test
