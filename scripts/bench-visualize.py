@@ -166,6 +166,13 @@ def parse_det_rows(text):
 # is the benchmark's base name -- `+jit` stripped, `@section` kept -- the same
 # name its card is titled with. Use it for a number that is measured correctly
 # but does not mean what the chart next to it suggests.
+#
+# Both rakupp notes were established on rakupp v5.0.1 (docs/rakupp-gap-survey.md)
+# and re-checked when bench.yml moved to v5.9.0: its `bin/rakupp` is still an
+# ELF `EXEC` (non-PIE) binary, and it still ships its native JSON routines
+# (`rakupp-from-json`, `Rakupp::Internals::JSON`). Re-check them on every rakupp
+# bump: a rakupp that ran JSON::Fast's Raku code would show as a several-fold
+# jump in its bench-json-fast time at the version marker on bench-trend.
 _RAKUPP_NATIVE_JSON = (
     "rakupp does not run JSON::Fast's Raku code: it answers "
     "<span class=\"mono\">JSON::Fast::from-json</span> with its own C++ JSON "
@@ -179,8 +186,8 @@ _RAKUPP_NON_PIE_STARTUP = (
     "Most of this row is process startup, and rakupp is a non-PIE executable "
     "(loaded at a fixed address, no relative relocations). mutsu is a PIE, so "
     "the dynamic loader applies ~80k relocations and copy-on-write faults in "
-    "~400 pages first. Linked non-PIE, the same mutsu build measures about "
-    "<b>1.1x</b> rakupp here, not ~1.3-1.4x. That trade (less ASLR) is #11158's "
+    "~400 pages first. Linked non-PIE, the same mutsu build measured about "
+    "<b>1.1x</b> rakupp v5.0.1 here, not ~1.3-1.4x. That trade (less ASLR) is #11158's "
     "call. See <span class=\"mono\">docs/rakupp-gap-survey.md</span>."
 )
 # Both notes describe a ratio where rakupp wins by something other than running

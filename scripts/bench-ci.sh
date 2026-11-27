@@ -3,7 +3,7 @@
 # runs and print one TSV row per benchmark to stdout.
 #
 # Columns: benchmark  mutsu_median_s  mutsu_min_s  raku_median_s  ratio  runs
-#          rakupp_median_s  ratio_rakupp
+#          rakupp_median_s  ratio_rakupp  raku_version  rakupp_version
 #
 # `ratio` is mutsu/raku (Rakudo). The last two columns measure Raku++
 # (https://github.com/ash/rakupp, a from-scratch C++ implementation) the same
@@ -12,6 +12,13 @@
 # consumer that reads the first six columns by position still sees the same
 # row. Both are NA when no rakupp binary is found (RAKUPP_BIN, default
 # `rakupp` on PATH) -- a local run without it prints the same rows as before.
+#
+# The two version columns are the first line of `--version` of the very
+# binaries measured (RAKU_BIN / RAKUPP_BIN), NA when one is not found. A new
+# reference release steps every ratio at once without mutsu changing, so the
+# history has to say which release each ratio was measured against
+# (bench-trend marks the change and keeps its medians from reading across it).
+# They are appended last, like the rakupp columns, for the same reason.
 #
 # Notes for consumers (.github/workflows/bench.yml):
 # - Shared CI runners are noisy; single absolute numbers are not comparable
@@ -100,11 +107,23 @@ if command -v "$RAKUPP" >/dev/null 2>&1; then
     have_rakupp=1
 fi
 
+# binary -> the first line of its `--version`, tabs and CRs flattened so the
+# TSV keeps its shape; NA when it prints nothing.
+version_of() {
+    local v
+    v=$("$1" --version 2>/dev/null | head -1 | tr '\t\r' '  ') || true
+    printf '%s' "${v:-NA}"
+}
+RAKU_VERSION=NA
+[ "$have_raku" = 1 ] && RAKU_VERSION=$(version_of "$RAKU")
+RAKUPP_VERSION=NA
+[ "$have_rakupp" = 1 ] && RAKUPP_VERSION=$(version_of "$RAKUPP")
+
 # One output row: name, the mutsu median/min, then each reference's median and
 # the mutsu/reference ratio.
 row() { # name m_med m_min r_med p_med
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$(ratio "$2" "$4")" "$RUNS" \
-        "$5" "$(ratio "$2" "$5")"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$(ratio "$2" "$4")" "$RUNS" \
+        "$5" "$(ratio "$2" "$5")" "$RAKU_VERSION" "$RAKUPP_VERSION"
 }
 
 for bench in benchmarks/*.raku; do
