@@ -262,6 +262,14 @@ impl Interpreter {
         best.map(|(p, j, _)| (p, j))
     }
 
+    /// The runtime's own module search paths, which the parser follows with the
+    /// bundled batteries (`set_parser_lib_paths_with_bundle`) only when a parse
+    /// resolves a module.
+    // Cost: O(p), p = the runtime's lib paths.
+    pub(crate) fn parser_runtime_lib_paths(&self) -> Vec<String> {
+        (*self.module.lib_paths).clone()
+    }
+
     /// Default install directory for a well-known repository name
     /// ("site"/"home"/"vendor"/"perl"), mirroring the XDG pattern used by
     /// `precomp.rs::cache_dir()`. Returns `None` (no default available) rather
@@ -286,120 +294,13 @@ impl Interpreter {
     }
 
     /// This interpreter's bundled-battery search paths: the process-wide scan
-    /// ([`Self::bundled_lib_paths_shared`]), taken on first use.
+    /// ([`crate::bundle_paths::shared`]), taken on first use.
     // Cost: O(1) after the first call, which is the scan's O(d),
     // d = bundled distributions.
     pub(crate) fn bundled_lib_paths(&self) -> &Arc<Vec<String>> {
         self.module
             .bundled_lib_paths
-            .get_or_init(Self::bundled_lib_paths_shared)
-    }
-
-    /// The process-wide memo behind [`Interpreter::bundled_lib_paths_shared`],
-    /// keyed by the `MUTSU_BUNDLE_DIR` value the last scan was made under so a
-    /// process that changes it still re-scans.
-    #[allow(clippy::type_complexity)]
-    fn bundled_lib_paths_memo()
-    -> &'static std::sync::RwLock<Option<(Option<String>, Arc<Vec<String>>)>> {
-        static MEMO: std::sync::RwLock<Option<(Option<String>, Arc<Vec<String>>)>> =
-            std::sync::RwLock::new(None);
-        &MEMO
-    }
-
-    /// [`Self::resolve_bundled_lib_paths`], scanned at most once per process
-    /// (per `MUTSU_BUNDLE_DIR` value) and handed out as a shared `Arc`.
-    ///
-    /// The scan is a `read_dir` of the bundle base plus a `join` + `is_dir`
-    /// stat for every distribution in it — ~40 entries, ~130 KB of
-    /// instructions. `Interpreter::new` ran it unconditionally, and a
-    /// grammar-with-actions parse builds one scratch interpreter per
-    /// subrule-with-arguments call and per embedded code block: 3,109 of them
-    /// on a 60-row `benchmarks/bench-yaml-parse.raku` document, i.e. 3,109 full
-    /// directory scans (124,360 `DirEntry::path`s, 133,687 `is_dir` stats) of a
-    /// directory whose contents cannot change under us, for 6.7% of the whole
-    /// program's instructions (#7576 round 12).
-    ///
-    /// The answer depends only on `MUTSU_BUNDLE_DIR` and the running
-    /// executable's location, so it is memoized on the former (the latter
-    /// cannot change within a process). A bundle directory whose *contents*
-    /// change mid-process is not picked up — adding a module search path at
-    /// runtime is what `-I` / `MUTSULIB` / `use lib` are for.
-    pub(crate) fn bundled_lib_paths_shared() -> Arc<Vec<String>> {
-        let bundle_dir = std::env::var("MUTSU_BUNDLE_DIR").ok();
-        if let Ok(memo) = Self::bundled_lib_paths_memo().read()
-            && let Some((key, paths)) = memo.as_ref()
-            && *key == bundle_dir
-        {
-            return Arc::clone(paths);
-        }
-        let paths = Arc::new(Self::resolve_bundled_lib_paths());
-        if let Ok(mut memo) = Self::bundled_lib_paths_memo().write() {
-            *memo = Some((bundle_dir, Arc::clone(&paths)));
-        }
-        paths
-    }
-
-    pub(crate) fn resolve_bundled_lib_paths() -> Vec<String> {
-        let Some(base) = Self::bundle_base() else {
-            return Vec::new();
-        };
-        let Ok(entries) = std::fs::read_dir(&base) else {
-            return Vec::new();
-        };
-        let mut paths: Vec<String> = Vec::new();
-        for entry in entries.flatten() {
-            let lib = entry.path().join("lib");
-            if lib.is_dir() {
-                paths.push(lib.display().to_string());
-            }
-        }
-        paths.sort();
-        paths
-    }
-
-    /// The directory holding the bundled distributions (`MUTSU_BUNDLE_DIR`,
-    /// or the first of the exe-relative candidates that exists), without
-    /// scanning it.
-    // Cost: O(1): an environment read, `current_exe` and a few `stat`s.
-    pub(crate) fn bundle_base() -> Option<std::path::PathBuf> {
-        use std::path::PathBuf;
-        let base: Option<PathBuf> = if let Ok(dir) = std::env::var("MUTSU_BUNDLE_DIR") {
-            Some(PathBuf::from(dir))
-        } else {
-            std::env::current_exe().ok().and_then(|exe| {
-                let dir = exe.parent()?.to_path_buf();
-                let mut candidates = vec![
-                    dir.join("..").join("share").join("mutsu").join("modules"),
-                    dir.join("..").join("..").join("modules"),
-                    dir.join("modules"),
-                ];
-                // A cargo test binary lives one level deeper, in
-                // `target/<profile>/deps/`, so the dev-build candidate above
-                // lands on `target/modules` and finds nothing — every `use`
-                // of a bundled battery inside a `#[test]` then failed with
-                // "Could not find <Module> in: (module repositories)". Only
-                // taken when the binary really sits in a `deps` directory, so
-                // an installed layout can't reach a stray `modules/` three
-                // levels up.
-                if dir.file_name().is_some_and(|n| n == "deps") {
-                    candidates.push(dir.join("..").join("..").join("..").join("modules"));
-                }
-                // Cargo 1.100's build-dir layout puts a test binary in
-                // `target/<profile>/build/<pkg>/<hash>/out/`, which is neither
-                // `deps` nor near `modules/`. Taken only when the path really
-                // is `<root>/target/<profile>/build/..`, so an installed
-                // layout can't reach a stray `modules/` through it.
-                if let Some(build) = dir.ancestors().find(|a| a.file_name().is_some_and(|n| n == "build"))
-                    && let Some(target) = build.parent().and_then(|p| p.parent())
-                    && target.file_name().is_some_and(|n| n == "target")
-                    && let Some(root) = target.parent()
-                {
-                    candidates.push(root.join("modules"));
-                }
-                candidates.into_iter().find(|c| c.is_dir())
-            })
-        };
-        base.filter(|b| b.is_dir())
+            .get_or_init(crate::bundle_paths::shared)
     }
 
     /// Reads `XDG_DATA_HOME` / `HOME` through `%*ENV`, which a program may
@@ -616,7 +517,7 @@ impl Interpreter {
         }
 
         let preprocessed = Self::maybe_preprocess_roast_directives(&code);
-        crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
+        crate::parser::set_parser_lib_paths_with_bundle(self.parser_runtime_lib_paths());
         crate::parser::set_parser_program_path(self.io.program_path.clone());
         // `$?FILE` inside a module is the module's own file, not the script's.
         // Module parses nest (this module's `use` triggers another load), so

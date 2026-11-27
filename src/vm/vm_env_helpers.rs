@@ -7,7 +7,7 @@ impl Interpreter {
     /// an earlier `use` imported is a type and not a call (`Sum.()`).
     // Cost: O(n), n = the unit's source text (parsed per call).
     pub(crate) fn compile_time_cu_value(&self) -> Option<Value> {
-        crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
+        crate::parser::set_parser_lib_paths_with_bundle(self.parser_runtime_lib_paths());
         // A type the unit imported resolves as an import, as at the end of
         // the BEGIN prologue (`OpCode::EndBeginPrologue`): its short name is
         // no class-table key (`class Foo is export` in `unit module TT` is

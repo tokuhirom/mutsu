@@ -57,7 +57,7 @@ impl Interpreter {
         // The tree was parsed elsewhere, so the parser's import table holds
         // none of what its `use` statements import; the CHECK-time routine
         // scan reads it (#15868).
-        crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
+        crate::parser::set_parser_lib_paths_with_bundle(self.parser_runtime_lib_paths());
         crate::parser::set_parser_program_path(self.io.program_path.clone());
         let result = crate::parser::with_rakuast_lexical_scope(|| {
             Self::register_lowered_unit_imports(&stmts);

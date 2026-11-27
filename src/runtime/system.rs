@@ -330,7 +330,7 @@ impl Interpreter {
         // Make module search paths visible to the parser so that `use Foo`
         // inside the EVAL'd code can resolve and register Foo's exported sub
         // names (needed for parenless calls like `use Foo; bar`).
-        crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
+        crate::parser::set_parser_lib_paths_with_bundle(self.parser_runtime_lib_paths());
         crate::parser::set_parser_program_path(self.io.program_path.clone());
         // An EVAL'd `use` loads as the EVAL's parse reaches it (ADR-17558).
         let parse_result = self.parse_with_loader(|| {

@@ -16,7 +16,7 @@ impl Interpreter {
         source: &str,
         compunit: bool,
     ) -> Result<Value, RuntimeError> {
-        crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
+        crate::parser::set_parser_lib_paths_with_bundle(self.parser_runtime_lib_paths());
         crate::parser::set_parser_program_path(self.io.program_path.clone());
         let scope = crate::rakuast::frontend::str_ast_scope(
             self.str_ast_caller_terms(),
@@ -87,7 +87,7 @@ impl Interpreter {
         slang: &Value,
     ) -> Result<Value, RuntimeError> {
         let slang = crate::runtime::types::value_is_defined(slang).then(|| slang.to_string_value());
-        crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
+        crate::parser::set_parser_lib_paths_with_bundle(self.parser_runtime_lib_paths());
         crate::parser::set_parser_program_path(self.io.program_path.clone());
         let scope = crate::rakuast::frontend::str_ast_scope(
             self.str_ast_caller_terms(),
