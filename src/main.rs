@@ -15,8 +15,8 @@ mod cli_options;
 const _: &[u8] = include_bytes!("../linker/startup-text.ld");
 
 use cli_options::{
-    handle_negated_long_option, handle_negated_short_option, illegal_option, print_help,
-    print_negation_error,
+    handle_negated_long_option, handle_negated_short_option, illegal_option, include_spec,
+    print_help, print_negation_error,
 };
 
 fn print_error(prefix: &str, err: &RuntimeError, source: Option<&str>, program_name: Option<&str>) {
@@ -230,13 +230,13 @@ fn run_main() {
             std::process::exit(1);
         } else if arg == "-I" {
             if let Some(path) = iter.next() {
-                lib_paths.push(path.clone());
+                lib_paths.push(include_spec(path));
             } else {
                 eprintln!("Usage: {} -I <path>", args[0]);
                 std::process::exit(1);
             }
         } else if let Some(path_suffix) = arg.strip_prefix("-I") {
-            lib_paths.push(path_suffix.to_string());
+            lib_paths.push(include_spec(path_suffix));
         } else if arg == "-M" {
             if let Some(module) = iter.next() {
                 preload_modules.push(module.clone());

@@ -398,33 +398,45 @@ impl Interpreter {
 
     /// The repository specs a `RAKULIB` value names, in listed order. As in
     /// Rakudo the list is comma-separated (not colon-separated like
-    /// `MUTSULIB`) and each entry is `inst#PATH`, `file#PATH` or a bare path.
-    /// A repository class spelled out (`CompUnit::Repository::Staging#name(site)#PATH`,
-    /// which is what a staging repository's `path-spec` prints and Pakku hands
-    /// its test children) is an installation at `PATH`, since `Staging` is an
-    /// `Installation` that only differs in how it deploys; it is normalized to
-    /// `inst#PATH`. An entry with any other `scheme#` prefix, and an empty
-    /// one, is ignored.
+    /// `MUTSULIB`) and each entry is normalized by [`Interpreter::repo_spec`];
+    /// an entry it rejects, and an empty one, is ignored.
     // Cost: O(n), n = length of the value.
     pub fn rakulib_specs(value: &str) -> Vec<String> {
         value
             .split(',')
             .map(str::trim)
             .filter(|spec| !spec.is_empty())
-            .filter_map(|spec| match spec.split_once('#') {
-                None => Some(spec.to_string()),
-                Some(("inst" | "file", _)) => Some(spec.to_string()),
-                Some((
-                    "CompUnit::Repository::Installation" | "CompUnit::Repository::Staging",
-                    rest,
-                )) => {
-                    // `CLASS#name(NAME)#PATH`: the path is the last segment.
-                    let path = rest.rsplit_once('#').map_or(rest, |(_, path)| path);
-                    (!path.is_empty()).then(|| format!("inst#{path}"))
-                }
-                Some(_) => None,
-            })
+            .filter_map(Self::repo_spec)
             .collect()
+    }
+
+    /// One repository spec as `-I` and `RAKULIB` accept it: `inst#PATH`,
+    /// `file#PATH` or a bare path stay as they are. A repository class spelled
+    /// out (`CompUnit::Repository::Staging#name(site)#PATH`, which is what a
+    /// staging repository's `path-spec` prints, and what zef and Pakku hand
+    /// their test children on `-I` / `RAKULIB`) is an installation at `PATH`,
+    /// since `Staging` is an `Installation` that only differs in how it
+    /// deploys; it is normalized to `inst#PATH`. Any other `scheme#` prefix is
+    /// `None`.
+    // Cost: O(n), n = length of the spec.
+    pub fn repo_spec(spec: &str) -> Option<String> {
+        match spec.split_once('#') {
+            None => Some(spec.to_string()),
+            Some(("inst" | "file", _)) => Some(spec.to_string()),
+            Some((
+                "CompUnit::Repository::Installation" | "CompUnit::Repository::Staging",
+                rest,
+            )) => {
+                // `CLASS#name(NAME)#PATH`: the path is the last segment.
+                let path = rest.rsplit_once('#').map_or(rest, |(_, path)| path);
+                (!path.is_empty()).then(|| format!("inst#{path}"))
+            }
+            Some(("CompUnit::Repository::FileSystem", rest)) => {
+                let path = rest.rsplit_once('#').map_or(rest, |(_, path)| path);
+                (!path.is_empty()).then(|| path.to_string())
+            }
+            Some(_) => None,
+        }
     }
 
     /// Put the repository a lib spec names at the front of `$*REPO`'s chain:
