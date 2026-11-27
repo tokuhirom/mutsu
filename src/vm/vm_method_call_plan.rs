@@ -436,9 +436,14 @@ impl Interpreter {
             receiver,
             gate.can_skip_merge || gate.merge_is_name_carry_only,
         );
-        // A slot frame has no overlay to carry anything out of.
+        // A slot frame has no overlay to carry anything out of. A merge the
+        // gate keeps only for the runtime-name carry (`merge_is_name_carry_only`:
+        // the body calls something) is no reason to refuse one: a callee's
+        // writes land in the env handle the slot frame shares with its caller,
+        // which is where the lean frame's carry would have put them. The body
+        // itself writes no name (`slot_frame_body_ok`).
         let slot_frame = lean
-            && gate.can_skip_merge
+            && (gate.can_skip_merge || gate.merge_is_name_carry_only)
             && super::vm_method_slot_frame::slot_frame_body_ok(def, cc, owner);
         // A mixin owner another thread may publish is asked anew per call
         // (`method_body_package` reads `published_mixins`, which no registry
