@@ -20,14 +20,17 @@ use super::*;
 impl Interpreter {
     /// Note that `package::name` was just installed: a package-less routine the
     /// main program declares under a core routine's name is the program's own.
-    // Cost: O(1) (two hash probes) unless `name` is a core routine of the main
-    // unit; then a copy-on-write insert into a small set.
+    // Cost: O(n) (a few hash probes), n = name length, plus the one-time scan
+    // of the core sub names (`is_core_sub_name`) for the first main-program
+    // routine; a copy-on-write insert into a small set when `name` is a core
+    // routine of the main unit. A module's routine stops at the lineage test,
+    // before any name probe (#17504).
     pub(crate) fn note_main_unit_routine(&mut self, package: &str, name: &str) {
         if !crate::qualified::is_global_name(package)
             || crate::qualified::is_qualified_str(name)
-            || !(crate::builtin_functions::is_builtin_function(name)
-                || !crate::builtins::rakudo_candidates::core_sub_candidates(name).is_empty())
             || !self.is_main_lineage(self.executing_unit_sym())
+            || !(crate::builtin_functions::is_builtin_function(name)
+                || crate::builtins::rakudo_candidates::is_core_sub_name(name))
         {
             return;
         }
