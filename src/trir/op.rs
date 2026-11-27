@@ -398,6 +398,45 @@ pub(crate) enum TrOp {
         pos_ref: u16,
         c: i32,
     },
+    /// Pop an index; jump to `target` when the truth of element `index` of
+    /// the native int list in free variable `outer` equals `on`:
+    /// `AtPosIOuter(outer); JumpIf{True,False}I(target)`, a character-class
+    /// table test (`nqp::atpos_i($ws, $ord)`).
+    JumpAtPosIOuter {
+        outer: u16,
+        on: bool,
+        target: u32,
+    },
+    /// Jump to `target` when `cmp(<the codepoint at the reference
+    /// pos_ref in boxed slot text>, c)` equals `on`; touches no bank.
+    /// `OrdAtLocalRef { text, pos_ref }; JumpCmpC { .. }`.
+    JumpCmpOrdAtRefC {
+        text: u16,
+        pos_ref: u16,
+        cmp: TrCmp,
+        on: bool,
+        c: i32,
+        target: u32,
+    },
+    /// [`TrOp::JumpCmpOrdAtRefC`] at the position in native slot `pos`.
+    /// `OrdAtLocalSlot { text, pos }; JumpCmpC { .. }`.
+    JumpCmpOrdAtSlotC {
+        text: u16,
+        pos: u16,
+        cmp: TrCmp,
+        on: bool,
+        c: i32,
+        target: u32,
+    },
+    /// Copy boxed slot `from` into boxed slot `to`; touches no bank.
+    /// `LoadObj(from); StoreObj(to)`.
+    CopyObjLocal {
+        from: u16,
+        to: u16,
+    },
+    /// `UnboxI` of boxed slot `n`, read in place: `LoadObj(n); UnboxI`
+    /// without the clone and its drop.
+    UnboxILocal(u16),
 
     // ---- inlined callees (ADR-8673 D2, `compile/inline_call.rs`) ----
     /// Enter the inlined body of `chunk.inline_regions[region]`: the guards a
@@ -465,6 +504,9 @@ impl TrOp {
             | TrOp::JumpCmpLC { target: t, .. }
             | TrOp::JumpIfEmptyLocal { target: t, .. }
             | TrOp::JumpIfNonEmptyLocal { target: t, .. }
+            | TrOp::JumpAtPosIOuter { target: t, .. }
+            | TrOp::JumpCmpOrdAtRefC { target: t, .. }
+            | TrOp::JumpCmpOrdAtSlotC { target: t, .. }
             | TrOp::InlineEnter { join: t, .. }
             | TrOp::InlineReturn { join: t, .. } => Some(t),
             _ => None,
@@ -484,6 +526,9 @@ impl TrOp {
             | TrOp::JumpCmpLC { target: t, .. }
             | TrOp::JumpIfEmptyLocal { target: t, .. }
             | TrOp::JumpIfNonEmptyLocal { target: t, .. }
+            | TrOp::JumpAtPosIOuter { target: t, .. }
+            | TrOp::JumpCmpOrdAtRefC { target: t, .. }
+            | TrOp::JumpCmpOrdAtSlotC { target: t, .. }
             | TrOp::InlineEnter { join: t, .. }
             | TrOp::InlineReturn { join: t, .. } => Some(*t),
             _ => None,

@@ -363,6 +363,59 @@ impl Interpreter {
                     let r = self.trir.nl[nbase + *pos_ref as usize] as usize;
                     self.trir.nl[r] = nat::add_i(self.trir.nl[r], *c as i64);
                 }
+                TrOp::JumpAtPosIOuter { outer, on, target } => {
+                    let idx = self.ipop();
+                    let v = Self::trir_atpos_i(&self.trir.outers[cbase + *outer as usize], idx)?;
+                    if (v != 0) == *on {
+                        ip = *target as usize;
+                        continue;
+                    }
+                }
+                TrOp::JumpCmpOrdAtRefC {
+                    text,
+                    pos_ref,
+                    cmp,
+                    on,
+                    c,
+                    target,
+                } => {
+                    let r = self.trir.nl[nbase + *pos_ref as usize] as usize;
+                    let pos = self.trir.nl[r];
+                    let t = &mut self.trir;
+                    let cp =
+                        Self::trir_ord_at_memo(&mut t.str_memo, &t.ol[obase + *text as usize], pos);
+                    if cmp.eval(cp, *c as i64) == *on {
+                        ip = *target as usize;
+                        continue;
+                    }
+                }
+                TrOp::JumpCmpOrdAtSlotC {
+                    text,
+                    pos,
+                    cmp,
+                    on,
+                    c,
+                    target,
+                } => {
+                    let pos = self.trir.nl[nbase + *pos as usize];
+                    let t = &mut self.trir;
+                    let cp =
+                        Self::trir_ord_at_memo(&mut t.str_memo, &t.ol[obase + *text as usize], pos);
+                    if cmp.eval(cp, *c as i64) == *on {
+                        ip = *target as usize;
+                        continue;
+                    }
+                }
+                TrOp::CopyObjLocal { from, to } => {
+                    let v = self.trir.ol[obase + *from as usize].clone();
+                    self.trir.ol[obase + *to as usize] = v;
+                }
+                TrOp::UnboxILocal(n) => {
+                    // `UnboxI`'s coercion, on the slot in place.
+                    let v = &self.trir.ol[obase + *n as usize];
+                    let i = v.as_int().unwrap_or_else(|| crate::runtime::to_int(v));
+                    self.trir.ns.push(i);
+                }
                 TrOp::OrdAtOuter(n) => {
                     let pos = self.ipop();
                     // Read in place: the operand is not consumed, so cloning

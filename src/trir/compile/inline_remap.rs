@@ -75,6 +75,31 @@ impl TrirCompiler<'_> {
                 RefTarget::Direct(t) => TrOp::AddLocalICVoid { slot: t, c: *c },
                 RefTarget::Ref(t) => TrOp::AddRefICVoid { pos_ref: t, c: *c },
             },
+            TrOp::JumpCmpOrdAtRefC {
+                text,
+                pos_ref,
+                cmp,
+                on,
+                c,
+                target,
+            } => match reference(pos_ref)? {
+                RefTarget::Direct(t) => TrOp::JumpCmpOrdAtSlotC {
+                    text: m.o(*text)?,
+                    pos: t,
+                    cmp: *cmp,
+                    on: *on,
+                    c: *c,
+                    target: to(target)?,
+                },
+                RefTarget::Ref(t) => TrOp::JumpCmpOrdAtRefC {
+                    text: m.o(*text)?,
+                    pos_ref: t,
+                    cmp: *cmp,
+                    on: *on,
+                    c: *c,
+                    target: to(target)?,
+                },
+            },
             TrOp::SetRefI(s) => match reference(s)? {
                 RefTarget::Direct(t) => TrOp::StoreI(t),
                 RefTarget::Ref(t) => TrOp::SetRefI(t),
@@ -131,6 +156,26 @@ impl TrirCompiler<'_> {
                 text: m.o(*text)?,
                 pos: m.n(*pos)?,
             },
+            TrOp::JumpCmpOrdAtSlotC {
+                text,
+                pos,
+                cmp,
+                on,
+                c,
+                target,
+            } => TrOp::JumpCmpOrdAtSlotC {
+                text: m.o(*text)?,
+                pos: m.n(*pos)?,
+                cmp: *cmp,
+                on: *on,
+                c: *c,
+                target: to(target)?,
+            },
+            TrOp::CopyObjLocal { from, to: dest } => TrOp::CopyObjLocal {
+                from: m.o(*from)?,
+                to: m.o(*dest)?,
+            },
+            TrOp::UnboxILocal(s) => TrOp::UnboxILocal(m.o(*s)?),
             TrOp::AddLocalIC { slot, c } => TrOp::AddLocalIC {
                 slot: m.n(*slot)?,
                 c: *c,
@@ -143,6 +188,11 @@ impl TrirCompiler<'_> {
             TrOp::LoadOuter(n) => TrOp::LoadOuter(*n),
             TrOp::OrdAtOuter(n) => TrOp::OrdAtOuter(*n),
             TrOp::AtPosIOuter(n) => TrOp::AtPosIOuter(*n),
+            TrOp::JumpAtPosIOuter { outer, on, target } => TrOp::JumpAtPosIOuter {
+                outer: *outer,
+                on: *on,
+                target: to(target)?,
+            },
             // Constants.
             TrOp::ConstObj(i) => TrOp::ConstObj(i + m.consts),
             TrOp::NarrowStoreI(i) => TrOp::NarrowStoreI(i + m.consts),
@@ -265,6 +315,7 @@ pub(super) fn native_slot(op: &TrOp) -> Option<u16> {
         | TrOp::ShiftIStoreLocal { slot: s, .. }
         | TrOp::PushISlotLocalVoid { slot: s, .. }
         | TrOp::OrdAtLocalSlot { pos: s, .. }
+        | TrOp::JumpCmpOrdAtSlotC { pos: s, .. }
         | TrOp::AddLocalIC { slot: s, .. }
         | TrOp::AddLocalICVoid { slot: s, .. } => Some(*s),
         _ => None,

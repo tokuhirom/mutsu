@@ -100,8 +100,8 @@ fn nom_ws_compiles_to_the_typed_scanner_loop() {
             // it goes through that reference.
             // The position read through it feeds `ordat` directly.
             "OrdAtLocalRef(0, 0)",
-            "AtPosIOuter(0)",
-            "JumpIfFalseI(5)",
+            // The table test is one op (`peephole.rs`).
+            "JumpAtPosIOuter { outer: 0, on: false, target: 4 }",
             "IncRefIVoid(0)",
             "Jump(0)",
             // The loop's `Nil` value, pushed and dropped, is gone

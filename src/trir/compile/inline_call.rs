@@ -274,7 +274,10 @@ impl TrirCompiler<'_> {
         for (k, op) in body.iter().enumerate() {
             if matches!(
                 op,
-                TrOp::LoadOuter(_) | TrOp::OrdAtOuter(_) | TrOp::AtPosIOuter(_)
+                TrOp::LoadOuter(_)
+                    | TrOp::OrdAtOuter(_)
+                    | TrOp::AtPosIOuter(_)
+                    | TrOp::JumpAtPosIOuter { .. }
             ) {
                 self.inline_outer_fixups.push(start + k);
             }
@@ -307,8 +310,12 @@ impl TrirCompiler<'_> {
     pub(super) fn apply_inline_outer_fixups(&mut self) {
         let base = self.outers.len() as u16;
         for &i in &self.inline_outer_fixups {
-            if let Some(TrOp::LoadOuter(n) | TrOp::OrdAtOuter(n) | TrOp::AtPosIOuter(n)) =
-                self.ops.get_mut(i)
+            if let Some(
+                TrOp::LoadOuter(n)
+                | TrOp::OrdAtOuter(n)
+                | TrOp::AtPosIOuter(n)
+                | TrOp::JumpAtPosIOuter { outer: n, .. },
+            ) = self.ops.get_mut(i)
             {
                 *n += base;
             }

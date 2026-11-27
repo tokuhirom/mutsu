@@ -47,6 +47,15 @@
 //!   `SetRefI(r)` makes it [`TrOp::AddRefICVoid`]. Four ops, three pushes
 //!   and three pops become one op that touches no bank: the
 //!   `$pos = nqp::add_i($pos, 1)` of every scanner loop.
+//! - **Table and codepoint tests.** `AtPosIOuter(o); JumpIf..I(t)` is
+//!   [`TrOp::JumpAtPosIOuter`] (a character-class table test), and an
+//!   `OrdAtLocalRef`/`OrdAtLocalSlot` followed by a `JumpCmpC` is
+//!   [`TrOp::JumpCmpOrdAtRefC`]/[`TrOp::JumpCmpOrdAtSlotC`]: the codepoint
+//!   is compared where it is read, with no int-bank round trip.
+//! - **Boxed slot reads.** `LoadObj(a); StoreObj(b)` is
+//!   [`TrOp::CopyObjLocal`], and `LoadObj(n); UnboxI` is
+//!   [`TrOp::UnboxILocal`]: no push, no pop, and the unbox reads the slot in
+//!   place instead of cloning it.
 //! - **Loop rotation.** A backward `Jump(h)` onto a loop header
 //!   `JumpIfEmptyLocal { slot, target: e }` becomes
 //!   `JumpIfNonEmptyLocal { slot, target: h + 1 }; Jump(e)`: each further
@@ -288,6 +297,66 @@ fn fuse(ops: &[TrOp], i: usize) -> Option<(usize, Vec<TrOp>)> {
                 }],
             ))
         }
+        // ---- boxed slot reads ----
+        TrOp::LoadObj(from) if matches!(at(1), Some(TrOp::StoreObj(_))) => {
+            let Some(TrOp::StoreObj(to)) = at(1) else {
+                return None;
+            };
+            Some((
+                2,
+                vec![TrOp::CopyObjLocal {
+                    from: *from,
+                    to: *to,
+                }],
+            ))
+        }
+        TrOp::LoadObj(n) if matches!(at(1), Some(TrOp::UnboxI)) => {
+            Some((2, vec![TrOp::UnboxILocal(*n)]))
+        }
+        // ---- table and codepoint tests ----
+        TrOp::AtPosIOuter(outer) if cond_jump(at(1)).is_some() => {
+            let (on, target) = cond_jump(at(1))?;
+            Some((
+                2,
+                vec![TrOp::JumpAtPosIOuter {
+                    outer: *outer,
+                    on,
+                    target,
+                }],
+            ))
+        }
+        TrOp::OrdAtLocalRef { text, pos_ref } if matches!(at(1), Some(TrOp::JumpCmpC { .. })) => {
+            let Some(TrOp::JumpCmpC { cmp, on, c, target }) = at(1) else {
+                return None;
+            };
+            Some((
+                2,
+                vec![TrOp::JumpCmpOrdAtRefC {
+                    text: *text,
+                    pos_ref: *pos_ref,
+                    cmp: *cmp,
+                    on: *on,
+                    c: *c,
+                    target: *target,
+                }],
+            ))
+        }
+        TrOp::OrdAtLocalSlot { text, pos } if matches!(at(1), Some(TrOp::JumpCmpC { .. })) => {
+            let Some(TrOp::JumpCmpC { cmp, on, c, target }) = at(1) else {
+                return None;
+            };
+            Some((
+                2,
+                vec![TrOp::JumpCmpOrdAtSlotC {
+                    text: *text,
+                    pos: *pos,
+                    cmp: *cmp,
+                    on: *on,
+                    c: *c,
+                    target: *target,
+                }],
+            ))
+        }
         // ---- constant adds ----
         TrOp::GetRefI(pos_ref) if const_add(at(1), at(2)).is_some() => {
             let c = const_add(at(1), at(2))?;
@@ -478,6 +547,73 @@ mod tests {
             TrOp::ReturnI,
         ];
         assert_eq!(optimize(ops.clone()).len(), ops.len());
+    }
+
+    #[test]
+    fn a_table_test_and_a_codepoint_test_are_one_op_each() {
+        // `nom-ws`: skip while `$ws[ord]` is set; then test a quote.
+        let ops = vec![
+            TrOp::OrdAtLocalRef {
+                text: 1,
+                pos_ref: 0,
+            },
+            TrOp::AtPosIOuter(2),
+            TrOp::JumpIfFalseI(4),
+            TrOp::Jump(0),
+            TrOp::OrdAtLocalRef {
+                text: 1,
+                pos_ref: 0,
+            },
+            TrOp::ConstI(34),
+            TrOp::EqI,
+            TrOp::JumpIfTrueI(9),
+            TrOp::ReturnNil,
+            TrOp::ReturnNil,
+        ];
+        let out = optimize(ops);
+        assert!(matches!(
+            out[0],
+            TrOp::OrdAtLocalRef {
+                text: 1,
+                pos_ref: 0
+            }
+        ));
+        assert!(matches!(
+            out[1],
+            TrOp::JumpAtPosIOuter {
+                outer: 2,
+                on: false,
+                target: 3
+            }
+        ));
+        assert!(matches!(out[2], TrOp::Jump(0)));
+        assert!(matches!(
+            out[3],
+            TrOp::JumpCmpOrdAtRefC {
+                text: 1,
+                pos_ref: 0,
+                cmp: TrCmp::Eq,
+                on: true,
+                c: 34,
+                target: 5
+            }
+        ));
+        assert_eq!(out.len(), 6);
+    }
+
+    #[test]
+    fn boxed_slot_copies_and_unboxes_touch_no_bank() {
+        let ops = vec![
+            TrOp::LoadObj(0),
+            TrOp::StoreObj(1),
+            TrOp::LoadObj(1),
+            TrOp::UnboxI,
+            TrOp::ReturnI,
+        ];
+        let out = optimize(ops);
+        assert!(matches!(out[0], TrOp::CopyObjLocal { from: 0, to: 1 }));
+        assert!(matches!(out[1], TrOp::UnboxILocal(1)));
+        assert!(matches!(out[2], TrOp::ReturnI));
     }
 
     #[test]
