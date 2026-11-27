@@ -40,6 +40,13 @@
 //!   [`TrOp::ShiftIStoreLocal`] and `LoadI(s); PushILocalVoid(l)` is
 //!   [`TrOp::PushISlotLocalVoid`]; neither touches a bank. They are the
 //!   per-character body of `unjsonify-string`.
+//! - **Constant adds.** `LoadI(s); ConstI(c); AddI` (or `SubI`, as `-c`) is
+//!   [`TrOp::AddLocalIC`], and a following `StoreI(s)` of the same slot
+//!   makes it [`TrOp::AddLocalICVoid`]; through an `is rw` reference,
+//!   `GetRefI(r); ConstI(c); AddI` is [`TrOp::AddRefIC`] and a following
+//!   `SetRefI(r)` makes it [`TrOp::AddRefICVoid`]. Four ops, three pushes
+//!   and three pops become one op that touches no bank: the
+//!   `$pos = nqp::add_i($pos, 1)` of every scanner loop.
 //! - **Loop rotation.** A backward `Jump(h)` onto a loop header
 //!   `JumpIfEmptyLocal { slot, target: e }` becomes
 //!   `JumpIfNonEmptyLocal { slot, target: h + 1 }; Jump(e)`: each further
@@ -216,6 +223,21 @@ fn rotate_loop(ops: &[TrOp], i: usize) -> Option<(usize, Vec<TrOp>)> {
     ))
 }
 
+/// The constant a `ConstI(c); AddI` or `ConstI(c); SubI` pair adds, as the
+/// `i32` a fused op carries: `c`, or `-c` for a subtraction. Native `int`
+/// arithmetic wraps, so `x - c` is `x + (-c)` exactly.
+fn const_add(konst: Option<&TrOp>, op: Option<&TrOp>) -> Option<i32> {
+    let TrOp::ConstI(c) = konst? else {
+        return None;
+    };
+    let c = match op? {
+        TrOp::AddI => *c,
+        TrOp::SubI => c.checked_neg()?,
+        _ => return None,
+    };
+    i32::try_from(c).ok()
+}
+
 /// The conditional jump at `i`, as `(on, target)`: jump when the popped
 /// value's truth equals `on`.
 fn cond_jump(op: Option<&TrOp>) -> Option<(bool, u32)> {
@@ -265,6 +287,33 @@ fn fuse(ops: &[TrOp], i: usize) -> Option<(usize, Vec<TrOp>)> {
                     pos_ref: *pos_ref,
                 }],
             ))
+        }
+        // ---- constant adds ----
+        TrOp::GetRefI(pos_ref) if const_add(at(1), at(2)).is_some() => {
+            let c = const_add(at(1), at(2))?;
+            Some((
+                3,
+                vec![TrOp::AddRefIC {
+                    pos_ref: *pos_ref,
+                    c,
+                }],
+            ))
+        }
+        TrOp::AddRefIC { pos_ref, c } if matches!(at(1), Some(TrOp::SetRefI(r)) if r == pos_ref) => {
+            Some((
+                2,
+                vec![TrOp::AddRefICVoid {
+                    pos_ref: *pos_ref,
+                    c: *c,
+                }],
+            ))
+        }
+        TrOp::LoadI(slot) if const_add(at(1), at(2)).is_some() => {
+            let c = const_add(at(1), at(2))?;
+            Some((3, vec![TrOp::AddLocalIC { slot: *slot, c }]))
+        }
+        TrOp::AddLocalIC { slot, c } if matches!(at(1), Some(TrOp::StoreI(s)) if s == slot) => {
+            Some((2, vec![TrOp::AddLocalICVoid { slot: *slot, c: *c }]))
         }
         // ---- slot-to-slot list ops ----
         TrOp::ShiftILocal(list) => {
@@ -369,6 +418,66 @@ mod tests {
         ));
         assert!(matches!(out[1], TrOp::IncIVoid(1)));
         assert!(matches!(out[2], TrOp::ReturnNil));
+    }
+
+    #[test]
+    fn a_constant_add_through_a_reference_is_one_op() {
+        // `$pos = nqp::add_i($pos, 1)` through `int $pos is rw`, then
+        // `nqp::sub_i($pos, 2)` used as a value.
+        let ops = vec![
+            TrOp::GetRefI(0),
+            TrOp::ConstI(1),
+            TrOp::AddI,
+            TrOp::SetRefI(0),
+            TrOp::GetRefI(0),
+            TrOp::ConstI(2),
+            TrOp::SubI,
+            TrOp::ReturnI,
+        ];
+        let out = optimize(ops);
+        assert!(matches!(out[0], TrOp::AddRefICVoid { pos_ref: 0, c: 1 }));
+        assert!(matches!(out[1], TrOp::AddRefIC { pos_ref: 0, c: -2 }));
+        assert!(matches!(out[2], TrOp::ReturnI));
+        assert_eq!(out.len(), 3);
+    }
+
+    #[test]
+    fn a_constant_add_to_a_slot_is_one_op_only_into_the_same_slot() {
+        let ops = vec![
+            TrOp::LoadI(3),
+            TrOp::ConstI(5),
+            TrOp::AddI,
+            TrOp::StoreI(3),
+            TrOp::LoadI(3),
+            TrOp::ConstI(1),
+            TrOp::AddI,
+            TrOp::StoreI(4),
+            TrOp::ReturnNil,
+        ];
+        let out = optimize(ops);
+        assert!(matches!(out[0], TrOp::AddLocalICVoid { slot: 3, c: 5 }));
+        assert!(matches!(out[1], TrOp::AddLocalIC { slot: 3, c: 1 }));
+        assert!(matches!(out[2], TrOp::StoreI(4)));
+    }
+
+    #[test]
+    fn a_constant_outside_i32_is_not_fused() {
+        let ops = vec![
+            TrOp::LoadI(0),
+            TrOp::ConstI(i64::from(i32::MAX) + 1),
+            TrOp::AddI,
+            TrOp::ReturnI,
+        ];
+        let out = optimize(ops.clone());
+        assert_eq!(out.len(), ops.len());
+        // `- i32::MIN` does not fit either.
+        let ops = vec![
+            TrOp::LoadI(0),
+            TrOp::ConstI(i64::from(i32::MIN)),
+            TrOp::SubI,
+            TrOp::ReturnI,
+        ];
+        assert_eq!(optimize(ops.clone()).len(), ops.len());
     }
 
     #[test]

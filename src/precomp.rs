@@ -168,7 +168,9 @@ pub(crate) fn interpreter_version() -> String {
     // 73: TRIR's `TrInnerCall` / `TrMethodCall` gained `line` (#18080).
     // 74: compile inputs record the static-outer latch (#19166); an older
     // entry compiled unlatched lacks the question and must not be served.
-    const CACHE_FORMAT_VERSION: u32 = 74;
+    // 75: TRIR gained the fused constant-add ops `AddLocalIC`/`AddRefIC` and
+    // their in-place forms (#8673).
+    const CACHE_FORMAT_VERSION: u32 = 75;
     // The exe mtime cannot change while this process runs, so stat it once —
     // every cache validation used to re-stat the (large) binary per module.
     static VERSION: std::sync::OnceLock<String> = std::sync::OnceLock::new();

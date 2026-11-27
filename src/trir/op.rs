@@ -373,6 +373,31 @@ pub(crate) enum TrOp {
         text: u16,
         pos_ref: u16,
     },
+    /// Push `nqp::add_i(<native slot slot>, c)`: `LoadI(slot); ConstI(c);
+    /// AddI`, or `SubI` with `c` negated. Touches no bank but the push.
+    AddLocalIC {
+        slot: u16,
+        c: i32,
+    },
+    /// `slot = nqp::add_i(slot, c)`: `AddLocalIC { slot, c }; StoreI(slot)`,
+    /// the `$i = $i + 1` of a counting loop; touches no bank.
+    AddLocalICVoid {
+        slot: u16,
+        c: i32,
+    },
+    /// [`TrOp::AddLocalIC`] through the `is rw` reference in native slot
+    /// `pos_ref`: `GetRefI(pos_ref); ConstI(c); AddI`.
+    AddRefIC {
+        pos_ref: u16,
+        c: i32,
+    },
+    /// [`TrOp::AddLocalICVoid`] through the reference: `AddRefIC { pos_ref,
+    /// c }; SetRefI(pos_ref)`, a scanner advancing a caller's `int $pos is
+    /// rw` (`$pos = nqp::add_i($pos, 1)`).
+    AddRefICVoid {
+        pos_ref: u16,
+        c: i32,
+    },
 
     // ---- inlined callees (ADR-8673 D2, `compile/inline_call.rs`) ----
     /// Enter the inlined body of `chunk.inline_regions[region]`: the guards a
