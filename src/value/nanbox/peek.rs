@@ -178,6 +178,19 @@ impl NanBox {
         }
     }
 
+    /// The `StrBody` payload if this is a `Str`, without reading it: a tag
+    /// test and a pointer, for callers that compare string identity.
+    #[inline]
+    pub(in crate::value) fn as_str_body(&self) -> Option<&crate::value::StrBody> {
+        let bits = self.0.get();
+        match classify(bits) {
+            // SAFETY: Str words carry an Arc<StrBody>, live for the &self
+            // borrow (the same mapping `as_str` uses).
+            Classified::Kind(Kind::Str) => Some(unsafe { peek_arc::<crate::value::StrBody>(bits) }),
+            _ => None,
+        }
+    }
+
     /// The string slice if this is a `Str`. No coercion.
     #[inline]
     pub(in crate::value) fn as_str(&self) -> Option<&str> {

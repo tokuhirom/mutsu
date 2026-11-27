@@ -724,6 +724,13 @@ impl Value {
         self.0.as_bool()
     }
 
+    /// The `Str` payload itself, unread: a tag probe for identity checks
+    /// (`Arc::as_ptr` of a held body against it). No coercion.
+    #[inline]
+    pub(crate) fn as_str_body(&self) -> Option<&crate::value::StrBody> {
+        self.0.as_str_body()
+    }
+
     /// The string slice if this is exactly a `Str`. No coercion.
     #[inline]
     pub fn as_str(&self) -> Option<&str> {
