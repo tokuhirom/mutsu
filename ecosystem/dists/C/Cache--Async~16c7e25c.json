@@ -14,7 +14,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 0.13,
+        "secs": 0.14,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -24,7 +24,7 @@
         "nok": 0,
         "ok": 14,
         "plan": 14,
-        "secs": 1.03,
+        "secs": 0.72,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.18,
+        "secs": 0.17,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 0.9,
+        "secs": 0.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -60,7 +60,7 @@
         "nok": 0,
         "ok": 0,
         "plan": 12,
-        "secs": 1.4,
+        "secs": 1.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -72,7 +72,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 1.05,
+        "secs": 1.07,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -82,7 +82,7 @@
         "nok": 0,
         "ok": 3,
         "plan": 3,
-        "secs": 2.11,
+        "secs": 1.87,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -94,7 +94,7 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 0.11,
+        "secs": 0.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -104,20 +104,19 @@
         "nok": 0,
         "ok": 25,
         "plan": 25,
-        "secs": 0.83,
+        "secs": 0.67,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
     },
     {
-      "cmp": "no_baseline",
-      "flaky": true,
+      "cmp": "parity",
       "mutsu": {
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.09,
+        "secs": 0.05,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -127,7 +126,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.88,
+        "secs": 0.49,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -149,7 +148,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.88,
+        "secs": 1.56,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -161,7 +160,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.09,
+        "secs": 1.1,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -171,7 +170,7 @@
         "nok": 0,
         "ok": 10,
         "plan": 10,
-        "secs": 1.7,
+        "secs": 1.53,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -183,7 +182,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.05,
+        "secs": 0.04,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -193,7 +192,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.94,
+        "secs": 0.63,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -205,7 +204,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.08,
+        "secs": 0.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -215,7 +214,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.89,
+        "secs": 0.58,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -230,7 +229,7 @@
     "date": "2026-11-27",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "3f0f4e81",
+    "mutsu_commit": "9fa982f0",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
@@ -243,10 +242,10 @@
   },
   "status": "green",
   "totals": {
-    "baseline_assertions": 71,
-    "baseline_files": 8,
-    "mutsu_assertions": 71,
-    "parity_files": 8,
+    "baseline_assertions": 73,
+    "baseline_files": 9,
+    "mutsu_assertions": 73,
+    "parity_files": 9,
     "regressed_files": 0
   },
   "version": "0.3.4"

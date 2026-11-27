@@ -17,7 +17,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.29,
+        "secs": 0.18,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -27,7 +27,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.1,
+        "secs": 0.83,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -39,7 +39,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.06,
+        "secs": 0.61,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -49,52 +49,8 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 0.98,
-        "skip": 0,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
         "secs": 0.83,
-        "skip": 1,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/020-basic.t",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 3.7,
-        "skip": 1,
-        "todo": 0,
-        "verdict": "pass"
-      }
-    },
-    {
-      "cmp": "parity",
-      "mutsu": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 0.65,
-        "skip": 1,
-        "todo": 0,
-        "verdict": "pass"
-      },
-      "path": "t/030-event.t",
-      "raku": {
-        "nok": 0,
-        "ok": 1,
-        "plan": 1,
-        "secs": 1.68,
-        "skip": 1,
+        "skip": 0,
         "todo": 0,
         "verdict": "pass"
       }
@@ -110,12 +66,56 @@
         "todo": 0,
         "verdict": "pass"
       },
+      "path": "t/020-basic.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 2.71,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.46,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/030-event.t",
+      "raku": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 1.27,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    },
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 1,
+        "plan": 1,
+        "secs": 0.55,
+        "skip": 1,
+        "todo": 0,
+        "verdict": "pass"
+      },
       "path": "t/040-synopsis.t",
       "raku": {
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 1.44,
+        "secs": 1.22,
         "skip": 1,
         "todo": 0,
         "verdict": "pass"
@@ -130,7 +130,7 @@
     "date": "2026-11-27",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "3f0f4e81",
+    "mutsu_commit": "9fa982f0",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",

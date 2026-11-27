@@ -40,7 +40,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.61,
+        "secs": 0.51,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -52,7 +52,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 0.29,
+        "secs": 0.3,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -62,7 +62,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 4.72,
+        "secs": 4.74,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -72,11 +72,11 @@
       "cmp": "no_baseline",
       "path": "t/01-no-reset.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/33264FBCEF2C804C4FD9A8C8C15E7128088A4A42D05CBEE2EB9F9F212A8AAEEC: Read-only file system",
+        "first_failure": "Failed to open file /tmp/9A06EDA1D0418326ACA3D3C1FE99735420970DF295A080CFFBD609F53ED431BF: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 5.53,
+        "secs": 5.86,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -86,11 +86,11 @@
       "cmp": "no_baseline",
       "path": "t/02-imports.t",
       "raku": {
-        "first_failure": "Failed to open file /tmp/FEC0BF173BB85023EF8AC1B676277AE1B16ECB5EA2835918CD14279AAA426284: Read-only file system",
+        "first_failure": "Failed to open file /tmp/2BF3F46E42668F75C4099AA59C24C5749B39CB8C00CD05D124F6558BB96732F4: Read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": 1,
-        "secs": 1.14,
+        "secs": 1.05,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -102,7 +102,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 2.96,
+        "secs": 2.92,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -112,7 +112,7 @@
         "nok": 0,
         "ok": 1,
         "plan": 1,
-        "secs": 18.49,
+        "secs": 18.09,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -127,7 +127,7 @@
     "date": "2026-11-27",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "3f0f4e81",
+    "mutsu_commit": "9fa982f0",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",

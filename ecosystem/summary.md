@@ -7,18 +7,18 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **100.0%** (1340/1340) |
-| file parity | 100.0% (5161/5161) |
+| **dist parity** (published headline) | **100.0%** (1338/1338) |
+| file parity | 100.0% (5168/5168) |
 | assertion parity | 100.0% |
-| accepted divergences (out of the KPI, ADR-0130) | 14 file(s) |
+| accepted divergences (out of the KPI, ADR-0130) | 15 file(s) |
 | out-of-scope distributions (`exclude.txt`, out of the KPI) | 14 |
 
 | status | distributions |
 |---|---|
 | `blocked_dep` | 3 |
 | `blocked_load` | 3 |
-| `green` | 1340 |
-| `no_baseline` | 328 |
+| `green` | 1338 |
+| `no_baseline` | 330 |
 | out of scope (`exclude.txt`, any status) | 14 |
 
 ## Regressed since the previous ledger
@@ -207,7 +207,7 @@ _None._
 | `Bencode` | 0.2 | green | 1/1 |
 | `BigRoot` | 0.1.1 | green | 3/3 |
 | `Bin::Utils` | 0.0.2 | green | 3/3 |
-| `BinaryHeap` | 2.1.2 | green | 6/6 |
+| `BinaryHeap` | 2.1.3 | green | 6/6 |
 | `bird` | 0.1.11 | green | 1/1 |
 | `Bitcoin` | 0.7.1 | green | 1/1 |
 | `Bitcoin::Core::Secp256k1` | 0.0.29 | no_baseline | — |
@@ -222,7 +222,7 @@ _None._
 | `Business::CreditCard` | 0.2 | green | 2/2 |
 | `BusyIndicator` | 0.6.2 | green | 1/1 |
 | `C::Parser` | 0.3.3 | green | 9/9 |
-| `Cache::Async` | 0.3.4 | green | 8/8 |
+| `Cache::Async` | 0.3.4 | green | 9/9 |
 | `caelum` | 0.1.1 | no_baseline | — |
 | `Calendar` | 0.0.4 | no_baseline | — |
 | `CBOR::Simple` | 0.1.4 | green | 7/7 |
@@ -270,7 +270,7 @@ _None._
 | `Compress::Zlib` | 2.0.0 | green | 4/4 |
 | `Compress::Zlib::Raw` | 2.0.0 | green | 2/2 |
 | `CompUnit::Util` | 0.7.0 | green | 8/8 |
-| `Concurrent::BoundedChannel` | 0.4.1 | green | 1/1 |
+| `Concurrent::BoundedChannel` | 0.4.1 | no_baseline | — |
 | `Concurrent::Iterator` | 1.1 | green | 3/3 |
 | `Concurrent::PChannel` | 0.0.4 | no_baseline | — |
 | `Concurrent::PriorityQueue` | 0.0.2 | green | 2/2 |
@@ -408,7 +408,7 @@ _None._
 | `DateTime::US` | 0.1.6 | green | 8/8 |
 | `Dawa` | 0.0.11 | green | 5/5 |
 | `DAWG` | 0.1.6 | green | 6/6 |
-| `DB::DuckDB` | 1.4.1 | no_baseline | — |
+| `DB::DuckDB` | 1.4.3 | no_baseline | — |
 | `DB::Migration::Declare` | 0.1.3 | green | 2/2 |
 | `DB::Migration::Simple` | 1.1 | green | 1/1 |
 | `DB::MySQL` | 0.8 | no_baseline | — |
@@ -484,7 +484,7 @@ _None._
 | `DSL::Translators` | 0.1.2 | no_baseline | — |
 | `Duck::CSV` | 0.0.2 | green | 1/1 |
 | `Duckie` | 0.0.16 | green | 1/1 |
-| `Duckula` | 0.51.3 | blocked_load | — |
+| `Duckula` | 0.53.0 | blocked_load | — |
 | `EBNF::Grammar` | 0.1.6 | green | 5/5 |
 | `EC` | 0.6.6 | green | 4/4 |
 | `ECMA262Regex` | 1.2 | green | 3/3 |
@@ -704,7 +704,7 @@ _None._
 | `HTTP::Roles` | 0.2.3 | green | 1/1 |
 | `HTTP::Server::Async` | 0.2 | green | 8/8 |
 | `HTTP::Server::Async::Plugins::Router::Simple` | 0.1.2 | green | 1/1 |
-| `HTTP::Server::Logger` | 0.1.4 | green | 1/1 |
+| `HTTP::Server::Logger` | 0.1.4 | green | 2/2 |
 | `HTTP::Server::Middleware::JSON` | 0.0.3 | green | 1/1 |
 | `HTTP::Server::Router` | 0.1.7 | no_baseline | — |
 | `HTTP::Server::Router::YAML` | 0.0.1 | no_baseline | — |
@@ -904,7 +904,7 @@ _None._
 | `LLM::Graph` | 0.2.0 | green | 5/5 |
 | `LLM::Prompts` | 0.2.15 | green | 4/4 |
 | `LLM::Resources` | 0.0.4 | no_baseline | — |
-| `LLM::RetrievalAugmentedGeneration` | 0.0.8 | green | 3/3 |
+| `LLM::RetrievalAugmentedGeneration` | 0.0.8 | green | 4/4 |
 | `LN` | 1.001002 | green | 3/3 |
 | `Locale::Codes::Country` | 0.0.2 | green | 1/1 |
 | `Locale::Dates` | 0.0.7 | green | 2/2 |
@@ -1011,7 +1011,7 @@ _None._
 | `Mathematica::Serializer` | 0.2.1 | green | 3/3 |
 | `MCP` | 0.33.6 | green | 10/10 |
 | `MCP::Client` | 0.6.2 | green | 25/25 |
-| `MCP::Server` | 0.7.2 | green | 24/24 |
+| `MCP::Server` | 0.7.2 | green | 23/23 |
 | `MCP::Server::Tool::Ask` | 0.1.5 | green | 5/5 |
 | `MCP::Server::Tool::FileSystem` | 0.3.6 | no_baseline | — |
 | `MCP::Server::Tool::Shell` | 0.4.5 | green | 13/13 |
@@ -1069,7 +1069,7 @@ _None._
 | `MUGS::UI::CLI` | 0.1.4 | no_baseline | — |
 | `MUGS::UI::TUI` | 0.1.4 | no_baseline | — |
 | `MUGS::UI::WebSimple` | 0.1.4 | no_baseline | — |
-| `Mux` | 0.0.4 | green | 1/1 |
+| `Mux` | 0.0.4 | green | 2/2 |
 | `mv2d` | 0.1.333 | green | 1/1 |
 | `MVC::Keayl` | 0.9.2 | green | 37/37 |
 | `MVC::Keayl::Admin` | 0.9.1 | green | 3/3 |
@@ -1116,7 +1116,7 @@ _None._
 | `Number::Denominate` | 2.002002 | green | 5/5 |
 | `Number::More` | 0.2.12 | green | 11/11 |
 | `NYI` | 0.0.2 | green | 1/1 |
-| `Object::Delayed` | 0.0.13 | green | 4/4 |
+| `Object::Delayed` | 0.0.13 | green | 3/3 |
 | `Object::Permission` | 0.0.7 | green | 6/6 |
 | `Object::Permission::Group` | 0.0.7 | green | 3/3 |
 | `Object::Trampoline` | 0.0.12 | green | 3/3 |
@@ -1303,7 +1303,7 @@ _None._
 | `RakudoContainerfileBuilder` | 1.0.0 | no_baseline | — |
 | `RakudoPrereq` | 1.001005 | green | 2/2 |
 | `Rakuest` | 0.8.2 | green | 5/5 |
-| `Rakuish` | 0.141.1 | green | 28/28 |
+| `Rakuish` | 0.156.0 | green | 35/35 |
 | `RakuPM` | 1.1.6 | green | 27/27 |
 | `RakuPMVerifyTmp` | 0.1.1 | green | 1/1 |
 | `RakupodObject` | 0.0.7 | no_baseline | — |
@@ -1407,8 +1407,8 @@ _None._
 | `span` | 0.0.2 | green | 1/1 |
 | `Spanish` | 0.0.2 | green | 1/1 |
 | `Sparky` | 0.2.32 | green | 1/1 |
-| `Sparky-Job-Api` | 0.0.13 | green | 1/1 |
-| `Sparky::Minimal` | 0.0.3 | green | 1/1 |
+| `Sparky-Job-Api` | 0.0.14 | green | 1/1 |
+| `Sparky::Minimal` | 0.0.4 | no_baseline | — |
 | `Sparrow6` | 0.0.96 | green | 4/4 |
 | `Sparrow6::Rakudo::Install` | 0.0.4 | green | 1/1 |
 | `SparrowCI` | 0.0.11 | green | 1/1 |
@@ -1584,7 +1584,7 @@ _None._
 | `Tokenizers` | 0.3.0 | no_baseline | — |
 | `TOML` | 3 | green | 5/5 |
 | `TOML::Thumb` | 0.2 | green | 2/2 |
-| `Tomtit` | 0.1.37 | green | 1/1 |
+| `Tomtit` | 0.1.38 | green | 1/1 |
 | `Tomtit::Profile::Python` | 0.0.2 | green | 1/1 |
 | `Tomty` | 0.0.22 | green | 1/1 |
 | `TooLoo` | 2.0.2 | no_baseline | — |
@@ -1689,7 +1689,7 @@ _None._
 | `WWW::GCloud::API::Storage` | 0.0.5 | no_baseline | — |
 | `WWW::GCloud::API::Vision` | 0.0.4 | no_baseline | — |
 | `WWW::Gemini` | 0.0.26 | green | 3/3 |
-| `WWW::HorizonsEphemerisSystem` | 0.0.2 | green | 3/3 |
+| `WWW::HorizonsEphemerisSystem` | 0.0.3 | green | 3/3 |
 | `WWW::LLaMA` | 0.1.5 | no_baseline | — |
 | `WWW::MermaidInk` | 0.1.2 | no_baseline | — |
 | `WWW::MistralAI` | 0.1.3 | no_baseline | — |

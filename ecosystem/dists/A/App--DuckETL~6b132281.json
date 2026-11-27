@@ -36,7 +36,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 3.13,
+        "secs": 2.4,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -46,7 +46,7 @@
         "nok": 0,
         "ok": 2,
         "plan": 2,
-        "secs": 3.44,
+        "secs": 2.84,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -58,7 +58,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 0.09,
+        "secs": 0.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -68,7 +68,7 @@
         "nok": 0,
         "ok": 18,
         "plan": 18,
-        "secs": 1.54,
+        "secs": 1.01,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -78,11 +78,11 @@
       "cmp": "no_baseline",
       "path": "t/02-pipeline.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ducketl-pipe-2-4645' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/ducketl-pipe-2-94870' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.84,
+        "secs": 1.41,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -92,11 +92,11 @@
       "cmp": "no_baseline",
       "path": "t/03-planner.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ducketl-plan-2-67436' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/ducketl-plan-2-80765' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.92,
+        "secs": 1.17,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -106,11 +106,11 @@
       "cmp": "no_baseline",
       "path": "t/04-executor.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ducketl-exec-2-12641' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/ducketl-exec-2-52997' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.32,
+        "secs": 1.93,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -120,11 +120,11 @@
       "cmp": "no_baseline",
       "path": "t/05-cli.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ducketl-cli-2-22332' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/ducketl-cli-2-35986' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 1.74,
+        "secs": 1.29,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -136,7 +136,7 @@
         "nok": 0,
         "ok": 44,
         "plan": 44,
-        "secs": 0.13,
+        "secs": 0.15,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -146,7 +146,7 @@
         "nok": 0,
         "ok": 44,
         "plan": 44,
-        "secs": 1.42,
+        "secs": 1.36,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -156,11 +156,11 @@
       "cmp": "no_baseline",
       "path": "t/07-run.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ducketl-run-2-29279' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/ducketl-run-2-12142' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 2.76,
+        "secs": 2.79,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -170,11 +170,11 @@
       "cmp": "no_baseline",
       "path": "t/08-draft.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ducketl-draft-2-77366' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/ducketl-draft-2-45905' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 44,
         "plan": null,
-        "secs": 2.2,
+        "secs": 1.52,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -184,11 +184,11 @@
       "cmp": "no_baseline",
       "path": "t/09-m3.rakutest",
       "raku": {
-        "first_failure": "Failed to create directory '/tmp/ducketl-m3-2-42514' with mode '0o777': Failed to mkdir: read-only file system",
+        "first_failure": "Failed to create directory '/tmp/ducketl-m3-2-12798' with mode '0o777': Failed to mkdir: read-only file system",
         "nok": 0,
         "ok": 0,
         "plan": null,
-        "secs": 4.14,
+        "secs": 3.12,
         "skip": 0,
         "todo": 0,
         "verdict": "die"
@@ -200,7 +200,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 0.07,
+        "secs": 0.06,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -210,7 +210,7 @@
         "nok": 0,
         "ok": 19,
         "plan": 19,
-        "secs": 1.32,
+        "secs": 0.91,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -243,7 +243,7 @@
     "date": "2026-11-27",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "3f0f4e81",
+    "mutsu_commit": "9fa982f0",
     "mutsu_version": "0.26.1",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
