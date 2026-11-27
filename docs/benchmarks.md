@@ -86,6 +86,12 @@ previous commit", because a one-commit move on this runner pool is mostly noise:
   Raku code faster (its native JSON parser, its non-PIE startup) is not coloured and does not
   count as a loss: the card shows its note instead, in every metric. Wins are not coloured,
   so the losses read at a glance.
+- A ratio is only as stable as its baseline. Each history row records the reference versions it
+  ran against (the `rakudo` and `rakupp` columns, the first line of each `--version`), and the
+  page names the current ones at the top ("vs Rakudo 2026.11 · Raku++ v5.9.0"). A ratio chart
+  draws a dashed vertical line where a reference version changes: every ratio steps there
+  without mutsu changing. No ratio median reads across the latest change, so for the first
+  10 commits after a bump a ratio reads fewer points and shows `n=` with how many.
 - A losing card links the issues that track it, from
   [`benchmarks/bench-tracking.toml`](../benchmarks/bench-tracking.toml). For a losing row with no
   entry the generator warns: file a `todo:perf` issue on `lane:perf`, close condition

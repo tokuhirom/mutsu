@@ -99,7 +99,11 @@ const benchRows = [
 //   to rakupp (1.05x) and is tracked (its entry is the real one in
 //   benchmarks/bench-tracking.toml);
 // - bench-json-fast is slower than rakupp only because rakupp parses JSON
-//   natively, which its note says: that is not a loss.
+//   natively, which its note says: that is not a loss;
+// - the runner's rakudo moves from 2026.07 to 2026.11 at commit 20, and every
+//   rakudo ratio steps from a loss (1.30x / 1.20x) to a win (0.80x / 0.70x)
+//   there without mutsu changing: the ten-commit median must read only the
+//   four commits since, or every card would claim a loss against rakudo.
 const benchSpecs = [
   ['bench-fib', (i) => (i < 12 ? 0.2 : 0.1), '1.10'],
   ['hash-access', (i) => 0.04 * (i % 2 ? 1.01 : 0.99), '1.05'],
@@ -112,9 +116,11 @@ for (let i = 0; i < 24; i++) {
     const t = secs(i).toFixed(4);
     // The first commits predate the rakupp columns, as on bench-data: their
     // rows have ten fields, not thirteen.
-    const pp = i < 3 ? '' : `\t0.2000\t${ratioPp}\tRaku++`;
-    benchRows.push(`2026-07-${day}T00:00:00Z\t${sha}\t${name}\t${t}\t${t}\t0.3000\t0.80\t7\tci\tRakudo${pp}`);
-    benchRows.push(`2026-07-${day}T00:00:00Z\t${sha}\t${name}+jit\t${t}\t${t}\t0.3000\t0.70\t7\tci\tRakudo${pp}`);
+    const pp = i < 3 ? '' : `\t0.2000\t${ratioPp}\tRaku++ 5.0.1 (2026-09-29) x86_64-linux`;
+    const rk = `Welcome to Rakudo™ v${i < 20 ? '2026.07' : '2026.11'}.`;
+    const [r, rj] = i < 20 ? ['1.30', '1.20'] : ['0.80', '0.70'];
+    benchRows.push(`2026-07-${day}T00:00:00Z\t${sha}\t${name}\t${t}\t${t}\t0.3000\t${r}\t7\tci\t${rk}${pp}`);
+    benchRows.push(`2026-07-${day}T00:00:00Z\t${sha}\t${name}+jit\t${t}\t${t}\t0.3000\t${rj}\t7\tci\t${rk}${pp}`);
   }
 }
 writeFileSync(BENCH_TSV, benchRows.join('\n') + '\n');
@@ -256,6 +262,19 @@ try {
   assert(await json.locator('.standing .lose').count() === 0
          && await json.locator('.standing a').count() === 0,
          'and is neither flagged nor linked as a loss');
+  // The reference versions behind the ratios: named at the top, marked on the
+  // ratio charts where they change, and never read across by a median.
+  console.log('Test: benchmark dashboard shows the reference versions');
+  assert(await page.textContent('#refs') === 'vs Rakudo 2026.11 · Raku++ v5.0.1',
+         'the header names the rakudo and rakupp the current ratios are measured against');
+  assert(await fib.locator('.win').textContent() === '0.70×'
+         && (await fib.locator('.since').textContent()).trim() === 'n=4',
+         'a ratio median reads only the commits since the latest rakudo change, and says how few');
+  assert((await fib.locator('span[title*="against Rakudo 2026.11"]').count()) === 1,
+         'and its tooltip names the version it is measured against');
+  assert(await page.locator('.bench-card line.refchange').count() === 0
+         && await page.locator('#legendRef.hidden').count() === 1,
+         'the seconds charts carry no reference-version marker');
   // Run-to-run motion on the CI runners is instance noise, so the page shows
   // no change figure at all -- neither a single-commit delta nor a trend.
   assert(await page.locator('.bench-card .chip').count() === 0
@@ -299,6 +318,8 @@ try {
          'reopening such a link restores the view');
   assert(await page.getAttribute('#metric button[data-v="ratio"]', 'aria-pressed') === 'true',
          'and the metric');
+  assert(await page.locator('#legendRef.hidden').count() === 1,
+         'the table view shows no marker legend');
   assert(await page.locator('#tableWrap tbody tr').count() === 3,
          'with the table actually rendered');
   assert((await page.textContent('#tableWrap th[data-k="jit"]')).includes('↓'),
@@ -316,6 +337,19 @@ try {
   assert(new URL(page.url()).hash === '#view=table',
          'an old link sorted by the retired single-commit delta falls back to the name');
 
+  await page.goto(`${BASE}/bench-trend.html?lang=en#metric=ratio&window=50`,
+                  { waitUntil: 'networkidle' });
+  assert(await page.locator('.bench-card line.refchange').count() === 3,
+         'a reopened link to the rakudo ratio marks the rakudo change on every chart');
+  assert((await page.textContent('.bench-card line.refchange title'))
+           .startsWith('Rakudo 2026.07 → Rakudo 2026.11'),
+         'and the marker names the two versions');
+  assert(await page.locator('#legendRef:not(.hidden)').count() === 1,
+         'with the marker in the legend');
+  assert(await page.evaluate(() =>
+    [...document.querySelectorAll('.bench-card .now')].every(n => n.textContent.startsWith('0.70'))),
+    'and each card\'s big ratio is the median since the change, not across it');
+
   await page.goto(`${BASE}/bench-trend.html?lang=en#metric=ratiopp`,
                   { waitUntil: 'networkidle' });
   assert(await page.getAttribute('#metric button[data-v="ratiopp"]', 'aria-pressed') === 'true',
@@ -323,6 +357,8 @@ try {
   assert(await page.evaluate(() =>
     [...document.querySelectorAll('.bench-card text.axis')].some(t => t.textContent === 'rakupp')),
     'and its reference line is labelled rakupp');
+  assert(await page.locator('.bench-card line.refchange').count() === 0,
+         'a reference that never changed version draws no marker');
   // rakupp answers JSON::Fast::from-json natively, so the JSON rows' rakupp
   // ratio carries a caveat on that card -- and only on that card.
   assert(await page.locator('.bench-card[data-name="bench-json-fast"] .bench-note').count() === 1
