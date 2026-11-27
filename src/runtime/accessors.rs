@@ -227,7 +227,7 @@ impl Interpreter {
             attributes,
             ..
         } = v.view()
-            && class_name == "Failure"
+            && class_name == crate::sym!("Failure")
         {
             // The one "is this Failure handled?" answer (`.handled`, method-call
             // explosion and sinking all ask it): `.so`/`.Bool`/`.handled = True`
@@ -324,7 +324,7 @@ impl Interpreter {
         else {
             return None;
         };
-        if class_name != "Failure" {
+        if class_name != crate::sym!("Failure") {
             return None;
         }
         if value.is_failure_handled() {
@@ -553,7 +553,7 @@ impl Interpreter {
             attributes,
             ..
         } = value.view()
-            && class_name == "Failure"
+            && class_name == crate::sym!("Failure")
             && let Some(ex) = attributes.as_map().get("exception")
         {
             return Self::failure_value_to_error(

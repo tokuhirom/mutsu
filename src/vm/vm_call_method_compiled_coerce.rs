@@ -178,7 +178,7 @@ impl Interpreter {
         }
         // Already an Iterator instance: identity (interpreter's early return).
         if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name == "Iterator"
+            && class_name == crate::sym!("Iterator")
         {
             return Some(target.clone());
         }

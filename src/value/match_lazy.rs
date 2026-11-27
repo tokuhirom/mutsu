@@ -276,7 +276,7 @@ impl MatchNode {
             && let ValueView::Instance { attributes, .. } = cursor.view()
         {
             for (key, value) in attributes.as_map().iter() {
-                if !matches!(key.as_str(), "orig" | "from" | "pos" | "to") {
+                if !crate::sym_in!(*key, "orig" | "from" | "pos" | "to") {
                     attrs.insert(*key, value.clone());
                 }
             }

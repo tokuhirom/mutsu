@@ -768,7 +768,7 @@ impl Interpreter {
             && !constraint.contains(['[', ':'])
             && let Some(bound_val) = self.type_name_binding(constraint)
             && let ValueView::Package(bound) = bound_val.view()
-            && bound != *constraint
+            && bound.as_str() != constraint
             && crate::qualified::unqualified_part(bound).as_str() == constraint
             && self.has_type(&bound.resolve())
         {
@@ -1108,7 +1108,7 @@ impl Interpreter {
             && crate::runtime::native_decl::builtin_native_repr(constraint).is_some()
             && crate::runtime::native_decl::builtin_native_repr(name.as_str()).is_some()
         {
-            return name == constraint;
+            return name.as_str() == constraint;
         }
         if self.type_matches_value_resolved_why(constraint, value, why) {
             return true;
@@ -1317,14 +1317,14 @@ impl Interpreter {
                     enum_type,
                     ..
                 } => {
-                    enum_type == constraint
+                    enum_type.as_str() == constraint
                         || constraint == "int"
                         || crate::runtime::native_types::is_native_int_type(constraint)
                 }
                 // An enum value is of its own enum type: `PvtMode :$private`
                 // given `pvmAuto` (AttrX::Mooish's `invoke-opt`) otherwise
                 // walked the whole gauntlet to accept it (#17335).
-                ValueView::Enum { enum_type, .. } => enum_type == constraint,
+                ValueView::Enum { enum_type, .. } => enum_type.as_str() == constraint,
                 ValueView::BigInt(_) => constraint == "Int",
                 ValueView::Num(_) => constraint == "Num" || constraint == "num",
                 // A `Rat $r` parameter otherwise walked the whole gauntlet
@@ -1536,10 +1536,7 @@ impl Interpreter {
         // `set-socket(IO::Socket $s)` receives a plain INET socket) accept them.
         if constraint == "IO::Socket"
             && let ValueView::Instance { class_name, .. } = value.view()
-            && matches!(
-                class_name.as_str(),
-                "IO::Socket::INET" | "IO::Socket::Async"
-            )
+            && crate::sym_in!(class_name, "IO::Socket::INET" | "IO::Socket::Async")
         {
             return true;
         }
@@ -1555,8 +1552,8 @@ impl Interpreter {
             // values. Needed so `multi method m(Nil)` out-narrows a coercion
             // candidate like `m(Str() $s)` for a literal Nil argument.
             return matches!(value.view(), ValueView::Nil)
-                || matches!(value.view(), ValueView::Instance { class_name, .. } if class_name.as_str() == "Failure")
-                || matches!(value.view(), ValueView::Package(name) if name == "Nil");
+                || matches!(value.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("Failure"))
+                || matches!(value.view(), ValueView::Package(name) if name == crate::sym!("Nil"));
         }
         // The type object of an `Int`-based enum is an `Int` type
         // (`E ~~ Int`); the candidate ranking puts it one step below `Int`
@@ -2009,7 +2006,7 @@ impl Interpreter {
         if !crate::runtime::utils::is_known_type_constraint(constraint)
             && let Some(bound_val) = self.type_name_binding(constraint)
             && let ValueView::Package(bound) = bound_val.view()
-            && bound != *constraint
+            && bound.as_str() != constraint
         {
             return self.type_matches_value_why(&bound.resolve(), value, why);
         }
@@ -2308,7 +2305,7 @@ impl Interpreter {
             }
             if let Some(constraint_base) = constraint.split_once('[').map(|(base, _)| base)
                 && mro.iter().any(|parent| {
-                    parent == constraint_base || parent.starts_with(&format!("{constraint_base}["))
+                    parent.as_str() == constraint_base || parent.starts_with(&format!("{constraint_base}["))
                 })
             {
                 return true;
@@ -2415,8 +2412,8 @@ impl Interpreter {
             // and so is not an `Any`. Its MRO is authoritative.
             if constraint == "Any" && self.registry().classes.contains_key(cn) {
                 let mro = self.class_mro(cn);
-                if mro.iter().any(|p| p.as_str() == "Mu")
-                    && !mro.iter().any(|p| p.as_str() == "Any")
+                if mro.iter().any(|p| *p == crate::sym!("Mu"))
+                    && !mro.iter().any(|p| *p == crate::sym!("Any"))
                 {
                     return false;
                 }

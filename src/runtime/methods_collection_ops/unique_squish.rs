@@ -103,7 +103,7 @@ impl Interpreter {
     pub(crate) fn distinct_comparator(&self, with_fn: Option<Value>) -> Option<Value> {
         let func = with_fn?;
         if let ValueView::Routine { name, .. } = func.view()
-            && name == "infix:<===>"
+            && name == crate::sym!("infix:<===>")
         {
             return None;
         }

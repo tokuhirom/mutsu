@@ -29,7 +29,7 @@ impl Interpreter {
                 attributes: new_attrs,
                 ..
             } = result.view()
-                && class_name == "IO::Handle"
+                && class_name == crate::sym!("IO::Handle")
             {
                 let updated = new_attrs.as_map().clone();
                 return Ok((result, updated));

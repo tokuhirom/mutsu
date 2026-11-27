@@ -20,7 +20,7 @@ impl Interpreter {
         // that reaches `Mu` without `Any` is outside `Any` (the rule
         // `Registry::compute_class_mro` applies too).
         let mro = self.class_mro(type_name);
-        mro.iter().any(|c| c == "Mu") && !mro.iter().any(|c| c == "Any")
+        mro.iter().any(|c| *c == crate::sym!("Mu")) && !mro.iter().any(|c| *c == crate::sym!("Any"))
     }
 
     /// A sized Blob/Buf constraint checks the buffer's type, never its contents.

@@ -80,7 +80,7 @@ impl Interpreter {
             return true;
         }
         if let ValueView::Instance { class_name, .. } = val.view()
-            && class_name.as_str() == "Failure"
+            && class_name == crate::sym!("Failure")
         {
             return true;
         }

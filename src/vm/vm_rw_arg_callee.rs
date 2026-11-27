@@ -243,7 +243,7 @@ impl Interpreter {
             // CORE's identity operators take raw operands. Their Routine
             // handles have no ParamDef, but still need the same element-cell
             // producer as a user routine with raw parameters.
-            return positional < 2 && matches!(name.as_str(), "infix:<=:=>" | "infix:<!=:=>");
+            return positional < 2 && crate::sym_in!(name, "infix:<=:=>" | "infix:<!=:=>");
         }
         // `.^lookup` / `.^methods` hand back a `Method`/`Submethod` INSTANCE
         // whose `__mutsu_method_callable` attribute is the routine `CALL-ME`

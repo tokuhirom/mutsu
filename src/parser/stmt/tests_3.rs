@@ -107,7 +107,7 @@ fn parse_method_decl_with_match_var_param() {
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 1);
     if let Stmt::ClassDecl { body, .. } = &stmts[0] {
-        assert!(matches!(&body[0], Stmt::MethodDecl { name, .. } if name == "TOP"));
+        assert!(matches!(&body[0], Stmt::MethodDecl { name, .. } if *name == crate::sym!("TOP")));
     } else {
         panic!("expected ClassDecl");
     }
@@ -141,7 +141,9 @@ fn parse_method_decl_with_operator_name() {
         program("class A { method postcircumfix:<{ }>($key) { %!attrs{$key} } }").unwrap();
     assert_eq!(rest, "");
     if let Stmt::ClassDecl { body, .. } = &stmts[0] {
-        assert!(matches!(&body[0], Stmt::MethodDecl { name, .. } if name == "postcircumfix:<{ }>"));
+        assert!(
+            matches!(&body[0], Stmt::MethodDecl { name, .. } if *name == crate::sym!("postcircumfix:<{ }>"))
+        );
     } else {
         panic!("expected ClassDecl");
     }
@@ -212,7 +214,7 @@ fn parse_role_decl_with_generics_and_does_clause() {
     let (rest, stmts) = program("role R2[Cool ::T] does R1[T] is ok { }").unwrap();
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 1);
-    assert!(matches!(&stmts[0], Stmt::RoleDecl { name, .. } if name == "R2"));
+    assert!(matches!(&stmts[0], Stmt::RoleDecl { name, .. } if *name == crate::sym!("R2")));
 }
 
 /// ADR-0019 D4-1: a role body's synthetic `does Role[Args]` `DoesDecl`
@@ -252,7 +254,7 @@ fn parse_role_decl_records_whether_a_parent_came_from_is() {
         assert_eq!(rest, "");
         let Some(Stmt::RoleDecl { body, .. }) = stmts
             .iter()
-            .find(|s| matches!(s, Stmt::RoleDecl { name, .. } if name == "R2"))
+            .find(|s| matches!(s, Stmt::RoleDecl { name, .. } if *name == crate::sym!("R2")))
         else {
             panic!("expected RoleDecl for {src}");
         };
@@ -269,7 +271,7 @@ fn parse_grammar_decl_with_does_clause() {
     let (rest, stmts) = program("grammar G does R { rule TOP { ^ <x> } }").unwrap();
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 1);
-    assert!(matches!(&stmts[0], Stmt::ClassDecl { name, .. } if name == "G"));
+    assert!(matches!(&stmts[0], Stmt::ClassDecl { name, .. } if *name == crate::sym!("G")));
 }
 
 #[test]
@@ -277,7 +279,7 @@ fn parse_token_decl_with_regex_like_body() {
     let (rest, stmts) = program("token TOP { <fred>+ }").unwrap();
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 1);
-    assert!(matches!(&stmts[0], Stmt::TokenDecl { name, .. } if name == "TOP"));
+    assert!(matches!(&stmts[0], Stmt::TokenDecl { name, .. } if *name == crate::sym!("TOP")));
 }
 
 #[test]
@@ -285,7 +287,9 @@ fn parse_token_decl_with_sym_variant_name() {
     let (rest, stmts) = program("token fred:sym<foo> { <sym> \\d+ }").unwrap();
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 1);
-    assert!(matches!(&stmts[0], Stmt::TokenDecl { name, .. } if name == "fred:sym<foo>"));
+    assert!(
+        matches!(&stmts[0], Stmt::TokenDecl { name, .. } if *name == crate::sym!("fred:sym<foo>"))
+    );
 }
 
 #[test]

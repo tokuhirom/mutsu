@@ -237,9 +237,9 @@ impl Interpreter {
                     if !k.starts_with("__mutsu_")
                         && !k.starts_with("?")
                         && !k.starts_with("!")
-                        && k != "_"
-                        && k != "@_"
-                        && k != "%_"
+                        && *k != crate::sym!("_")
+                        && *k != crate::sym!("@_")
+                        && *k != crate::sym!("%_")
                     {
                         self.env_mut().insert_sym(*k, v.clone());
                     }

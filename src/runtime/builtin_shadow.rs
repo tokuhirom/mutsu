@@ -131,7 +131,7 @@ impl Interpreter {
             // they never reach its `FALLBACK` (Grammar::ABNF's `$/[0].comb`).
             || (Self::cool_only_builtin_method(name)
                 && self.class_has_wildcard_handles_or_fallback(cn)
-                && !self.class_mro(cn).iter().any(|c| c.as_str() == "Cool"))
+                && !self.class_mro(cn).iter().any(|c| *c == crate::sym!("Cool")))
     }
 
     /// [`Self::user_shadows_builtin`] for the type object `class`. A type

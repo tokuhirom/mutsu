@@ -23,13 +23,13 @@ impl Interpreter {
         iterator: &Value,
     ) -> Result<Value, RuntimeError> {
         let user_iterator = matches!(iterator.view(), ValueView::Instance { class_name, .. }
-            if class_name != "Iterator" && self.class_does_role(&class_name.resolve(), "Iterator"));
+            if class_name != crate::sym!("Iterator") && self.class_does_role(&class_name.resolve(), "Iterator"));
         let items: Vec<Value> = if let ValueView::Instance {
             class_name,
             attributes,
             ..
         } = iterator.view()
-            && class_name == "Iterator"
+            && class_name == crate::sym!("Iterator")
         {
             if let Some(rest) = self.map_grep_stream_drain(&attributes) {
                 rest?

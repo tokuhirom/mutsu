@@ -31,11 +31,11 @@ impl Interpreter {
             attributes,
             ..
         } = effective_arg.view()
-            && (class_name == "IO::Path"
+            && (class_name == crate::sym!("IO::Path")
                 || self
                     .class_mro(&class_name.resolve())
                     .iter()
-                    .any(|n| n == "IO::Path"))
+                    .any(|n| *n == crate::sym!("IO::Path")))
         {
             requested = attributes
                 .as_map()
@@ -141,7 +141,7 @@ impl Interpreter {
             attributes,
             ..
         } = path_arg.view()
-            && class_name == "IO::Path"
+            && class_name == crate::sym!("IO::Path")
         {
             requested = attributes
                 .as_map()

@@ -211,7 +211,7 @@ impl Interpreter {
     fn cat_active_handle(attrs: &AttrMap) -> Option<Value> {
         let active = attrs.get("active")?;
         match active.view() {
-            ValueView::Instance { class_name, .. } if class_name == "IO::Handle" => {
+            ValueView::Instance { class_name, .. } if class_name == crate::sym!("IO::Handle") => {
                 Some(active.clone())
             }
             _ => None,
@@ -255,7 +255,7 @@ impl Interpreter {
             .unwrap_or_else(|| "utf8".to_string());
         let bin = attrs.get("bin").is_some_and(|v| v.truthy());
         match src.view() {
-            ValueView::Instance { class_name, .. } if class_name == "IO::Handle" => {
+            ValueView::Instance { class_name, .. } if class_name == crate::sym!("IO::Handle") => {
                 // Already a handle: ensure it is opened, then push the cat's
                 // chomp / nl-in / encoding onto it.
                 let handle = src.clone();
@@ -292,7 +292,7 @@ impl Interpreter {
                         class_name,
                         attributes,
                         ..
-                    } if class_name == "IO::Path" => attributes
+                    } if class_name == crate::sym!("IO::Path") => attributes
                         .as_map()
                         .get("path")
                         .map(|p| p.to_string_value())
@@ -313,7 +313,7 @@ impl Interpreter {
                     open_args.push(Value::pair("enc".to_string(), Value::str(enc)));
                 }
                 match self.native_io_handle(&h_attrs, "open", open_args) {
-                    Ok(v) if matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle") => {
+                    Ok(v) if matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("IO::Handle")) => {
                         Some(v)
                     }
                     _ => None,
@@ -351,7 +351,7 @@ impl Interpreter {
         // Remember the previously-active handle: it becomes the `$old` argument
         // to `on-switch` and must be closed before we open the next source.
         let old = match attrs.get("active").cloned() {
-            Some(active) if matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle") =>
+            Some(active) if matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("IO::Handle")) =>
             {
                 let _ = self.close_handle_value(&active);
                 active
@@ -387,7 +387,7 @@ impl Interpreter {
                 // the path against the process cwd and loses it).
                 let path_val = match sources[pos].view() {
                     ValueView::Instance { class_name, .. }
-                        if class_name == "IO::Path"
+                        if class_name == crate::sym!("IO::Path")
                             || class_name.as_str().starts_with("IO::Path::") =>
                     {
                         sources[pos].clone()
@@ -414,7 +414,7 @@ impl Interpreter {
     ) -> Value {
         let active = attrs.get("active").cloned();
         if let Some(active) = &active
-            && matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")
+            && matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("IO::Handle"))
         {
             return active.clone();
         }
@@ -621,14 +621,14 @@ impl Interpreter {
     fn cat_close(&mut self, attrs: &mut AttrMap) {
         let active = attrs.get("active").cloned();
         if let Some(active) = &active
-            && matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")
+            && matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("IO::Handle"))
         {
             let _ = self.close_handle_value(active);
         }
         let handle_sources: Vec<Value> = match attrs.get("sources").map(Value::view) {
             Some(ValueView::Array(items, ..)) => items
                 .iter()
-                .filter(|v| matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle"))
+                .filter(|v| matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("IO::Handle")))
                 .cloned()
                 .collect(),
             _ => Vec::new(),
@@ -1019,7 +1019,7 @@ impl Interpreter {
                 // handle (a zero-source or exhausted cat) the result is `Nil` —
                 // we never open a fresh handle just to lock it.
                 match attrs.get("active").cloned() {
-                    Some(active) if matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle") => {
+                    Some(active) if matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("IO::Handle")) => {
                         self.native_io_handle_method(&active, method, args)?
                     }
                     _ => Value::NIL,
@@ -1031,7 +1031,7 @@ impl Interpreter {
                 // never switches handles. On an exhausted/zero-source cat the
                 // result is Nil.
                 let active = self.cat_ensure_active(&mut attrs, publish);
-                if matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")
+                if matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("IO::Handle"))
                 {
                     self.native_io_handle_method(&active, method, args)?
                 } else {
@@ -1042,7 +1042,7 @@ impl Interpreter {
                 // `.t` (is-this-a-TTY) of the active handle; a cat with no active
                 // handle (exhausted/zero-source) is not a TTY, so `False`.
                 let active = self.cat_ensure_active(&mut attrs, publish);
-                if matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")
+                if matches!(active.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("IO::Handle"))
                 {
                     self.native_io_handle_method(&active, "t", vec![])?
                 } else {

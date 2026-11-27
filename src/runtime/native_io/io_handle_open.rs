@@ -102,7 +102,7 @@ impl Interpreter {
                     class_name,
                     attributes,
                     ..
-                } if class_name == "IO::Path" => attributes
+                } if class_name == crate::sym!("IO::Path") => attributes
                     .as_map()
                     .get("path")
                     .map(|p| p.to_string_value())
@@ -117,7 +117,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "IO::Path" => {
+            } if class_name == crate::sym!("IO::Path") => {
                 attributes.as_map().get("cwd").map(|c| c.to_string_value())
             }
             _ => None,

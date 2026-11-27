@@ -85,7 +85,7 @@ impl Interpreter {
         else {
             return Ok(None);
         };
-        if class_name != "Supply" {
+        if class_name != crate::sym!("Supply") {
             return Ok(None);
         }
         let attrs = attributes.as_map();
@@ -243,7 +243,7 @@ impl Interpreter {
         let ValueView::Instance { class_name, .. } = source.view() else {
             return Ok(None);
         };
-        if class_name != "Supply" {
+        if class_name != crate::sym!("Supply") {
             return Ok(None);
         }
         let source = source.clone();
@@ -279,7 +279,7 @@ impl Interpreter {
         else {
             return Ok(false);
         };
-        if class_name != "Supply" {
+        if class_name != crate::sym!("Supply") {
             return Ok(false);
         }
         // Guard against runaway nesting. A pipeline that reuses the *same*

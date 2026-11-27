@@ -13141,7 +13141,7 @@ impl CompiledCode {
                             name.trim_end_matches("::"),
                         ))
                         .first()
-                        .is_some_and(|part| part.as_str() == "CALLER")
+                        .is_some_and(|part| *part == crate::sym!("CALLER"))
                     {
                         self.uses_callframe = true;
                     }

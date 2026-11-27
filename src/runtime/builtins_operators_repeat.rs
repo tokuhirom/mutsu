@@ -169,7 +169,7 @@ impl Interpreter {
         const EAGER_LIMIT: usize = Interpreter::REPEAT_EAGER_LIMIT;
         // Warn on uninitialized type object used as repeat count
         if let ValueView::Package(name) = right.view()
-            && name == "Int"
+            && name == crate::sym!("Int")
         {
             self.warn_uninitialized_repeat_count(&name.resolve())?;
         }
@@ -343,7 +343,7 @@ impl Interpreter {
             match op {
                 "x" => {
                     if let ValueView::Package(name) = rhs.view()
-                        && name == "Int"
+                        && name == crate::sym!("Int")
                     {
                         self.warn_uninitialized_repeat_count(&name.resolve())?;
                     }

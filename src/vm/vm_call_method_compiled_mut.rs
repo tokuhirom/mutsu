@@ -241,21 +241,21 @@ impl Interpreter {
         }
         // Native Failure construction (mut path twin of the above).
         if let Some(class_name) = new_on_package
-            && class_name == "Failure"
+            && class_name == crate::sym!("Failure")
         {
             self.dispatch.method_dispatch_pure = true;
             return self.build_native_failure_value(&args);
         }
         // Native Seq construction (mut path twin of the above).
         if let Some(class_name) = new_on_package
-            && class_name == "Seq"
+            && class_name == crate::sym!("Seq")
         {
             self.dispatch.method_dispatch_pure = true;
             return Ok(self.try_native_seq_construct(&args));
         }
         // Native IO::Socket::INET construction (mut path twin of the above).
         if let Some(class_name) = new_on_package
-            && class_name == "IO::Socket::INET"
+            && class_name == crate::sym!("IO::Socket::INET")
         {
             self.dispatch.method_dispatch_pure = true;
             return self.dispatch_socket_inet_new(&args);
@@ -563,7 +563,7 @@ impl Interpreter {
         target: Value,
         method_sym: crate::symbol::Symbol,
     ) -> Value {
-        if method_sym != "new" {
+        if method_sym != crate::sym!("new") {
             return target;
         }
         let class_name = match target.view() {

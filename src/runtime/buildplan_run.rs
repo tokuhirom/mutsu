@@ -230,7 +230,7 @@ impl Interpreter {
         let (sigil, _) = task.sigil_and_bare();
         let payload = task.payload.clone().unwrap_or(Value::NIL);
         let native_thunk = matches!(payload.view(),
-            ValueView::Sub(data) if data.name.as_str() == "<attribute-build>");
+            ValueView::Sub(data) if data.name == crate::sym!("<attribute-build>"));
         let value = if native_thunk {
             self.plan_native_default(instance, task)?
         } else if self.type_matches_value("Code", &payload) {

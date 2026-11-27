@@ -316,7 +316,7 @@ impl crate::Interpreter {
         // IterationBuffer))`, the ForwardIterables idiom) is appended in its
         // own storage, the way `nqp::push` on it is (#9419).
         if let Some(av) = args.first()
-            && matches!(av.view(), ValueView::Instance { class_name, .. } if class_name == "IterationBuffer")
+            && matches!(av.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("IterationBuffer"))
         {
             let _ = Self::nqp_with_elems_mut("push-all", av, |items| {
                 items.extend(vals.iter().cloned())

@@ -81,7 +81,9 @@ pub(crate) fn owners_of(value: &Value) -> Option<&'static [&'static str]> {
         | ValueView::FatRat(..)
         | ValueView::BigRat(..)
         | ValueView::Complex(..) => Some(&["Cool"]),
-        ValueView::Package(name) if name == "Any" || name == "Mu" => Some(&[]),
+        ValueView::Package(name) if name == crate::sym!("Any") || name == crate::sym!("Mu") => {
+            Some(&[])
+        }
         // An immutable `List` is the same shape: its rows refuse the mutators.
         ValueView::Array(..) => Some(&["Array", "List"]),
         ValueView::Hash(_) => Some(&["Hash", "Map"]),

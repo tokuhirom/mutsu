@@ -292,7 +292,7 @@ impl Interpreter {
             ..
         } = target.view()
         {
-            if class_name == "Backtrace" {
+            if class_name == crate::sym!("Backtrace") {
                 return Ok(attributes
                     .as_map()
                     .get("frames")

@@ -968,7 +968,7 @@ impl Compiler {
                 modifier: None,
                 ..
             } if args.is_empty()
-                && name == "WHO"
+                && *name == crate::sym!("WHO")
                 && matches!(target.as_ref(), Expr::BareWord(p) if matches!(p.as_str(), "MY" | "LEXICAL" | "OUTER")) =>
             {
                 let Expr::BareWord(package) = target.as_ref() else {
@@ -988,7 +988,7 @@ impl Compiler {
                 modifier: None,
                 quoted: false,
                 sugar: false,
-            } if args.is_empty() && name == "list" => {
+            } if args.is_empty() && *name == crate::sym!("list") => {
                 self.compile_expr(&Expr::MethodCall {
                     target: target.clone(),
                     name: *name,
@@ -1014,7 +1014,7 @@ impl Compiler {
                 quoted: false,
                 sugar: false,
             } if args.is_empty()
-                && name == "defined"
+                && *name == crate::sym!("defined")
                 && super::with_defined::is_defined_probe_target(target) =>
             {
                 self.compile_expr(target);
@@ -1064,7 +1064,7 @@ impl Compiler {
                 modifier,
                 quoted,
                 ..
-            } if name == "VAR"
+            } if *name == crate::sym!("VAR")
                 && args.is_empty()
                 && modifier.is_none()
                 && !quoted
@@ -1095,7 +1095,11 @@ impl Compiler {
                 modifier,
                 quoted,
                 ..
-            } if name == "return-rw" && args.is_empty() && modifier.is_none() && !quoted => {
+            } if *name == crate::sym!("return-rw")
+                && args.is_empty()
+                && modifier.is_none()
+                && !quoted =>
+            {
                 let call = Expr::Call {
                     name: *name,
                     args: vec![(**target).clone()],
@@ -1110,7 +1114,7 @@ impl Compiler {
                 modifier,
                 quoted,
                 ..
-            } if name == "VAR"
+            } if *name == crate::sym!("VAR")
                 && args.is_empty()
                 && modifier.is_none()
                 && !quoted

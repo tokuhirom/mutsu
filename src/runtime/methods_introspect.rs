@@ -899,7 +899,7 @@ impl Interpreter {
                 // `.wrap` already reads, so `Class.^find_method(name).WHY`
                 // keeps finding the `#|` comment on the method declaration
                 // (roast integration/advent2011-day10.t).
-                if matches!(class_name.as_str(), "Method" | "Submethod" | "Regex") {
+                if crate::sym_in!(class_name, "Method" | "Submethod" | "Regex") {
                     let am = attributes.as_map();
                     let method_name = am.get("__mutsu_lookup_method").map(|v| v.to_string_value());
                     let owner = am
@@ -995,7 +995,7 @@ impl Interpreter {
                         k.push(attr_name.to_string());
                     }
                     k
-                } else if class_name == "Parameter" {
+                } else if class_name == crate::sym!("Parameter") {
                     // Parameter objects: look up by "owner_sub::param_name"
                     let mut k = Vec::new();
                     let param_name = attributes

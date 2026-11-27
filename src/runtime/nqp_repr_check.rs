@@ -149,7 +149,7 @@ fn check_opaque_iteration_buffer(
     else {
         return Ok(());
     };
-    if class_name == "IterationBuffer"
+    if class_name == crate::sym!("IterationBuffer")
         || attributes
             .as_map()
             .contains_key(crate::runtime::nqp_ops_list::iteration_buffer_items_key())

@@ -692,8 +692,8 @@ impl Interpreter {
                         ..
                     },
                 ) = (left.view(), right.view())
-                    && dt_class == "DateTime"
-                    && d_class == "Date"
+                    && dt_class == crate::sym!("DateTime")
+                    && d_class == crate::sym!("Date")
                 {
                     let (y, m, d, _, _, _, _) =
                         crate::builtins::methods_0arg::temporal::datetime_attrs(

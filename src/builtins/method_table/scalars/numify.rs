@@ -99,7 +99,7 @@ pub(crate) fn temporal_seconds(target: &Value) -> Option<Value> {
     else {
         return None;
     };
-    if class_name != "Instant" && class_name != "Duration" {
+    if class_name != crate::sym!("Instant") && class_name != crate::sym!("Duration") {
         return None;
     }
     Some(

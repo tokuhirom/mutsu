@@ -315,10 +315,7 @@ impl Interpreter {
             let how_is_class_like = matches!(
                 how.view(),
                 ValueView::Instance { class_name, .. }
-                    if matches!(
-                        class_name.as_str(),
-                        "Perl6::Metamodel::ClassHOW" | "Perl6::Metamodel::GrammarHOW"
-                    )
+                    if crate::sym_in!(class_name, "Perl6::Metamodel::ClassHOW" | "Perl6::Metamodel::GrammarHOW")
             );
             if !how_is_class_like {
                 let name = self.mop_receiver_owner(&args[0]);

@@ -37,7 +37,7 @@ impl Interpreter {
         else {
             return None;
         };
-        if !matches!(class_name.as_str(), "Method" | "Submethod") {
+        if !crate::sym_in!(class_name, "Method" | "Submethod") {
             return None;
         }
         let ValueView::Routine {

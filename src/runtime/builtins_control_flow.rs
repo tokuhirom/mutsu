@@ -320,8 +320,8 @@ impl Interpreter {
                 ));
             }
             Some(ValueView::Nil) => {}
-            Some(ValueView::Package(name)) if name == "Any" => {}
-            Some(ValueView::Package(name)) if name == "Sub" => {
+            Some(ValueView::Package(name)) if name == crate::sym!("Any") => {}
+            Some(ValueView::Package(name)) if name == crate::sym!("Sub") => {
                 let caller_callable_id = self
                     .caller_env_stack
                     .last()
@@ -338,7 +338,7 @@ impl Interpreter {
                     ));
                 }
             }
-            Some(ValueView::Package(name)) if name == "Block" => {}
+            Some(ValueView::Package(name)) if name == crate::sym!("Block") => {}
             Some(ValueView::Str(label)) => {
                 sig.label = Some(label.to_string());
             }

@@ -28,7 +28,7 @@ impl Interpreter {
     ) -> Result<(), RuntimeError> {
         let topic = topic.deref_container();
         let type_name = match topic.view() {
-            ValueView::Instance { class_name, .. } if class_name == "Failure" => {
+            ValueView::Instance { class_name, .. } if class_name == crate::sym!("Failure") => {
                 return Self::sink_failure_to_error(topic.clone()).map(|_| ());
             }
             ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => {

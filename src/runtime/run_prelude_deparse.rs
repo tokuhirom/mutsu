@@ -157,7 +157,7 @@ fn mentions_deparse(stmts: &[Stmt]) -> bool {
     impl<'ast> Visit<'ast> for Mentions {
         fn visit_expr(&mut self, expr: &'ast Expr) {
             if let Expr::MethodCall { name, .. } = expr
-                && name.as_str() == "DEPARSE"
+                && *name == crate::sym!("DEPARSE")
             {
                 self.0 = true;
             }

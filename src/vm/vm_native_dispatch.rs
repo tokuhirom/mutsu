@@ -196,7 +196,7 @@ impl Interpreter {
         // `(C.new, 9).flat` reads the `iterator` of an `Iterable` element
         // (#15322); the pure flattener cannot, so expand those elements first.
         // A `List`'s `.flat` defers that to its pull instead (#15962).
-        if method_sym.as_str() == "flat"
+        if method_sym == crate::sym!("flat")
             && args.is_empty()
             && !matches!(
                 target.view(),
@@ -395,7 +395,7 @@ impl Interpreter {
         // names) that makes the distinction here.
         // `zip` over an unbounded column streams its rows instead of letting
         // the pure native `zip` materialize the column (#9159).
-        if name_sym.as_str() == "zip" {
+        if name_sym == crate::sym!("zip") {
             match self.builtin_zip_unbounded(args) {
                 Ok(Some(result)) => return Some(Ok(result)),
                 Ok(None) => {}

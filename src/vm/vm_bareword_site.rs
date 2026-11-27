@@ -174,7 +174,7 @@ impl Interpreter {
         let mut context = None;
         let memoizable = match self.stack.last().map(Value::view) {
             Some(ValueView::Package(sym))
-                if sym != name
+                if sym != name_sym
                     && !crate::qualified::is_qualified(name_sym)
                     && crate::qualified::is_qualified(sym)
                     && crate::qualified::unqualified_part(sym) == name_sym =>
@@ -185,7 +185,7 @@ impl Interpreter {
                     && self.smiley_base_unbound(name_sym)
             }
             Some(ValueView::Package(sym)) => {
-                (sym == name
+                (sym == name_sym
                     || (is_lexical_storage_of(sym, name)
                         && (unit_lexical
                             || self.env_binds_name_to(name_sym, sym)

@@ -98,7 +98,7 @@ fn subclass_instance(i: &mut Interpreter, target: &Value, answer: Answer) -> Ans
     let ValueView::Package(class) = target.view() else {
         return answer;
     };
-    if class == "Promise" || !matches!(promise.view(), ValueView::Promise(_)) {
+    if class == crate::sym!("Promise") || !matches!(promise.view(), ValueView::Promise(_)) {
         return answer;
     }
     Some(

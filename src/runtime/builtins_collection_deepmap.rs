@@ -334,7 +334,7 @@ impl Interpreter {
     pub(crate) fn single_item_result(&mut self, target: &Value, mapped: Value) -> Value {
         if let ValueView::Package(name) = target.descalarize().view() {
             let array = Symbol::intern("Array");
-            let is_array = name == "Array" || self.class_mro(&name.resolve()).contains(&array);
+            let is_array = name == crate::sym!("Array") || self.class_mro(&name.resolve()).contains(&array);
             return if is_array {
                 Value::real_array(vec![mapped])
             } else {

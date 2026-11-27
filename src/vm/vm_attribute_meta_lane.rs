@@ -65,7 +65,7 @@ impl Interpreter {
         let target_idx = self.stack.len().checked_sub(arity + 1)?;
         if !matches!(
             self.stack[target_idx].view(),
-            ValueView::Instance { class_name, .. } if class_name == "Attribute"
+            ValueView::Instance { class_name, .. } if class_name == crate::sym!("Attribute")
         ) {
             return None;
         }

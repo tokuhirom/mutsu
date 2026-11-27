@@ -56,7 +56,7 @@ impl Interpreter {
             .read()
             .lexical_package_units
             .get(&top)
-            && !matches!(top.as_str(), "EXPORT" | "EXPORTHOW")
+            && !crate::sym_in!(top, "EXPORT" | "EXPORTHOW")
         {
             if self.unit_is_running(unit) {
                 return None;

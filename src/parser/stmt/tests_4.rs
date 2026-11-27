@@ -186,7 +186,7 @@ fn expr_stmt_non_lvalue_assignment_is_not_silently_ignored() {
     assert_eq!(rest, "");
     match stmt {
         Stmt::Expr(Expr::Call { name, .. }) => {
-            assert_eq!(name, crate::lvalue_call::ASSIGN_CALLABLE);
+            assert_eq!(name, crate::sym!(crate::lvalue_call::ASSIGN_CALLABLE));
         }
         other => panic!("expected assignment call expression, got {other:?}"),
     }
@@ -222,7 +222,7 @@ fn known_call_stmt_parses_unicode_and_ascii_minus_angle_complex_args() {
     assert_eq!(rest, "");
     match stmt {
         Stmt::Call { name, args, .. } => {
-            assert_eq!(name, "is-deeply");
+            assert_eq!(name, crate::sym!("is-deeply"));
             assert!(args.len() >= 2);
             assert!(matches!(
                 args[0],
@@ -255,7 +255,7 @@ fn known_call_stmt_keeps_chained_assignment_as_single_argument() {
     assert_eq!(rest, ";");
     match stmt {
         Stmt::Call { name, args, .. } => {
-            assert_eq!(name, "is");
+            assert_eq!(name, crate::sym!("is"));
             assert!(matches!(
                 args.first(),
                 Some(CallArg::Positional(Expr::AssignExpr { .. }))

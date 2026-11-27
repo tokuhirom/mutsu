@@ -220,7 +220,7 @@ impl Interpreter {
                 attributes,
                 ..
             } if crate::value::supply_class::is_supply_class(class_name) => attributes,
-            ValueView::Package(name) if name == "Supply" => {
+            ValueView::Package(name) if name == crate::sym!("Supply") => {
                 // Over a live source the combination is a per-tap recipe
                 // (ADR-18443).
                 if let Some(kind) = op.multi_source_kind()
@@ -355,7 +355,7 @@ impl Interpreter {
         else {
             return None;
         };
-        if class_name != "Supply" {
+        if class_name != crate::sym!("Supply") {
             return None;
         }
         if let Some(result) = crate::builtins::method_table::supply::listify(target, want_array) {

@@ -985,7 +985,7 @@ impl Interpreter {
             return Ok(removed);
         }
         if let ValueView::Package(type_name) = container.view()
-            && (type_name == "Hash" || type_name == "Hash:U")
+            && (type_name == crate::sym!("Hash") || type_name == crate::sym!("Hash:U"))
         {
             // `:delete` on the Hash TYPE OBJECT (`Hash<z>:delete`) yields Nil
             // (raku: S32-hash/delete.t) — there is no container whose hole

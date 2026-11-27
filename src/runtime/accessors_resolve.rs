@@ -681,12 +681,12 @@ impl Interpreter {
         let (_, pseudo) = segments.split_last()?;
         let is_eval_unit = |unit| crate::runtime::eval_unit_parent(unit).is_some();
         match pseudo {
-            [setting] if setting.as_str() == "SETTING" && is_eval_unit(self.current_unit) => {
+            [setting] if *setting == crate::sym!("SETTING") && is_eval_unit(self.current_unit) => {
                 Some(self.resolve_code_var(bare))
             }
             [caller, setting]
-                if caller.as_str() == "CALLER"
-                    && setting.as_str() == "SETTING"
+                if *caller == crate::sym!("CALLER")
+                    && *setting == crate::sym!("SETTING")
                     && is_eval_unit(self.caller_frame_unit()) =>
             {
                 self.get_callers_var(&format!("&{bare}"), 1, true).ok()

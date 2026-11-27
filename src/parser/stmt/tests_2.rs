@@ -232,7 +232,7 @@ fn parse_my_regex_decl() {
     assert!(matches!(
         &stmts[0],
         Stmt::TokenDecl { name, body, .. }
-            if name == "rx"
+            if *name == crate::sym!("rx")
                 && matches!(
                     body.as_slice(),
                     [Stmt::Expr(Expr::Literal(lit))] if matches!(lit.view(), crate::value::ValueView::Regex(pattern) if pattern.as_str().trim() == "abc")
@@ -245,7 +245,7 @@ fn parse_sub_decl() {
     let (rest, stmts) = program("sub foo($x) { return $x; }").unwrap();
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 1);
-    assert!(matches!(&stmts[0], Stmt::SubDecl { name, .. } if name == "foo"));
+    assert!(matches!(&stmts[0], Stmt::SubDecl { name, .. } if *name == crate::sym!("foo")));
 }
 
 #[test]
@@ -292,7 +292,9 @@ fn parse_declared_postfix_operator_call_in_following_statement() {
     let (rest, stmts) = program("sub postfix:<!!>($x) { $x }; (4!!, 5!!).join(' ');").unwrap();
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 2);
-    assert!(matches!(&stmts[0], Stmt::SubDecl { name, .. } if name == "postfix:<!!>"));
+    assert!(
+        matches!(&stmts[0], Stmt::SubDecl { name, .. } if *name == crate::sym!("postfix:<!!>"))
+    );
     assert!(matches!(&stmts[1], Stmt::Expr(Expr::MethodCall { .. })));
 }
 
@@ -317,7 +319,7 @@ fn parse_main_semicolon_captures_following_mainline() {
     assert_eq!(stmts.len(), 2);
     assert!(matches!(&stmts[0], Stmt::VarDecl { .. }));
     if let Stmt::SubDecl { name, body, .. } = &stmts[1] {
-        assert_eq!(name, "MAIN");
+        assert_eq!(*name, crate::sym!("MAIN"));
         assert_eq!(body.len(), 1);
         assert!(matches!(&body[0], Stmt::Say(_)));
     } else {
@@ -331,7 +333,7 @@ fn parse_unit_main_semicolon_captures_following_mainline() {
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 1);
     if let Stmt::SubDecl { name, body, .. } = &stmts[0] {
-        assert_eq!(name, "MAIN");
+        assert_eq!(*name, crate::sym!("MAIN"));
         assert_eq!(body.len(), 1);
         assert!(matches!(&body[0], Stmt::Say(_)));
     } else {
@@ -396,7 +398,7 @@ fn parse_class_decl() {
     let (rest, stmts) = program("class Foo { has $.x; method bar { 42 } }").unwrap();
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 1);
-    assert!(matches!(&stmts[0], Stmt::ClassDecl { name, .. } if name == "Foo"));
+    assert!(matches!(&stmts[0], Stmt::ClassDecl { name, .. } if *name == crate::sym!("Foo")));
 }
 
 /// ADR-0019 D4-1: a bracketed `is`/`does`/`hides` parent's content is
@@ -480,6 +482,6 @@ fn parse_class_decl_with_is_rw_trait() {
             name,
             class_is_rw: true,
             ..
-        } if name == "Foo"
+        } if *name == crate::sym!("Foo")
     ));
 }

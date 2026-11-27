@@ -121,7 +121,7 @@ fn thread_join(i: &mut Interpreter, t: &Value, _: &[Value], _: Named<'_>) -> Ans
     else {
         return None;
     };
-    if class_name != "Thread" {
+    if class_name != crate::sym!("Thread") {
         return None;
     }
     let attrs = attributes.as_map().clone();

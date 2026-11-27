@@ -31,7 +31,7 @@ impl Interpreter {
     fn is_unresolved_symbol(value: &Value) -> bool {
         matches!(
             value.view(),
-            ValueView::Instance { class_name, .. } if class_name == "Failure"
+            ValueView::Instance { class_name, .. } if class_name == crate::sym!("Failure")
         )
     }
 }

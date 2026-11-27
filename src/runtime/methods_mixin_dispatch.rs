@@ -504,7 +504,7 @@ impl Interpreter {
             let any_callable_value = role_param_bindings.iter().any(|(_, value)| {
                 match value.view() {
                     ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => true,
-                    ValueView::Package(pkg) => pkg == "Callable",
+                    ValueView::Package(pkg) => pkg == crate::sym!("Callable"),
                     _ => false,
                 }
             });
@@ -551,7 +551,7 @@ impl Interpreter {
                     && match value.view() {
                         ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => true,
                         // An unsupplied `&cb?` is the `Callable` type object.
-                        ValueView::Package(pkg) => pkg == "Callable",
+                        ValueView::Package(pkg) => pkg == crate::sym!("Callable"),
                         _ => false,
                     };
                 saved_role_params.push((name.clone(), self.env.get(name).cloned()));

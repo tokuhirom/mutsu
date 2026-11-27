@@ -429,7 +429,7 @@ impl Interpreter {
                     && declared_constraint_incdec.is_none()
                     && match raw.descalarize().view() {
                         ValueView::Nil => true,
-                        ValueView::Package(p) => p == "Any",
+                        ValueView::Package(p) => p == crate::sym!("Any"),
                         _ => false,
                     } =>
             {

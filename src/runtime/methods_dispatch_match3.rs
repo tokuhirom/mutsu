@@ -744,7 +744,7 @@ impl Interpreter {
                 },
                 idx,
             ) if is_stash_class_name(class_name.as_str()) => {
-                let missing = if class_name.as_str() == "Stash" {
+                let missing = if class_name == crate::sym!("Stash") {
                     Value::package(crate::symbol::wk::any())
                 } else {
                     Value::NIL

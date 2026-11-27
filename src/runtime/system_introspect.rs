@@ -152,7 +152,7 @@ impl Interpreter {
             return Value::NIL;
         }
         let (package, name) = match entry.routine {
-            Some(f) if !f.is_block && !f.name.is_empty() && f.name != "<unit>" => {
+            Some(f) if !f.is_block && !f.name.is_empty() && f.name != crate::sym!("<unit>") => {
                 (f.package, f.name)
             }
             Some(f) if f.is_block => return Value::NIL,

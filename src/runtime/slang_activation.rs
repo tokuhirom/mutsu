@@ -120,7 +120,7 @@ pub(crate) fn grammar_handle_activations(value: &Value) -> Vec<crate::parser::Sl
     else {
         return Vec::new();
     };
-    if class_name != GRAMMAR_HANDLE_CLASS {
+    if class_name != crate::sym!(GRAMMAR_HANDLE_CLASS) {
         return Vec::new();
     }
     match attributes.as_map().get(LANG_ACTIVATIONS_ATTR).map(Value::view) {

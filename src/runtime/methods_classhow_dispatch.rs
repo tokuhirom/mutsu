@@ -24,7 +24,7 @@ pub(super) fn unwrap_method_instance_callable(value: &Value) -> Value {
             class_name,
             attributes,
             ..
-        } if matches!(class_name.as_str(), "Method" | "Submethod" | "Regex") => {
+        } if crate::sym_in!(class_name, "Method" | "Submethod" | "Regex") => {
             let am = attributes.as_map();
             // A non-dispatcher candidate carries its callable directly. A
             // multi dispatcher has none of its own -- fall back to its first

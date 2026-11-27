@@ -59,7 +59,7 @@ fn str_(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> 
             class_name,
             attributes,
             ..
-        } if class_name == "Failure" => {
+        } if class_name == crate::sym!("Failure") => {
             // Using a Failure in string context throws the wrapped exception.
             return Some(Err(match attributes.as_map().get("exception") {
                 Some(ex) => RuntimeError::from_exception_value(ex.clone()),

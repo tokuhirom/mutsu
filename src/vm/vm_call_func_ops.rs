@@ -417,7 +417,7 @@ impl Interpreter {
             || matches!(
                 v.view(),
                 ValueView::Instance { class_name, .. }
-                    if matches!(class_name.as_str(), "Method" | "Submethod" | "Regex")
+                    if crate::sym_in!(class_name, "Method" | "Submethod" | "Regex")
             )
     }
 

@@ -61,7 +61,7 @@ pub(super) static ROWS: &[MethodRow] = &[
 // Cost: O(1).
 pub(crate) fn pairs(target: &Value) -> Option<Vec<Value>> {
     match target.view() {
-        ValueView::Instance { class_name, .. } if class_name == "IO::Path::Parts" => {
+        ValueView::Instance { class_name, .. } if class_name == crate::sym!("IO::Path::Parts") => {
             all_pairs(target)
         }
         _ => None,

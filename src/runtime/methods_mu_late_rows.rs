@@ -269,7 +269,7 @@ impl Interpreter {
             }
             // `Method.Str` is `Code.Str`: the name, with the coercion warning.
             ValueView::Instance { class_name, .. }
-                if matches!(class_name.as_str(), "Method" | "Submethod")
+                if crate::sym_in!(class_name, "Method" | "Submethod")
                     && !self.has_user_method(&class_name.resolve(), "Str") =>
             {
                 self.code_str(target)

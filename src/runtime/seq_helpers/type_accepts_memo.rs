@@ -429,7 +429,7 @@ impl Interpreter {
         }
         match self.type_name_binding(ty) {
             None => true,
-            Some(bound) => matches!(bound.view(), ValueView::Package(p) if p == ty),
+            Some(bound) => matches!(bound.view(), ValueView::Package(p) if p.as_str() == ty),
         }
     }
 }

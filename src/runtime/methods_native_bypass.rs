@@ -268,7 +268,7 @@ impl Interpreter {
             // `DESTROY` need no gate either — `chomp`'s own cascade arm
             // already self-guards and the other three have no cascade arm
             // at all (step 7).
-            || (matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Proc::Async")
+            || (matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("Proc::Async"))
                 && method == "Supply")
             // `Stash.keys`/`.values` need the interpreter's own package-stash
             // enumeration; the generic `.keys`/`.values` cascade arms

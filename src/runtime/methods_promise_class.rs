@@ -130,7 +130,7 @@ impl Interpreter {
                         attributes,
                         ..
                     },
-                )) if class_name == "Instant" => {
+                )) if class_name == crate::sym!("Instant") => {
                     let tai = attributes
                         .as_map()
                         .get("value")

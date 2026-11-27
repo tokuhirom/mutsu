@@ -451,7 +451,7 @@ pub(crate) fn build_compound_assign_expr(
         }
         Expr::MethodCall {
             target, name, args, ..
-        } if name == "AT-POS" && args.len() == 1 => {
+        } if name == crate::sym!("AT-POS") && args.len() == 1 => {
             let index = args.into_iter().next().unwrap_or(Expr::Literal(Value::NIL));
             return Ok(compound_index_assign_expr(
                 *target,
@@ -967,7 +967,7 @@ pub(crate) fn build_custom_compound_assign_expr(
             args,
             modifier: None,
             ..
-        } if name != "AT-POS" => {
+        } if name != crate::sym!("AT-POS") => {
             let target_var_name = crate::parser::method_lvalue_target_name(&target);
             let current_value = Expr::MethodCall {
                 target: target.clone(),

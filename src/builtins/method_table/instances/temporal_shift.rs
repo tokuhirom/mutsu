@@ -174,7 +174,7 @@ pub(crate) fn rebless_datetime_result(
     target_class_name: crate::symbol::Symbol,
     original_attrs: &crate::gc::Gc<crate::value::InstanceAttrs>,
 ) -> Value {
-    if target_class_name == "DateTime" {
+    if target_class_name == crate::sym!("DateTime") {
         return result;
     }
     let ValueView::Instance {
@@ -185,7 +185,7 @@ pub(crate) fn rebless_datetime_result(
     else {
         return result;
     };
-    if class_name != "DateTime" {
+    if class_name != crate::sym!("DateTime") {
         return result;
     }
     let merged = (**original_attrs).clone();
@@ -218,7 +218,7 @@ pub(crate) fn rebless_date_result(
     target_class_name: crate::symbol::Symbol,
     original_attrs: &crate::gc::Gc<crate::value::InstanceAttrs>,
 ) -> Value {
-    if target_class_name == "Date" {
+    if target_class_name == crate::sym!("Date") {
         return result;
     }
     let ValueView::Instance {
@@ -229,7 +229,7 @@ pub(crate) fn rebless_date_result(
     else {
         return result;
     };
-    if class_name != "Date" {
+    if class_name != crate::sym!("Date") {
         return result;
     }
     let merged = (**original_attrs).clone();

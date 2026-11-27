@@ -15,5 +15,5 @@ pub(crate) const PROC_ASYNC_PIPE: &str = "Proc::Async::Pipe";
 /// `Proc::Async::Pipe`.
 // Cost: O(1), two symbol compares.
 pub(crate) fn is_supply_class(class: Symbol) -> bool {
-    class == "Supply" || class == PROC_ASYNC_PIPE
+    class == crate::sym!("Supply") || class == crate::sym!(PROC_ASYNC_PIPE)
 }

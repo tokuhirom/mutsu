@@ -373,7 +373,7 @@ impl Interpreter {
 
         // Warn on uninitialized type object used as repeat count
         if let ValueView::Package(name) = right.view()
-            && name == "Int"
+            && name == crate::sym!("Int")
         {
             self.warn_uninitialized_repeat_count(&name.resolve())?;
         }

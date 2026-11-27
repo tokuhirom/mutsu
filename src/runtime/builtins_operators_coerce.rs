@@ -73,7 +73,7 @@ impl Interpreter {
             attributes,
             ..
         } = value.view()
-            && class_name.as_str() == "Date"
+            && class_name == crate::sym!("Date")
             && !self.has_user_method("Date", "Numeric")
         {
             let (year, month, day) =

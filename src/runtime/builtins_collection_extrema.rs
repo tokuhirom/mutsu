@@ -7,7 +7,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Failure" => attributes.as_map().get("exception").cloned(),
+            } if class_name == crate::sym!("Failure") => attributes.as_map().get("exception").cloned(),
             ValueView::Mixin(inner, mixins) => {
                 if let Some(mixed) = mixins.get("Failure")
                     && let Some(ex) = Self::failure_exception_from_value(mixed)
@@ -317,7 +317,7 @@ impl Interpreter {
         }
         if positional.len() == 1
             && let ValueView::Instance { class_name, .. } = positional[0].view()
-            && class_name == "Hash"
+            && class_name == crate::sym!("Hash")
         {
             let method_args = by.map_or_else(Vec::new, |v| vec![v]);
             return self.call_method_with_values(positional[0].clone(), "min", method_args);
@@ -362,7 +362,7 @@ impl Interpreter {
         }
         if positional.len() == 1
             && let ValueView::Instance { class_name, .. } = positional[0].view()
-            && class_name == "Hash"
+            && class_name == crate::sym!("Hash")
         {
             let method_args = by.map_or_else(Vec::new, |v| vec![v]);
             return self.call_method_with_values(positional[0].clone(), "max", method_args);

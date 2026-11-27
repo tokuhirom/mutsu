@@ -44,7 +44,7 @@ pub(super) static ROWS: &[MethodRow] = &[
 // Cost: O(1).
 fn handle_failure(target: &Value) {
     if let ValueView::Instance { class_name, .. } = target.view()
-        && class_name == "Failure"
+        && class_name == crate::sym!("Failure")
     {
         target.mark_failure_handled();
     }
@@ -131,11 +131,11 @@ pub(crate) fn sink(target: &Value, args: &[Value]) -> Option<Result<Value, Runti
     match target.view() {
         // Sinking a finished, unsuccessful `Proc` throws, as the sink
         // statement does (rakudo's `Proc.sink`).
-        ValueView::Instance { class_name, .. } if class_name == "Proc" => Some(
+        ValueView::Instance { class_name, .. } if class_name == crate::sym!("Proc") => Some(
             crate::runtime::native_methods::proc_unsuccessful_sink_error(target)
                 .map_or(Ok(Value::NIL), Err),
         ),
-        ValueView::Instance { class_name, .. } if class_name == "Failure" => {
+        ValueView::Instance { class_name, .. } if class_name == crate::sym!("Failure") => {
             Some(crate::runtime::Interpreter::unhandled_failure_error(target).map(|()| Value::NIL))
         }
         ValueView::Seq(body) => {

@@ -43,13 +43,10 @@ impl Interpreter {
                     .get(&how_name)
                     .is_some_and(|class_def| {
                         class_def.mro.iter().any(|parent| {
-                            matches!(
-                                parent.as_str(),
-                                "Metamodel::ClassHOW"
+                            crate::sym_in!(*parent, "Metamodel::ClassHOW"
                                     | "Metamodel::GrammarHOW"
                                     | "Perl6::Metamodel::ClassHOW"
-                                    | "Perl6::Metamodel::GrammarHOW"
-                            )
+                                    | "Perl6::Metamodel::GrammarHOW")
                         })
                     }));
             if !supported {

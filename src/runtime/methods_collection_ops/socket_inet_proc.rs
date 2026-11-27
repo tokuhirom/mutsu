@@ -279,7 +279,7 @@ impl Interpreter {
             attributes,
             ..
         } = result.view()
-            && class_name == "Proc"
+            && class_name == crate::sym!("Proc")
         {
             self.replay_proc_taps(&attributes);
             return;
@@ -510,7 +510,7 @@ impl Interpreter {
     pub(in crate::runtime) fn promise_class_name(&mut self, target: &Value) -> Option<String> {
         match target.view() {
             ValueView::Package(name) => {
-                if name == "Promise" {
+                if name == crate::sym!("Promise") {
                     Some("Promise".to_string())
                 } else if self
                     .class_mro(&name.resolve())

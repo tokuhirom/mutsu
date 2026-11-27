@@ -13,7 +13,7 @@ impl Interpreter {
     ) -> Result<Value, RuntimeError> {
         if method == "split"
             && matches!(target.view(), ValueView::Instance { class_name, .. }
-                if class_name == "Distribution::Resource")
+                if class_name == crate::sym!("Distribution::Resource"))
         {
             return self.call_method_with_values(target, "slurp", vec![]);
         }

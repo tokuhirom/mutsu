@@ -361,7 +361,7 @@ impl Interpreter {
                     class_name,
                     attributes,
                     ..
-                } if class_name == "IterationBuffer" => {
+                } if class_name == crate::sym!("IterationBuffer") => {
                     match attributes
                         .as_map()
                         .get("__mutsu_iterationbuffer_items")

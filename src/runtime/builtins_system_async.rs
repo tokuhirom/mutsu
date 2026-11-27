@@ -247,7 +247,7 @@ impl Interpreter {
         let native_await_target = matches!(v.view(), ValueView::Promise(_) | ValueView::Channel(_))
             || matches!(
                 v.view(),
-                ValueView::Instance { class_name, .. } if class_name == "Promise"
+                ValueView::Instance { class_name, .. } if class_name == crate::sym!("Promise")
             );
         if !native_await_target && self.type_matches_value("Awaitable", &v) {
             let handle = self.call_method_with_values(v, "get-await-handle", vec![])?;
@@ -417,7 +417,7 @@ impl Interpreter {
             attributes,
             ..
         } = value.view()
-            && class_name == "IO::Socket::Async::StatusResult"
+            && class_name == crate::sym!("IO::Socket::Async::StatusResult")
         {
             let status = attributes
                 .as_map()

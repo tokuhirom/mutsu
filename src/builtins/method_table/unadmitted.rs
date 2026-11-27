@@ -125,7 +125,7 @@ pub(crate) fn invoke_unadmitted(
         args.iter().all(|arg| {
             let arg = arg.descalarize();
             !arg.is_junction_value()
-                && !matches!(arg.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+                && !matches!(arg.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("Failure"))
         })
     } else {
         args.iter().all(is_builtin_value_argument)

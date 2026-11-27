@@ -138,7 +138,7 @@ mod tests {
         let vars = aliases_of(target);
         assert_eq!(
             vars.iter()
-                .filter(|v| v.as_str() == "alias-index-test-var")
+                .filter(|v| **v == crate::sym!("alias-index-test-var"))
                 .count(),
             1
         );

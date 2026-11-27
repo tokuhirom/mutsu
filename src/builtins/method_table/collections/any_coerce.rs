@@ -472,7 +472,8 @@ pub(crate) fn supply(target: &Value, _args: &[Value]) -> Option<Result<Value, Ru
         return supply(&pairs, &[]);
     }
     if let ValueView::Instance { class_name, .. } = target.view()
-        && (class_name == "Supplier" || class_name == "Supplier::Preserving")
+        && (class_name == crate::sym!("Supplier")
+            || class_name == crate::sym!("Supplier::Preserving"))
     {
         // Supplier.Supply has runtime behavior (live stream), not generic coercion.
         return None;

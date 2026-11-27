@@ -327,7 +327,7 @@ fn parse_fat_arrow_chain_in_call_arguments() {
     assert_eq!(rest, "");
     match expr {
         Expr::Call { name, args, .. } => {
-            assert_eq!(name, "is");
+            assert_eq!(name, crate::sym!("is"));
             assert!(args.len() >= 3);
             // Non-bareword key => outermost PositionalPair wrapping
             // Inner chain pairs are raw Binary

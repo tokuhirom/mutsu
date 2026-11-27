@@ -238,7 +238,7 @@ impl Interpreter {
         // `build_native_failure_value` impl the interpreter's
         // `dispatch_new_and_constructors` arm also delegates to.
         if let Some(class_name) = new_on_package
-            && class_name == "Failure"
+            && class_name == crate::sym!("Failure")
         {
             self.dispatch.method_dispatch_pure = true;
             return self.build_native_failure_value(&args);
@@ -250,7 +250,7 @@ impl Interpreter {
         // also delegates to. (A user subclass `class S is Seq` resolves to its
         // own class name and is left to the interpreter.)
         if let Some(class_name) = new_on_package
-            && class_name == "Seq"
+            && class_name == crate::sym!("Seq")
         {
             self.dispatch.method_dispatch_pure = true;
             return Ok(self.try_native_seq_construct(&args));
@@ -262,7 +262,7 @@ impl Interpreter {
         // also delegates to. (A user subclass resolves to its own class name and
         // is left to the interpreter.)
         if let Some(class_name) = new_on_package
-            && class_name == "IO::Socket::INET"
+            && class_name == crate::sym!("IO::Socket::INET")
         {
             self.dispatch.method_dispatch_pure = true;
             return self.dispatch_socket_inet_new(&args);

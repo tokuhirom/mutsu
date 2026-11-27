@@ -248,7 +248,7 @@ fn extract_static_string(expr: &Expr) -> Option<String> {
         // $*SPEC.catdir(<packages Test-Helpers lib>) → "packages/Test-Helpers/lib"
         Expr::MethodCall {
             target, name, args, ..
-        } if name == "catdir" || name == "catfile" => {
+        } if *name == crate::sym!("catdir") || *name == crate::sym!("catfile") => {
             // Target should be $*SPEC
             if let Expr::Var(v) = target.as_ref()
                 && v == "*SPEC"

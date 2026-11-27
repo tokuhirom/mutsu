@@ -89,7 +89,7 @@ pub(crate) fn invoke(
     }
     // `Any:U`'s `EXISTS-POS(|)` binds any defined index without coercing it: nothing
     // exists in a type object or in `Nil` (§9.154).
-    if method == "EXISTS-POS"
+    if method == crate::sym!("EXISTS-POS")
         && row(id).owner == "Any"
         && (target.is_nil() || matches!(target.view(), ValueView::Package(_)))
     {
@@ -113,7 +113,7 @@ pub(crate) fn invoke(
                 ))
             })));
     }
-    if flags.contains(RowFlags::INDEX_COERCES) || method.as_str() == "AT-POS" {
+    if flags.contains(RowFlags::INDEX_COERCES) || method == crate::sym!("AT-POS") {
         return invoke_in(id, interp, target, &[index]);
     }
     // `Any.EXISTS-POS`: the one-element list `Any` is has only index 0, which
@@ -127,7 +127,7 @@ pub(crate) fn invoke(
 /// Whether `arg` is a `Failure`.
 // Cost: O(1), a tag probe.
 fn is_failure(arg: &Value) -> bool {
-    matches!(arg.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+    matches!(arg.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("Failure"))
 }
 
 /// The `Int` an argument that does `Int` stands for: a `Bool`, an `Int`-valued

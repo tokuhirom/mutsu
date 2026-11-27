@@ -150,7 +150,7 @@ pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
                 if !is_shaped {
                     while items
                         .last()
-                        .is_some_and(|v| matches!(v.view(), ValueView::Package(s) if s == "Any"))
+                        .is_some_and(|v| matches!(v.view(), ValueView::Package(s) if s == crate::sym!("Any")))
                     {
                         items.pop();
                     }
@@ -238,7 +238,7 @@ pub(super) fn multidim_delete(target: &mut Value, indices: &[Value]) -> Value {
                 if !is_shaped {
                     while items
                         .last()
-                        .is_some_and(|v| matches!(v.view(), ValueView::Package(s) if s == "Any"))
+                        .is_some_and(|v| matches!(v.view(), ValueView::Package(s) if s == crate::sym!("Any")))
                     {
                         items.pop();
                     }

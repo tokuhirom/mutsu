@@ -404,7 +404,7 @@ impl Interpreter {
             if !this
                 .class_mro(&class_name.resolve())
                 .iter()
-                .any(|name| name.as_str() == "Range")
+                .any(|name| *name == crate::sym!("Range"))
             {
                 return Ok(None);
             }

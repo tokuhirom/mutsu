@@ -416,7 +416,7 @@ fn method_gather_read(target: &Value, method: &str) -> GatherRead {
     match method {
         // `List.new(g)` keeps the Seq readable (Rakudo stores it as one
         // element).
-        "new" if matches!(target.view(), ValueView::Package(name) if name == "List") => {
+        "new" if matches!(target.view(), ValueView::Package(name) if name == crate::sym!("List")) => {
             GatherRead::Cache
         }
         // `Supply.from-list` pulls the gather itself, so that a gather that

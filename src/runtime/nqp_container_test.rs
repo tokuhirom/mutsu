@@ -40,7 +40,7 @@ fn classify_container(v: &Value) -> (bool, Option<char>) {
             let kind = native_ref_kind(&name);
             (name == "Scalar" || name == "Proxy" || kind.is_some(), kind)
         }
-        ValueView::Package(name) => (name == "Scalar", None),
+        ValueView::Package(name) => (name == crate::sym!("Scalar"), None),
         // A shared element cell handed out as a value (an Array slot read
         // through `$!reified`, `atposref`) is that element's Scalar, and so is the
         // `.VAR` view of a cell (`@raw-slurpy[0].VAR`).

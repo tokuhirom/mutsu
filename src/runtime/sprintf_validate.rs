@@ -440,7 +440,7 @@ pub(crate) fn validate_sprintf_arg_types(fmt: &str, args: &[Value]) -> Result<()
                 arg,
                 Symbol::intern("Numeric"),
             )
-            && matches!(numeric.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+            && matches!(numeric.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("Failure"))
         {
             // The probe's Failure is consumed here, not left to warn on drop.
             numeric.mark_failure_handled();

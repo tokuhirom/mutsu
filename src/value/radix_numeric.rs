@@ -239,7 +239,7 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
             class_name,
             attributes,
             ..
-        } if class_name == "Instant" => attributes
+        } if class_name == crate::sym!("Instant") => attributes
             .as_map()
             .get("value")
             .cloned()
@@ -248,7 +248,7 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
             class_name,
             attributes,
             ..
-        } if class_name == "Duration" => attributes
+        } if class_name == crate::sym!("Duration") => attributes
             .as_map()
             .get("value")
             .cloned()
@@ -265,7 +265,7 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
             class_name,
             attributes,
             ..
-        } if class_name == "Date" => {
+        } if class_name == crate::sym!("Date") => {
             let (y, m, d) = crate::value::temporal_core::date_attrs(&(attributes).as_map());
             let epoch = crate::value::temporal_core::civil_to_epoch_days(y, m, d);
             Value::int(epoch * 86400)
@@ -274,7 +274,7 @@ pub(crate) fn coerce_to_numeric(val: Value) -> Value {
             class_name,
             attributes,
             ..
-        } if class_name == "DateTime" => {
+        } if class_name == crate::sym!("DateTime") => {
             let (y, mo, d, h, mi, s, tz) =
                 crate::value::temporal_core::datetime_attrs(&(attributes).as_map());
             Value::num(crate::value::temporal_core::datetime_to_posix(

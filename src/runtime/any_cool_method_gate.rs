@@ -141,8 +141,8 @@ pub(crate) fn cool_method_not_found(
 /// `"Any"`/`"Mu"` when `target` is one of those two type objects.
 fn undefined_owner(target: &Value) -> Option<&'static str> {
     match target.view() {
-        ValueView::Package(name) if name == "Any" => Some("Any"),
-        ValueView::Package(name) if name == "Mu" => Some("Mu"),
+        ValueView::Package(name) if name == crate::sym!("Any") => Some("Any"),
+        ValueView::Package(name) if name == crate::sym!("Mu") => Some("Mu"),
         _ => None,
     }
 }

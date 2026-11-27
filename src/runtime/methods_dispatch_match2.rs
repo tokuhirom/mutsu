@@ -14,7 +14,7 @@ impl Interpreter {
         // `Mu` is no `Any`: of the methods below, the `Mu` type object has
         // only `iterator` and `take` (`Mu.unique`, `Mu.minmax` and `Mu.List`
         // are `X::Method::NotFound` in Rakudo).
-        if matches!(target.view(), ValueView::Package(name) if name == "Mu")
+        if matches!(target.view(), ValueView::Package(name) if name == crate::sym!("Mu"))
             && !matches!(method, "iterator" | "take")
         {
             return None;
@@ -78,7 +78,7 @@ impl Interpreter {
         &mut self,
         target: Value,
     ) -> Result<Value, RuntimeError> {
-        if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Iterator")
+        if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("Iterator"))
         {
             return Ok(target);
         }
@@ -604,7 +604,7 @@ impl Interpreter {
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
         if let ValueView::Package(name) = target.view()
-            && name == "Supply"
+            && name == crate::sym!("Supply")
         {
             return Ok(Value::seq(vec![target]));
         }

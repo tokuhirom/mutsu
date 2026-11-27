@@ -90,7 +90,7 @@ pub(crate) fn why(node: &RakuAstNode) -> Value {
 fn check(value: &Value) -> Result<(), RuntimeError> {
     let ok = match value.view() {
         ValueView::RakuAst(node) => node.class == RakuAstClass::DocDeclarator,
-        ValueView::Package(name) => name.as_str() == "RakuAST::Doc::Declarator",
+        ValueView::Package(name) => name == crate::sym!("RakuAST::Doc::Declarator"),
         _ => false,
     };
     if ok {

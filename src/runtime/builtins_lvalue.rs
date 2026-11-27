@@ -594,7 +594,7 @@ impl Interpreter {
                     // while the callback runs; treating the temporary Proxy
                     // argument as a caller writeback would replace the real
                     // invocant with the assigned scalar.
-                    *k != "self"
+                    **k != crate::sym!("self")
                         && Self::is_writeback_safe_scalar(v)
                         && pre_env.get(*k).map(|p| p != *v).unwrap_or(true)
                 })
@@ -845,7 +845,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if matches!(class_name.as_str(), "Method" | "Submethod") && !call_args.is_empty() => {
+            } if crate::sym_in!(class_name, "Method" | "Submethod") && !call_args.is_empty() => {
                 let mut call_args = call_args;
                 let invocant = call_args.remove(0);
                 let method = match self.bound_method_object_name(&callable, &invocant) {

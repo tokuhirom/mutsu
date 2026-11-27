@@ -40,7 +40,7 @@ impl Interpreter {
         if cn == "X::AdHoc"
             || self.has_user_method(cn, method)
             || (method != "payload" && self.has_user_method(cn, "message"))
-            || !self.class_mro(cn).iter().any(|name| name == "X::AdHoc")
+            || !self.class_mro(cn).iter().any(|name| *name == crate::sym!("X::AdHoc"))
         {
             return None;
         }
@@ -260,7 +260,7 @@ impl Interpreter {
             || self
                 .class_mro(&cn)
                 .iter()
-                .any(|p| p == "Exception" || p == "Failure")
+                .any(|p| *p == crate::sym!("Exception") || *p == crate::sym!("Failure"))
     }
 
     /// True when rendering `method` on this exception instance must go through

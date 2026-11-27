@@ -827,7 +827,7 @@ impl Interpreter {
         if self
             .class_mro(cn_resolved)
             .iter()
-            .any(|n| *n == "Array" || *n == "List")
+            .any(|n| *n == crate::sym!("Array") || *n == crate::sym!("List"))
         {
             // ADR-0054 S4: a `Slip` value always flattens into a slurpy
             // positional list context, regardless of call-site `|` syntax.
@@ -867,7 +867,7 @@ impl Interpreter {
         if self
             .class_mro(cn_resolved)
             .iter()
-            .any(|n| *n == "Hash" || *n == "Map")
+            .any(|n| *n == crate::sym!("Hash") || *n == crate::sym!("Map"))
         {
             let hash_args: Vec<Value> = args
                 .iter()
@@ -1189,7 +1189,7 @@ impl Interpreter {
     ) -> Option<Result<Value, RuntimeError>> {
         let _ = args;
         let enum_name = match target.view() {
-            ValueView::Package(name) if name == "Bool" => Some("Bool".to_string()),
+            ValueView::Package(name) if name == crate::sym!("Bool") => Some("Bool".to_string()),
             ValueView::Bool(_) => Some("Bool".to_string()),
             ValueView::Package(name)
                 if self.registry().enum_types.contains_key(&name.resolve()) =>
@@ -1316,7 +1316,7 @@ impl Interpreter {
         if !self
             .class_mro(&class_name.resolve())
             .iter()
-            .any(|name| name == "DateTime")
+            .any(|name| *name == crate::sym!("DateTime"))
         {
             return None;
         }

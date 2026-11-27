@@ -448,7 +448,7 @@ impl Interpreter {
                         )
                         .map(|value| value.truthy())
                         .unwrap_or(
-                            !matches!(value.view(), ValueView::Package(name) if name == "Any"),
+                            !matches!(value.view(), ValueView::Package(name) if name == crate::sym!("Any")),
                         );
                     if exists {
                         initialized.insert(i as usize);

@@ -49,7 +49,7 @@ impl Interpreter {
         }
         if let Some(path_val) = target.get("path") {
             let io_path = match path_val.view() {
-                ValueView::Instance { class_name, .. } if class_name == "IO::Path" => {
+                ValueView::Instance { class_name, .. } if class_name == crate::sym!("IO::Path") => {
                     path_val.clone()
                 }
                 _ => self.make_io_path_instance(&path_val.to_string_value()),
@@ -72,7 +72,7 @@ impl Interpreter {
                     class_name,
                     attributes,
                     ..
-                } if class_name == "IO::Path" => attributes
+                } if class_name == crate::sym!("IO::Path") => attributes
                     .as_map()
                     .get("path")
                     .map(|v| v.to_string_value())
@@ -103,7 +103,7 @@ impl Interpreter {
                 ValueView::Package(name) => {
                     format!("({})", crate::qualified::unqualified_part(name).as_str())
                 }
-                ValueView::Instance { class_name, .. } if class_name == "IO::Path" => {
+                ValueView::Instance { class_name, .. } if class_name == crate::sym!("IO::Path") => {
                     format!(
                         "{}.IO",
                         crate::builtins::methods_0arg::raku_repr::escape_raku_str(

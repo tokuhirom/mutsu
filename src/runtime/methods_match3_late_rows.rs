@@ -44,7 +44,7 @@ impl Interpreter {
         // Only an iterator over a plain element array (`@a.iterator`,
         // `(1..5).iterator`) predicts its count: a `.map`/`.grep` stream or a
         // `squish` scan counts by running, like Rakudo's.
-        if class_name != "Iterator"
+        if class_name != crate::sym!("Iterator")
             || !attributes.contains_key("items")
             || attributes.contains_key(crate::value::MAP_GREP_STREAM_ATTR)
             || attributes.contains_key("squish_source")
@@ -76,7 +76,7 @@ impl Interpreter {
         else {
             return None;
         };
-        if class_name != "Thread" {
+        if class_name != crate::sym!("Thread") {
             return None;
         }
         let attrs = attributes.as_map().clone();

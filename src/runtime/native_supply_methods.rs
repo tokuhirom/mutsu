@@ -36,7 +36,7 @@ impl Interpreter {
             attributes,
             ..
         } = done_cb.view()
-            && class_name == "__WheneverDoneGroup"
+            && class_name == crate::sym!("__WheneverDoneGroup")
             && let Some(ValueView::Int(group_id)) =
                 attributes.as_map().get("group_id").map(|v| v.view())
         {
@@ -61,7 +61,7 @@ impl Interpreter {
             attributes,
             ..
         } = done_cb.view()
-            && class_name == "__SupplyDoneChain"
+            && class_name == crate::sym!("__SupplyDoneChain")
         {
             if let Some(ValueView::Array(cbs, ..)) =
                 attributes.as_map().get("callbacks").map(|v| v.view())
@@ -82,7 +82,7 @@ impl Interpreter {
             attributes,
             ..
         } = done_cb.view()
-            && class_name == "__SupplyCloseMarker"
+            && class_name == crate::sym!("__SupplyCloseMarker")
             && let Some(ValueView::Int(cid)) = attributes
                 .as_map()
                 .get("close_supplier_id")
@@ -107,7 +107,7 @@ impl Interpreter {
             attributes,
             ..
         } = done_cb.view()
-            && class_name == "__SupplyOnDemandComplete"
+            && class_name == crate::sym!("__SupplyOnDemandComplete")
         {
             let attrs = attributes.as_map();
             if let Some(ValueView::Int(cid)) = attrs.get("close_supplier_id").map(|v| v.view()) {
@@ -150,7 +150,7 @@ impl Interpreter {
             attributes,
             ..
         } = done_cb.view()
-            && class_name == "__SupplySharedDone"
+            && class_name == crate::sym!("__SupplySharedDone")
         {
             let attrs = attributes.as_map();
             let Some(ValueView::Int(supplier_id)) = attrs.get("supplier_id").map(Value::view)

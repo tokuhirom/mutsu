@@ -938,7 +938,7 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Backtrace" => attributes
+            } if class_name == crate::sym!("Backtrace") => attributes
                 .as_map()
                 .get("text")
                 .map(|v: &Value| v.to_string_value())
@@ -949,7 +949,7 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "CompUnit" => attributes
+            } if class_name == crate::sym!("CompUnit") => attributes
                 .as_map()
                 .get("short-name")
                 .map(|v: &Value| v.to_string_value())
@@ -958,7 +958,9 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "IO::Path" || class_name.as_str().starts_with("IO::Path::") => {
+            } if class_name == crate::sym!("IO::Path")
+                || class_name.as_str().starts_with("IO::Path::") =>
+            {
                 attributes
                     .as_map()
                     .get("path")
@@ -990,7 +992,7 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Proc" => attributes
+            } if class_name == crate::sym!("Proc") => attributes
                 .as_map()
                 .get("exitcode")
                 .map(|v: &Value| v.to_string_value())
@@ -1022,14 +1024,14 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == crate::value::label::LABEL_CLASS => {
+            } if class_name == crate::sym!(crate::value::label::LABEL_CLASS) => {
                 crate::value::label::label_str(&attributes.as_map())
             }
             ValueView::Instance {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Instant" => {
+            } if class_name == crate::sym!("Instant") => {
                 let val = attributes
                     .as_map()
                     .get("value")
@@ -1041,7 +1043,7 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Duration" => {
+            } if class_name == crate::sym!("Duration") => {
                 let val = attributes
                     .as_map()
                     .get("value")
@@ -1088,7 +1090,7 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Pod::Block::Declarator" => attributes
+            } if class_name == crate::sym!("Pod::Block::Declarator") => attributes
                 .as_map()
                 .get("contents")
                 .map(|v: &Value| v.to_string_value())
@@ -1097,7 +1099,7 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "StrDistance" => attributes
+            } if class_name == crate::sym!("StrDistance") => attributes
                 .as_map()
                 .get("after")
                 .map(|v: &Value| v.to_string_value())
@@ -1127,10 +1129,10 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Method"
-                || class_name == "Submethod"
-                || class_name == "Sub"
-                || class_name == "Routine"
+            } if class_name == crate::sym!("Method")
+                || class_name == crate::sym!("Submethod")
+                || class_name == crate::sym!("Sub")
+                || class_name == crate::sym!("Routine")
                 || crate::value::attribute_class::is_attribute_class(class_name) =>
             {
                 attributes
@@ -1161,7 +1163,7 @@ impl Value {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Failure" => {
+            } if class_name == crate::sym!("Failure") => {
                 let msg = attributes
                     .as_map()
                     .get("exception")

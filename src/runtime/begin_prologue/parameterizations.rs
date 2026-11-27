@@ -74,7 +74,7 @@ fn declare_parametric_classes(stmt: &Stmt, parametric: &mut HashSet<String>) {
     for member in crate::ast::scope_members(std::slice::from_ref(stmt)) {
         if let Stmt::ClassDecl { name, body, .. } = member
             && crate::ast::scope_members(body).any(
-                |s| matches!(s, Stmt::MethodDecl { name, .. } if *name == "^parameterize"),
+                |s| matches!(s, Stmt::MethodDecl { name, .. } if *name == crate::sym!("^parameterize")),
             )
         {
             parametric.insert(name.resolve().to_string());

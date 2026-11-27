@@ -126,7 +126,7 @@ pub(crate) fn repr_is_vm_array(v: &Value) -> bool {
                     .is_some_and(|t| t.starts_with("array"))
         }
         ValueView::Instance { class_name, .. } => {
-            class_name == "IterationBuffer"
+            class_name == crate::sym!("IterationBuffer")
                 || crate::runtime::utils::is_buf_or_blob_class(class_name.as_str())
         }
         _ => false,
@@ -137,7 +137,7 @@ pub(crate) fn repr_is_vm_array(v: &Value) -> bool {
 /// `BOOTHash` type object. A Raku `Hash`, `Map` or stash is P6opaque: 0.
 // Cost: O(1).
 pub(crate) fn repr_is_vm_hash(v: &Value) -> bool {
-    v.is_vm_hash() || matches!(v.view(), ValueView::Package(name) if name.as_str() == "BOOTHash")
+    v.is_vm_hash() || matches!(v.view(), ValueView::Package(name) if name == crate::sym!("BOOTHash"))
 }
 
 impl Interpreter {

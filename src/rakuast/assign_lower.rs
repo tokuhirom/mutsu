@@ -24,7 +24,7 @@ pub(crate) fn is_expression_target(target: &Expr) -> bool {
         }
     }
     match target {
-        Expr::MethodCall { name, args, .. } => !(name == "item" && args.is_empty()),
+        Expr::MethodCall { name, args, .. } => !(*name == crate::sym!("item") && args.is_empty()),
         Expr::Var(_)
         | Expr::ArrayVar(_)
         | Expr::HashVar(_)
@@ -86,7 +86,7 @@ pub(crate) fn is_callable_lvalue_target(target: &Expr) -> bool {
 pub(crate) fn is_item_target(target: &Expr) -> bool {
     match target.peel_parens() {
         Expr::Contextualizer { kind, .. } => *kind == crate::ast::ContextKind::Item,
-        Expr::MethodCall { name, args, .. } => name == "item" && args.is_empty(),
+        Expr::MethodCall { name, args, .. } => *name == crate::sym!("item") && args.is_empty(),
         _ => false,
     }
 }
