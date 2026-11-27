@@ -15,12 +15,17 @@
 //! The flattened set (`class_composed_roles`) walks `role_parents` as it was
 //! when the built-in registry was finished, frozen by
 //! [`freeze_builtin_role_parents`]: that is the table the eager loop walked.
+//!
+//! The rows are the class catalogue's (`0..catalogue::LEN`), then the
+//! built-in value types' composed-role seeds (`builtin_composed_role_seeds`),
+//! which state both their direct and flattened lists.
 
 use std::sync::{Arc, OnceLock};
 
 use rustc_hash::FxHashSet;
 
 use super::builtin_class_catalogue as catalogue;
+use super::builtin_composed_role_seeds as seeds;
 use super::registry::Sharded;
 use super::registry_sharded_map::ShardedEntry;
 
@@ -37,9 +42,12 @@ pub(crate) enum ComposedRoleKind {
     DoesOnly,
 }
 
-static FLATTENED: [OnceLock<Roles>; catalogue::LEN] = [const { OnceLock::new() }; catalogue::LEN];
-static DIRECT: [OnceLock<Roles>; catalogue::LEN] = [const { OnceLock::new() }; catalogue::LEN];
-static DOES_ONLY: [OnceLock<Roles>; catalogue::LEN] = [const { OnceLock::new() }; catalogue::LEN];
+/// Rows: the class catalogue's, then the seeds.
+const ROWS: usize = catalogue::LEN + seeds::LEN;
+
+static FLATTENED: [OnceLock<Roles>; ROWS] = [const { OnceLock::new() }; ROWS];
+static DIRECT: [OnceLock<Roles>; ROWS] = [const { OnceLock::new() }; ROWS];
+static DOES_ONLY: [OnceLock<Roles>; ROWS] = [const { OnceLock::new() }; ROWS];
 
 /// The built-in registry's `role_parents`, as it was when
 /// `build_builtin_registry` finished.
@@ -53,10 +61,36 @@ pub(crate) fn freeze_builtin_role_parents(role_parents: &Sharded<String, Roles>)
     let _ = BUILTIN_ROLE_PARENTS.set(role_parents.clone());
 }
 
-/// Whether row `index` has an entry in these registries: it composes a role.
+/// Whether row `index` has an entry in the `kind` registry: a catalogue row
+/// that composes a role, or a seed row with a list for `kind`.
 // Cost: O(r), r = the row's length.
-fn row_has_entry(index: usize) -> bool {
-    catalogue::does(index).next().is_some()
+fn row_has_entry(kind: ComposedRoleKind, index: usize) -> bool {
+    match index.checked_sub(catalogue::LEN) {
+        None => catalogue::does(index).next().is_some(),
+        Some(seed) => match kind {
+            ComposedRoleKind::Flattened => true,
+            ComposedRoleKind::Direct => seeds::direct(seed).next().is_some(),
+            ComposedRoleKind::DoesOnly => false,
+        },
+    }
+}
+
+/// The name of row `index`.
+// Cost: O(1).
+fn row_name(index: usize) -> &'static str {
+    match index.checked_sub(catalogue::LEN) {
+        None => catalogue::name(index),
+        Some(seed) => seeds::name(seed),
+    }
+}
+
+/// The name of row `index`, as the `String` a key walk yields.
+// Cost: O(1) after the first call of each table's.
+fn row_name_string(index: usize) -> &'static String {
+    match index.checked_sub(catalogue::LEN) {
+        None => catalogue::name_string(index),
+        Some(seed) => seeds::name_string(seed),
+    }
 }
 
 /// Row `index`'s entry in the `kind` registry, computed on first use exactly
@@ -70,6 +104,15 @@ fn materialize(kind: ComposedRoleKind, index: usize) -> &'static Roles {
         ComposedRoleKind::DoesOnly => &DOES_ONLY,
     };
     slots[index].get_or_init(|| {
+        if let Some(seed) = index.checked_sub(catalogue::LEN) {
+            return match kind {
+                ComposedRoleKind::Flattened => seeds::flattened(seed).map(str::to_string).collect(),
+                // A seed row has no `does`-only entry (`row_has_entry`).
+                ComposedRoleKind::Direct | ComposedRoleKind::DoesOnly => {
+                    seeds::direct(seed).map(str::to_string).collect()
+                }
+            };
+        }
         let does: Roles = catalogue::does(index).map(str::to_string).collect();
         match kind {
             ComposedRoleKind::Direct => does,
@@ -117,14 +160,18 @@ impl ComposedRoleTable {
         self.catalogue = Some(kind);
     }
 
-    /// The visible catalogue row with an entry for `name`, whether or not the
-    /// overlay shadows it.
-    // Cost: O(|name| log R), R = catalogue rows.
+    /// The visible row with an entry for `name`, whether or not the overlay
+    /// shadows it. A seed row comes first: the catalogue rows of the seeded
+    /// classes (`Blob`, the `Systemic` classes) compose nothing of their own.
+    // Cost: O(|name| log R), R = rows.
     #[inline]
     fn row(&self, name: &str) -> Option<(ComposedRoleKind, usize)> {
         let kind = self.catalogue?;
-        let index = catalogue::index_of(name)?;
-        (!self.is_hidden(index) && row_has_entry(index)).then_some((kind, index))
+        let index = seeds::index_of(name)
+            .map(|seed| catalogue::LEN + seed)
+            .filter(|index| row_has_entry(kind, *index))
+            .or_else(|| catalogue::index_of(name))?;
+        (!self.is_hidden(index) && row_has_entry(kind, index)).then_some((kind, index))
     }
 
     // Cost: O(1) expected.
@@ -144,12 +191,12 @@ impl ComposedRoleTable {
     /// Visible catalogue rows with an entry that the overlay does not shadow.
     // Cost: O(1) to create; walking it is O(R log R).
     fn unshadowed_rows(&self) -> impl Iterator<Item = (ComposedRoleKind, usize)> + '_ {
-        let rows = if self.catalogue.is_some() { catalogue::LEN } else { 0 };
+        let rows = if self.catalogue.is_some() { ROWS } else { 0 };
         (0..rows).filter_map(move |index| {
             let kind = self.catalogue?;
             (!self.is_hidden(index)
-                && row_has_entry(index)
-                && !self.overlay.contains_key(catalogue::name(index)))
+                && row_has_entry(kind, index)
+                && !self.overlay.contains_key(row_name(index)))
             .then_some((kind, index))
         })
     }
@@ -223,7 +270,7 @@ impl ComposedRoleTable {
     pub(crate) fn iter(&self) -> impl Iterator<Item = (&String, &Roles)> + '_ {
         self.overlay.iter().chain(self.unshadowed_rows().map(
             |(kind, index)| -> (&String, &Roles) {
-                (catalogue::name_string(index), materialize(kind, index))
+                (row_name_string(index), materialize(kind, index))
             },
         ))
     }
@@ -236,7 +283,7 @@ impl ComposedRoleTable {
         let dropped: Vec<usize> = self
             .unshadowed_rows()
             .filter(|(kind, index)| {
-                !keep(catalogue::name_string(*index), materialize(*kind, *index))
+                !keep(row_name_string(*index), materialize(*kind, *index))
             })
             .map(|(_, index)| index)
             .collect();
@@ -255,7 +302,7 @@ impl ComposedRoleTable {
             }
         }
         if self.catalogue.is_some() && snapshot.catalogue == self.catalogue {
-            for index in 0..catalogue::LEN {
+            for index in 0..ROWS {
                 if self.is_hidden(index)
                     && !snapshot.is_hidden(index)
                     && let Some(hidden) = self.hidden.as_mut()
@@ -277,8 +324,8 @@ mod tests {
     #[test]
     fn every_row_computes_what_the_eager_loop_wrote() {
         let registry = crate::runtime::Interpreter::shared_builtin_registry();
-        // The `X::` rows: a core row has no `does` list of its own (its
-        // composed roles, if any, are written eagerly into the overlay).
+        // The `X::` rows: a core row has no `does` list of its own (the
+        // built-in value types' are seed rows, below).
         for index in 0..catalogue::X_LEN {
             let name = catalogue::name(index);
             let does: Roles = catalogue::does(index).map(str::to_string).collect();
@@ -309,6 +356,34 @@ mod tests {
             .get("X::TooLateForREPR")
             .expect("row");
         assert!(tlfr.is_empty(), "X::TooLateForREPR's X::Comp is its parent");
+    }
+
+    /// A seed row answers the flattened and direct registries with its own
+    /// lists, and the `does`-only registry not at all.
+    #[test]
+    fn seed_rows_answer_their_stated_lists() {
+        let registry = crate::runtime::Interpreter::shared_builtin_registry();
+        let strings = |roles: &[&str]| roles.iter().map(|r| r.to_string()).collect::<Roles>();
+        assert_eq!(
+            registry.class_composed_roles.get("Rat"),
+            Some(&strings(&["Rational[Int,Int]", "Real", "Numeric"]))
+        );
+        assert_eq!(
+            registry.class_direct_composed_roles.get("Rat"),
+            Some(&strings(&["Rational[Int,Int]"]))
+        );
+        assert!(registry.class_does_only_roles.get("Rat").is_none());
+        // `Blob` is also a catalogue class, composing nothing of its own.
+        assert_eq!(
+            registry.class_composed_roles.get("Blob"),
+            Some(&strings(&["Positional[T]", "Stringy"]))
+        );
+        assert!(registry.class_direct_composed_roles.get("Blob").is_none());
+        let mut table = registry.class_composed_roles.clone();
+        assert!(table.remove("VM").is_some());
+        assert!(!table.contains_key("VM"));
+        assert!(table.iter().all(|(name, _)| name != "VM"));
+        assert!(table.iter().any(|(name, _)| name == "Kernel"));
     }
 
     #[test]
