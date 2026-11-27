@@ -26,9 +26,9 @@ impl Drop for InterpreterThreadRegistration {
     fn drop(&mut self) {
         // Runs as a TLS destructor. Drop the thread's `Gc`-bearing
         // thread-locals while still registered, as `spawn_user_thread`'s
-        // `WorkerGuard` does. A thread-local that built an interpreter (e.g.
-        // `regex_parse`'s `VALIDATE_INTERP`) was initialized after this slot,
-        // so its destructor has already run: destructors run in reverse order.
+        // `WorkerGuard` does. A thread-local that built an interpreter was
+        // initialized after this slot, so its destructor has already run:
+        // destructors run in reverse order.
         crate::value::drop_thread_local_gc_state();
         mark_thread_registered(false);
         super::gc_ptr::exit_mutator_worker();

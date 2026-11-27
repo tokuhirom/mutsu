@@ -2,6 +2,7 @@ use super::regex::regex_code_interp::{code_interp_close, dq_code_interp_atom};
 use super::regex_parse::*;
 use super::regex_parse_grapheme::merge_grapheme_literal_tokens;
 use super::*;
+use super::regex_parser::RegexParser;
 
 /// Result of scanning the body of a `< ... >` regex assertion (the opening `<`
 /// is already consumed).
@@ -308,7 +309,7 @@ pub(super) fn scalar_names_in_decl(code: &str) -> Vec<String> {
     names
 }
 
-/// What [`Interpreter::consume_repeat_separator`] found after a repeating
+/// What [`crate::runtime::regex_parser::RegexParser::consume_repeat_separator`] found after a repeating
 /// quantifier.
 #[derive(Default)]
 struct SeparatorParse {
@@ -319,7 +320,7 @@ struct SeparatorParse {
     ws_after_quant: bool,
 }
 
-impl Interpreter {
+impl RegexParser<'_> {
     /// Whether a sequence term under `:sigspace` is followed by significant
     /// whitespace (and not by a `%` separator), which leaves it backtrackable
     /// even in a ratcheted regex -- see the `token_ratchet` computation.
@@ -580,12 +581,12 @@ fn strip_inner_prop_negation(prop: &str) -> (&str, bool) {
     }
 }
 
-impl Interpreter {
+impl RegexParser<'_> {
     /// Whether `name` resolves to a user-defined token/rule/regex in the current
     /// package. A grammar that defines its own `token same { … }` shadows the
     /// builtin assertion of the same name, exactly as it shadows `<alpha>`.
     fn regex_name_is_grammar_token(&self, name: &str) -> bool {
-        !self.current_package().is_empty() && self.resolve_token_defs(name).is_some()
+        self.grammar_defines_token(name)
     }
 
     /// Raise [`PARSE_CONSULTED_AMBIENT_STATE`]
@@ -639,16 +640,17 @@ impl Interpreter {
     ) -> Option<(String, bool)> {
         let call = call.trim();
         let var_name = call.strip_prefix('$')?;
-        if !Self::is_interpolated_alias_target(call) {
+        if !Interpreter::is_interpolated_alias_target(call) {
             return None;
         }
         // Reads the variable's VALUE at parse time, like the `<$var>` arm.
         Self::note_regex_parse_ambient_read();
-        let value = self
+        let rt = self.rt()?;
+        let value = rt
             .env
             .get(var_name)
             .cloned()
-            .or_else(|| self.env.get(&format!("${var_name}")).cloned())?
+            .or_else(|| rt.env.get(&format!("${var_name}")).cloned())?
             .into_deref();
         match value.view() {
             ValueView::Regex(_) | ValueView::RegexWithAdverbs(_) => {
@@ -685,11 +687,14 @@ impl Interpreter {
         // below as a single element (issue #8040).
         Self::note_regex_parse_ambient_read();
         let value = self
-            .env
-            .get(env_key)
-            .cloned()
-            .or_else(|| self.regex_package_chain_var_fallback(env_key))
-            .or_else(|| self.get_env_with_main_alias(env_key))
+            .rt()
+            .and_then(|rt| {
+                rt.env
+                    .get(env_key)
+                    .cloned()
+                    .or_else(|| rt.regex_package_chain_var_fallback(env_key))
+                    .or_else(|| rt.get_env_with_main_alias(env_key))
+            })
             .unwrap_or(Value::NIL)
             .deref_container();
         let elements = match value.view() {
@@ -859,7 +864,7 @@ impl Interpreter {
         }
         // Consume and validate the single separator atom.
         let remaining: String = chars.clone().collect();
-        let sep_atom_str = Self::split_separator_atom(&remaining);
+        let sep_atom_str = Interpreter::split_separator_atom(&remaining);
         for _ in 0..sep_atom_str.chars().count() {
             chars.next();
         }
@@ -960,7 +965,7 @@ impl Interpreter {
         // `$<name>=` / `%<name>=` / `@<name>=` alias prefix and/or a trailing
         // quantifier).
         let remaining: String = chars.clone().collect();
-        let sep_atom_str = Self::split_separator_atom(&remaining);
+        let sep_atom_str = Interpreter::split_separator_atom(&remaining);
         // Advance the main iterator past the separator atom.
         for _ in 0..sep_atom_str.chars().count() {
             chars.next();
@@ -1002,7 +1007,7 @@ impl Interpreter {
     /// This wraps EVERY entry into the recursive-descent parser, not just the
     /// outermost one [`REGEX_PARSE_CACHE`]
     /// covers: the parser re-enters itself through
-    /// [`Interpreter::parse_regex_with_mode`] for groups, lookaround bodies,
+    /// [`crate::runtime::regex_parser::RegexParser::parse_regex_with_mode`] for groups, lookaround bodies,
     /// alternation branches, conjunction parts and `%`-separator atoms, and
     /// that path had no memo of its own, so the inside of a cached outer
     /// pattern was re-parsed on every outer parse.
@@ -1045,15 +1050,21 @@ impl Interpreter {
         // Plain scalars are read where the cursor reaches them (#14510): a
         // pattern reached here directly (a `<$var>` source, a Regex value's
         // own text, a sub-pattern) hoists them like `parse_regex` does.
+        // A `Match` parse always carries the runtime (`Interpreter`'s wrappers
+        // build it so); a `Validate` parse has none to interpolate from.
+        let match_rt = match mode {
+            RegexParseMode::Match => self.rt(),
+            RegexParseMode::Validate => None,
+        };
         let hoisted;
-        let pattern = if mode == RegexParseMode::Match {
-            hoisted = self.with_match_time_scalars(pattern, Vec::new());
+        let pattern = if let Some(rt) = match_rt {
+            hoisted = rt.with_match_time_scalars(pattern, Vec::new());
             &*hoisted
         } else {
             pattern
         };
-        let interpolated = if mode == RegexParseMode::Match {
-            match self.interpolate_regex_scalars(pattern) {
+        let interpolated = if let Some(rt) = match_rt {
+            match rt.interpolate_regex_scalars(pattern) {
                 Ok(s) => {
                     // A sub-pattern (a lookaround body, above all) is
                     // interpolated here, a step below its enclosing pattern,
@@ -1124,7 +1135,7 @@ impl Interpreter {
         }
         let tok_gen =
             crate::runtime::regex_parse::TOKEN_DEFS_GEN.load(std::sync::atomic::Ordering::Relaxed);
-        let bucket = (self.current_package_sym(), mode);
+        let bucket = (self.package_sym(), mode);
         if let Some(hit) = crate::runtime::regex_parse::REGEX_SUBPATTERN_PARSE_CACHE.with(|c| {
             c.borrow()
                 .get(&bucket)
@@ -1393,7 +1404,7 @@ impl Interpreter {
         // pattern's mode; they are read by the same routine as a modifier
         // written later in the pattern, so the two spellings cannot drift.
         while let Some(after_colon) = source.strip_prefix(':')
-            && let Some(rest) = Self::try_parse_inline_modifier(
+            && let Some(rest) = Interpreter::try_parse_inline_modifier(
                 after_colon,
                 &mut ratchet,
                 &mut ignore_case,
@@ -1436,7 +1447,7 @@ impl Interpreter {
             return None;
         }
         // Handle top-level alternation (| or ||)
-        let (top_alts, is_sequential) = Self::split_top_level_alternation(source);
+        let (top_alts, is_sequential) = Interpreter::split_top_level_alternation(source);
         if top_alts.len() > 1 {
             // A trailing or interior empty branch (`/ a | /`, `/ | /`) is a null
             // regex. A single leading empty branch is allowed for alignment
@@ -1498,7 +1509,7 @@ impl Interpreter {
         // Check for conjunction (`&` or `&&`) at the top level.
         // Conjunction has higher precedence than alternation, so this runs
         // after alternation splitting found no `|`.
-        let conj_parts = Self::split_top_level_conjunction(source);
+        let conj_parts = Interpreter::split_top_level_conjunction(source);
         if conj_parts.len() > 1 {
             // As with alternation, a trailing/interior empty conjunct (`/ a & /`)
             // is null; a single leading empty conjunct is allowed (`/ & a /`).
@@ -1550,7 +1561,7 @@ impl Interpreter {
         // former standalone validator did); expanding first can produce
         // intermediate forms whose quantifiers trip the parse-time checks.
         let expanded = if mode == RegexParseMode::Match {
-            Self::expand_ltm_pattern(source, sigspace)
+            Interpreter::expand_ltm_pattern(source, sigspace)
         } else {
             source.to_string()
         };
@@ -1604,7 +1615,7 @@ impl Interpreter {
         'atoms: while let Some(c) = chars.next() {
             let was_ws = std::mem::replace(&mut prev_was_ws, c.is_whitespace());
             let prev_was_ws = was_ws;
-            if c == Self::NON_DECLARATIVE_INTERP_MARK {
+            if c == Interpreter::NON_DECLARATIVE_INTERP_MARK {
                 in_non_declarative_interp = !in_non_declarative_interp;
                 if in_non_declarative_interp {
                     interp_span_start = Some(tokens.len());
@@ -2233,7 +2244,7 @@ impl Interpreter {
                     // Handle inline scope modifiers: :ratchet, :!ratchet, :r, :!r,
                     // :ignorecase, :!ignorecase, :i, :!i, :sigspace, :!sigspace, :s, :!s,
                     // :ignoremark, :!ignoremark, :m, :!m
-                    if let Some(modifier_rest) = Self::try_parse_inline_modifier(
+                    if let Some(modifier_rest) = Interpreter::try_parse_inline_modifier(
                         &remaining,
                         &mut ratchet,
                         &mut ignore_case,
@@ -2940,7 +2951,7 @@ impl Interpreter {
                             chars.next();
                         }
                         runtime_value_atom = true;
-                        self.regex_qq_interp_atom(c, &body, ignore_case)?
+                        self.rt()?.regex_qq_interp_atom(c, &body, ignore_case)?
                     }
                     '"' | '\u{201C}' | '\u{201E}' => {
                         // Double-quoted literal string in Raku regex: "foo" matches literally
@@ -3085,7 +3096,7 @@ impl Interpreter {
                                 Some(ch) if ch == close => break,
                                 // A runtime-interpolated span: the whole literal
                                 // becomes one non-declarative atom (ADR-0022 §5).
-                                Some(Self::NON_DECLARATIVE_INTERP_MARK) => saw_interp_mark = true,
+                                Some(Interpreter::NON_DECLARATIVE_INTERP_MARK) => saw_interp_mark = true,
                                 Some(ch) => literal.push(ch),
                                 None => break,
                             }
@@ -3692,11 +3703,11 @@ impl Interpreter {
                                         && !trimmed.starts_with('{')
                                         && !trimmed.starts_with("?{")
                                         && !trimmed.starts_with("!{")
-                                        && Self::contains_longname_alias(trimmed)
+                                        && Interpreter::contains_longname_alias(trimmed)
                                     {
                                         PENDING_REGEX_ERROR.with(|e| {
                                             *e.borrow_mut() =
-                                                Some(Self::make_longname_alias_error());
+                                                Some(Interpreter::make_longname_alias_error());
                                         });
                                         return None;
                                     }
@@ -4129,7 +4140,7 @@ impl Interpreter {
                                         // function of the pattern text alone.
                                         // The read is noted below, once the value's
                                         // pattern text tells whether it is keyable.
-                                        let value = match self.regex_value_var(var_name) {
+                                        let value = match self.rt()?.regex_value_var(var_name) {
                                             Some(v) => v,
                                             None => {
                                                 Self::note_regex_parse_ambient_read();
@@ -4161,11 +4172,11 @@ impl Interpreter {
                                         // A named regex/token held in the variable
                                         // (`my $p = &protocol; /<$p>/`) is a Regex too:
                                         // interpolate its source, not its name.
-                                        let value = self.regex_routine_as_regex_value(value);
+                                        let value = self.rt()?.regex_routine_as_regex_value(value);
                                         // An undefined value has no `INTERPOLATE_ASSERTION`
                                         // candidate in rakudo: the match dies (#13042).
                                         if let Some(err) =
-                                            Self::interpolate_assertion_undefined_error(&value)
+                                            Interpreter::interpolate_assertion_undefined_error(&value)
                                         {
                                             Self::note_regex_parse_ambient_read();
                                             PENDING_REGEX_ERROR.with(|e| {
@@ -4203,22 +4214,22 @@ impl Interpreter {
                                             Self::note_regex_parse_ambient_read();
                                         }
                                         // Check for longname alias first
-                                        if Self::contains_longname_alias(&pat_str) {
+                                        if Interpreter::contains_longname_alias(&pat_str) {
                                             PENDING_REGEX_ERROR.with(|e| {
                                                 *e.borrow_mut() =
-                                                    Some(Self::make_longname_alias_error());
+                                                    Some(Interpreter::make_longname_alias_error());
                                             });
                                             return None;
                                         }
                                         // Security check: reject dangerous patterns (skipped
                                         // for a genuine Regex value — see above)
                                         if !is_regex_value
-                                            && !self.monkey_see_no_eval()
-                                            && Self::contains_dangerous_regex_code(&pat_str)
+                                            && !self.rt()?.monkey_see_no_eval()
+                                            && Interpreter::contains_dangerous_regex_code(&pat_str)
                                         {
                                             PENDING_REGEX_ERROR.with(|e| {
                                                 *e.borrow_mut() =
-                                                    Some(Self::make_security_policy_error());
+                                                    Some(Interpreter::make_security_policy_error());
                                             });
                                             return None;
                                         }
@@ -4232,7 +4243,7 @@ impl Interpreter {
                                     );
                                         // Check for undeclared variables in the resolved string
                                         if let Some(err) =
-                                            self.check_undeclared_vars_in_pattern(&pat_str)
+                                            self.rt()?.check_undeclared_vars_in_pattern(&pat_str)
                                         {
                                             PENDING_REGEX_ERROR.with(|e| {
                                                 *e.borrow_mut() = Some(err);
@@ -4568,9 +4579,8 @@ impl Interpreter {
                                                 | "print"
                                                 | "ident"
                                         );
-                                        let grammar_overrides_builtin = is_builtin_name
-                                            && !self.current_package().is_empty()
-                                            && self.resolve_token_defs(class_name).is_some();
+                                        let grammar_overrides_builtin =
+                                            is_builtin_name && self.grammar_defines_token(class_name);
                                         if grammar_overrides_builtin {
                                             RegexAtom::Named(name.into())
                                         } else {
@@ -4669,10 +4679,10 @@ impl Interpreter {
                                                         return None;
                                                     }
                                                     // Check for longname aliases
-                                                    if Self::contains_longname_alias(trimmed) {
+                                                    if Interpreter::contains_longname_alias(trimmed) {
                                                         PENDING_REGEX_ERROR.with(|e| {
                                                             *e.borrow_mut() = Some(
-                                                                Self::make_longname_alias_error(),
+                                                                Interpreter::make_longname_alias_error(),
                                                             );
                                                         });
                                                         return None;
@@ -4685,7 +4695,7 @@ impl Interpreter {
                                                     // followed only by an allowed continuation
                                                     // (whitespace, `=`, `:`, `(`) or end of name.
                                                     if let Some(err) =
-                                                        Self::check_subrule_name_tail(class_name)
+                                                        Interpreter::check_subrule_name_tail(class_name)
                                                     {
                                                         PENDING_REGEX_ERROR.with(|e| {
                                                             *e.borrow_mut() = Some(err);
@@ -4730,7 +4740,7 @@ impl Interpreter {
                             return None;
                         }
                         let (alternatives, cap_is_sequential) =
-                            Self::split_top_level_alternation(&group_pattern);
+                            Interpreter::split_top_level_alternation(&group_pattern);
                         // A trailing/interior empty branch inside the group (`(a|)`)
                         // is null; a leading empty branch is allowed (`(|a)`).
                         if alternatives.len() > 1
@@ -4861,7 +4871,7 @@ impl Interpreter {
                         }
                         // Parse the group as top-level alternation, including `||`.
                         let (alternatives, bracket_is_sequential) =
-                            Self::split_top_level_alternation(&group_pattern);
+                            Interpreter::split_top_level_alternation(&group_pattern);
                         // Raku keeps a leading inline `:i` modifier active for the
                         // whole bracketed alternation (`[:i'first-'[...]|before|after]`),
                         // not only for the first branch.  Each branch is parsed as
@@ -5168,7 +5178,7 @@ impl Interpreter {
                                 {
                                     push_regex_sorrow(malformed_range_exception());
                                 }
-                                let (min, max) = Self::parse_quantifier_range(&count_str);
+                                let (min, max) = Interpreter::parse_quantifier_range(&count_str);
                                 RegexQuant::Repeat(min, max)
                             }
                         } else {
@@ -5237,7 +5247,7 @@ impl Interpreter {
                     let rest: String = la.collect();
                     let (mut r, mut i, mut m, mut s) = (ratchet, ignore_case, ignore_mark, sigspace);
                     rest.starts_with(|ch: char| ch.is_alphanumeric() || ch == '!')
-                        && Self::try_parse_inline_modifier(&rest, &mut r, &mut i, &mut m, &mut s)
+                        && Interpreter::try_parse_inline_modifier(&rest, &mut r, &mut i, &mut m, &mut s)
                             .is_some()
                 }
             };
