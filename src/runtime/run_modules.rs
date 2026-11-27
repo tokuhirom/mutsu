@@ -66,7 +66,7 @@ impl Interpreter {
         // candidates last so an explicit `use lib`/`-I`/`MUTSULIB` module or
         // an `mzef`-installed (site-repo) version always shadows the bundled copy
         // (BATTERIES.md §3/§6).
-        for base in self.module.bundled_lib_paths.iter() {
+        for base in self.bundled_lib_paths().iter() {
             let base_path = Path::new(base.as_str());
             for ext in &extensions {
                 let filename = format!("{}{}", base_name, ext);
@@ -281,8 +281,18 @@ impl Interpreter {
     /// keyword during the scan of `use OO::Monitors`.
     pub(crate) fn parser_scan_lib_paths(&self) -> Vec<String> {
         let mut paths = (*self.module.lib_paths).clone();
-        paths.extend(self.module.bundled_lib_paths.iter().cloned());
+        paths.extend(self.bundled_lib_paths().iter().cloned());
         paths
+    }
+
+    /// This interpreter's bundled-battery search paths: the process-wide scan
+    /// ([`Self::bundled_lib_paths_shared`]), taken on first use.
+    // Cost: O(1) after the first call, which is the scan's O(d),
+    // d = bundled distributions.
+    pub(crate) fn bundled_lib_paths(&self) -> &Arc<Vec<String>> {
+        self.module
+            .bundled_lib_paths
+            .get_or_init(Self::bundled_lib_paths_shared)
     }
 
     /// The process-wide memo behind [`Interpreter::bundled_lib_paths_shared`],
@@ -330,6 +340,28 @@ impl Interpreter {
     }
 
     pub(crate) fn resolve_bundled_lib_paths() -> Vec<String> {
+        let Some(base) = Self::bundle_base() else {
+            return Vec::new();
+        };
+        let Ok(entries) = std::fs::read_dir(&base) else {
+            return Vec::new();
+        };
+        let mut paths: Vec<String> = Vec::new();
+        for entry in entries.flatten() {
+            let lib = entry.path().join("lib");
+            if lib.is_dir() {
+                paths.push(lib.display().to_string());
+            }
+        }
+        paths.sort();
+        paths
+    }
+
+    /// The directory holding the bundled distributions (`MUTSU_BUNDLE_DIR`,
+    /// or the first of the exe-relative candidates that exists), without
+    /// scanning it.
+    // Cost: O(1): an environment read, `current_exe` and a few `stat`s.
+    pub(crate) fn bundle_base() -> Option<std::path::PathBuf> {
         use std::path::PathBuf;
         let base: Option<PathBuf> = if let Ok(dir) = std::env::var("MUTSU_BUNDLE_DIR") {
             Some(PathBuf::from(dir))
@@ -367,21 +399,7 @@ impl Interpreter {
                 candidates.into_iter().find(|c| c.is_dir())
             })
         };
-        let Some(base) = base.filter(|b| b.is_dir()) else {
-            return Vec::new();
-        };
-        let Ok(entries) = std::fs::read_dir(&base) else {
-            return Vec::new();
-        };
-        let mut paths: Vec<String> = Vec::new();
-        for entry in entries.flatten() {
-            let lib = entry.path().join("lib");
-            if lib.is_dir() {
-                paths.push(lib.display().to_string());
-            }
-        }
-        paths.sort();
-        paths
+        base.filter(|b| b.is_dir())
     }
 
     /// Reads `XDG_DATA_HOME` / `HOME` through `%*ENV`, which a program may
@@ -426,8 +444,9 @@ impl Interpreter {
 
             // Rakudo's chain also holds the `core` Installation, whose
             // distribution is the one carrying the core modules; mutsu's is the
-            // bundled Rakudo-Core battery (`bundled_core_distribution`).
-            if self.bundled_core_distribution().is_some()
+            // bundled Rakudo-Core battery (`bundled_core_distribution`, which
+            // is built only when something asks for it).
+            if Self::has_bundled_core_distribution()
                 && let Some(core_dir) = self.default_repo_dir("core")
             {
                 let mut core_attrs = HashMap::new();

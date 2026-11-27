@@ -363,9 +363,11 @@ pub(crate) struct ModuleState {
     /// bundle is the lowest-priority source — an explicit `-I`/`MUTSULIB` path,
     /// a project-local module, or an `mzef`-installed (site-repo) version all
     /// shadow it. This is the batteries "floor + independent-update" mechanism
-    /// (BATTERIES.md §3/§6). Resolved once at startup (exe-relative, or via
-    /// `MUTSU_BUNDLE_DIR`).
-    pub(crate) bundled_lib_paths: std::sync::Arc<Vec<String>>,
+    /// (BATTERIES.md §3/§6). Resolved on first use (exe-relative, or via
+    /// `MUTSU_BUNDLE_DIR`), through [`Interpreter::bundled_lib_paths`]: the
+    /// directory scan was ~5% of a `say "hello"`'s instructions, for a list
+    /// only module loading reads (#19197).
+    pub(crate) bundled_lib_paths: std::sync::OnceLock<std::sync::Arc<Vec<String>>>,
     /// Set while `require` resolves a module: a missing `Test::`-namespace
     /// module must surface as a catchable X::CompUnit::UnsatisfiedDependency
     /// instead of the silent no-op `use Test::Util` relies on.
@@ -834,7 +836,7 @@ impl ModuleState {
             unscoped_import_units: Default::default(),
             operator_import_gen: 0,
             lib_paths: Default::default(),
-            bundled_lib_paths: Interpreter::bundled_lib_paths_shared(),
+            bundled_lib_paths: std::sync::OnceLock::new(),
             require_propagates_missing_module: false,
             preload_modules: Vec::new(),
             pending_dist_selectors: Vec::new(),
