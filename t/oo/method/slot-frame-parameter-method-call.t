@@ -7,7 +7,7 @@ use Test;
 # caller's env, so these pin that nothing leaks into or out of it. Each case
 # repeats so the planned calls are the ones checked.
 
-plan 22;
+plan 25;
 
 class Box { has $.n = 0; method inc { $!n++; self } }
 class P {
@@ -91,3 +91,19 @@ is $c.chars('abcd'), 4, 'chars still answers';
 is $c.lc('Q'), 'q', 'lc still answers';
 is $c.succ('a'), 'b', 'succ on a Str';
 is $s, 'outer', 'the caller variable is still untouched';
+
+# A caller variable of a parameter's name that a closure captured is a shared
+# cell in the caller's env. The slot frame shares that env, so it must not
+# adopt the cell as its parameter's, also for a parameter holding Nil.
+class D {
+    method m($n)     { $n }
+    method k(Str $t) { $t.chars }
+}
+my $d = D.new;
+my $n = 42;
+my $t = 'outer-t';
+my &cl = { $n++; $t ~= '!' };
+cl();
+is (^3).map({ ($d.m(Nil) // 'nil') }).join(','), 'nil,nil,nil', 'a Nil parameter is not the caller\'s captured cell';
+is (^3).map({ $d.k('ab') }).join(','), '2,2,2', 'nor is a Str one';
+is "$n $t", '43 outer-t!', 'the captured caller variables are untouched';

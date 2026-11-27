@@ -153,6 +153,16 @@ impl Interpreter {
         if !self.in_slot_frame_body(code) {
             return None;
         }
+        // A built-in row on an immutable scalar answers as at a `CallMethod`
+        // site (`vm_call_method_site_lane`), on the value: no receiver place.
+        // The static verdict at this op was taken for a variable receiver, so
+        // the names an inline receiver leaves to the full path are refused
+        // here as a `CallMethod` site's verdict would.
+        if !Self::inline_receiver_full_path(Self::const_str(code, name_idx))
+            && let Some(answer) = self.try_value_site_lane(code, ip, name_idx, 0)
+        {
+            return Some(self.finish_call_method_site_lane(code, ip, answer));
+        }
         Some(self.exec_call_method_value_site(code, ip, name_idx, 0, None, false, None))
     }
 

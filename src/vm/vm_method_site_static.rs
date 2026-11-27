@@ -37,6 +37,16 @@ impl Interpreter {
     // indexed load); the first call is O(o + a), o = ops, a = argument
     // descriptors' entries.
     #[inline]
+    /// Whether `name` is one the site lane leaves to the full path when the
+    /// receiver is an inline value rather than a variable
+    /// (`INLINE_RECEIVER_FULL_PATH`): the extra refusal a value call at a
+    /// `CallMethodMut` site needs on top of that site's static verdict
+    /// (`slot_body_value_call`).
+    // Cost: O(1).
+    pub(super) fn inline_receiver_full_path(name: &str) -> bool {
+        INLINE_RECEIVER_FULL_PATH.contains(&name)
+    }
+
     pub(super) fn method_site_static_ok(code: &CompiledCode, ip: usize) -> bool {
         code.method_site_static
             .get_or_init(|| {
