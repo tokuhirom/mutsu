@@ -14,12 +14,7 @@ impl Interpreter {
     /// straight out of boxed slot `n`, so they pay no `Value` clone and drop.
     // Cost: O(1) amortized, plus the generic `nqp::elems` for a non-list operand.
     #[inline]
-    pub(super) fn trir_list_op(
-        &mut self,
-        op: &TrOp,
-        nbase: usize,
-        obase: usize,
-    ) -> Result<(), RuntimeError> {
+    pub(super) fn trir_list_op(&mut self, op: &TrOp, obase: usize) -> Result<(), RuntimeError> {
         match op {
             TrOp::ElemsO => {
                 let v = self.opop();
@@ -53,20 +48,6 @@ impl Interpreter {
             TrOp::PushILocalVoid(n) => {
                 let i = self.ipop();
                 self.trir_push_int_local(obase + *n as usize, i)?;
-            }
-            TrOp::ShiftIStoreLocal {
-                list,
-                slot,
-                bits,
-                signed,
-            } => {
-                let v = self.trir_shift_int_local(obase + *list as usize)?;
-                self.trir.nl[nbase + *slot as usize] =
-                    super::exec_str::wrap_sized(v, *bits, *signed);
-            }
-            TrOp::PushISlotLocalVoid { list, slot } => {
-                let i = self.trir.nl[nbase + *slot as usize];
-                self.trir_push_int_local(obase + *list as usize, i)?;
             }
             _ => {
                 return Err(RuntimeError::new(format!(

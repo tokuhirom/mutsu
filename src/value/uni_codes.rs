@@ -20,6 +20,9 @@
 
 use crate::gc::{ErasedGc, Trace};
 
+/// The capacity a store grows to on its first [`UniCodes::push`].
+const PUSH_START_CAPACITY: usize = 32;
+
 /// A `Uni`'s codepoints: `buf[head..]` is live. The dead prefix left by
 /// [`UniCodes::shift`] is dropped once it outgrows the live part, so it never
 /// holds more slots than the store has live.
@@ -60,7 +63,23 @@ impl UniCodes {
     // Cost: O(1) amortized.
     #[inline]
     pub fn push(&mut self, code: u32) {
+        if self.buf.len() == self.buf.capacity() {
+            self.grow_for_push();
+        }
         self.buf.push(code);
+    }
+
+    /// Make room for at least one more codepoint. A store built by pushing
+    /// starts at [`PUSH_START_CAPACITY`] slots instead of `Vec`'s four: a
+    /// `Uni` filled one `push_i` at a time (JSON::Fast's `unjsonify-string`
+    /// copies every character of an escaped string this way) otherwise paid
+    /// a reallocation at 4, 8, 16 and 32 codepoints.
+    // Cost: O(e) to move the e elements into the larger buffer.
+    #[cold]
+    #[inline(never)]
+    fn grow_for_push(&mut self) {
+        let extra = self.buf.capacity().max(PUSH_START_CAPACITY);
+        self.buf.reserve(extra);
     }
 
     /// Remove the last codepoint (`nqp::pop_i`).
@@ -136,6 +155,21 @@ impl UniCodes {
         self.buf.extend(codes);
     }
 
+    /// Replace the contents with the codepoints of `text`, in one allocation:
+    /// `str::chars` reports a quarter of the byte length as its lower size
+    /// bound, so collecting it grew the buffer several times over.
+    // Cost: O(n), n = bytes of `text`.
+    pub fn replace_with_str(&mut self, text: &str) {
+        self.clear();
+        if text.is_ascii() {
+            self.buf.extend(text.bytes().map(u32::from));
+        } else {
+            self.buf.reserve(text.len());
+            // Codepoints ARE the contents here. str-prim: allow
+            self.buf.extend(text.chars().map(u32::from));
+        }
+    }
+
     // Cost: O(e), e = live elements.
     fn compact(&mut self) {
         if self.head > 0 {
@@ -186,5 +220,31 @@ mod tests {
         assert_eq!(c.as_slice(), &[6, 7, 2, 3, 0, 0]);
         c.resize(2);
         assert_eq!(c.as_slice(), &[6, 7]);
+    }
+
+    #[test]
+    fn replace_with_str_takes_codepoints_in_one_allocation() {
+        let mut c = UniCodes::from_vec(vec![1, 2]);
+        c.shift();
+        c.replace_with_str("a/b");
+        assert_eq!(c.as_slice(), &[97, 47, 98]);
+        c.replace_with_str("\u{E9}\u{1F600}x");
+        assert_eq!(c.as_slice(), &[0xE9, 0x1F600, 0x78]);
+        let long = "https://example.org/".repeat(8);
+        c.replace_with_str(&long);
+        assert_eq!(c.len(), long.len());
+        assert!(c.buf.capacity() >= long.len());
+    }
+
+    #[test]
+    fn push_onto_an_empty_store_reserves_a_starting_capacity() {
+        let mut c = UniCodes::default();
+        c.push(1);
+        assert!(c.buf.capacity() >= super::PUSH_START_CAPACITY);
+        for i in 2..=100 {
+            c.push(i);
+        }
+        assert_eq!(c.len(), 100);
+        assert_eq!(c.get(99), Some(100));
     }
 }

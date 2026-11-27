@@ -7,7 +7,7 @@ use nqp;
 # holder of the Uni has to see the edit. Every expected value here is
 # rakudo 2026.07's.
 
-plan 20;
+plan 23;
 
 my $u := nqp::strtocodes("héllo", nqp::const::NORMALIZE_NFD, nqp::create(NFD));
 is nqp::elems($u), 6, 'strtocodes fills the store with the NFD codepoints';
@@ -57,3 +57,18 @@ nqp::splice($escape, nqp::list_i(92, 34), 1, 1);
 is nqp::strfromcodes($escape), 'a\\"b', 'the escaper splice shape (JSON::Fast str-escape)';
 
 is nqp::atpos_i(nqp::create(Uni), 3), 0, 'reading past the end of an empty Uni gives 0';
+
+# A store filled one push_i at a time grows past its starting capacity, and
+# strfromcodes takes an all-ASCII store and a mixed one alike.
+my $long := nqp::strtocodes('https://example.org/' x 10, nqp::const::NORMALIZE_NFD, nqp::create(NFD));
+my $out := nqp::create(Uni);
+nqp::while(nqp::elems($long), nqp::push_i($out, nqp::shift_i($long)));
+is nqp::elems($out) ~ ' ' ~ (nqp::strfromcodes($out) eq 'https://example.org/' x 10), '200 True',
+  'a 200-codepoint copy loop keeps every codepoint';
+my $mixed := nqp::create(Uni);
+nqp::push_i($mixed, $_) for 0x61, 0xE9, 0x1F600, 0x7A;
+is nqp::strfromcodes($mixed).ords.join(','), '97,233,128512,122',
+  'strfromcodes of a store with non-ASCII codepoints';
+my $ascii := nqp::strtocodes('a/b-c', nqp::const::NORMALIZE_NFD, nqp::create(NFD));
+is nqp::elems($ascii) ~ ' ' ~ nqp::strfromcodes($ascii), '5 a/b-c',
+  'strtocodes and strfromcodes round-trip an ASCII string';
