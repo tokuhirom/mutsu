@@ -509,6 +509,15 @@ impl Trace for super::MatchNode {
     fn drop_gc_edges(&mut self) {
         self.take_attrs_for_gc();
     }
+    /// No edge until the Match is materialized. A `~~` hit hands its Match
+    /// to `$/` and to the expression's result, so dropping the result was a
+    /// survivor-drop on every successful match: a candidate-buffer push
+    /// (~160 instructions, plus a `Weak` that kept the allocation until the
+    /// next drain) for a node the program usually never materializes.
+    // Cost: O(1).
+    fn currently_acyclic(&self) -> bool {
+        self.forced().is_none()
+    }
 }
 
 impl Trace for super::ContainerCell {

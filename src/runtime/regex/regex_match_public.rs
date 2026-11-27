@@ -193,10 +193,11 @@ impl Interpreter {
         //
         // All of that is a function of the tree and the pattern, so it is
         // decided once per tree (`regex_value_memo`).
-        if super::regex_value_memo::regex_value_facts(regex, tree, &pattern).string_path {
+        let facts = super::regex_value_memo::regex_value_facts(regex, tree, &pattern);
+        if facts.string_path {
             return self.regex_match_with_captures(&pattern, text);
         }
-        let parsed = self.parse_regex_value(regex)?;
+        let parsed = self.parse_regex_value_with_facts(&pattern, tree, &facts)?;
         let result = self.regex_match_with_parsed_captures(&parsed, text);
         if let Some(caps) = &result {
             self.persist_embedded_my_decls(caps, &HashSet::new());
