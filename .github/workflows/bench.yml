@@ -155,8 +155,8 @@ jobs:
         # occasionally to track new Rakudo releases (see
         # https://rakudo.org/downloads/rakudo for the current filename).
         env:
-          RAKUDO_VERSION: "2026.07"
-          RAKUDO_ARCHIVE: "rakudo-moar-2026.07-01-linux-x86_64-gcc.tar.gz"
+          RAKUDO_VERSION: "2026.11"
+          RAKUDO_ARCHIVE: "rakudo-moar-2026.11-01-linux-x86_64-gcc.tar.gz"
         run: |
           set +e
           mkdir -p "$HOME/rakudo"
