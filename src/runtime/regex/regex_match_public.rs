@@ -167,9 +167,10 @@ impl Interpreter {
         regex: &Value,
         text: &str,
     ) -> Option<RegexCaptures> {
-        let pattern = match regex.view() {
-            ValueView::Regex(pattern) => pattern.to_string(),
-            ValueView::RegexWithAdverbs(adverbs) => adverbs.pattern.to_string(),
+        // A refcount bump: this runs on every match attempt.
+        let pattern: std::sync::Arc<String> = match regex.view() {
+            ValueView::Regex(pattern) => std::sync::Arc::clone(&pattern),
+            ValueView::RegexWithAdverbs(adverbs) => std::sync::Arc::clone(&adverbs.pattern),
             _ => return None,
         };
         // The value-aware path is intentionally only a leaf for the static
