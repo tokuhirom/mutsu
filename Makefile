@@ -1,4 +1,4 @@
-.PHONY: test lint roast checks check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail check-bench-det check-prims check-exec-route check-dev check-next-issue check-interp-construction check-slow-path check-ast-walkers check-layer-deps check-interp-fields check-frame-fixtures check-name-scans check-adr check-runner-pins check-integration-tests check-frontend-debt adr-index
+.PHONY: test lint roast checks check-roast-whitelist check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-pipefail check-bench-det check-prims check-exec-route check-dev check-next-issue check-interp-construction check-slow-path check-ast-walkers check-layer-deps check-interp-fields check-frame-fixtures check-name-scans check-adr check-runner-pins check-rakudo-pin check-integration-tests check-frontend-debt adr-index
 
 # Recipes run under bash with `pipefail`, because the two suite recipes pipe
 # into `tee` and POSIX sh reports only the *last* command's status -- `tee`'s,
@@ -61,7 +61,7 @@ test: checks
 # and `scripts/dev gate` runs them as its first stage (`checks`), ahead of
 # lint, so a misplaced `t/` file or a ratchet overshoot fails the gate in
 # seconds instead of after `make lint` and the release build.
-checks: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-interp-construction check-slow-path check-ast-walkers check-layer-deps check-interp-fields check-frame-fixtures check-bench-det check-prims check-exec-route check-dev check-next-issue check-adr check-runner-pins check-integration-tests check-frontend-debt
+checks: check-pipefail check-value-wall check-flaky-list check-t-layout check-magic-keys check-panic-surface check-name-scans check-interp-construction check-slow-path check-ast-walkers check-layer-deps check-interp-fields check-frame-fixtures check-bench-det check-prims check-exec-route check-dev check-next-issue check-adr check-runner-pins check-rakudo-pin check-integration-tests check-frontend-debt
 
 # Every configuration mutsu ships, linted the way CI lints it. A warning only
 # exists in the configuration you actually compile, so the default host build
@@ -234,6 +234,13 @@ check-adr:
 check-runner-pins:
 	scripts/check-runner-pins.sh --self-test
 	scripts/check-runner-pins.sh
+
+# `.rakudo-version` is the single rakudo release the oracle, the bench baseline
+# and the ecosystem sweep install; nothing else names one. Also run by CI's
+# always-on `changes` job, like check-runner-pins.
+check-rakudo-pin:
+	scripts/check-rakudo-pin.sh --self-test
+	scripts/check-rakudo-pin.sh
 
 # tests/: `autotests = false` builds the integration tests as two binaries whose
 # roots declare every file as a module, so a file neither root declares would

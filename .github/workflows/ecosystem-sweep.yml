@@ -107,7 +107,7 @@ on:
         type: string
         default: '120'
       raku_version:
-        description: 'Pin the rakudo release (e.g. 2026.07); empty = newest prebuilt'
+        description: 'Pin the rakudo release (e.g. 2026.07); empty = the one in .rakudo-version'
         type: string
         default: ''
       rollup:
@@ -240,21 +240,22 @@ jobs:
           retention-days: 1
           if-no-files-found: error
 
-      # Resolve the rakudo release ONCE. `install-raku.sh` otherwise picks "the
-      # newest prebuilt right now", which for a multi-hour sweep can differ
-      # between the first shard and the last -- a moving denominator inside one
-      # measurement.
+      # Resolve the rakudo release ONCE, and to a concrete archive URL: the
+      # release defaults to the repository's single pin (`.rakudo-version`,
+      # shared with the bench baseline and the agents' oracle), and resolving
+      # it here also fixes the archive's build revision, which rakudo.org could
+      # otherwise bump between the first shard and the last -- a moving
+      # denominator inside one measurement.
       - name: Resolve the rakudo release to pin
         id: raku
         env:
           RAKU_VERSION: ${{ inputs.raku_version }}
         run: |
           set -euo pipefail
-          if [ -n "$RAKU_VERSION" ]; then
-            url=$(.agents/skills/install-raku/install-raku.sh --print-url --version "$RAKU_VERSION")
-          else
-            url=$(.agents/skills/install-raku/install-raku.sh --print-url)
+          if [ -z "$RAKU_VERSION" ]; then
+            RAKU_VERSION=$(.agents/skills/install-raku/install-raku.sh --print-pin)
           fi
+          url=$(.agents/skills/install-raku/install-raku.sh --print-url --version "$RAKU_VERSION")
           version=$(printf '%s\n' "$url" | sed -nE 's#.*/rakudo-moar-([0-9]{4}\.[0-9]+(\.[0-9]+)?)-.*#\1#p')
           if [ -z "$version" ]; then
             echo "::error::could not read a rakudo version out of $url"
