@@ -73,6 +73,11 @@ pub(crate) struct VmCallFrame {
     /// and the stack depth. Every other field is empty and was never moved
     /// out of the interpreter, so `pop_call_frame` must not restore it.
     pub slot: bool,
+    /// The address of the slot frame's body (`CompiledCode`), 0 for every
+    /// other frame: lets an op tell that it runs in the slot frame's own body
+    /// rather than in code a callee runs on top of it without a frame of its
+    /// own (`Interpreter::in_slot_frame_body`).
+    pub slot_body: usize,
 }
 
 /// The part of a [`VmCallFrame`] that saves caller registers which are empty

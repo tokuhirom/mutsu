@@ -147,6 +147,7 @@ impl Interpreter {
                 self.topic_state.active_loop_rw_param_names.push_frame(),
             ),
             slot: false,
+            slot_body: 0,
         };
         self.call_frames.push(frame);
     }
@@ -178,6 +179,7 @@ impl Interpreter {
                 self.topic_state.active_loop_rw_param_names.push_frame(),
             ),
             slot: false,
+            slot_body: 0,
         };
         self.call_frames.push(frame);
     }

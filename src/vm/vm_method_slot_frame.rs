@@ -59,6 +59,9 @@ pub(super) fn slot_frame_body_ok(
     {
         return false;
     }
+    let plan = def.frame_plan(owner, cc);
+    let is_param_slot =
+        |slot: u32| matches!(plan.locals.get(slot as usize), Some(LocalInit::Param(_)));
     let ops_ok = cc.ops.iter().all(|op| match op {
         OpCode::LoadConst(_)
         | OpCode::LoadNil
@@ -74,26 +77,85 @@ pub(super) fn slot_frame_body_ok(
         // builds its own frame over the unchanged caller env. With no
         // arguments, no slot of this frame is passed to the callee, so no
         // readonly parameter can be bound `is rw` (ADR-18393 D2
-        // `READONLY_OBS`). A call on a *variable* (`CallMethodMut`) stays
-        // refused: its writeback reads and writes the receiver by name.
+        // `READONLY_OBS`).
         OpCode::CallMethod {
             arity: 0,
             modifier_idx: None,
             arg_sources_idx: None,
             ..
         } => true,
+        // The same call on one of this method's parameters (`$s.chars`).
+        // `CallMethodMut` treats its receiver as a variable it may rebind,
+        // which it does by name; a lean parameter is a readonly binding that
+        // nothing may rebind, so in a slot frame this op runs as the call on
+        // the parameter's value it is (`Interpreter::slot_body_value_call`),
+        // and never reaches the by-name machinery. `.VAR` asks about the
+        // variable itself and keeps the lean frame (#19266).
+        OpCode::CallMethodMut {
+            name_idx,
+            arity: 0,
+            target_slot: Some(slot),
+            modifier_idx: None,
+            quoted: false,
+            arg_sources_idx: None,
+            ..
+        } => is_param_slot(*slot) && cc.const_sym(*name_idx) != crate::sym!("VAR"),
         OpCode::GetLocal(idx) => cc.local_read_plain(*idx as usize),
         _ => false,
     });
     ops_ok
-        && def
-            .frame_plan(owner, cc)
+        && plan
             .locals
             .iter()
             .all(|init| !matches!(init, LocalInit::Outer))
 }
 
 impl Interpreter {
+    /// Whether the op now running belongs to the body of the innermost slot
+    /// frame, not to code a callee runs on top of it without a frame of its
+    /// own.
+    // Cost: O(1).
+    #[inline]
+    pub(super) fn in_slot_frame_body(&self, code: &CompiledCode) -> bool {
+        self.call_frames
+            .last()
+            .is_some_and(|f| f.slot_body == std::ptr::from_ref(code) as usize)
+    }
+
+    /// A `CallMethodMut` on one of the slot frame's own parameters, run as the
+    /// call on the parameter's value it is. `slot_frame_body_ok` admitted the
+    /// op only in that shape: no arguments, no modifier, an unquoted name that
+    /// is not `VAR`, and a receiver slot that is a lean (readonly, plain `$`)
+    /// parameter. Such a binding cannot be rebound, so the variable half of
+    /// `CallMethodMut` (the rebind check, the writeback, the raw-invocant
+    /// cell, all by name) has nothing to do. In a slot frame, which runs on
+    /// its caller's env, those by-name steps would reach the caller's
+    /// same-named variable instead (#19266). `None` for every other op.
+    // Cost: O(1) to decline.
+    #[inline]
+    pub(super) fn slot_body_value_call(
+        &mut self,
+        code: &CompiledCode,
+        ip: usize,
+    ) -> Option<Result<(), RuntimeError>> {
+        let OpCode::CallMethodMut {
+            name_idx,
+            arity: 0,
+            target_slot: Some(_),
+            modifier_idx: None,
+            quoted: false,
+            arg_sources_idx: None,
+            ..
+        } = code.ops[ip]
+        else {
+            return None;
+        };
+        if !self.in_slot_frame_body(code) {
+            return None;
+        }
+        Some(self.exec_call_method_value_site(code, ip, name_idx, 0, None, false, None))
+    }
+
     /// The per-call half of the slot frame's admission (module docs).
     // Cost: O(1).
     #[inline]
@@ -148,7 +210,7 @@ impl Interpreter {
         // writes no name (module docs), so it runs on the caller's handle.
         #[cfg(debug_assertions)]
         let entry_env = self.env().clone();
-        self.push_slot_call_frame();
+        self.push_slot_call_frame(cc);
         let saved_stack_depth = self.stack.len();
         self.push_method_class_sym(owner_sym, Some(false));
 
@@ -255,9 +317,15 @@ impl Interpreter {
         self.dispatch.method_dispatch_pure = true;
         // The env handle was never replaced, so there is nothing to restore.
         let _frame = self.pop_call_frame();
+        // Only a body without calls can promise this: a callee's writes, and
+        // those of a caller's CATCH run inline at a throw in the body
+        // (ADR-0072, `write_throw_env`), land in the env the frame shares with
+        // its caller. That is where the lean frame's exit merge hands them,
+        // so the handle may move. The body's own ops still write no name:
+        // `slot_frame_body_ok` admits none that does.
         #[cfg(debug_assertions)]
         debug_assert!(
-            self.env().ptr_eq(&entry_env),
+            cc.has_calls || self.env().ptr_eq(&entry_env),
             "slot frame: the env handle changed under a slot frame (missing ADR-18393 D2 refusal)"
         );
 
@@ -279,7 +347,7 @@ impl Interpreter {
     /// line, the slot window and the stack depth. Nothing else is moved out
     /// of the interpreter, which `VmCallFrame::slot` tells `pop_call_frame`.
     // Cost: O(1).
-    fn push_slot_call_frame(&mut self) {
+    fn push_slot_call_frame(&mut self, body: &CompiledCode) {
         crate::vm::vm_poll::poll(crate::gc::SafepointKind::Call, 0);
         let frame = VmCallFrame {
             saved_env: self.env().clone(),
@@ -296,6 +364,7 @@ impl Interpreter {
             saved_active_loop_param_names: None,
             saved_active_loop_rw_param_names: None,
             slot: true,
+            slot_body: std::ptr::from_ref(body) as usize,
         };
         self.call_frames.push(frame);
     }
