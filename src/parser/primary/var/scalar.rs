@@ -61,6 +61,32 @@ pub(in crate::parser) fn starts_named_placeholder(rest: &str) -> bool {
         .is_some_and(is_raku_identifier_start)
 }
 
+/// Whether `rest`, the text after a `$` that `var_name` read as the bare
+/// anonymous `__ANON_STATE#`, makes that `$` an assignment target of its own,
+/// so a statement parser should mint it a per-occurrence state name.
+///
+/// Not when the `$` is really the sigil of something else:
+/// - a named placeholder (`$:foo`, see [`starts_named_placeholder`]);
+/// - a positional match variable (`$0`, `$1`): `var_name` has no arm for a
+///   digit, so it hands back `__ANON_STATE#` with the digits still in `rest`.
+///   A speculative assignment parse of `$a += $0` reached the `$0` this way,
+///   and the minted name stayed recorded in the scope after the attempt
+///   failed, declaring a `state` nobody wrote. The enclosing block then reset
+///   that state on every entry: about 3.5k instructions per iteration of a
+///   loop whose body reads `$0`;
+/// - a `.` / subscript follows: there the collapsed `__ANON_STATE#` is
+///   load-bearing (`$.attr op= …` resolves it to `self`; `$<x>` keeps its
+///   historical target).
+// Cost: O(1).
+pub(in crate::parser) fn bare_dollar_is_assign_target(rest: &str) -> bool {
+    !starts_named_placeholder(rest)
+        && !rest.as_bytes().first().is_some_and(u8::is_ascii_digit)
+        && !matches!(
+            rest.trim_start().as_bytes().first(),
+            Some(b'.') | Some(b'[') | Some(b'{') | Some(b'<')
+        )
+}
+
 /// Build a string concatenation expression: left ~ right
 fn concat_exprs(left: Expr, right: Expr) -> Expr {
     Expr::Binary {
