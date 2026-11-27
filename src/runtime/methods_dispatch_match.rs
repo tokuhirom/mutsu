@@ -24,7 +24,7 @@ impl Interpreter {
     /// 0-arg `.say`/`.print`/`.put`/`.printf` "stringify the invocant" behavior
     /// from shadowing the cat's own (X::NYI) write methods.
     pub(crate) fn is_io_cathandle(v: &Value) -> bool {
-        matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == "IO::CatHandle")
+        matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("IO::CatHandle"))
     }
 
     /// Dispatch methods by name - first group (string, IO, coercion, misc).
@@ -62,7 +62,7 @@ impl Interpreter {
         // `Supply:D:`); calling them on the Supply type object is an error in
         // Rakudo, not `Any`'s method.
         if matches!(method, "classify" | "categorize")
-            && matches!(target.view(), ValueView::Package(name) if name == "Supply")
+            && matches!(target.view(), ValueView::Package(name) if name == crate::sym!("Supply"))
         {
             return Some(Err(RuntimeError::new(format!(
                 "Cannot call '{method}' as a class method on Supply (requires a defined invocant)"

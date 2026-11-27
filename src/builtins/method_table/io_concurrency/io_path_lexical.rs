@@ -115,7 +115,7 @@ fn str_interp_row(
     _named: Named<'_>,
 ) -> Option<Result<Value, RuntimeError>> {
     let ctx = PathCtx::of(target)?;
-    if ctx.class == "Distribution::Resource" {
+    if ctx.class == crate::sym!("Distribution::Resource") {
         interp.check_deprecation_for_method(
             "Str",
             "Distribution::Resource",
@@ -132,7 +132,7 @@ fn str_interp_row(
 // Cost: O(p), p = chars of the path.
 pub(crate) fn resource_stringy(target: &Value) -> Option<Value> {
     let ctx = PathCtx::of(target)?;
-    if ctx.class != "Distribution::Resource" {
+    if ctx.class != crate::sym!("Distribution::Resource") {
         return None;
     }
     crate::runtime::deprecation::record_deprecation(
@@ -182,7 +182,7 @@ fn io_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>
         return Some(Ok(Value::slip(Vec::new())));
     }
     // A `Distribution::Resource` answers the plain `IO::Path` it stands for.
-    let class = if ctx.class == "Distribution::Resource" {
+    let class = if ctx.class == crate::sym!("Distribution::Resource") {
         Symbol::intern("IO::Path")
     } else {
         ctx.class
@@ -200,7 +200,7 @@ fn platform_library_name_row(
     args: &[Value],
 ) -> Option<Result<Value, RuntimeError>> {
     let ctx = PathCtx::of(target)?;
-    if ctx.class != "Distribution::Resource" {
+    if ctx.class != crate::sym!("Distribution::Resource") {
         return None;
     }
     io_row(target, args)

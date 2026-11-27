@@ -24,7 +24,7 @@ use num_traits::Signed;
 /// does (Rakudo's `multi method pick(Whatever)` takes both).
 // Cost: O(1).
 fn is_whatever_type(arg: &Value) -> bool {
-    matches!(arg.view(), ValueView::Package(name) if name == "Whatever")
+    matches!(arg.view(), ValueView::Package(name) if name == crate::sym!("Whatever"))
 }
 
 /// Runs `f` on `arg`, with the `Whatever` type object replaced by `*`.

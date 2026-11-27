@@ -1,6 +1,7 @@
 use super::regex_parse::*;
 use super::regex_parse_charclass_alts::CharClassAltTally;
 use super::*;
+use super::regex_parser::RegexParser;
 use unicode_normalization::UnicodeNormalization;
 
 thread_local! {
@@ -26,12 +27,12 @@ enum TokenClassFold {
     Inline(Vec<RegexPattern>),
 }
 
-impl Interpreter {
+impl RegexParser<'_> {
     pub(super) fn parse_raku_char_class(&self, inner: &str, negated: bool) -> Option<CharClass> {
         self.parse_raku_char_class_tallied(inner, negated, &mut CharClassAltTally::default())
     }
 
-    /// [`Interpreter::parse_raku_char_class`], also recording in `tally` how
+    /// [`crate::runtime::regex_parser::RegexParser::parse_raku_char_class`], also recording in `tally` how
     /// many alternatives Rakudo would compile the enumeration into (see
     /// `regex_parse_charclass_alts`).
     pub(super) fn parse_raku_char_class_tallied(
@@ -850,12 +851,13 @@ impl Interpreter {
     /// candidates become inline alternation branches. Sound because the parse
     /// cache is keyed by package and invalidated by `TOKEN_DEFS_GEN`.
     fn token_class_fold(&self, name: &str) -> Option<TokenClassFold> {
-        let pkg = self.current_package();
+        let rt = self.rt()?;
+        let pkg = rt.current_package();
         if pkg.is_empty() {
             return None;
         }
         let candidates =
-            self.resolve_token_patterns_static_in_pkg(name, crate::symbol::Symbol::intern(&pkg));
+            rt.resolve_token_patterns_static_in_pkg(name, crate::symbol::Symbol::intern(&pkg));
         if candidates.is_empty() {
             return None;
         }
@@ -1115,20 +1117,12 @@ impl Interpreter {
                     // Check if this is a known built-in character class name
                     let is_known_builtin = Self::is_builtin_char_class_name(class_name);
                     // Check if the name resolves as a grammar token in the current package
-                    let is_grammar_token = !is_known_builtin
-                        && !self.current_package().is_empty()
-                        && (self.resolve_token_defs(class_name).is_some()
-                            || self.has_proto_token_in_pkg(
-                                class_name,
-                                crate::symbol::Symbol::intern(&self.current_package()),
-                            ));
+                    let is_grammar_token =
+                        !is_known_builtin && self.grammar_defines_token_or_proto(class_name);
                     // A grammar's own token of a built-in's name replaces the
                     // built-in, so a negation of it must resolve at match time.
-                    let overrides_builtin = is_known_builtin
-                        && !crate::qualified::is_global_package(crate::symbol::Symbol::intern(
-                            &self.current_package(),
-                        ))
-                        && self.resolve_token_defs(class_name).is_some();
+                    let overrides_builtin =
+                        is_known_builtin && self.grammar_overrides_builtin(class_name);
                     if !is_known_builtin && !is_grammar_token {
                         // "No such method" is a runtime resolution failure, not a
                         // parse-time syntax error: such patterns are meant to die

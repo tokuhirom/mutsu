@@ -76,7 +76,7 @@ fn boot_field(ex: &Value, key: &str) -> Option<Value> {
             class_name,
             attributes,
             ..
-        } if class_name == BOOT_EXCEPTION => {
+        } if class_name == crate::sym!(BOOT_EXCEPTION) => {
             Some(attributes.as_map().get(key).cloned().unwrap_or(Value::NIL))
         }
         _ => None,
@@ -151,7 +151,7 @@ impl Interpreter {
                         class_name,
                         attributes,
                         ..
-                    } if class_name == BOOT_EXCEPTION => {
+                    } if class_name == crate::sym!(BOOT_EXCEPTION) => {
                         attributes.bind_attr_through(key, value.clone());
                         Ok(value)
                     }

@@ -62,7 +62,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "Format" => attributes
+            } if class_name == crate::sym!("Format") => attributes
                 .as_map()
                 .get(crate::value::numeric_payload::STR_PAYLOAD)
                 .filter(|payload| matches!(payload.view(), ValueView::Str(_)))

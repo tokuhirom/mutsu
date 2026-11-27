@@ -105,7 +105,7 @@ impl Interpreter {
             return Some(result);
         }
         if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name == "IO::Handle"
+            && class_name == crate::sym!("IO::Handle")
             && matches!(method, "print" | "put" | "say" | "printf" | "print-nl")
             && !self.has_user_method_sym("IO::Handle", method_sym)
             && self
@@ -160,7 +160,7 @@ impl Interpreter {
         if method != "defined"
             || !args.is_empty()
             || target.is_nil()
-            || class_sym == "Nil"
+            || class_sym == crate::sym!("Nil")
             || self.grammar_has_user_method_memo(class_sym, method_sym)
             || match self.package_has_applicable_user_method(target, method, args) {
                 Ok(applies) => applies,

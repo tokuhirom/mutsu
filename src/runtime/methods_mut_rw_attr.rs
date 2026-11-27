@@ -6,7 +6,7 @@ impl Interpreter {
     pub(crate) fn stmt_contains_return_rw_call(stmt: &Stmt) -> bool {
         match stmt {
             Stmt::Expr(expr) | Stmt::Return(expr) => {
-                matches!(expr, Expr::Call { name, .. } if name == "return-rw")
+                matches!(expr, Expr::Call { name, .. } if *name == crate::sym!("return-rw"))
             }
             _ => false,
         }
@@ -38,7 +38,7 @@ impl Interpreter {
                 Expr::HashVar(name) if name.starts_with('!') && name.len() > 1 => {
                     Some((name[1..].to_string(), '%'))
                 }
-                Expr::Call { name, args, .. } if name == "return-rw" && args.len() == 1 => {
+                Expr::Call { name, args, .. } if *name == crate::sym!("return-rw") && args.len() == 1 => {
                     match &args[0] {
                         Expr::Var(attr) if attr.starts_with('!') && attr.len() > 1 => {
                             Some((attr[1..].to_string(), '$'))
@@ -383,7 +383,7 @@ impl Interpreter {
         };
         // Unwrap `return-rw EXPR`.
         let expr = match expr {
-            Expr::Call { name, args, .. } if name == "return-rw" && args.len() == 1 => &args[0],
+            Expr::Call { name, args, .. } if *name == crate::sym!("return-rw") && args.len() == 1 => &args[0],
             other => other,
         };
         if let Expr::Index {
@@ -418,7 +418,7 @@ impl Interpreter {
             _ => return None,
         };
         let expr = match expr {
-            Expr::Call { name, args, .. } if name == "return-rw" && args.len() == 1 => &args[0],
+            Expr::Call { name, args, .. } if *name == crate::sym!("return-rw") && args.len() == 1 => &args[0],
             other => other,
         };
         if let Expr::Index {

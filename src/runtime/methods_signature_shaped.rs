@@ -31,7 +31,7 @@ impl Interpreter {
                     // Enum type as shape: use the number of enum variants
                     if let Some(variants) = self.registry().enum_types.get(&name.resolve()) {
                         vec![Value::int(variants.len() as i64)]
-                    } else if name == "Bool" {
+                    } else if name == crate::sym!("Bool") {
                         // Bool is a builtin enum with 2 values (False, True)
                         vec![Value::int(2)]
                     } else {
@@ -80,7 +80,7 @@ impl Interpreter {
                 ValueView::Package(name) => {
                     if let Some(variants) = self.registry().enum_types.get(&name.resolve()) {
                         variants.len()
-                    } else if name == "Bool" {
+                    } else if name == crate::sym!("Bool") {
                         2
                     } else {
                         return Ok(None);

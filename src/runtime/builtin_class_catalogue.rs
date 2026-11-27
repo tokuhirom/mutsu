@@ -79,7 +79,7 @@ const EAGER_PARENTS: &[(&str, &str)] = &[
 // ----- compile-time layout ------------------------------------------------
 
 // Cost: O(n), n = bytes of the row data; compile time only.
-const fn count_rows(rows: &[u8]) -> usize {
+pub(super) const fn count_rows(rows: &[u8]) -> usize {
     let mut n = 0;
     let mut i = 0;
     while i < rows.len() {
@@ -96,7 +96,7 @@ const fn count_rows(rows: &[u8]) -> usize {
 }
 
 // Cost: O(n), n = bytes of the row data; compile time only.
-const fn row_starts<const N: usize>(rows: &[u8]) -> [u32; N] {
+pub(super) const fn row_starts<const N: usize>(rows: &[u8]) -> [u32; N] {
     let mut out = [0u32; N];
     let mut row = 1;
     let mut i = 0;
@@ -113,7 +113,7 @@ const fn row_starts<const N: usize>(rows: &[u8]) -> [u32; N] {
 // Cost: O(n), n = bytes of the row data; compile time only. Also checks that
 // every row has three tab-separated fields and that the names are strictly
 // increasing (the binary search below relies on it).
-const fn name_ends<const N: usize>(rows: &[u8]) -> [u32; N] {
+pub(super) const fn name_ends<const N: usize>(rows: &[u8]) -> [u32; N] {
     let starts = row_starts::<N>(rows);
     let mut out = [0u32; N];
     let mut row = 0;

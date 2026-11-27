@@ -176,7 +176,7 @@ impl Interpreter {
         }
         // `NQPMu` (the bootstrap type of an unbound `my ::T $x`) has no `Mu`
         // methods beyond the meta-object ones every object answers.
-        if matches!(target.view(), ValueView::Package(name) if name == "NQPMu")
+        if matches!(target.view(), ValueView::Package(name) if name == crate::sym!("NQPMu"))
             && !matches!(method, "WHAT" | "HOW" | "WHO" | "VAR" | "defined")
             && !method.starts_with('^')
         {
@@ -948,7 +948,7 @@ impl Interpreter {
             && self
                 .class_mro(&class_name.resolve())
                 .iter()
-                .any(|name| name == "DateTime" || name == "Date")
+                .any(|name| *name == crate::sym!("DateTime") || *name == crate::sym!("Date"))
             && let Some(formatter) = attributes.as_map().get("formatter")
         {
             let saved_env = self.env().clone();
@@ -1010,7 +1010,7 @@ impl Interpreter {
         // `Attribute` rows answer it. The subclass has no dispatch shape, so
         // the rows are found by their owner, after its own methods declined.
         if let ValueView::Instance { class_name, .. } = target.view()
-            && class_name != "Attribute"
+            && class_name != crate::sym!("Attribute")
             && crate::builtins::method_table::owner_declares("Attribute", Symbol::intern(method))
             && self
                 .classhow_mro_unhidden_names(&target)
@@ -1072,7 +1072,7 @@ impl Interpreter {
         // found by owner from this entry as well as by their shapes.
         if let Some(owner) = match target.view() {
             ValueView::Instance { .. } if Self::format_string_of(&target).is_some() => Some("Format"),
-            ValueView::Package(name) if name == "Formatter" && !self.has_class("Formatter") => {
+            ValueView::Package(name) if name == crate::sym!("Formatter") && !self.has_class("Formatter") => {
                 Some("Formatter")
             }
             _ => None,
@@ -1127,7 +1127,7 @@ impl Interpreter {
             && let ValueView::Mixin(inner, _) = target.view()
             && matches!(
                 inner.view(),
-                ValueView::Instance { class_name, .. } if class_name == "Variable"
+                ValueView::Instance { class_name, .. } if class_name == crate::sym!("Variable")
             )
             && !self.mixin_composes_method(&target, method)
         {
@@ -1534,10 +1534,7 @@ impl Interpreter {
         // exactly the flags the named arguments set (the others read False).
         if method == "new"
             && let ValueView::Package(name) = target.view()
-            && matches!(
-                name.as_str(),
-                "Metamodel::Archetypes" | "Perl6::Metamodel::Archetypes"
-            )
+            && crate::sym_in!(name, "Metamodel::Archetypes" | "Perl6::Metamodel::Archetypes")
         {
             let mut attrs = std::collections::HashMap::new();
             for arg in &args {
@@ -1557,7 +1554,7 @@ impl Interpreter {
             attributes,
             ..
         } = target.view()
-            && class_name == "Perl6::Metamodel::Archetypes"
+            && class_name == crate::sym!("Perl6::Metamodel::Archetypes")
             && matches!(
                 method,
                 "composable"
@@ -1970,7 +1967,7 @@ impl Interpreter {
                     && !(method == "gist"
                         && (inner.instance_is_exception_by_name()
                             || self.class_mro(&class_name.resolve()).iter().any(|owner| {
-                                owner == "Exception" || owner == "Failure"
+                                *owner == crate::sym!("Exception") || *owner == crate::sym!("Failure")
                             })))
                     && let Some(result) = self.default_instance_repr_with_mixin(
                         inner.as_ref(),

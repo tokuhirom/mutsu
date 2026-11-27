@@ -418,7 +418,7 @@ pub(crate) fn sort_result_to_ordering(result: &Value) -> std::cmp::Ordering {
         ValueView::Bool(false) => std::cmp::Ordering::Less,
         ValueView::Enum {
             enum_type, value, ..
-        } if enum_type == "Order" => value.as_i64().cmp(&0),
+        } if enum_type == crate::sym!("Order") => value.as_i64().cmp(&0),
         _ => std::cmp::Ordering::Equal,
     }
 }

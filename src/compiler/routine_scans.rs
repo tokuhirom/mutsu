@@ -24,7 +24,7 @@ impl<'ast> Visit<'ast> for ReturnRwScan {
             return;
         }
         match stmt {
-            Stmt::Call { name, .. } if name == "return-rw" => self.found = true,
+            Stmt::Call { name, .. } if *name == crate::sym!("return-rw") => self.found = true,
             // A nested routine or package returns from itself; a phaser's
             // value is not the routine's.
             Stmt::Phaser { .. } | Stmt::DocPhaser(_) => {}
@@ -38,8 +38,8 @@ impl<'ast> Visit<'ast> for ReturnRwScan {
             return;
         }
         match expr {
-            Expr::Call { name, .. } if name == "return-rw" => self.found = true,
-            Expr::MethodCall { name, .. } if name == "return-rw" => self.found = true,
+            Expr::Call { name, .. } if *name == crate::sym!("return-rw") => self.found = true,
+            Expr::MethodCall { name, .. } if *name == crate::sym!("return-rw") => self.found = true,
             // A code object's body is analysed as a routine of its own when
             // it is compiled; a lazy `gather` returns nothing to the routine.
             e if is_code_object(e) => {}
@@ -93,11 +93,11 @@ impl<'ast> Visit<'ast> for NonNilReturnScan {
             return;
         }
         match expr {
-            Expr::Call { name, args, .. } if name == "return" && args.len() <= 1 => {
+            Expr::Call { name, args, .. } if *name == crate::sym!("return") && args.len() <= 1 => {
                 self.check(args.first())
             }
             // `return 1, 2` returns a list: never Nil.
-            Expr::Call { name, args, .. } if name == "return" && args.len() > 1 => {
+            Expr::Call { name, args, .. } if *name == crate::sym!("return") && args.len() > 1 => {
                 self.found = true
             }
             _ => walk_expr(self, expr),

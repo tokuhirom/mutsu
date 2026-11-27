@@ -295,7 +295,7 @@ impl Interpreter {
                     }
                     _ => false,
                 };
-                if matches!(arg0.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+                if matches!(arg0.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("Failure"))
                 {
                     return Err(RuntimeError::new("Exception"));
                 }
@@ -369,7 +369,7 @@ impl Interpreter {
         if is_set_op {
             for arg in &args {
                 if let ValueView::Instance { class_name, .. } = arg.view()
-                    && class_name == "Failure"
+                    && class_name == crate::sym!("Failure")
                 {
                     return Err(RuntimeError::new("Exception"));
                 }

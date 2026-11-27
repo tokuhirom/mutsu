@@ -18,7 +18,7 @@ impl Interpreter {
             if let ValueView::Pair(key, value) = arg.view() {
                 match key.as_str() {
                     "as" => {
-                        as_str = matches!(value.view(), ValueView::Package(name) if name == "Str")
+                        as_str = matches!(value.view(), ValueView::Package(name) if name == crate::sym!("Str"))
                     }
                     "c" | "continue" | "p" | "pos" => return false,
                     _ => {}

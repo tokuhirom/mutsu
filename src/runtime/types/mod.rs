@@ -1681,7 +1681,7 @@ pub(crate) fn subset_inline_predicate_shape(
 pub(crate) fn binds_as_code_variable(value: &Value) -> bool {
     match value.view() {
         ValueView::Sub(_) | ValueView::WeakSub(_) | ValueView::Routine { .. } => true,
-        ValueView::Package(name) => name == "Callable",
+        ValueView::Package(name) => name == crate::sym!("Callable"),
         _ => false,
     }
 }

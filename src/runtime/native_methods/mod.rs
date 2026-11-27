@@ -274,7 +274,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == "utf16" => {
+            } if class_name == crate::sym!("utf16") => {
                 if let Some(items) = crate::value::value_buf::buf_elems(&attributes) {
                     let use_be = matches!(normalized.as_str(), "utf16be" | "utf-16be");
                     let mut bytes = Vec::with_capacity(items.len() * 2);
@@ -648,7 +648,7 @@ impl Interpreter {
                     attributes: opened_attrs,
                     ..
                 } = opened.view()
-                    && opened_class == "IO::Handle"
+                    && opened_class == crate::sym!("IO::Handle")
                 {
                     let mut merged = attributes.clone();
                     for (key, value) in opened_attrs.as_map().iter() {

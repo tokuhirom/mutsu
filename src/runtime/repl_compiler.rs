@@ -125,7 +125,7 @@ impl Interpreter {
                 class_name,
                 attributes,
                 ..
-            } if class_name == CONTEXT_CLASS => attributes
+            } if class_name == crate::sym!(CONTEXT_CLASS) => attributes
                 .as_map()
                 .get(CONTEXT_ID_ATTR)
                 .map(|v| crate::runtime::to_int(v) as usize),

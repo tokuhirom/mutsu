@@ -84,7 +84,7 @@ impl Interpreter {
         // $junction ~~ Junction should return True (a Junction isa Junction).
         // Also applies to Mu (the supertype of Junction).
         if matches!(left.view(), ValueView::Junction { .. })
-            && matches!(right.view(), ValueView::Package(name) if matches!(name.as_str(), "Junction" | "Mu"))
+            && matches!(right.view(), ValueView::Package(name) if crate::sym_in!(name, "Junction" | "Mu"))
         {
             return self.smart_match_op(left, right, rhs_is_match_regex);
         }

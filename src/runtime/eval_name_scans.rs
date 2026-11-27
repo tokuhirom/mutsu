@@ -139,7 +139,7 @@ impl<'ast> Visit<'ast> for ModuleNames {
     // `require Module` declares the name `Module` for the statements after it.
     fn visit_expr(&mut self, expr: &'ast Expr) {
         if let Expr::Call { name, args, .. } = expr
-            && name.as_str() == "require"
+            && *name == crate::sym!("require")
             && let Some(Expr::Literal(module)) = args.first()
             && let crate::value::ValueView::Package(module) = module.view()
         {

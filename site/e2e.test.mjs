@@ -92,18 +92,17 @@ const benchRows = [
   'date\tcommit\tbenchmark\tmutsu_median_s\tmutsu_min_s\traku_median_s\tratio_mutsu_over_raku\truns\trunner\trakudo'
     + '\trakupp_median_s\tratio_mutsu_over_rakupp\trakupp',
 ];
-// 24 commits, enough for the robust figures (a median of the last 10 against
-// the 10 before):
-// - bench-fib halves at commit 12, a step far outside its noise, so its trend
-//   is shown; it loses to rakupp (1.10x) and has no tracking entry;
-// - bench-hash jitters by 1% around a flat line, so it has no trend; it beats
-//   both references;
-// - bench-json-fast loses only to rakupp, whose ratio there is not engine
-//   against engine (its tracking entry is the real one in
-//   benchmarks/bench-tracking.toml).
+// 24 commits, more than the 10 the robust figures (medians) read:
+// - bench-fib halves at commit 12; it loses to rakupp (1.10x) and has no
+//   tracking entry;
+// - hash-access jitters by 1% around a flat line; it loses
+//   to rakupp (1.05x) and is tracked (its entry is the real one in
+//   benchmarks/bench-tracking.toml);
+// - bench-json-fast is slower than rakupp only because rakupp parses JSON
+//   natively, which its note says: that is not a loss.
 const benchSpecs = [
   ['bench-fib', (i) => (i < 12 ? 0.2 : 0.1), '1.10'],
-  ['bench-hash', (i) => 0.04 * (i % 2 ? 1.01 : 0.99), '0.90'],
+  ['hash-access', (i) => 0.04 * (i % 2 ? 1.01 : 0.99), '1.05'],
   ['bench-json-fast', (i) => 0.1 * (1 + i / 50), '1.10'],
 ];
 for (let i = 0; i < 24; i++) {
@@ -232,39 +231,43 @@ try {
          'and the language switch');
   assert(await page.locator('.bench-card svg').count() === 3,
          'the charts still render (one per benchmark)');
-  assert(await page.locator('.bench-note').count() === 0,
-         'a benchmark note stays hidden under a metric it does not concern');
+  // The vs rakupp ratio is on every card whatever the metric, so the card whose
+  // ratio rakupp wins by parsing JSON natively carries that note throughout.
+  assert(await page.locator('.bench-note').count() === 1
+         && await page.locator('.bench-card[data-name="bench-json-fast"] .bench-note').count() === 1,
+         'only the card whose shown ratio has a caveat carries a note');
 
   // Where mutsu loses is marked in the ordinary cards, quietly: the losing
-  // ratio in red, the caveat as a †, the tracking issues as small links.
+  // ratio in red, the tracking issues as small links.
   console.log('Test: benchmark dashboard marks the ratios mutsu loses');
   assert(await page.locator('#losing').count() === 0,
          'there is no separate losers section');
   const fib = page.locator('.bench-card[data-name="bench-fib"] .standing');
   assert(await fib.locator('.lose').count() === 1 && await fib.locator('.win').count() === 1,
          'a card carries its ratios against both references, the losing one flagged');
-  assert(await page.locator('.bench-card[data-name="bench-hash"] .standing .lose').count() === 0,
-         'a card that wins against both flags nothing');
-  const json = page.locator('.bench-card[data-name="bench-json-fast"] .standing');
-  assert((await json.locator('.note-mark').getAttribute('title')).startsWith('rakupp parses JSON natively'),
-         'a caveated ratio carries its caveat');
-  assert(await json.locator('a[href$="/issues/8673"]').count() === 1,
+  const ha = page.locator('.bench-card[data-name="hash-access"] .standing');
+  assert(await ha.locator('a[href$="/issues/10951"]').count() === 1,
          'a losing card links the issue benchmarks/bench-tracking.toml names for it');
   assert(await fib.locator('a').count() === 0,
          'and a losing card with no tracking entry links nothing');
-  assert((await page.textContent('.bench-card[data-name="bench-fib"] .chip')).includes('faster'),
-         'a step far outside the noise is shown as a trend');
-  assert(await page.textContent('.bench-card[data-name="bench-hash"] .chip') === 'no change',
-         'commit-to-commit jitter is not');
-  assert(!(await page.textContent('body')).includes('Δ latest'),
-         'no single-commit delta is presented anywhere');
+  const json = page.locator('.bench-card[data-name="bench-json-fast"]');
+  assert((await json.locator('.bench-note').textContent()).startsWith('rakupp does not run JSON::Fast'),
+         'a ratio rakupp wins by parsing JSON natively is explained by its note');
+  assert(await json.locator('.standing .lose').count() === 0
+         && await json.locator('.standing a').count() === 0,
+         'and is neither flagged nor linked as a loss');
+  // Run-to-run motion on the CI runners is instance noise, so the page shows
+  // no change figure at all -- neither a single-commit delta nor a trend.
+  assert(await page.locator('.bench-card .chip').count() === 0
+         && !(await page.textContent('body')).includes('Δ latest'),
+         'no change-since-earlier figure is presented anywhere');
 
   await page.click('#view button[data-v="table"]');
   assert(await page.locator('#tableWrap tbody tr').count() === 3,
          'and the table view still works');
-  assert(await page.locator('#tableWrap th[data-k="trend"]').count() === 1
+  assert(await page.locator('#tableWrap th[data-k="trend"]').count() === 0
          && await page.locator('#tableWrap tbody td.lose').count() === 2,
-         'with a robust trend column and the losing ratios flagged');
+         'with no trend column and the losing ratios flagged');
 
   // The controls are the page's whole state, so a link has to carry them --
   // otherwise "look at the instruction counts over the last 50 commits" cannot

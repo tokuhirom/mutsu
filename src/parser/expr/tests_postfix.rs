@@ -7,7 +7,7 @@ fn parse_pair_lvalue_colonparen_form() {
     assert_eq!(rest, "");
     assert!(matches!(
         expr,
-        Expr::Literal(lit) if matches!(lit.view(), ValueView::Instance { class_name, .. } if class_name == "Signature")
+        Expr::Literal(lit) if matches!(lit.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("Signature"))
     ));
 }
 
@@ -27,7 +27,7 @@ fn parse_custom_postfix_operator_call() {
     ));
     match spelled.expr {
         Expr::Call { name, args, .. } => {
-            assert_eq!(name, "postfix:<!>");
+            assert_eq!(name, crate::sym!("postfix:<!>"));
             assert_eq!(args.len(), 1);
             assert!(matches!(args[0], Expr::Var(ref n) if n.as_str() == "base"));
         }
@@ -51,7 +51,7 @@ fn parse_unicode_custom_postfix_operator_call() {
     ));
     match spelled.expr {
         Expr::Call { name, args, .. } => {
-            assert_eq!(name, "postfix:<§>");
+            assert_eq!(name, crate::sym!("postfix:<§>"));
             assert_eq!(args.len(), 1);
             assert!(
                 matches!(&args[0], Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(3)))
@@ -67,7 +67,7 @@ fn parse_dot_custom_postfix_operator_call() {
     assert_eq!(rest, "");
     match expr {
         Expr::Call { name, args, .. } => {
-            assert_eq!(name, "postfix:<!>");
+            assert_eq!(name, crate::sym!("postfix:<!>"));
             assert_eq!(args.len(), 1);
             assert!(
                 matches!(&args[0], Expr::Literal(lit) if matches!(lit.view(), ValueView::Int(5)))
@@ -101,7 +101,7 @@ fn parse_dot_hyper_postfix_increment() {
             target, name, args, ..
         } => {
             assert!(matches!(*target, Expr::Var(ref n) if n.as_str() == "x"));
-            assert_eq!(name, "postfix:<++>");
+            assert_eq!(name, crate::sym!("postfix:<++>"));
             assert!(args.is_empty());
         }
         _ => panic!("expected hyper postfix increment"),
@@ -116,7 +116,7 @@ fn parse_hyper_index_without_dot() {
         Expr::HyperMethodCall {
             target, name, args, ..
         } => {
-            assert_eq!(name, "postcircumfix:<[ ]>");
+            assert_eq!(name, crate::sym!("postcircumfix:<[ ]>"));
             assert_eq!(args.len(), 1);
             assert!(matches!(*target, Expr::Index { .. }));
         }
@@ -132,7 +132,7 @@ fn parse_hyper_index_with_dot() {
         Expr::HyperMethodCall {
             target, name, args, ..
         } => {
-            assert_eq!(name, "postcircumfix:<[ ]>");
+            assert_eq!(name, crate::sym!("postcircumfix:<[ ]>"));
             assert_eq!(args.len(), 1);
             assert!(matches!(*target, Expr::Index { .. }));
         }
@@ -240,7 +240,7 @@ fn parse_hyper_method_with_unspace_after_operator() {
     match expr {
         Expr::HyperMethodCall { target, name, .. } => {
             assert!(matches!(*target, Expr::Var(ref n) if n.as_str() == "m"));
-            assert_eq!(name, "foo");
+            assert_eq!(name, crate::sym!("foo"));
         }
         _ => panic!("expected hyper method call"),
     }
@@ -346,7 +346,7 @@ fn parse_is_deeply_with_unicode_and_ascii_minus_complex_literals() {
     assert_eq!(rest, "");
     match expr {
         Expr::Call { name, args, .. } => {
-            assert_eq!(name, "is-deeply");
+            assert_eq!(name, crate::sym!("is-deeply"));
             assert!(args.len() >= 2);
             assert!(matches!(
                 args[0],
@@ -373,7 +373,7 @@ fn parse_expr_listop_with_topic_method_first_arg() {
     assert_eq!(rest, "");
     match expr {
         Expr::Call { name, args, .. } => {
-            assert_eq!(name, "is-deeply");
+            assert_eq!(name, crate::sym!("is-deeply"));
             assert!(args.len() >= 3);
             assert!(matches!(args[0], Expr::MethodCall { .. }));
         }

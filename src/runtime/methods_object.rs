@@ -679,10 +679,7 @@ impl Interpreter {
             .any(|tc| self.constraint_is_user_subset(tc));
         let new_skips_phases = (has_build || has_tweak)
             && self.class_mro(cn_resolved).iter().any(|c| {
-                matches!(
-                    c.as_str(),
-                    "Hash" | "Map" | "Array" | "List" | "Set" | "Bag" | "Mix" | "SetHash" | "BagHash" | "MixHash"
-                )
+                crate::sym_in!(*c, "Hash" | "Map" | "Array" | "List" | "Set" | "Bag" | "Mix" | "SetHash" | "BagHash" | "MixHash")
             });
         let deferred_seeds = (0..class_attrs.len())
             .map(|_| std::sync::OnceLock::new())

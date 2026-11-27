@@ -4,7 +4,7 @@ use num_traits::ToPrimitive;
 
 /// Check if a Value is a Failure instance.
 fn is_failure_value(value: &Value) -> bool {
-    matches!(value.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+    matches!(value.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("Failure"))
 }
 
 /// Parse a coercion type like "Int()" or "Int(Rat)".
@@ -284,7 +284,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = value.view()
-            && class_name == "Distribution::Resource"
+            && class_name == crate::sym!("Distribution::Resource")
         {
             let path = attributes
                 .as_map()
@@ -335,7 +335,7 @@ impl Interpreter {
             && self
                 .class_mro(&class_name.resolve())
                 .iter()
-                .any(|c| c == "Str")
+                .any(|c| *c == crate::sym!("Str"))
             && let Some(inner) = attributes.as_map().get("value").cloned()
             && !inner.is_nil()
             && let Ok(coerced) = self.try_coerce_value_with_method(target, inner)

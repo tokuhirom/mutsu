@@ -488,7 +488,7 @@ impl Interpreter {
         // claim one, so it is answered before them: Monad keys its type cache
         // by `M.WHICH ~ '|' ~ T.WHICH`, two of these per key (#17331).
         if let ValueView::Instance { class_name, .. } = v.view()
-            && (class_name == "ObjAt" || class_name == "ValueObjAt")
+            && (class_name == crate::sym!("ObjAt") || class_name == crate::sym!("ValueObjAt"))
         {
             let cn = class_name.as_str();
             if !self.has_user_method(cn, "Stringy")

@@ -251,7 +251,7 @@ impl Interpreter {
     // operand's twigil form is also probed); other receivers cost what the generic op does.
     pub(crate) fn nqp_getattr_named(obj: &Value, name: NqpAttrName) -> Option<Value> {
         // A `Capture` subclass's `@!list` / `%!hash` (`capture_storage`).
-        if matches!(name.read_key.as_str(), "hash" | "list")
+        if crate::sym_in!(name.read_key, "hash" | "list")
             && let Some(storage) = Self::capture_storage_read(obj, name.read_key.as_str())
         {
             return storage;
@@ -266,7 +266,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = obj.view()
-            && class_name != "Match"
+            && class_name != crate::sym!("Match")
         {
             let attrs = attributes.as_map();
             if !attrs.contains_key(crate::value::match_view::cursor_match_marker()) {
@@ -282,7 +282,7 @@ impl Interpreter {
                     .cloned();
                 // An attribute the instance does not store may still be a
                 // view the generic body computes (`IO::Path`'s `$!os-path`).
-                if found.is_some() || class_name != "IO::Path" {
+                if found.is_some() || class_name != crate::sym!("IO::Path") {
                     return found;
                 }
             }
@@ -300,7 +300,7 @@ impl Interpreter {
         val: Value,
     ) -> Result<(), RuntimeError> {
         if let Some(key) = name.write_key
-            && matches!(key.as_str(), "hash" | "list")
+            && crate::sym_in!(key, "hash" | "list")
             && Self::capture_storage_bind(obj, key.as_str(), &val)
         {
             return Ok(());

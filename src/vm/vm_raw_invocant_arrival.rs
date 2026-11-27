@@ -58,7 +58,6 @@ impl Interpreter {
         code: &CompiledCode,
         target_name: &str,
         target: &Value,
-        method: &str,
         method_sym: crate::symbol::Symbol,
         args: &[Value],
     ) -> bool {
@@ -74,7 +73,7 @@ impl Interpreter {
         {
             return false;
         }
-        self.arm_raw_invocant_arrival_slow(code, target_name, target, method, args)
+        self.arm_raw_invocant_arrival_slow(code, target_name, target, method_sym.as_str(), args)
     }
 
     /// The part of [`Self::arm_raw_invocant_arrival`] past the pre-gate, kept
@@ -137,12 +136,10 @@ impl Interpreter {
         code: &CompiledCode,
         target_name: &str,
         target: Value,
-        method: &str,
         method_sym: crate::symbol::Symbol,
         args: Vec<Value>,
     ) -> Result<Value, RuntimeError> {
-        let armed =
-            self.arm_raw_invocant_arrival(code, target_name, &target, method, method_sym, &args);
+        let armed = self.arm_raw_invocant_arrival(code, target_name, &target, method_sym, &args);
         let result =
             self.try_compiled_method_mut_or_interpret_sym(target_name, target, method_sym, args);
         self.disarm_raw_invocant_arrival(armed);
@@ -236,6 +233,20 @@ impl Interpreter {
             return None;
         }
         self.pending_raw_invocant.take().map(|p| p.cell)
+    }
+
+    /// [`Self::take_implicit_self_invocant_arrival`] for a caller holding the
+    /// method's symbol: the name is resolved only when an arrival is pending,
+    /// so the common no-arrival call does no symbol-to-string work.
+    // Cost: O(1), plus one name compare when an arrival is pending.
+    #[inline]
+    pub(crate) fn take_implicit_self_invocant_arrival_sym(
+        &mut self,
+        method_sym: crate::symbol::Symbol,
+        pd: Option<&crate::ast::ParamDef>,
+    ) -> Option<Value> {
+        self.pending_raw_invocant.as_ref()?;
+        self.take_implicit_self_invocant_arrival(method_sym.as_str(), pd)
     }
 }
 

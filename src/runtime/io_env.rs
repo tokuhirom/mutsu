@@ -535,7 +535,7 @@ impl Interpreter {
             // `print` is `$*OUT.print(...)`, so a wrapped `IO::Handle.print`
             // sees it (the `say`/`put`/`note` routines have methods of their own).
             if !newline
-                && matches!(handle.view(), ValueView::Instance { class_name, .. } if class_name == "IO::Handle")
+                && matches!(handle.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("IO::Handle"))
                 && let Some(wrapped) = self.try_builtin_method_wrap(
                     "IO::Handle",
                     &handle,

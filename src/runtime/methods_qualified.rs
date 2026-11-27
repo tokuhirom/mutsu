@@ -73,7 +73,7 @@ impl Interpreter {
         if qualifier == "Range"
             && class_name != "Range"
             && built.is_range()
-            && self.class_mro(&class_name).iter().any(|c| c == "Range")
+            && self.class_mro(&class_name).iter().any(|c| *c == crate::sym!("Range"))
         {
             let mut attrs = HashMap::new();
             attrs.insert(
@@ -306,7 +306,7 @@ impl Interpreter {
         // materialize them (a role-only class `C does R` linearizes to `[C, R]`).
         // `Cool` is only reachable from Cool-derived types, so it must actually
         // appear in the MRO (matching Rakudo's "not inherited" rejection otherwise).
-        if qualifier == "Cool" && !self.class_mro(&cn).iter().any(|c| c.as_str() == "Cool") {
+        if qualifier == "Cool" && !self.class_mro(&cn).iter().any(|c| *c == crate::sym!("Cool")) {
             return None;
         }
         if !matches!(

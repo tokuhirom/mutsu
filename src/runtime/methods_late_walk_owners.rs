@@ -46,7 +46,7 @@ impl Interpreter {
             // `Bool` is the core's own enum.
             ValueView::Enum { .. } | ValueView::Bool(_) => true,
             ValueView::Package(name) => {
-                name == "Bool" || self.registry().enum_types.contains_key(&*name.resolve())
+                name == crate::sym!("Bool") || self.registry().enum_types.contains_key(&*name.resolve())
             }
             _ => false,
         }

@@ -52,7 +52,7 @@ impl super::Interpreter {
         if args.is_empty()
             && matches!(method, "gist" | "Stringy")
             && let ValueView::Instance { class_name, .. } = target.view()
-            && !matches!(class_name.as_str(), "Date" | "DateTime")
+            && !crate::sym_in!(class_name, "Date" | "DateTime")
             && self.has_user_method(&class_name.resolve(), "Str")
         {
             return Some(self.try_compiled_method_or_interpret(target.clone(), "Str", Vec::new()));
@@ -75,7 +75,7 @@ impl super::Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         if let ValueView::Instance { class_name, .. } = target.view()
-            && !matches!(class_name.as_str(), "Date" | "DateTime")
+            && !crate::sym_in!(class_name, "Date" | "DateTime")
             && self.has_user_method(&class_name.resolve(), method)
         {
             match self.user_method_applies(&class_name.resolve(), method, target, args) {

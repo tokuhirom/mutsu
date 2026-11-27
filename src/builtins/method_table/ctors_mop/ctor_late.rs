@@ -101,7 +101,7 @@ fn joined(args: &[Value], named: Named<'_>) -> Vec<Value> {
 /// Whether `target` is the type object `name` itself.
 // Cost: O(1).
 fn is_type(target: &Value, name: &str) -> bool {
-    matches!(target.view(), ValueView::Package(n) if n == name)
+    matches!(target.view(), ValueView::Package(n) if n.as_str() == name)
 }
 
 // Cost: O(a), a = arguments of the call.
@@ -116,7 +116,8 @@ fn argfiles_new(i: &mut Interpreter, t: &Value, args: &[Value], named: Named<'_>
 
 // Cost: O(1).
 fn handled(_: &mut Interpreter, t: &Value, args: &[Value], _: Named<'_>) -> Answer {
-    if !matches!(t.view(), ValueView::Instance { class_name, .. } if class_name == "Failure") {
+    if !matches!(t.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("Failure"))
+    {
         return None;
     }
     Interpreter::failure_handled_late(t, args).map(Ok)

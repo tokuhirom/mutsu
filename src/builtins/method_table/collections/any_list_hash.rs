@@ -54,7 +54,7 @@ pub(crate) fn hash_of(target: &Value) -> Result<Value, RuntimeError> {
 // Cost: O(e), e = elements of the invocant (O(1) for a scalar: an odd-element error).
 fn hash(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
     match target.view() {
-        ValueView::Package(name) if name == "Hash" => Some(Ok(target.clone())),
+        ValueView::Package(name) if name == crate::sym!("Hash") => Some(Ok(target.clone())),
         ValueView::Package(_) | ValueView::Nil => Some(Ok(Value::hash(ValueMap::default()))),
         ValueView::Hash(_) => super::map::hash(target, &[]),
         ValueView::Set(..) | ValueView::Bag(..) | ValueView::Mix(..) => {

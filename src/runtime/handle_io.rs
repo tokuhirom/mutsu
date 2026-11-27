@@ -48,7 +48,7 @@ impl Interpreter {
             attributes,
             ..
         } = value.view()
-            && (class_name == "IO::Handle" || class_name == "IO::Socket::INET")
+            && (class_name == crate::sym!("IO::Handle") || class_name == crate::sym!("IO::Socket::INET"))
             && let Some(ValueView::Int(id)) = attributes.as_map().get("handle").map(Value::view)
             && id >= 0
         {

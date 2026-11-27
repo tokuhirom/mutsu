@@ -46,7 +46,7 @@ impl<'ast> Visit<'ast> for ReturnScan {
         match stmt {
             Stmt::Return(expr) if return_value_is_fresh(expr) => {}
             Stmt::Return(_) => self.found = true,
-            Stmt::Call { name, .. } if name == "return" => self.found = true,
+            Stmt::Call { name, .. } if *name == crate::sym!("return") => self.found = true,
             Stmt::Phaser { .. } | Stmt::DocPhaser(_) => {}
             s if is_scope_declaration(s) => {}
             _ => walk_stmt(self, stmt),
@@ -58,7 +58,7 @@ impl<'ast> Visit<'ast> for ReturnScan {
             return;
         }
         match expr {
-            Expr::Call { name, .. } if name == "return" => self.found = true,
+            Expr::Call { name, .. } if *name == crate::sym!("return") => self.found = true,
             e if is_code_object(e) => {}
             Expr::Gather(_) | Expr::PhaserExpr { .. } => {}
             _ => walk_expr(self, expr),

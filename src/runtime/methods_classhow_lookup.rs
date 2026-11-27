@@ -488,7 +488,7 @@ impl Interpreter {
         // their own named source here rather than a `Match` entry in the
         // builtin catalog (`Match`'s catalog row carries no methods at all).
         if crate::runtime::regex::regex_cursor::is_cursor_protocol_method(method_name)
-            && (class_name_str == "Match" || mro.iter().any(|c| c.as_str() == "Match"))
+            && (class_name_str == "Match" || mro.iter().any(|c| *c == crate::sym!("Match")))
         {
             return Some(self.make_native_method_object(method_name, &class_name_str));
         }

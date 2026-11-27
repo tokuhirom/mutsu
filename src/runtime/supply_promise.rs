@@ -34,7 +34,7 @@ impl Interpreter {
             attributes,
             ..
         } = tap.view()
-            && class_name == "__SupplyDoWrappedTap"
+            && class_name == crate::sym!("__SupplyDoWrappedTap")
         {
             let attrs = attributes.as_map();
             if let Some(ValueView::Array(cbs, ..)) = attrs.get("do_callbacks").map(Value::view) {

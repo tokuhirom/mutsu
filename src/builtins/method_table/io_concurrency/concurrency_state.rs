@@ -61,7 +61,7 @@ fn attrs_of(target: &Value, class: &str) -> Option<AttrMap> {
             class_name,
             attributes,
             ..
-        } if class_name == class => Some(AttrMap::clone(&attributes.as_map())),
+        } if class_name.as_str() == class => Some(AttrMap::clone(&attributes.as_map())),
         _ => None,
     }
 }
@@ -131,7 +131,7 @@ fn name_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErro
 /// `Thread.is-initial-thread`.
 // Cost: O(a), a = attributes.
 fn initial_row(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-    if matches!(target.view(), ValueView::Package(name) if name == "Thread") {
+    if matches!(target.view(), ValueView::Package(name) if name == crate::sym!("Thread")) {
         return Some(Ok(Value::truth(
             crate::runtime::methods_collection_ops::is_initial_thread(),
         )));

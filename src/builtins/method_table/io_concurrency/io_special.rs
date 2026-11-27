@@ -49,7 +49,7 @@ fn what_of(target: &Value) -> Option<String> {
             class_name,
             attributes,
             ..
-        } if class_name == "IO::Special" => Some(
+        } if class_name == crate::sym!("IO::Special") => Some(
             attributes
                 .as_map()
                 .get("what")

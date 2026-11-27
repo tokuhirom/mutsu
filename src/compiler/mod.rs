@@ -48,7 +48,7 @@ mod declaration_plan_tests {
         let plan = code
             .sub_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "f" && !plan.compiled_routine_keys.is_empty())
+            .find(|plan| plan.name == crate::sym!("f") && !plan.compiled_routine_keys.is_empty())
             .expect("source-order f declaration plan");
         assert_eq!(plan.compiled_routine_keys.len(), 1);
         assert!(compiled_fns.contains_key(&plan.compiled_routine_keys[0]));
@@ -80,7 +80,9 @@ mod declaration_plan_tests {
         let inner_keys: Vec<_> = compiled_fns
             .values()
             .flat_map(|function| function.code.sub_decl_plans.iter())
-            .filter(|plan| plan.name.as_str() == "inner" && !plan.compiled_routine_keys.is_empty())
+            .filter(|plan| {
+                plan.name == crate::sym!("inner") && !plan.compiled_routine_keys.is_empty()
+            })
             .map(|plan| plan.compiled_routine_keys[0])
             .collect();
         // Each `inner` is registered from two plans — the hoist pass's and the
@@ -155,7 +157,7 @@ mod declaration_plan_tests {
         assert!(
             code.token_decl_plans
                 .iter()
-                .any(|plan| plan.name.as_str() == "top_level")
+                .any(|plan| plan.name == crate::sym!("top_level"))
         );
         assert!(code.ops.iter().any(|op| matches!(
             op,
@@ -170,12 +172,12 @@ mod declaration_plan_tests {
         let plan_a = code
             .class_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "A")
+            .find(|plan| plan.name == crate::sym!("A"))
             .expect("class A declaration plan");
         assert!(plan_a.body_plan.iter().any(|op| matches!(
             op,
             crate::opcode::ClassBodyOp::TokenRule { plan }
-                if plan.name.as_str() == "in_class"
+                if plan.name == crate::sym!("in_class")
         )));
     }
 
@@ -272,7 +274,7 @@ mod declaration_plan_tests {
         let plan = code
             .proto_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "f")
+            .find(|plan| plan.name == crate::sym!("f"))
             .expect("proto f declaration plan");
         let key = plan
             .compiled_routine_key
@@ -306,7 +308,7 @@ mod declaration_plan_tests {
         let plan = code
             .proto_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "g")
+            .find(|plan| plan.name == crate::sym!("g"))
             .expect("proto g declaration plan");
         assert!(plan.compiled_routine_key.is_none());
     }
@@ -330,7 +332,7 @@ mod declaration_plan_tests {
         let class_plan = code
             .class_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "C")
+            .find(|plan| plan.name == crate::sym!("C"))
             .expect("class C declaration plan");
         let chunk = class_plan
             .body_plan
@@ -344,7 +346,7 @@ mod declaration_plan_tests {
             .code
             .proto_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "f" && plan.is_method)
+            .find(|plan| plan.name == crate::sym!("f") && plan.is_method)
             .expect("proto method f declaration plan");
         assert!(
             plan.compiled_routine_key.is_none(),
@@ -366,7 +368,7 @@ mod declaration_plan_tests {
         let plan_a = code
             .class_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "A")
+            .find(|plan| plan.name == crate::sym!("A"))
             .expect("class A declaration plan");
         assert!(!plan_a.is_stub);
         assert_eq!(
@@ -377,7 +379,7 @@ mod declaration_plan_tests {
         let plan_stub = code
             .class_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "Stub")
+            .find(|plan| plan.name == crate::sym!("Stub"))
             .expect("class Stub declaration plan");
         assert!(plan_stub.is_stub);
         assert!(plan_stub.trusts.is_empty());
@@ -399,7 +401,7 @@ mod declaration_plan_tests {
         let plan_a = code
             .class_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "A")
+            .find(|plan| plan.name == crate::sym!("A"))
             .expect("class A declaration plan");
         let mut names: Vec<_> = plan_a
             .declared_static_names
@@ -426,7 +428,7 @@ mod declaration_plan_tests {
         let plan_a = code
             .class_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "A")
+            .find(|plan| plan.name == crate::sym!("A"))
             .expect("class A declaration plan");
         let mut keys: Vec<_> = plan_a
             .parent_arg_chunks
@@ -472,7 +474,7 @@ mod declaration_plan_tests {
         let plan_a = code
             .class_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "A")
+            .find(|plan| plan.name == crate::sym!("A"))
             .expect("class A declaration plan");
         let mut names: Vec<_> = plan_a
             .own_attribute_names
@@ -516,7 +518,7 @@ mod declaration_plan_tests {
         let plan_a = code
             .class_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "A")
+            .find(|plan| plan.name == crate::sym!("A"))
             .expect("class A declaration plan");
 
         // Every `Other` op (the `SetLine` markers and the `my`-lexical
@@ -539,17 +541,17 @@ mod declaration_plan_tests {
         assert_eq!(typed.len(), 11, "typed ops: {typed:?}");
         assert!(matches!(
             typed[0],
-            ClassBodyOp::Attr { name, .. } if name.as_str() == "x"
+            ClassBodyOp::Attr { name, .. } if *name == crate::sym!("x")
         ));
         assert!(matches!(typed[1], ClassBodyOp::Method));
         assert!(matches!(
             typed[2],
-            ClassBodyOp::Does { name, .. } if name.as_str() == "Baz"
+            ClassBodyOp::Does { name, .. } if *name == crate::sym!("Baz")
         ));
         // `ClassSub` shares `Other`'s chunk mechanism (D6-3b).
         assert!(matches!(
             typed[3],
-            ClassBodyOp::ClassSub { name, chunk: Some(_), .. } if name.as_str() == "helper"
+            ClassBodyOp::ClassSub { name, chunk: Some(_), .. } if *name == crate::sym!("helper")
         ));
         // `CodeAlias`/`ProtoMethod`/`LeavePhaser` compile the same way (D6-3c).
         assert!(matches!(
@@ -571,18 +573,18 @@ mod declaration_plan_tests {
         // whose nested `has $.w` is the last op, appended at the tail.
         assert!(matches!(
             typed[7],
-            ClassBodyOp::ClassSub { name, chunk: Some(_), .. } if name.as_str() == "f"
+            ClassBodyOp::ClassSub { name, chunk: Some(_), .. } if *name == crate::sym!("f")
         ));
         assert!(matches!(typed[8], ClassBodyOp::Method));
         // The nested `has` are found in a `sub` and in a method's control-flow
         // block alike (#8441), in source order.
         assert!(matches!(
             typed[9],
-            ClassBodyOp::Attr { name, .. } if name.as_str() == "w"
+            ClassBodyOp::Attr { name, .. } if *name == crate::sym!("w")
         ));
         assert!(matches!(
             typed[10],
-            ClassBodyOp::Attr { name, .. } if name.as_str() == "v"
+            ClassBodyOp::Attr { name, .. } if *name == crate::sym!("v")
         ));
         // `my ($p, $q) := ...` nests its bind group inside the outer
         // destructuring `SyntheticBlock`: the outer one is looked through, the
@@ -619,7 +621,7 @@ mod declaration_plan_tests {
         let plan_a = code
             .class_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "A")
+            .find(|plan| plan.name == crate::sym!("A"))
             .expect("class A declaration plan");
 
         use crate::opcode::ClassBodyOp;
@@ -667,7 +669,7 @@ mod declaration_plan_tests {
         let plan_a = code
             .class_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "A")
+            .find(|plan| plan.name == crate::sym!("A"))
             .expect("class A declaration plan");
 
         use crate::opcode::ClassBodyOp;
@@ -717,7 +719,7 @@ mod declaration_plan_tests {
         let plan_foo = code
             .class_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "Foo")
+            .find(|plan| plan.name == crate::sym!("Foo"))
             .expect("class Foo declaration plan");
 
         // A `SetLine` marker statement (interstitial, parser-inserted) is
@@ -765,7 +767,7 @@ mod declaration_plan_tests {
         let plan_r = code
             .role_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "R")
+            .find(|plan| plan.name == crate::sym!("R"))
             .expect("role R declaration plan");
         assert_eq!(
             plan_r
@@ -792,7 +794,7 @@ mod declaration_plan_tests {
         let plan_stub = code
             .role_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "Stub")
+            .find(|plan| plan.name == crate::sym!("Stub"))
             .expect("role Stub declaration plan");
         assert!(plan_stub.is_stub);
         assert_eq!(plan_stub.our_scope_violation.as_deref(), None);
@@ -800,7 +802,7 @@ mod declaration_plan_tests {
         let plan_plain = code
             .role_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "Plain")
+            .find(|plan| plan.name == crate::sym!("Plain"))
             .expect("role Plain declaration plan");
         assert!(!plan_plain.is_stub);
         assert_eq!(plan_plain.our_scope_violation.as_deref(), None);
@@ -811,7 +813,7 @@ mod declaration_plan_tests {
         let plan_r = code
             .role_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "R")
+            .find(|plan| plan.name == crate::sym!("R"))
             .expect("role R declaration plan");
         assert_eq!(plan_r.our_scope_violation.as_deref(), Some("variable"));
 
@@ -821,7 +823,7 @@ mod declaration_plan_tests {
         let plan_r = code
             .role_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "R")
+            .find(|plan| plan.name == crate::sym!("R"))
             .expect("role R declaration plan");
         assert_eq!(plan_r.our_scope_violation.as_deref(), Some("class"));
 
@@ -832,7 +834,7 @@ mod declaration_plan_tests {
         let plan_r = code
             .role_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "R")
+            .find(|plan| plan.name == crate::sym!("R"))
             .expect("role R declaration plan");
         assert_eq!(plan_r.our_scope_violation.as_deref(), None);
     }
@@ -859,7 +861,7 @@ mod declaration_plan_tests {
         let plan_r = code
             .role_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "R")
+            .find(|plan| plan.name == crate::sym!("R"))
             .expect("role R declaration plan");
 
         // Filtering out `Deferred` ops (the `SetLine` markers and the `say`
@@ -877,7 +879,7 @@ mod declaration_plan_tests {
         assert!(matches!(typed[0], RoleBodyOp::Parent));
         assert!(matches!(
             typed[1],
-            RoleBodyOp::Attr { name, .. } if name.as_str() == "x"
+            RoleBodyOp::Attr { name, .. } if *name == crate::sym!("x")
         ));
         assert!(matches!(typed[2], RoleBodyOp::Method));
         assert!(matches!(typed[3], RoleBodyOp::Parent));
@@ -915,7 +917,7 @@ mod declaration_plan_tests {
         let plan_r = code
             .role_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "R")
+            .find(|plan| plan.name == crate::sym!("R"))
             .expect("role R declaration plan");
 
         use crate::opcode::RoleBodyOp;
@@ -1014,7 +1016,7 @@ mod declaration_plan_tests {
         let sub_plan = code
             .sub_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "f")
+            .find(|plan| plan.name == crate::sym!("f"))
             .expect("sub f declaration plan");
         assert!(
             !has_legacy_body_field(&format!("{sub_plan:?}")),
@@ -1024,7 +1026,7 @@ mod declaration_plan_tests {
         let class_plan = code
             .class_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "C")
+            .find(|plan| plan.name == crate::sym!("C"))
             .expect("class C declaration plan");
         assert!(
             !has_legacy_body_field(&format!("{class_plan:?}")),
@@ -1034,7 +1036,7 @@ mod declaration_plan_tests {
         let role_plan = code
             .role_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "R")
+            .find(|plan| plan.name == crate::sym!("R"))
             .expect("role R declaration plan");
         assert!(
             !has_legacy_body_field(&format!("{role_plan:?}")),
@@ -1044,7 +1046,7 @@ mod declaration_plan_tests {
         let proto_plan = code
             .proto_decl_plans
             .iter()
-            .find(|plan| plan.name.as_str() == "p")
+            .find(|plan| plan.name == crate::sym!("p"))
             .expect("proto sub p declaration plan");
         assert!(
             has_legacy_body_field(&format!("{proto_plan:?}")),
@@ -4947,15 +4949,15 @@ impl Compiler {
             Expr::MethodCall {
                 target, name, args, ..
             } if args.is_empty()
-                && (*name == "keys"
-                    || *name == "List"
-                    || *name == "pairs"
-                    || *name == "antipairs"
-                    || *name == "kv") =>
+                && (*name == crate::sym!("keys")
+                    || *name == crate::sym!("List")
+                    || *name == crate::sym!("pairs")
+                    || *name == crate::sym!("antipairs")
+                    || *name == crate::sym!("kv")) =>
             {
                 matches!(target.as_ref(), Expr::ArrayVar(_) | Expr::HashVar(_))
-                    || (*name != "keys"
-                        && *name != "List"
+                    || (*name != crate::sym!("keys")
+                        && *name != crate::sym!("List")
                         && Self::is_literal_list_receiver(target)
                         && Self::for_iterable_yields_bare_items(target))
             }
@@ -4968,7 +4970,9 @@ impl Compiler {
             // its target's verdict.
             Expr::MethodCall {
                 target, name, args, ..
-            } if args.is_empty() && *name == "Seq" => Self::for_iterable_yields_bare_items(target),
+            } if args.is_empty() && *name == crate::sym!("Seq") => {
+                Self::for_iterable_yields_bare_items(target)
+            }
             // A view of a LITERAL receiver (`(1,2).values`, `(1,2).kv`,
             // `(1,2).reverse`, `(1,2).sort`): the literal has no element
             // containers to hand out, so the view inherits its bareness. A
@@ -4978,10 +4982,10 @@ impl Compiler {
             Expr::MethodCall {
                 target, name, args, ..
             } if args.is_empty()
-                && (*name == "values"
-                    || *name == "list"
-                    || *name == "reverse"
-                    || *name == "sort")
+                && (*name == crate::sym!("values")
+                    || *name == crate::sym!("list")
+                    || *name == crate::sym!("reverse")
+                    || *name == crate::sym!("sort"))
                 && Self::is_literal_list_receiver(target) =>
             {
                 Self::for_iterable_yields_bare_items(target)
@@ -5136,14 +5140,19 @@ impl Compiler {
             Expr::MethodCall {
                 target, name, args, ..
             } if args.is_empty()
-                && (*name == "values" || *name == "kv" || *name == "value" || *name == "pairs") =>
+                && (*name == crate::sym!("values")
+                    || *name == crate::sym!("kv")
+                    || *name == crate::sym!("value")
+                    || *name == crate::sym!("pairs")) =>
             {
                 Self::for_iterable_source_name(target)
             }
             // Handle @a.reverse → source is @a (reversed)
             Expr::MethodCall {
                 target, name, args, ..
-            } if args.is_empty() && (*name == "reverse" || *name == "sort") => {
+            } if args.is_empty()
+                && (*name == crate::sym!("reverse") || *name == crate::sym!("sort")) =>
+            {
                 Self::for_iterable_source_name(target)
             }
             // `@$h` desugars to `($h).list`: the loop iterates the scalar's
@@ -5155,7 +5164,7 @@ impl Compiler {
             // `@a.list` re-tags the array itself, same as bare `for @a`.
             Expr::MethodCall {
                 target, name, args, ..
-            } if args.is_empty() && *name == "list" => {
+            } if args.is_empty() && *name == crate::sym!("list") => {
                 let inner = match target.as_ref() {
                     Expr::Grouped(g) => g.as_ref(),
                     other => other,
@@ -5183,7 +5192,7 @@ impl Compiler {
             Expr::MethodCall {
                 target, name, args, ..
             } if args.is_empty()
-                && *name == "list"
+                && *name == crate::sym!("list")
                 && matches!(target.as_ref(), Expr::Var(_))
         )
     }
@@ -5193,7 +5202,7 @@ impl Compiler {
         matches!(
             iterable,
             Expr::MethodCall { name, args, .. }
-                if args.is_empty() && *name == "reverse"
+                if args.is_empty() && *name == crate::sym!("reverse")
         )
     }
 
@@ -5277,7 +5286,7 @@ impl Compiler {
         matches!(
             iterable,
             Expr::MethodCall { name, args, .. }
-                if args.is_empty() && *name == "kv"
+                if args.is_empty() && *name == crate::sym!("kv")
         )
     }
 
@@ -5292,7 +5301,7 @@ impl Compiler {
         matches!(
             iterable,
             Expr::MethodCall { name, args, .. }
-                if args.is_empty() && (*name == "pairs" || *name == "antipairs")
+                if args.is_empty() && (*name == crate::sym!("pairs") || *name == crate::sym!("antipairs"))
         )
     }
 
@@ -5310,7 +5319,7 @@ impl Compiler {
             target, name, args, ..
         } = iterable
             && args.is_empty()
-            && *name == "values"
+            && *name == crate::sym!("values")
         {
             return Self::for_iterable_source_name(target).is_some();
         }

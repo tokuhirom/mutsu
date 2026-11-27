@@ -109,7 +109,7 @@ impl Interpreter {
             let current_view = self.env().get_sym(name_sym).map(Value::view);
             let first_letter_uppercase = name.starts_with(|c: char| c.is_uppercase());
             let unbound_type_slot = match current_view {
-                Some(ValueView::Package(p)) if p == "Any" && name != "Any" => {
+                Some(ValueView::Package(p)) if p == crate::sym!("Any") && name != "Any" => {
                     first_letter_uppercase
                 }
                 Some(ValueView::Package(_)) => true,

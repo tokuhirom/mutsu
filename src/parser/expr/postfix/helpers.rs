@@ -142,7 +142,7 @@ pub(in crate::parser) fn is_subscript_expr(expr: &Expr) -> bool {
     match expr.peel_spelled() {
         Expr::Index { .. } | Expr::MultiDimIndex { .. } | Expr::ZenSlice(_) => true,
         Expr::HyperMethodCall { name, .. } => {
-            matches!(name.as_str(), "AT-KEY" | "postcircumfix:<{ }>")
+            crate::sym_in!(*name, "AT-KEY" | "postcircumfix:<{ }>")
         }
         _ => false,
     }

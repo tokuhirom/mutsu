@@ -151,13 +151,14 @@ _RAKUPP_NON_PIE_STARTUP = (
     "<b>1.1x</b> rakupp here, not ~1.3-1.4x. That trade (less ASLR) is #11158's "
     "call. See <span class=\"mono\">docs/rakupp-gap-survey.md</span>."
 )
-# Each note also carries a short `tag`, shown in the tooltip of the † a card
-# and the table put next to the ratio it qualifies, and `engine`: False when the
-# ratio is not engine against engine at all, which takes it out of `--report`'s
-# ranking (the row is still listed, in its own group, labelled).
+# Both notes describe a ratio where rakupp wins by something other than running
+# the same Raku code faster (a native parser; a non-PIE link), so mutsu being
+# slower there is not a gap to close. `engine: False` keeps such a ratio from
+# being coloured or counted as a loss: the card shows the note itself instead,
+# and `--report` lists the row in its own group, labelled with the short `tag`.
 _NOTE_NATIVE_JSON = {"tag": "rakupp parses JSON natively", "engine": False,
                      "html": _RAKUPP_NATIVE_JSON}
-_NOTE_NON_PIE = {"tag": "mostly startup; rakupp is non-PIE", "engine": True,
+_NOTE_NON_PIE = {"tag": "mostly startup; rakupp is non-PIE", "engine": False,
                  "html": _RAKUPP_NON_PIE_STARTUP}
 BENCH_NOTES = {
     "bench-json-fast": {"ratiopp": _NOTE_NATIVE_JSON},
@@ -444,11 +445,6 @@ main { padding: clamp(16px, 3vw, 28px) clamp(16px, 4vw, 40px) 60px; flex: 1; }
 .readout { display: flex; align-items: baseline; gap: 8px; margin: 2px 0 4px; }
 .now { font-size: 16px; font-weight: 600; }
 .now .unit { font-size: 11px; color: var(--muted); font-weight: 400; margin-left: 1px; }
-.chip { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 6px;
-  border: 1px solid transparent; }
-.chip.up   { color: var(--bad);  background: color-mix(in srgb, var(--bad) 12%, transparent); }
-.chip.down { color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); }
-.chip.flat { color: var(--muted); background: color-mix(in srgb, var(--muted) 12%, transparent); }
 svg { display: block; width: 100%; height: auto; overflow: visible; touch-action: none; }
 .gridline { stroke: var(--grid); stroke-width: 1; }
 .refline { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 3; opacity: .5; }
@@ -480,8 +476,8 @@ tbody tr:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
 .hidden { display: none; }
 /* Wins and losses against a reference engine, wherever a ratio is shown. A
    marginal loss (a quarter of the recent points at or under parity) keeps the
-   colour but drops the weight; a caveated ratio carries a † with the caveat
-   as its tooltip. */
+   colour but drops the weight. A caveated ratio is not coloured: its card
+   carries the note instead. */
 .lose { color: var(--bad); font-weight: 650; }
 .lose.marginal { font-weight: 400; }
 .standing { display: flex; gap: 12px; flex-wrap: wrap; align-items: baseline;
@@ -570,6 +566,15 @@ const unit = () => metric === 'seconds' ? 's' : isRatio() ? '×' : '';
 // A caveat attached to this benchmark for the active metric (BENCH_NOTES in
 // the generator), or undefined.
 const noteFor = (b) => b.notes && b.notes[metric] && b.notes[metric].html;
+// The note a card shows: the active metric's, or else the note of a ratio its
+// "vs rakudo / vs rakupp" line shows in every metric -- that ratio needs its
+// explanation next to it whatever is selected.
+const cardNoteFor = (b) => noteFor(b)
+  || (b.notes && b.standing && REFS.map(([k]) => b.standing[k] && b.notes[k] && b.notes[k].html)
+        .find(Boolean));
+// A caveated ratio (rakupp answering natively, its non-PIE startup) is not a
+// loss to act on: it is shown uncoloured, with the note on the card.
+const caveated = (b, k) => !!(b.notes && b.notes[k] && b.notes[k].engine === false);
 const RECENT = DATA.recent;
 const ISSUE_URL = 'https://github.com/tokuhirom/mutsu/issues/';
 const REFS = [['ratio', 'rakudo'], ['ratiopp', 'rakupp']];
@@ -599,51 +604,19 @@ const ratioTitle = (r) => `median of the last ${r.n} commits; interquartile rang
 function ratioCell(b, key) {
   const r = b.standing && b.standing[key];
   if (!r) return el('td', { class: 'mono' }, '—');
-  const note = b.notes && b.notes[key];
-  return el('td', { class: 'mono ' + ratioClass(r), title: ratioTitle(r) },
-    r.med.toFixed(2) + '×',
-    note ? el('span', { class: 'note-mark', title: note.tag + ': ' + stripTags(note.html) }, '†') : null);
+  return el('td', { class: 'mono ' + (caveated(b, key) ? '' : ratioClass(r)), title: ratioTitle(r) },
+    r.med.toFixed(2) + '×');
 }
 
 function windowStart() { return windowN > 0 ? Math.max(0, N - windowN) : 0; }
 
 // The newest RECENT points of a series, as values. Deliberately not limited to
-// the commit window: the window shapes the charts, but a median or a trend has
-// to read the same points whatever is zoomed in -- and a 50- or 150-commit
-// window can hold fewer than 2 x RECENT wall-clock points, since the
-// deterministic series records more commits than the wall-clock one.
+// the commit window: the window shapes the charts, but a median has to read
+// the same points whatever is zoomed in -- and a 50- or 150-commit window can
+// hold only a handful of wall-clock points, since the deterministic series
+// records more commits than the wall-clock one.
 function recentVals(pts) {
   return pts.filter(defined).slice(-RECENT).map(yval);
-}
-
-// A trend that a single noisy commit cannot fake: the median of the newest
-// RECENT points against the median of the RECENT before them, reported only
-// when the step is larger than the noise. The noise is the series' own: the
-// spread of each half around its median (MAD, scaled to a standard deviation),
-// turned into the standard error of a difference of two medians (1.2533 s
-// sqrt(2/k)). A step beyond two of those is shown; anything smaller -- which on
-// a 16-33%-noisy wall-clock series is most commit-to-commit motion -- is not.
-// The floor (0.5%) is for the deterministic series, whose spread can be zero.
-function trend(pts) {
-  const w = pts.filter(defined).map(yval);
-  if (w.length < 2 * RECENT) return null;
-  const cur = w.slice(-RECENT), prev = w.slice(-2 * RECENT, -RECENT);
-  const mc = median(cur), mp = median(prev);
-  if (!mp) return null;
-  const resid = [...cur.map(v => Math.abs(v - mc)), ...prev.map(v => Math.abs(v - mp))];
-  const sigma = 1.4826 * median(resid);
-  const band = Math.max(2 * 1.2533 * sigma * Math.sqrt(2 / RECENT), 0.005 * Math.abs(mp));
-  return { pct: (mc - mp) / mp * 100, bandPct: band / Math.abs(mp) * 100,
-           real: Math.abs(mc - mp) > band };
-}
-
-function trendChip(t) {
-  if (!t) return `<span class="chip flat" title="fewer than ${2 * RECENT} points recorded">—</span>`;
-  const band = `±${t.bandPct.toFixed(1)}%`;
-  if (!t.real) return `<span class="chip flat" title="median of the last ${RECENT} vs the ${RECENT} before moved ${t.pct.toFixed(1)}%, inside the noise band ${band}">no change</span>`;
-  const word = metric === 'seconds' ? (t.pct > 0 ? ' slower' : ' faster')
-    : (metric === 'instr' || metric === 'allocs') ? (t.pct > 0 ? ' more' : ' fewer') : '';
-  return `<span class="chip ${t.pct > 0 ? 'up' : 'down'}" title="median of the last ${RECENT} vs the ${RECENT} before; noise band ${band}">${t.pct > 0 ? '+' : ''}${t.pct.toFixed(1)}%${word}</span>`;
 }
 
 const W = 300, H = 96, PADL = 6, PADR = 10, PADT = 10, PADB = 16;
@@ -698,27 +671,24 @@ function cardHTML(b) {
   const now = vals.length
     ? `<span class="now mono" title="median of the last ${vals.length} points">${fmt(median(vals))}<span class="unit">${unit()}${nowLane==='jit'?' (+jit)':''}</span></span>`
     : '';
-  const chip = trendChip(trend(b[nowLane]));
   // Where mutsu stands against each reference, whatever metric is shown.
   const st = b.standing || {};
   const esc = (t) => t.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-  let standingLine = REFS.filter(([k]) => st[k]).map(([k, ref]) => {
-    const n = b.notes && b.notes[k];
-    const mark = n ? `<span class="note-mark" title="${esc(n.tag + ': ' + stripTags(n.html))}">†</span>` : '';
-    return `<span title="${ratioTitle(st[k])}">vs ${ref} <b class="mono ${ratioClass(st[k])}">${st[k].med.toFixed(2)}×</b>${mark}</span>`;
-  }).join('');
+  let standingLine = REFS.filter(([k]) => st[k]).map(([k, ref]) =>
+    `<span title="${ratioTitle(st[k])}">vs ${ref} <b class="mono ${caveated(b, k) ? '' : ratioClass(st[k])}">${st[k].med.toFixed(2)}×</b></span>`
+  ).join('');
   // A losing card names the issues that track the gap (bench-tracking.toml;
   // numbers only, validated by the generator), quietly, after its ratios.
-  const losing = REFS.some(([k]) => st[k] && st[k].losing);
+  const losing = REFS.some(([k]) => st[k] && st[k].losing && !caveated(b, k));
   if (losing && b.tracking) {
     standingLine += `<span title="${b.tracking.note ? esc(b.tracking.note) : 'tracking issues'}">`
       + b.tracking.issues.map(n => `<a href="${ISSUE_URL}${n}" rel="noopener">#${n}</a>`).join(' ')
       + '</span>';
   }
-  const note = noteFor(b);
+  const note = cardNoteFor(b);
   return `<div class="bench-card" data-name="${b.name}">
     <div class="head"><h2>${b.name}</h2></div>
-    <div class="readout">${now}${chip}</div>
+    <div class="readout">${now}</div>
     ${standingLine ? `<div class="standing">${standingLine}</div>` : ''}
     ${note ? `<p class="bench-note">${note}</p>` : ''}
     ${c.svg}
@@ -767,12 +737,9 @@ function renderTable() {
   const wrap = document.getElementById('tableWrap');
   const rows = benches.map(b => {
     const vb = recentVals(b.base), vj = recentVals(b.jit);
-    const t = trend(vj.length ? b.jit : b.base);
     const st = b.standing || {};
     return { b, name: b.name, base: vb.length ? median(vb) : null,
-             jit: vj.length ? median(vj) : null, note: noteFor(b),
-             // Only a trend beyond the noise sorts as one; the rest is 0.
-             trend: t ? (t.real ? t.pct : 0) : null, t,
+             jit: vj.length ? median(vj) : null, note: cardNoteFor(b),
              rk: st.ratio ? st.ratio.med : null, pp: st.ratiopp ? st.ratiopp.med : null };
   });
   rows.sort((a, x) => {
@@ -781,21 +748,18 @@ function renderTable() {
     return (av > xv ? 1 : av < xv ? -1 : 0) * sortDir;
   });
   const th = (k, label) => `<th data-k="${k}">${label}${sortKey===k?(sortDir>0?' ↑':' ↓'):''}</th>`;
-  let h = `<table><thead><tr>${th('name','benchmark')}${th('base','interp '+unit())}${th('jit','+jit '+unit())}${th('trend','trend')}${th('rk','vs rakudo')}${th('pp','vs rakupp')}</tr></thead><tbody></tbody></table>`;
+  let h = `<table><thead><tr>${th('name','benchmark')}${th('base','interp '+unit())}${th('jit','+jit '+unit())}${th('rk','vs rakudo')}${th('pp','vs rakupp')}</tr></thead><tbody></tbody></table>`;
   wrap.innerHTML = h;
   const body = wrap.querySelector('tbody');
   for (const r of rows) {
     // The table has no room for the note itself: mark the row and carry the
     // note's text as a tooltip.
     const mark = r.note ? el('span', { class: 'note-mark', title: stripTags(r.note) }, '†') : null;
-    const tc = document.createElement('td');
-    tc.className = 'mono';
-    tc.innerHTML = trendChip(r.t);
     body.append(el('tr', {},
       el('td', {}, r.name, mark),
       el('td', { class: 'mono' }, r.base == null ? '—' : fmt(r.base)),
       el('td', { class: 'mono' }, r.jit == null ? '—' : fmt(r.jit)),
-      tc, ratioCell(r.b, 'ratio'), ratioCell(r.b, 'ratiopp')));
+      ratioCell(r.b, 'ratio'), ratioCell(r.b, 'ratiopp')));
   }
   wrap.querySelectorAll('th').forEach(t => t.onclick = () => {
     const k = t.dataset.k; if (k === sortKey) sortDir *= -1; else { sortKey = k; sortDir = k === 'name' ? 1 : -1; }
@@ -833,8 +797,7 @@ const VALID = {
   view: (v) => v === 'charts' || v === 'table',
   y: (v) => v === 'fit' || v === 'zero',
   // Keep in step with the table's `th(...)` keys; asserted like the metrics.
-  sort: (v) => v === 'name' || v === 'base' || v === 'jit' || v === 'trend'
-    || v === 'rk' || v === 'pp',
+  sort: (v) => v === 'name' || v === 'base' || v === 'jit' || v === 'rk' || v === 'pp',
   dir: (v) => v === 'asc' || v === 'desc',
 };
 
@@ -955,10 +918,7 @@ document.getElementById('foot').innerHTML =
     : '') +
   `The big number on a card and the table's columns are the <b>median of the last ${RECENT} ` +
   `points</b> in the window, not the latest one: a CI runner is a lottery, and one commit's ` +
-  `move is mostly noise. <b>trend</b> compares that median with the median of the ${RECENT} ` +
-  `points before it, and is shown only when the step is larger than twice the standard ` +
-  `error of a difference of medians estimated from the series' own spread ` +
-  `(hover a chip for its band); otherwise it reads <i>no change</i>. ` +
+  `move is mostly noise, so the page shows no per-commit change either. ` +
   (DATA.hasDet
     ? `<b>instructions</b> is the deterministic series: simulated instruction counts ` +
       `(callgrind), which do not depend on the runner and reproduce to ~0.1%, against ` +

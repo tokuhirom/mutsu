@@ -192,7 +192,7 @@ impl PartialEq for Value {
                     attributes: ba,
                     ..
                 },
-            ) if a == "IO::Handle" && b == "IO::Handle" => {
+            ) if a == crate::sym!("IO::Handle") && b == crate::sym!("IO::Handle") => {
                 let a_map = aa.as_map();
                 let b_map = ba.as_map();
                 const COMPARABLE_KEYS: &[&str] =

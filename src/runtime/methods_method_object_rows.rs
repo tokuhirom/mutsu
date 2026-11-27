@@ -45,7 +45,7 @@ impl Interpreter {
             // candidate, while binding the callable's anonymous invocant
             // parameter would leave `self` unset.
             return Some(result.map(|primed| match primed.view() {
-                ValueView::Sub(data) if !matches!(class_name.as_str(), "Regex") => {
+                ValueView::Sub(data) if !crate::sym_in!(class_name, "Regex") => {
                     let mut carrier = (**data).clone();
                     carrier.body = std::sync::Arc::new(Vec::new());
                     carrier.compiled_code = None;

@@ -201,7 +201,7 @@ fn composes(interp: &mut Interpreter, target: &Value, role: &str) -> bool {
 fn class_composes(interp: &mut Interpreter, class: &str, role: &str) -> bool {
     interp.class_does_role(class, role)
         && !interp.class_mro(class).iter().any(|c| {
-            !matches!(c.as_str(), "Any" | "Mu" | "Cool")
+            !crate::sym_in!(*c, "Any" | "Mu" | "Cool")
                 && crate::builtin_types::catalog::builtin_type_mro_strs(c.as_str()).is_some()
         })
 }

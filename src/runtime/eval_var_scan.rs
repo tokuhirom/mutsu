@@ -664,7 +664,7 @@ impl<'ast> Visit<'ast> for UndeclaredVars<'_> {
         match expr {
             Expr::Var(_) | Expr::ArrayVar(_) | Expr::HashVar(_) => self.check_var(expr),
             // `require M <$x>` declares the variables its import list names.
-            Expr::Call { name, args, .. } if name.as_str() == "require" => {
+            Expr::Call { name, args, .. } if *name == crate::sym!("require") => {
                 for var in require_imported_vars(args) {
                     self.declare(&var);
                 }

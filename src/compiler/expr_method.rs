@@ -93,7 +93,7 @@ impl Compiler {
     pub(super) fn is_any_type_literal(target: &Expr) -> bool {
         matches!(
             target,
-            Expr::Literal(v) if matches!(v.view(), ValueView::Package(name) if name == "Any")
+            Expr::Literal(v) if matches!(v.view(), ValueView::Package(name) if name == crate::sym!("Any"))
         )
     }
 
@@ -683,7 +683,7 @@ impl Compiler {
         quoted: bool,
     ) {
         // Lower index :delete adverb to dedicated delete opcodes.
-        if name == "DELETE-KEY"
+        if *name == crate::sym!("DELETE-KEY")
             && args.is_empty()
             && modifier.is_none()
             && let Expr::Index {
@@ -759,7 +759,7 @@ impl Compiler {
             }
             return;
         }
-        if name == "DELETE-KEY"
+        if *name == crate::sym!("DELETE-KEY")
             && args.is_empty()
             && modifier.is_none()
             && let Expr::Call {
@@ -788,7 +788,7 @@ impl Compiler {
         // pair (`"kv" => True`, `:!kv` => `"kv" => False`). Route it to the same
         // `__mutsu_subscript_adverb` slice path with the `delete` flag set, so the
         // key/value slice is computed *and* the addressed slots are removed.
-        if name == "DELETE-KEY"
+        if *name == crate::sym!("DELETE-KEY")
             && modifier.is_none()
             && let Expr::Index {
                 target: idx_target,

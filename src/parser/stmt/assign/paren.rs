@@ -28,7 +28,7 @@ pub(crate) fn parenthesized_assign_expr(input: &str) -> PResult<'_, Expr> {
     let item_form =
         matches!(lhs, Expr::Contextualizer { .. }).then(|| lhs.clone().contextualizer_call());
     if let Expr::MethodCall { name, args, .. } = item_form.as_ref().unwrap_or(&lhs)
-        && name == "item"
+        && *name == crate::sym!("item")
         && args.is_empty()
         && !is_atomic
     {

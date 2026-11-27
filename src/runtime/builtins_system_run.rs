@@ -36,7 +36,7 @@ impl Interpreter {
         for (idx, arg) in args.into_iter().enumerate() {
             let plain = arg.unwrap_varref();
             let stringify = match plain.view() {
-                ValueView::Instance { class_name, .. } => idx > 0 || class_name != "IO::Path",
+                ValueView::Instance { class_name, .. } => idx > 0 || class_name != crate::sym!("IO::Path"),
                 _ => false,
             };
             if stringify {

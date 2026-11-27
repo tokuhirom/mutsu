@@ -56,7 +56,7 @@ fn endian_of(arg: &Value) -> Result<i64, RuntimeError> {
     if let ValueView::Enum {
         enum_type, value, ..
     } = arg.view()
-        && enum_type == "Endian"
+        && enum_type == crate::sym!("Endian")
     {
         return Ok(value.as_i64());
     }

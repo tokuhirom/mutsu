@@ -53,6 +53,7 @@ mod methods_distribution_cur_compunit;
 mod methods_distribution_cur_files;
 mod methods_distribution_cur_fs;
 mod methods_distribution_cur_inst;
+mod methods_distribution_cur_uninstall;
 mod methods_distribution_cur_resolve;
 mod methods_distribution_helpers;
 mod methods_enum_dispatch;

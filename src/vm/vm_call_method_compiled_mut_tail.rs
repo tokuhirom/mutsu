@@ -158,7 +158,7 @@ impl Interpreter {
                 }
                 self.pop_method_samewith_context();
                 return self.finish_compiled_method_mut_call(
-                    cn,
+                    class_sym,
                     target_id,
                     attrs_cell.as_ref(),
                     &method_def,
@@ -268,7 +268,7 @@ impl Interpreter {
     // rebound one with `:=`, plus a Proxy's FETCH.
     pub(super) fn finish_compiled_method_mut_call(
         &mut self,
-        cn: &str,
+        class_sym: crate::symbol::Symbol,
         target_id: Option<u64>,
         attrs_cell: Option<&crate::gc::Gc<crate::value::InstanceAttrs>>,
         method_def: &crate::runtime::MethodDef,
@@ -293,7 +293,10 @@ impl Interpreter {
                     (None, Some(cell)) => cell.to_map(),
                     (None, None) => AttrMap::new(),
                 };
-                return loan_env!(self, proxy_fetch(&result, None, cn, &proxy_attrs, id));
+                return loan_env!(
+                    self,
+                    proxy_fetch(&result, None, class_sym.as_str(), &proxy_attrs, id)
+                );
             }
         }
         Ok(result)

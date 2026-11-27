@@ -43,7 +43,7 @@ impl Interpreter {
             || self
                 .class_mro(how_class)
                 .iter()
-                .any(|c| c.as_str() == "Metamodel::SubsetHOW");
+                .any(|c| *c == crate::sym!("Metamodel::SubsetHOW"));
         if !is_subset_how {
             return;
         }

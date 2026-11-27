@@ -176,6 +176,12 @@ impl Interpreter {
         &self.routine_stack
     }
 
+    /// The `EVAL`s running on the routine stack, outermost first (#19242).
+    // Cost: O(e), e = running EVALs.
+    pub(crate) fn running_eval_frames(&self) -> Vec<super::eval_frames::EvalFrame> {
+        self.routine_stack.evals.within(self.routine_stack.len())
+    }
+
     /// An immutable snapshot of the routine stack (see
     /// [`super::routine_stack::RoutineStack::snapshot`]).
     // Cost: O(1) amortized.
@@ -1262,7 +1268,7 @@ impl Interpreter {
         // The reflective `Variable` object a `trait_mod:<is>(Variable:D ...)`
         // handler receives answers `var` / `name` inline too.
         if let ValueView::Instance { class_name, .. } = value.view()
-            && class_name == "Variable"
+            && class_name == crate::sym!("Variable")
             && matches!(method, "var" | "name" | "block")
         {
             return true;

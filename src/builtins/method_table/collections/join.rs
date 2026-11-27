@@ -168,8 +168,10 @@ fn join_core(target: &Value, sep: &str) -> Joined {
         }
         // `.join` on a Thread is the thread-join primitive (block until the
         // thread finishes), which the runtime's `native_thread` routes.
-        ValueView::Instance { class_name, .. } if class_name == "Thread" => Joined::NotCovered,
-        ValueView::Package(name) if name == "Thread" => Joined::NotCovered,
+        ValueView::Instance { class_name, .. } if class_name == crate::sym!("Thread") => {
+            Joined::NotCovered
+        }
+        ValueView::Package(name) if name == crate::sym!("Thread") => Joined::NotCovered,
         // A mixin joins what its inner value lists as (`(1, 2) but R`), which
         // the runtime's mixin delegation reads.
         ValueView::Mixin(..) => Joined::NotCovered,

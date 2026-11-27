@@ -15,7 +15,7 @@ const MIXIN_PREFIX: &str = "Attribute+{";
 /// itself, or a mixin type a `does` reblessed one into.
 // Cost: O(1), one symbol compare plus a fixed-length prefix compare.
 pub(crate) fn is_attribute_class(class: Symbol) -> bool {
-    class == "Attribute" || class.as_str().starts_with(MIXIN_PREFIX)
+    class == crate::sym!("Attribute") || class.as_str().starts_with(MIXIN_PREFIX)
 }
 
 /// Whether `value` is the result of composing a role into an `Attribute`

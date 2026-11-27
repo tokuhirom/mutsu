@@ -37,7 +37,7 @@ impl Interpreter {
         else {
             return None;
         };
-        if class_name == "IO::Path"
+        if class_name == crate::sym!("IO::Path")
             || class_name.as_str().starts_with("IO::Path::")
             || !super::any_cool_method_gate::is_cool_only_method(method)
             // `lines`, `words`, `comb`, ... are `IO::Path`'s own, not `Cool`'s.
@@ -50,7 +50,7 @@ impl Interpreter {
         let inherits = self
             .class_mro(class)
             .iter()
-            .any(|c| c.as_str() == "IO::Path" || c.as_str().starts_with("IO::Path::"));
+            .any(|c| *c == crate::sym!("IO::Path") || c.as_str().starts_with("IO::Path::"));
         if !inherits || self.has_user_method(class, method) {
             return None;
         }

@@ -284,7 +284,7 @@ impl Interpreter {
                 // reported every such block as *died*.
                 let mut failure_exception = None;
                 if let Some(top) = self.stack.last()
-                    && matches!(top.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+                    && matches!(top.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("Failure"))
                     && !top.is_failure_handled()
                 {
                     top.mark_failure_handled();
@@ -301,7 +301,7 @@ impl Interpreter {
                 if decay_failure
                     && failure_exception.is_some()
                     && self.stack.last().is_some_and(|top| {
-                        matches!(top.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+                        matches!(top.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("Failure"))
                     })
                 {
                     self.stack.pop();

@@ -1923,7 +1923,7 @@ impl Interpreter {
             let in_new = self
                 .routine_stack
                 .last()
-                .is_some_and(|frame| frame.name == "new")
+                .is_some_and(|frame| frame.name == crate::sym!("new"))
                 || self
                     .dispatch
                     .samewith_context_stack

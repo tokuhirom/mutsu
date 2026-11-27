@@ -207,7 +207,7 @@ impl Interpreter {
                                 || self
                                     .class_mro(base)
                                     .iter()
-                                    .any(|n| n == "Hash" || n == "Map"))
+                                    .any(|n| *n == crate::sym!("Hash") || *n == crate::sym!("Map")))
                 }
                 ValueView::Instance { class_name, .. } => {
                     let class_name = class_name.resolve();
@@ -218,7 +218,7 @@ impl Interpreter {
                         || self
                             .class_mro(&class_name)
                             .iter()
-                            .any(|n| n == "Hash" || n == "Map")
+                            .any(|n| *n == crate::sym!("Hash") || *n == crate::sym!("Map"))
                         || self.has_user_method_including_role(&class_name, "STORE")
                         || self.has_user_method_including_role(&class_name, "AT-KEY")
                 }

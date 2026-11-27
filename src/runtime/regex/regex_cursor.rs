@@ -182,7 +182,7 @@ impl Interpreter {
             && !self
                 .class_mro(&cursor_class)
                 .iter()
-                .any(|c| c.as_str() == "Match")
+                .any(|c| *c == crate::sym!("Match"))
         {
             return None;
         }

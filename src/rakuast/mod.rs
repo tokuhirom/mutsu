@@ -2610,7 +2610,7 @@ fn construct_class(
         // @args` passes it through untouched when there are no arguments
         // (CSS::Specification::Compiler's `call`).
         if let Some(arg_list) = named_arg(args, "args").filter(
-            |v| !matches!(v.view(), ValueView::Package(n) if n.as_str() == "RakuAST::ArgList"),
+            |v| !matches!(v.view(), ValueView::Package(n) if n == crate::sym!("RakuAST::ArgList")),
         ) {
             require_rakuast_class(&arg_list, RakuAstClass::ArgList, &constructor)?;
             // An empty `ArgList` is the default; rakudo's `.raku` leaves it out.

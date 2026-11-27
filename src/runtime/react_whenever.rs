@@ -183,7 +183,7 @@ impl Interpreter {
         else {
             return;
         };
-        if class_name != "Supply" {
+        if class_name != crate::sym!("Supply") {
             return;
         }
         let attrs = attributes.as_map();
@@ -267,14 +267,14 @@ impl Interpreter {
         // has to handle the actual source kinds (Supply, Promise, and Channel).
         let supply_val = match supply_val.view() {
             ValueView::Instance { class_name, .. }
-                if class_name == "Supplier"
-                    || class_name == "Supplier::Preserving"
-                    || class_name == "Proc::Async" =>
+                if class_name == crate::sym!("Supplier")
+                    || class_name == crate::sym!("Supplier::Preserving")
+                    || class_name == crate::sym!("Proc::Async") =>
             {
                 self.call_method_with_values(supply_val, "Supply", vec![])?
             }
             ValueView::Instance { class_name, .. }
-                if class_name != "Supply" && class_name != "IO::Socket::Async::Listener" =>
+                if class_name != crate::sym!("Supply") && class_name != crate::sym!("IO::Socket::Async::Listener") =>
             {
                 self.call_method_with_values(supply_val, "Supply", vec![])?
             }
@@ -364,7 +364,7 @@ impl Interpreter {
                 || self.async_state.react_active > 0)
         {
             if let ValueView::Instance { class_name, .. } = supply_val.view()
-                && class_name == "IO::Socket::Async::Listener"
+                && class_name == crate::sym!("IO::Socket::Async::Listener")
             {
                 let tap =
                     self.call_method_with_values(supply_val.clone(), "act", vec![callback])?;
@@ -546,7 +546,7 @@ impl Interpreter {
             }
             return Ok(result_tap(updated));
         } else if let ValueView::Instance { class_name, .. } = supply_val.view()
-            && class_name == "IO::Socket::Async::Listener"
+            && class_name == crate::sym!("IO::Socket::Async::Listener")
         {
             let tap = self.call_method_with_values(supply_val.clone(), "act", vec![callback])?;
             if let Some(sid) = parent_emitter_id {

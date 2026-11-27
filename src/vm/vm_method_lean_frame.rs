@@ -155,7 +155,7 @@ fn lean_param_ok(pd: &crate::ast::ParamDef) -> bool {
 /// The resolved, planned call a lean frame runs.
 pub(super) struct LeanMethodCall<'a> {
     /// The receiver's class (a metamethod's `state` is keyed by it).
-    pub(super) receiver_class_name: &'a str,
+    pub(super) receiver_class: Symbol,
     /// The class that declares the method.
     pub(super) owner_sym: Symbol,
     pub(super) method_sym: Symbol,
@@ -225,7 +225,7 @@ impl Interpreter {
             self.call_compiled_method_lean_in_unit(call, args, base)
         );
         let &LeanMethodCall {
-            receiver_class_name,
+            receiver_class,
             owner_sym,
             method_sym,
             method_def,
@@ -287,7 +287,7 @@ impl Interpreter {
             let pd = method_def.param_defs.get(idx);
             if pd.is_some_and(|pd| pd.is_invocant) {
                 let invocant = self
-                    .take_implicit_self_invocant_arrival(method_sym.as_str(), pd)
+                    .take_implicit_self_invocant_arrival_sym(method_sym, pd)
                     .unwrap_or_else(|| base.clone());
                 param_values.push((param_name.as_str(), param_syms[idx], invocant));
                 continue;
@@ -386,7 +386,7 @@ impl Interpreter {
         // A method's `state` is keyed by its type; the body has none
         // (`lean_frame_eligible`), but a block nested in it may ask.
         let saved_state_scope = self.lexicals.state_scope_id.take();
-        self.scope_method_state(method_sym.as_str(), receiver_class_name, owner_sym);
+        self.scope_method_state_sym(method_sym, receiver_class, owner_sym);
         self.reconcile_captured_readonly_ex(
             method_def.captured_readonly.as_ref(),
             cc,

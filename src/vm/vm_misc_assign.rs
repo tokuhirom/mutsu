@@ -1121,7 +1121,7 @@ impl Interpreter {
             // (ADR-0045); `$x := $_` must bind that cell, not its value (#14758).
             // Only a scalar bind takes it: any other WrapVarRef (`take $_`,
             // a call argument) passes the value.
-            || (sym.as_str() == "_" && self.scalar_bind_context().get()))
+            || (sym == crate::sym!("_") && self.scalar_bind_context().get()))
             && let Some(captured) = self.env().get_sym(sym)
             && captured.is_container_ref()
         {

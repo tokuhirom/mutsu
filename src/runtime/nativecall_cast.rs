@@ -124,7 +124,7 @@ impl Interpreter {
         // prepended inside a module (`Foo::Pointer`), so match on the last `::`
         // component — the same "one class, several spellings" problem
         // `cstruct_class_name` documents.
-        if crate::qualified::last_segment(class_name).as_str() != "Pointer" {
+        if crate::qualified::last_segment(class_name) != crate::sym!("Pointer") {
             return None;
         }
         let of: Option<String> = attributes

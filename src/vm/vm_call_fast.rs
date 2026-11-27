@@ -406,9 +406,9 @@ impl Interpreter {
             // The callee's private topic / arg array / routine-id / `$!` must not
             // leak to the caller (the caller env already holds its own).
             let is_callee_private = |k: Symbol| {
-                k == "_"
-                    || k == "@_"
-                    || k == "%_"
+                k == crate::sym!("_")
+                    || k == crate::sym!("@_")
+                    || k == crate::sym!("%_")
                     || (bang_is_callee_private
                         && k.with_str(crate::symbol::is_routine_scoped_implicit_var))
                     || cf.is_callee_local_sym(k)

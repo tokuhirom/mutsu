@@ -153,7 +153,7 @@ impl Interpreter {
                         class_name,
                         attributes: inner,
                         ..
-                    } if class_name == "Tap" || class_name == "IO::Socket::Async::ListenSocket" => {
+                    } if class_name == crate::sym!("Tap") || class_name == crate::sym!("IO::Socket::Async::ListenSocket") => {
                         let inner = inner.as_map().clone();
                         self.tap_close(&inner)?;
                     }

@@ -533,7 +533,7 @@ impl Interpreter {
                 .flatten()
                 .any(|v| {
                     matches!(v.view(), ValueView::Package(p)
-                        if crate::qualified::unqualified_part(p).as_str() != name && p != "Any")
+                        if crate::qualified::unqualified_part(p).as_str() != name && p != crate::sym!("Any"))
                 });
         if imported_routine
             && !bound_to_other_package
@@ -828,7 +828,7 @@ impl Interpreter {
             // only under a qualified — possibly ADR-0047-mangled — key): with
             // the plain `has_type_direct` alone, `my C $C .= new` resolved its
             // own bareword to the placeholder and built an `Any` instance.
-            Some(ValueView::Package(p)) if p == "Any" && name != "Any" => {
+            Some(ValueView::Package(p)) if p == crate::sym!("Any") && name != "Any" => {
                 self.resolve_bareword_type_name(name).is_some()
             }
             _ => false,

@@ -201,7 +201,7 @@ fn keep_common<W>(
 pub(crate) fn set_op_values(op: SetOp, left: &Value, right: &Value) -> Result<Value, RuntimeError> {
     let l = set_operand(left);
     let r = set_operand(right);
-    let is_failure = |v: &Value| matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == "Failure");
+    let is_failure = |v: &Value| matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("Failure"));
     if is_failure(&l) || is_failure(&r) {
         return Err(RuntimeError::new("Exception"));
     }

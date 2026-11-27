@@ -101,7 +101,7 @@ fn int_range(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeErr
         return instance_error("Int", target);
     };
     // `UInt` is `subset UInt of Int where * >= 0`: `0..^Inf`.
-    if name.as_str() == "UInt" {
+    if name == crate::sym!("UInt") {
         return Some(Ok(Value::generic_range(
             Value::int(0),
             Value::num(f64::INFINITY),

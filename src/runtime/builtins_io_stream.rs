@@ -103,7 +103,7 @@ impl Interpreter {
         // (#17754), whose per-file switching the builtin's line reader lacks.
         let mixed = match handle.view() {
             ValueView::Mixin(..) => true,
-            ValueView::Instance { class_name, .. } => class_name != "IO::Handle",
+            ValueView::Instance { class_name, .. } => class_name != crate::sym!("IO::Handle"),
             _ => false,
         };
         if !mixed {

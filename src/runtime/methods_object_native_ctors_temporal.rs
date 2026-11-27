@@ -60,7 +60,7 @@ impl Interpreter {
                     class_name,
                     attributes,
                     ..
-                } if class_name == "DateTime" => {
+                } if class_name == crate::sym!("DateTime") => {
                     let (y, m, d, _, _, _, _) = temporal::datetime_attrs(&attributes.as_map());
                     // The source's formatter carries over unless one is given.
                     if formatter.is_none() {
@@ -74,7 +74,7 @@ impl Interpreter {
                     class_name,
                     attributes,
                     ..
-                } if class_name == "Date" => {
+                } if class_name == crate::sym!("Date") => {
                     let (y, m, d) = temporal::date_attrs(&attributes.as_map());
                     if formatter.is_none() {
                         formatter = attributes.as_map().get("formatter").cloned();
@@ -87,7 +87,7 @@ impl Interpreter {
                     class_name,
                     attributes,
                     ..
-                } if class_name == "Instant" => {
+                } if class_name == crate::sym!("Instant") => {
                     let tai = attributes
                         .as_map()
                         .get("value")
@@ -201,7 +201,7 @@ impl Interpreter {
                             attributes,
                             ..
                         } = value.view()
-                            && class_name == "Date"
+                            && class_name == crate::sym!("Date")
                         {
                             let (y, m, d) = temporal::date_attrs(&attributes.as_map());
                             year = y;
@@ -332,7 +332,7 @@ impl Interpreter {
                     class_name,
                     attributes,
                     ..
-                } if class_name == "Date" => {
+                } if class_name == crate::sym!("Date") => {
                     let (y, m, d) = temporal::date_attrs(&attributes.as_map());
                     if formatter.is_none() {
                         formatter = attributes.as_map().get("formatter").cloned();
@@ -349,7 +349,7 @@ impl Interpreter {
                     class_name,
                     attributes,
                     ..
-                } if class_name == "Instant" => {
+                } if class_name == crate::sym!("Instant") => {
                     let val = attributes
                         .as_map()
                         .get("value")

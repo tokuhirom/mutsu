@@ -150,7 +150,7 @@ thread_local! {
     /// exclusions from reading the code, missed the `<$var>` form, and made
     /// `roast/S05-metasyntax/litvar.t` reuse the tree of `$var = '$i'` for
     /// `$var = '<$i>'`. Anything that reads such state must raise this;
-    /// `Interpreter::note_regex_parse_ambient_read` is the single way to do it.
+    /// `RegexParser::note_regex_parse_ambient_read` is the single way to do it.
     pub(crate) static PARSE_CONSULTED_AMBIENT_STATE: std::cell::Cell<bool> =
         const { std::cell::Cell::new(false) };
 
@@ -547,17 +547,6 @@ pub(crate) enum RegexParseMode {
     Validate,
 }
 
-thread_local! {
-    /// A reusable interpreter used only as a `&self` receiver for parse-time
-    /// regex validation (`validate_regex_structurally`). In `Validate` mode the
-    /// structural parser never consults the interpreter's env / grammar tables
-    /// (those reads are gated on `Match` mode), so this instance's state is
-    /// irrelevant — it exists solely so we can call the shared `&self` parser
-    /// without constructing a fresh `Interpreter` (which reads the whole OS
-    /// environment) on every regex literal at compile time.
-    static VALIDATE_INTERP: Interpreter = Interpreter::new();
-}
-
 /// Parse-time syntax validation via the structural parser — the single grammar
 /// source of truth (replaces the former `regex_validate` module).
 ///
@@ -723,8 +712,10 @@ pub(crate) fn validate_regex_structurally(pattern: &str) -> Result<(), RuntimeEr
     super::regex_dollar_brace::check_obsolete_dollar_brace(pattern)?;
     PENDING_REGEX_ERROR.with(|e| *e.borrow_mut() = None);
     let _ = take_regex_sorrows();
-    let parsed = VALIDATE_INTERP
-        .with(|interp| interp.parse_regex_with_mode(pattern, RegexParseMode::Validate));
+    // A parse-time validation has no runtime to read (`RegexParser`): the
+    // program it validates has not started.
+    let parsed = super::regex_parser::RegexParser::new(None)
+        .parse_regex_with_mode(pattern, RegexParseMode::Validate);
     // Surface any error the structural parse recorded. The parser sometimes
     // sets a pending error and then `continue`s past the bad construct (so it
     // can return a partial pattern that the runtime later rejects via

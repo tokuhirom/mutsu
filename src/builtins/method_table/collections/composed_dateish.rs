@@ -51,7 +51,7 @@ fn formatted(
         || interp
             .class_mro(&class)
             .iter()
-            .any(|c| matches!(c.as_str(), "Date" | "DateTime"))
+            .any(|c| crate::sym_in!(*c, "Date" | "DateTime"))
     {
         return None;
     }

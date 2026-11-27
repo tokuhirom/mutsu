@@ -802,7 +802,7 @@ impl Interpreter {
         // identical to an untagged compile.
         let mut args = if has_varref {
             let native_pair_new = method == "new"
-                && matches!(target.view(), ValueView::Package(cn) if cn == "Pair")
+                && matches!(target.view(), ValueView::Package(cn) if cn == crate::sym!("Pair"))
                 && !self.has_user_method("Pair", "new");
             args.into_iter()
                 .map(|a| match a.view() {
@@ -1108,14 +1108,7 @@ impl Interpreter {
                         args,
                     );
                 }
-                return self.run_plain_method_lane(
-                    code,
-                    target_name,
-                    target,
-                    method,
-                    method_sym,
-                    args,
-                );
+                return self.run_plain_method_lane(code, target_name, target, method_sym, args);
             }
             other => self.caches.plain_method_lane_candidate = other,
         }
@@ -1126,7 +1119,7 @@ impl Interpreter {
         // that binds its invocant raw (`multi method m(::?ROLE:U $self is rw:
         // ...)`) must reach the caller's variable, as it does without a proto.
         let proto_armed = self.proto_method_declared_for(&target, method)
-            && self.arm_raw_invocant_arrival(code, target_name, &target, method, method_sym, &args);
+            && self.arm_raw_invocant_arrival(code, target_name, &target, method_sym, &args);
         let proto_result = self.try_proto_method_body(&target, method, &args);
         self.disarm_raw_invocant_arrival(proto_armed);
         if let Some(result) = proto_result {
@@ -1459,12 +1452,10 @@ impl Interpreter {
         // X::Multi::NoMatch (roast .../multi-no-match.t).
         if method == "protect" {
             let is_lock_type_object = matches!(target.view(), ValueView::Package(name)
-                if matches!(name.as_str(),
-                    "Lock" | "Lock::Async" | "Lock::Soft"));
+                if crate::sym_in!(name, "Lock" | "Lock::Async" | "Lock::Soft"));
             let is_lock_instance_bad_arg = matches!(target.view(),
                 ValueView::Instance { class_name, .. }
-                if matches!(class_name.as_str(),
-                    "Lock" | "Lock::Async" | "Lock::Soft"))
+                if crate::sym_in!(class_name, "Lock" | "Lock::Async" | "Lock::Soft"))
                 && (args.len() != 1
                     || !matches!(args[0].view(), ValueView::Sub(..) | ValueView::WeakSub(..)));
             if is_lock_type_object || is_lock_instance_bad_arg {
@@ -1487,7 +1478,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = target.view()
-            && (class_name.as_str() == "Lock::Async" || class_name.as_str() == "Lock")
+            && (class_name == crate::sym!("Lock::Async") || class_name == crate::sym!("Lock"))
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept("callmethodmut", "lock-protect");
             let lock_id = match attributes.as_map().get("lock-id").map(Value::view) {
@@ -1529,7 +1520,7 @@ impl Interpreter {
                 attributes,
                 ..
             } = target.view()
-            && class_name.as_str() == "Lock::Async"
+            && class_name == crate::sym!("Lock::Async")
         {
             crate::vm::vm_stats::record_dispatch_entry_intercept(
                 "callmethodmut",
@@ -2175,7 +2166,6 @@ impl Interpreter {
                             code,
                             target_name,
                             target,
-                            method,
                             method_sym,
                             args,
                         )
@@ -2186,7 +2176,6 @@ impl Interpreter {
                         code,
                         target_name,
                         target,
-                        method,
                         method_sym,
                         args,
                     )

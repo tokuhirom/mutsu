@@ -151,7 +151,7 @@ impl Interpreter {
                 // (S03-operators/identity.t "basic sanity"). The cost — a
                 // rare `my $a := Any; my $b := Any` pair no longer comparing
                 // True — mirrors how the old Nil seed behaved here.
-                (ValueView::Package(a), ValueView::Package(b)) => a == b && a.as_str() != "Any",
+                (ValueView::Package(a), ValueView::Package(b)) => a == b && a != crate::sym!("Any"),
                 (ValueView::Sub(a), ValueView::Sub(b)) => crate::gc::Gc::ptr_eq(&a, &b),
                 (ValueView::WeakSub(a), ValueView::WeakSub(b)) => crate::gc::WeakGc::ptr_eq(&a, &b),
                 // A `Metamodel::Primitives.create_type` type object is a

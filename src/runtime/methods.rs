@@ -104,7 +104,7 @@ pub(crate) fn shaped_multidim_exists_pos(
 fn is_assigned_value(v: &Value) -> bool {
     match v.view() {
         ValueView::Nil => false,
-        ValueView::Package(s) if s == "Any" => false,
+        ValueView::Package(s) if s == crate::sym!("Any") => false,
         _ => true,
     }
 }

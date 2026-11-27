@@ -42,7 +42,7 @@ pub(crate) fn label_name(value: &Value) -> Option<String> {
             class_name,
             attributes,
             ..
-        } if class_name == LABEL_CLASS => Some(attr_str(&attributes.as_map(), "name")),
+        } if class_name == crate::sym!(LABEL_CLASS) => Some(attr_str(&attributes.as_map(), "name")),
         _ => None,
     }
 }

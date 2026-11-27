@@ -417,7 +417,7 @@ impl Interpreter {
         // shadows in the stash snapshot but not in the core resolver.
         if sigil.is_empty()
             && let [head, routine] = crate::qualified::segments(Symbol::intern(&name))
-            && matches!(head.as_str(), "CORE" | "SETTING")
+            && crate::sym_in!(*head, "CORE" | "SETTING")
             && let Some(bare) = routine.as_str().strip_prefix('&')
         {
             let qualified = crate::qualified::qualified_text(*head, bare);

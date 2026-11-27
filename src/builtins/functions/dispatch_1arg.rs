@@ -626,7 +626,11 @@ pub(crate) fn native_function_1arg(name: &str, arg: &Value) -> Option<Result<Val
                 Some(Ok(Value::truth(match arg.view() {
                     ValueView::Nil | ValueView::Package(_) => false,
                     ValueView::Slip(items) if items.is_empty() => false,
-                    ValueView::Instance { class_name, .. } if class_name == "Failure" => false,
+                    ValueView::Instance { class_name, .. }
+                        if class_name == crate::sym!("Failure") =>
+                    {
+                        false
+                    }
                     _ => true,
                 })))
             })

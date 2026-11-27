@@ -27,7 +27,7 @@ impl Interpreter {
         method_sym: Symbol,
         args: &mut [Value],
     ) {
-        if method_sym.as_str() != "set_value" || args.len() != 2 {
+        if method_sym != crate::sym!("set_value") || args.len() != 2 {
             return;
         }
         let slot_hint = args[1].varref_slot();

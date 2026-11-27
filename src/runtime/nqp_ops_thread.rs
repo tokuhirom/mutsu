@@ -24,7 +24,7 @@ fn thread_attrs(op: &str, args: &[Value]) -> Result<(Value, AttrMap), RuntimeErr
         attributes,
         ..
     } = handle.view()
-        && class_name == "Thread"
+        && class_name == crate::sym!("Thread")
     {
         let attrs = attributes.as_map().clone();
         return Ok((handle, attrs));

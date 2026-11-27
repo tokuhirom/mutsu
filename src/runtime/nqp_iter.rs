@@ -38,7 +38,7 @@ const NOT_ADVANCED: &str =
 /// Whether `v` is an `nqp::iterator` value.
 // Cost: O(1).
 pub(crate) fn is_boot_iter(v: &Value) -> bool {
-    matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == BOOT_ITER)
+    matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!(BOOT_ITER))
 }
 
 /// `nqp::iterator($list-or-hash)`.

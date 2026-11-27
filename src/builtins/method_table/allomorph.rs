@@ -139,7 +139,7 @@ pub(super) fn keep_allomorph<F>(
             if !std::ptr::eq(allomorph, part)
                 // `round($scale)` and `Int.abs` build a new number even when equal.
                 && arity == 0
-                && !(method.as_str() == "abs"
+                && !(method == crate::sym!("abs")
                     && matches!(part.dispatch_shape(), Some(DispatchShape::Int)))
                 && ALLOMORPH_RETURNS_SELF.contains(&method.as_str())
                 && value.dispatch_shape() == part.dispatch_shape()

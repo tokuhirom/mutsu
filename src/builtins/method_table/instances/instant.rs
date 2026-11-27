@@ -131,7 +131,7 @@ fn seconds(target: &Value) -> Value {
             .get("value")
             .cloned()
             .unwrap_or_else(|| {
-                if class_name == "Duration" {
+                if class_name == crate::sym!("Duration") {
                     Value::num(0.0)
                 } else {
                     Value::int(0)

@@ -742,7 +742,7 @@ impl Interpreter {
     // Cost: O(1).
     pub(crate) fn is_metamodel_primitives(target: &Value) -> bool {
         target.is_package_value()
-            && matches!(target.view(), ValueView::Package(name) if name.as_str() == "Metamodel::Primitives")
+            && matches!(target.view(), ValueView::Package(name) if name == crate::sym!("Metamodel::Primitives"))
     }
 
     /// Rakudo quirk: a class that declares `multi method ACCEPTS` without a

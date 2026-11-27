@@ -134,7 +134,7 @@ fn argument_items(value: &Value) -> Vec<Value> {
             class_name,
             attributes,
             ..
-        } if class_name == "IterationBuffer" => {
+        } if class_name == crate::sym!("IterationBuffer") => {
             list_items(attributes.as_map().get(ITERATION_BUFFER_ITEMS))
         }
         _ => Interpreter::value_to_list(value),
@@ -165,7 +165,9 @@ fn refuse_opaque(target: &Value, what: &str) -> Option<RuntimeError> {
     else {
         return None;
     };
-    if class_name == "IterationBuffer" || attributes.as_map().contains_key(ITERATION_BUFFER_ITEMS) {
+    if class_name == crate::sym!("IterationBuffer")
+        || attributes.as_map().contains_key(ITERATION_BUFFER_ITEMS)
+    {
         return None;
     }
     if crate::value::value_buf::has_buf_elems(&attributes) {

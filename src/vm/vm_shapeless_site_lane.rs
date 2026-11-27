@@ -65,7 +65,7 @@ impl Interpreter {
                 (name, true)
             }
             ValueView::Instance { class_name, .. } => {
-                if class_name == "Failure" || self.stack[base].is_lazy_match_value() {
+                if class_name == crate::sym!("Failure") || self.stack[base].is_lazy_match_value() {
                     return None;
                 }
                 (class_name, false)

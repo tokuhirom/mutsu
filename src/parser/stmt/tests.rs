@@ -48,7 +48,7 @@ fn parse_plan_call() {
     let (rest, stmts) = program("use Test;\nplan 1;").unwrap();
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 2);
-    assert!(matches!(&stmts[1], Stmt::Call { name, .. } if name == "plan"));
+    assert!(matches!(&stmts[1], Stmt::Call { name, .. } if *name == crate::sym!("plan")));
 }
 
 #[test]
@@ -57,7 +57,7 @@ fn parse_ok_call_with_named() {
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 2);
     if let Stmt::Call { name, args, .. } = &stmts[1] {
-        assert_eq!(name, "ok");
+        assert_eq!(*name, crate::sym!("ok"));
         assert!(args.len() >= 2);
         assert!(
             args.iter()
@@ -75,7 +75,7 @@ fn parse_is_deeply_unicode_ascii_minus_complex_args() {
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 2);
     if let Stmt::Call { name, args, .. } = &stmts[1] {
-        assert_eq!(name, "is-deeply");
+        assert_eq!(*name, crate::sym!("is-deeply"));
         assert!(args.len() >= 2);
         assert!(matches!(
             args[0],
@@ -173,7 +173,7 @@ fn parse_plan_skip_all() {
     assert_eq!(rest, "");
     assert_eq!(stmts.len(), 2);
     if let Stmt::Call { name, args, .. } = &stmts[1] {
-        assert_eq!(name, "plan");
+        assert_eq!(*name, crate::sym!("plan"));
         assert!(matches!(&args[0], CallArg::Named { name, .. } if name == "skip-all"));
     } else {
         panic!("Expected Call");
@@ -316,7 +316,7 @@ fn parse_user_prefix_sub_with_looser_trait_as_full_rhs_expression() {
             assert!(matches!(
                 &args[0],
                 Expr::Call { name, args, .. }
-                    if name == "prefix:<pIO>"
+                    if *name == crate::sym!("prefix:<pIO>")
                         && args.len() == 1
                         && matches!(
                             &args[0],

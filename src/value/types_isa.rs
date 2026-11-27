@@ -130,7 +130,7 @@ impl Value {
             ValueView::Slip(_) => "Slip",
             ValueView::Promise(p) => {
                 let cn = p.class_name();
-                if cn != "Promise" && cn == type_name {
+                if cn != crate::sym!("Promise") && cn.as_str() == type_name {
                     return true;
                 }
                 // Also check if type_name is "Promise" (parent)
@@ -283,7 +283,7 @@ impl Value {
                     || matches!(
                         self.view(),
                         ValueView::Instance { class_name, .. }
-                            if class_name == "Capture"
+                            if class_name == crate::sym!("Capture")
                     )
                     || (matches!(self.view(), ValueView::Instance { .. })
                         && self.is_match_instance())
@@ -302,7 +302,7 @@ impl Value {
             "Exception" => self.instance_is_exception_by_name(),
             "X::AdHoc" | "CX::Warn" | "CX::Return" | "X::OS" => {
                 if let ValueView::Instance { class_name, .. } = self.view() {
-                    class_name == type_name
+                    class_name.as_str() == type_name
                 } else {
                     false
                 }
@@ -330,24 +330,24 @@ impl Value {
                 matches!(
                     self.view(),
                     ValueView::Instance { class_name, .. }
-                        if class_name == "ObjAt" || class_name == "ValueObjAt"
+                        if class_name == crate::sym!("ObjAt") || class_name == crate::sym!("ValueObjAt")
                 )
             }
             "Pod::Block" => matches!(
                 self.view(),
                 ValueView::Instance { class_name, .. }
-                    if class_name == "Pod::Block"
-                        || class_name == "Pod::Block::Comment"
-                        || class_name == "Pod::Block::Para"
-                        || class_name == "Pod::Block::Named"
-                        || class_name == "Pod::Heading"
-                        || class_name == "Pod::Block::Table"
-                        || class_name == "Pod::Item"
+                    if class_name == crate::sym!("Pod::Block")
+                        || class_name == crate::sym!("Pod::Block::Comment")
+                        || class_name == crate::sym!("Pod::Block::Para")
+                        || class_name == crate::sym!("Pod::Block::Named")
+                        || class_name == crate::sym!("Pod::Heading")
+                        || class_name == crate::sym!("Pod::Block::Table")
+                        || class_name == crate::sym!("Pod::Item")
             ),
             "Pod::Config" => matches!(
                 self.view(),
                 ValueView::Instance { class_name, .. }
-                    if class_name == "Pod::Config"
+                    if class_name == crate::sym!("Pod::Config")
             ),
             _ => false,
         }
@@ -399,7 +399,7 @@ impl Value {
             ),
             "Dateish" => matches!(
                 self.view(),
-                ValueView::Instance { class_name, .. } if class_name == "Date" || class_name == "DateTime"
+                ValueView::Instance { class_name, .. } if class_name == crate::sym!("Date") || class_name == crate::sym!("DateTime")
             ),
             "Stringy" => matches!(self.view(), ValueView::Str(_)),
             "Callable" => {
@@ -533,12 +533,12 @@ impl Value {
         // Check built-in role compositions
         if role_name == "Encoding" {
             if let ValueView::Instance { class_name, .. } = self.view()
-                && class_name == "Encoding::Builtin"
+                && class_name == crate::sym!("Encoding::Builtin")
             {
                 return true;
             }
             if let ValueView::Package(name) = self.view()
-                && name == "Encoding::Builtin"
+                && name == crate::sym!("Encoding::Builtin")
             {
                 return true;
             }

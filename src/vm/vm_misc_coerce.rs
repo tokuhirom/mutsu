@@ -78,7 +78,7 @@ impl Interpreter {
         let is_range_instance = if let ValueView::Instance { class_name, .. } = val.view() {
             self.class_mro(&class_name.resolve())
                 .iter()
-                .any(|name| name.as_str() == "Range")
+                .any(|name| *name == crate::sym!("Range"))
         } else {
             false
         };

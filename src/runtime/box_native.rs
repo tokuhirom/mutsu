@@ -113,7 +113,7 @@ impl Interpreter {
         // `ObjAt` / `ValueObjAt` are core `is Str` classes mutsu builds
         // natively, around their `WHICH` string (`ValueMap.WHICH` boxes into
         // `ValueObjAt`).
-        if matches!(class.as_str(), "ObjAt" | "ValueObjAt") {
+        if crate::sym_in!(class, "ObjAt" | "ValueObjAt") {
             return matches!(value.view(), ValueView::Str(_))
                 .then(|| Self::build_native_objat_value(class, std::slice::from_ref(value)));
         }

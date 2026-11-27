@@ -35,7 +35,7 @@ impl Interpreter {
                     Err(err)
                         if err.exception.as_deref().is_some_and(|ex| {
                             matches!(ex.view(), ValueView::Instance { class_name, .. }
-                                if class_name.as_str() == "X::Caller::NotDynamic")
+                                if class_name == crate::sym!("X::Caller::NotDynamic"))
                         }) =>
                     {
                         return Ok(Self::symbol_not_dynamic_failure(&format!("${name}")));

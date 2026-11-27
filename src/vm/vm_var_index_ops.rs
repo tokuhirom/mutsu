@@ -420,7 +420,7 @@ impl Interpreter {
                     // answers.
                     ValueView::Hash(h) => h.declared_type.as_deref() != Some("PseudoStash"),
                     ValueView::Array(..) => true,
-                    ValueView::Instance { class_name, .. } => class_name.as_str() == "Stash",
+                    ValueView::Instance { class_name, .. } => class_name == crate::sym!("Stash"),
                     _ => false,
                 }
             });
@@ -1415,7 +1415,7 @@ impl Interpreter {
             index = coerced?;
         }
         // If target is a Failure, propagate it (// will catch it as undefined)
-        if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == "Failure")
+        if matches!(target.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("Failure"))
         {
             self.stack.push(target);
             return Ok(());
@@ -2416,7 +2416,7 @@ impl Interpreter {
                     ..
                 },
                 _,
-            ) if is_positional && class_name == "Backtrace" => {
+            ) if is_positional && class_name == crate::sym!("Backtrace") => {
                 let frames = attributes
                     .as_map()
                     .get("frames")

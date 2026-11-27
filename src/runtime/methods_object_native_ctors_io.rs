@@ -84,7 +84,7 @@ impl Interpreter {
                     && self
                         .class_mro(&class_name.resolve())
                         .iter()
-                        .any(|n| n == "IO::Path") =>
+                        .any(|n| *n == crate::sym!("IO::Path")) =>
                 {
                     positional_path = Some(
                         attributes

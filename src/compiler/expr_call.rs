@@ -47,7 +47,7 @@ impl Compiler {
                 args,
                 modifier: None,
                 ..
-            } if name == "item" && args.is_empty() => match target.as_ref() {
+            } if *name == crate::sym!("item") && args.is_empty() => match target.as_ref() {
                 Expr::Var(n) if !n.contains("::") => Some(n),
                 _ => None,
             },
@@ -325,7 +325,7 @@ impl Compiler {
 
     pub(super) fn compile_expr_call(&mut self, name: &Symbol, args: &[Expr]) {
         self.fold_lexical_sub_free_vars(name);
-        if *name == crate::ast::subscript_adverb::SUBSCRIPT_ADVERB_FN
+        if *name == crate::sym!(crate::ast::subscript_adverb::SUBSCRIPT_ADVERB_FN)
             && let Some(with_chain) = self.subscript_adverb_args_with_chain(args)
         {
             self.compile_expr_call_inner(name, &with_chain, false);
@@ -471,7 +471,7 @@ impl Compiler {
         // routine the free-var analysis never sees -- so keep `$s` env-synced
         // like any other rw-arg sink, or the STORE of a later `$r = v` on a
         // bound `$r` reads a stale (undefined) `$s` (#9200).
-        if matches!(name.as_str(), "substr-rw" | "subbuf-rw")
+        if crate::sym_in!(*name, "substr-rw" | "subbuf-rw")
             && let Some(Expr::Var(var_name)) = args.first()
         {
             self.note_atomic_env_sync_target(var_name, false);
@@ -489,7 +489,7 @@ impl Compiler {
         // $a, $b` hands back a List of the two containers (raku: `(h())[0] = 9`
         // writes `$a`), which is only possible if each operand produced its own
         // container. `builtin_return_rw` assembles them into the List.
-        if name == "return-rw" && !args.is_empty() {
+        if *name == crate::sym!("return-rw") && !args.is_empty() {
             for arg in args {
                 self.compile_return_rw_arg(arg);
             }
@@ -504,7 +504,7 @@ impl Compiler {
             });
             return;
         }
-        if name == "dd" && self.try_compile_dd_call(name, args) {
+        if *name == crate::sym!("dd") && self.try_compile_dd_call(name, args) {
             return;
         }
         // A `my &f` binding visible right here SHADOWS any package/registry
@@ -578,7 +578,7 @@ impl Compiler {
         // `Compiler::callframe_block_depth`). Guarded against re-injection so the
         // recursive re-dispatch terminates.
         if self.callframe_block_depth > 0
-            && name == "callframe"
+            && *name == crate::sym!("callframe")
             && !args
                 .iter()
                 .any(|a| Self::is_named_arg_key(a, "__callframe_blocks"))
@@ -616,7 +616,8 @@ impl Compiler {
         // `⚛$x` and `$x ⚛= v` are the lenient atomics: any scalar, but not a
         // narrow native integer (#12008). Their `atomic-fetch($x)` /
         // `atomic-assign($x, v)` spellings are guarded by their own branches below.
-        if (name == "__mutsu_atomic_fetch_var" || name == "__mutsu_atomic_store_var")
+        if (*name == crate::sym!("__mutsu_atomic_fetch_var")
+            || *name == crate::sym!("__mutsu_atomic_store_var"))
             && let Some(vn) = &atomic_helper_target
         {
             self.emit_lenient_atomic_guard(vn, false);
@@ -1273,7 +1274,7 @@ impl Compiler {
             self.code.emit(OpCode::Pop);
             self.code.emit(OpCode::GetGlobal(tmp_result_idx));
             return;
-        } else if name == "atomic-fetch"
+        } else if *name == crate::sym!("atomic-fetch")
             && args.len() == 1
             && let Expr::Var(var_name) = &args[0]
         {
@@ -1291,7 +1292,7 @@ impl Compiler {
                 static_arg_types: false,
             });
             return;
-        } else if name == "atomic-assign"
+        } else if *name == crate::sym!("atomic-assign")
             && args.len() == 2
             && let Expr::Var(var_name) = &args[0]
         {
@@ -1321,7 +1322,7 @@ impl Compiler {
             return;
         }
         // Rewrite cas($var, ...) -> __mutsu_cas_var($var_name_str, ...)
-        if name == "cas"
+        if *name == crate::sym!("cas")
             && (args.len() == 2 || args.len() == 3)
             && let Some(var_name) = Self::atomic_target_name(&args[0])
         {
@@ -1442,7 +1443,7 @@ impl Compiler {
             return;
         }
         // Rewrite undefine($var) -> $var = Any (assign type object to the variable)
-        if name == "undefine" && args.len() == 1 {
+        if *name == crate::sym!("undefine") && args.len() == 1 {
             // `undefine` is deprecated from 6.d on: record the use (rakudo
             // reports it at exit, "Saw 1 occurrence of deprecated code").
             self.compile_expr(&Expr::Call {
@@ -1772,7 +1773,7 @@ impl Compiler {
             self.compile_expr(&method_call);
         }
         // sink: evaluate the expression (including calling blocks), discard result, push Nil
-        else if name == "sink" && args.len() == 1 {
+        else if *name == crate::sym!("sink") && args.len() == 1 {
             match &args[0] {
                 // ADR-0048 Phase 2: `sink {}` does not take a signature in
                 // raku. A bare `{ $^c }` argument was parsed (before this
@@ -1832,7 +1833,7 @@ impl Compiler {
         // present; a normal `start { ... }` (no placeholder, or an explicit
         // `sub { ... }`/named closure argument, which stays `Expr::AnonSub`/
         // some other shape) falls through unchanged.
-        else if name == "start"
+        else if *name == crate::sym!("start")
             && args.len() == 1
             && let Expr::AnonSubParams { body, .. } = &args[0]
             && self.emit_block_placeholder_die(body)
@@ -1842,7 +1843,7 @@ impl Compiler {
         // run it INLINE in the current scope (so `quietly my $x = ...` leaks $x),
         // unlike the `quietly(&block)` builtin which runs the block in its own
         // frame. The guarded warn still resumes in place with its resume value.
-        else if name == "quietly" && args.len() == 1 {
+        else if *name == crate::sym!("quietly") && args.len() == 1 {
             match &args[0] {
                 Expr::AnonSub { body, .. } | Expr::AnonSubParams { body, .. } => {
                     // `quietly { ... }` -- run the block body inline as a
@@ -1866,7 +1867,7 @@ impl Compiler {
         }
         // Rewrite indir($path, { ... }) body into a callable block value so
         // call_function("indir", ...) can execute it after switching $*CWD.
-        else if name == "indir" && args.len() >= 2 {
+        else if *name == crate::sym!("indir") && args.len() >= 2 {
             let mut rewritten_args = args.to_vec();
             if let Expr::Block(body) = &rewritten_args[1] {
                 rewritten_args[1] = make_anon_sub(body.clone());
@@ -1886,7 +1887,7 @@ impl Compiler {
             });
         }
         // Rewrite cas($target, $expected, $new)
-        else if name == "cas" && args.len() == 3 {
+        else if *name == crate::sym!("cas") && args.len() == 3 {
             // For array element CAS: cas(@arr[idx], $expected, $new)
             // Emit __mutsu_cas_array_elem("@arr_name", @arr, idx, expected, new):
             // the name picks the shared lane, the read the frame's own binding
@@ -2041,7 +2042,7 @@ impl Compiler {
         }
         // Rewrite cas($var, &fn) to assignment expression:
         // $var = fn($var)
-        else if name == "cas" && args.len() == 2 {
+        else if *name == crate::sym!("cas") && args.len() == 2 {
             let var_name = Self::atomic_target_name(&args[0]);
             if let Some(vname) = var_name {
                 // ADR-0033 Phase 1: see the sibling fast path above — a
@@ -2183,7 +2184,7 @@ impl Compiler {
             }
         } else {
             // Rewrite VAR($var)/VAR(@var)/VAR(%var)/VAR(&var) -> $var.VAR, etc.
-            if name == "VAR"
+            if *name == crate::sym!("VAR")
                 && args.len() == 1
                 && matches!(
                     args[0],

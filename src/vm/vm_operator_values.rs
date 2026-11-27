@@ -321,7 +321,7 @@ impl Interpreter {
         if !crate::runtime::types::value_is_defined(&right) {
             return Ok(left);
         }
-        let is_failure = |v: &Value| matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == "Failure");
+        let is_failure = |v: &Value| matches!(v.view(), ValueView::Instance { class_name, .. } if class_name == crate::sym!("Failure"));
         if is_failure(&left) {
             return Ok(left);
         }
@@ -335,8 +335,10 @@ impl Interpreter {
             || self.has_user_stringifier_operand(&right)
         {
             match self.cmp_value(left.clone(), right.clone())?.view() {
-                ValueView::Enum { key, .. } if key.as_str() == "Less" => std::cmp::Ordering::Less,
-                ValueView::Enum { key, .. } if key.as_str() == "More" => {
+                ValueView::Enum { key, .. } if key == crate::sym!("Less") => {
+                    std::cmp::Ordering::Less
+                }
+                ValueView::Enum { key, .. } if key == crate::sym!("More") => {
                     std::cmp::Ordering::Greater
                 }
                 _ => std::cmp::Ordering::Equal,

@@ -40,7 +40,7 @@ fn check(value: &Value) -> Result<(), RuntimeError> {
         ValueView::RakuAst(node) => {
             matches!(node.class, RakuAstClass::Block | RakuAstClass::PointyBlock)
         }
-        ValueView::Package(name) => name.as_str() == "RakuAST::Block",
+        ValueView::Package(name) => name == crate::sym!("RakuAST::Block"),
         _ => false,
     };
     if ok {

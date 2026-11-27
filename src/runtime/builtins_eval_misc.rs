@@ -413,7 +413,7 @@ impl Interpreter {
                 node.class,
                 crate::rakuast::RakuAstClass::CompUnit | crate::rakuast::RakuAstClass::StatementList
             ) && stmts.iter().any(|s| {
-                matches!(s, Stmt::SubDecl { name, multi: false, .. } if name.as_str() == "MAIN")
+                matches!(s, Stmt::SubDecl { name, multi: false, .. } if *name == crate::sym!("MAIN"))
             }) {
                 stmts.push(Stmt::Expr(crate::ast::Expr::Call {
                     name: crate::symbol::Symbol::intern("__mutsu_dispatch_main"),
@@ -585,6 +585,18 @@ impl Interpreter {
         {
             self.repl_compiler.session_units.insert(unit_sym);
         }
+        // The snippet's mainline is a `<unit>` frame of its own in a
+        // backtrace, called from here (#19242). Taken before `?FILE` moves on
+        // to the unit, so the call site is the caller's file.
+        let eval_frames_saved = {
+            let depth = self.routine_stack.len();
+            let line = self.current_source_line();
+            let file = self.executing_source_file_sym();
+            let package = self.current_package_sym();
+            self.routine_stack
+                .evals
+                .enter(depth, unit_sym, package, line, file)
+        };
         let saved_unit = std::mem::replace(&mut self.current_unit, unit_sym);
         self.env
             .insert("?FILE".to_string(), Value::str(unit_name.clone()));
@@ -639,6 +651,9 @@ impl Interpreter {
                 self.env.insert_sym(sym, value);
             }
         }
+        // Left before the compile-failure handling below: a snippet that
+        // never compiled has no running frame of its own.
+        self.routine_stack.evals.leave(eval_frames_saved);
         // A compile-time diagnosis (`X::Comp`/`X::Syntax::*`) raised while
         // parsing the EVAL'd string reports `.filename` matching the EVAL
         // pseudo-file (rakudo: `/EVAL/`), just like `.line` reports the line
@@ -671,6 +686,22 @@ impl Interpreter {
                 attributes
                     .insert_if_absent("filename".to_string(), Value::str(compile_name.clone()));
                 attributes.insert_if_absent("file".to_string(), Value::str(compile_name));
+                // rakudo's compile failure carries the backtrace of the `EVAL`
+                // call that compiled it (under the compiler's own frames), so
+                // `.backtrace` is defined; it is not a runtime one (#19242).
+                if !attributes.contains_key("backtrace") {
+                    attributes.insert(
+                        "backtrace".to_string(),
+                        self.build_backtrace_value_with_runtime(false),
+                    );
+                }
+            } else if e.exception.is_none() {
+                // Not built yet (a typed `X::Syntax::...: ` message): build it
+                // now, with that backtrace, so every CATCH path sees one.
+                let exception = e.exception_value_with_backtrace(|| {
+                    Some(self.build_backtrace_value_with_runtime(false))
+                });
+                e.exception = Some(Box::new(exception));
             }
         }
         crate::parser::set_parser_source_file(saved_source_file);

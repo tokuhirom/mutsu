@@ -38,7 +38,7 @@ pub(crate) fn str_needs_dispatch(value: &Value) -> bool {
             // A plain `ObjAt` / `ValueObjAt` (a `.WHICH` result) stringifies
             // to its identity text; no user method can change that (a subclass
             // or a role mixin has another class name).
-            return !matches!(class_name.as_str(), "ObjAt" | "ValueObjAt");
+            return !crate::sym_in!(class_name, "ObjAt" | "ValueObjAt");
         }
         if matches!(v.view(), ValueView::Mixin(..)) {
             return true;
@@ -609,7 +609,7 @@ fn gist_value_node(value: &Value) -> String {
             class_name,
             attributes,
             ..
-        } if class_name == crate::value::label::LABEL_CLASS => {
+        } if class_name == crate::sym!(crate::value::label::LABEL_CLASS) => {
             crate::value::label::label_gist(&attributes.as_map())
         }
         ValueView::Instance { attributes, .. } if value.is_match_instance() => {

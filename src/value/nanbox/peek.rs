@@ -825,7 +825,7 @@ impl NanBox {
                 let class = attrs.class_name();
                 // One class, two shapes: a built-in iterator's is decoded from
                 // its attributes (`dispatch_shape/iterator_kind.rs`).
-                if class == "Iterator" {
+                if class == crate::symbol::wk::iterator_class() {
                     let map = attrs.as_map();
                     return Some(crate::value::iterator_shape_of(|key| map.get(key)));
                 }

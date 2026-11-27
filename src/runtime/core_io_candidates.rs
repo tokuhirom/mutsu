@@ -33,7 +33,7 @@ impl Interpreter {
                         _ => v.clone(),
                     };
                     matches!(v.into_deref().view(), ValueView::Instance { class_name, .. }
-                        if class_name == "IO::Path")
+                        if class_name == crate::sym!("IO::Path"))
                 })
     }
 

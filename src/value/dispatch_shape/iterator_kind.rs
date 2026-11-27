@@ -28,7 +28,7 @@ pub(crate) fn native_iterator_is_lazy(value: &Value) -> Option<bool> {
             class_name,
             attributes,
             ..
-        } if class_name == "Iterator" => Some(matches!(
+        } if class_name == crate::sym!("Iterator") => Some(matches!(
             attributes.as_map().get("is_lazy").map(Value::view),
             Some(ValueView::Bool(true))
         )),
@@ -55,7 +55,7 @@ pub(crate) fn native_iterator_determinism(value: &Value) -> Option<(bool, bool)>
             class_name,
             attributes,
             ..
-        } if class_name == "Iterator" => {
+        } if class_name == crate::sym!("Iterator") => {
             let map = attributes.as_map();
             let monotonic = map.get(MONOTONIC_ITERATOR_ATTR).is_some();
             // An increasing range's iterator (even one pulled through the

@@ -681,12 +681,12 @@ impl Interpreter {
         let (_, pseudo) = segments.split_last()?;
         let is_eval_unit = |unit| crate::runtime::eval_unit_parent(unit).is_some();
         match pseudo {
-            [setting] if setting.as_str() == "SETTING" && is_eval_unit(self.current_unit) => {
+            [setting] if *setting == crate::sym!("SETTING") && is_eval_unit(self.current_unit) => {
                 Some(self.resolve_code_var(bare))
             }
             [caller, setting]
-                if caller.as_str() == "CALLER"
-                    && setting.as_str() == "SETTING"
+                if *caller == crate::sym!("CALLER")
+                    && *setting == crate::sym!("SETTING")
                     && is_eval_unit(self.caller_frame_unit()) =>
             {
                 self.get_callers_var(&format!("&{bare}"), 1, true).ok()
@@ -1126,7 +1126,11 @@ impl Interpreter {
             // are resolved at call time and not listed in
             // is_builtin_function. Any other `&*name` that nothing bound is
             // unbound (`so &*NOPE` is False, `&*NOPE // 1` takes the default).
-            Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(lookup_name), false)
+            // Rakudo's process-level `&*EXIT` is the `exit` routine itself
+            // (`&*EXIT.name` is `exit`), so `&*EXIT(1)` — zef's `MAIN` `CATCH`
+            // — exits. A caller's own `my &*EXIT` was found in the env above.
+            let routine = if lookup_name == "EXIT" { "exit" } else { lookup_name };
+            Value::routine_parts(Symbol::intern("GLOBAL"), Symbol::intern(routine), false)
         } else {
             Value::NIL
         }

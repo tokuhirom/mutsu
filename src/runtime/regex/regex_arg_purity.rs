@@ -29,7 +29,7 @@
 //!   attributed.
 //!
 //! A parse-time ambient read raises this flag too, via
-//! [`crate::runtime::Interpreter::note_regex_parse_ambient_read`]: the memo
+//! [`crate::runtime::regex_parser::RegexParser::note_regex_parse_ambient_read`]: the memo
 //! stores the *parsed* candidates, so an impure parse makes the entry impure.
 
 use std::cell::{Cell, RefCell};
@@ -101,7 +101,7 @@ pub(crate) fn with_resolution<T>(params: Vec<String>, body: impl FnOnce() -> T) 
 /// the *rule bodies*' reads, and this window additionally covers the steps that
 /// run outside them — notably parsing each resolved candidate, whose own
 /// ambient reads reach here through
-/// [`crate::runtime::Interpreter::note_regex_parse_ambient_read`].
+/// [`crate::runtime::regex_parser::RegexParser::note_regex_parse_ambient_read`].
 pub(crate) fn with_memo_window<T>(body: impl FnOnce() -> T) -> (T, bool) {
     let outer = CONSULTED_AMBIENT_STATE.with(|f| f.replace(false));
     let value = body();

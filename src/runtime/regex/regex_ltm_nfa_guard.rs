@@ -150,7 +150,7 @@ mod tests {
             "<-[\\n]>",
             "\\x[301]",
         ] {
-            let parsed = interp
+            let parsed = crate::runtime::regex_parser::RegexParser::new(Some(&interp))
                 .parse_regex_with_mode(pattern, RegexParseMode::Match)
                 .expect("the pattern parses");
             let atom = &parsed.tokens[0].atom;

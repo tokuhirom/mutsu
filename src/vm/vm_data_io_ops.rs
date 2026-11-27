@@ -351,7 +351,7 @@ impl Interpreter {
             check_unhandled_failure(&v)?;
             // `NQPMu` (the bootstrap type of an unbound `my ::T $x`) carries no
             // `Mu` methods: rendering it asks for a `.gist`/`.Str` it lacks.
-            if matches!(v.view(), ValueView::Package(name) if name == "NQPMu") {
+            if matches!(v.view(), ValueView::Package(name) if name == crate::sym!("NQPMu")) {
                 let method = if kind.renders_gist() { "gist" } else { "Str" };
                 return Err(
                     crate::runtime::methods_signature_errors::make_method_not_found_error(

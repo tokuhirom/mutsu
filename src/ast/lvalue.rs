@@ -137,7 +137,9 @@ impl Expr {
                 op: TokenKind::AndThen | TokenKind::OrElse | TokenKind::NotAndThen,
                 ..
             } if peel.has(LvaluePeel::TOPIC_CHAIN) => left.lvalue_root(peel),
-            Expr::Call { name, args, .. } if peel.has(LvaluePeel::TEMP) && name == "temp" => {
+            Expr::Call { name, args, .. }
+                if peel.has(LvaluePeel::TEMP) && *name == crate::sym!("temp") =>
+            {
                 args.first()?.lvalue_root(peel)
             }
             _ => None,

@@ -129,7 +129,7 @@ impl Interpreter {
         match target.view() {
             ValueView::HashEntryRef { .. } | ValueView::ContainerRef(_) => true,
             ValueView::Nil => true,
-            ValueView::Package(p) => p == "Any" || p == "Mu",
+            ValueView::Package(p) => p == crate::sym!("Any") || p == crate::sym!("Mu"),
             _ => false,
         }
     }
@@ -188,7 +188,7 @@ impl Interpreter {
         }
         let current = element.deref_container();
         let undefined = matches!(current.view(), ValueView::Nil)
-            || matches!(current.view(), ValueView::Package(p) if p == "Any" || p == "Mu");
+            || matches!(current.view(), ValueView::Package(p) if p == crate::sym!("Any") || p == crate::sym!("Mu"));
         if !undefined {
             return Ok(current);
         }

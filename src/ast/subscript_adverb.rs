@@ -196,7 +196,7 @@ pub(crate) fn delete_flag() -> Expr {
 pub(crate) fn deleting(read: &Expr) -> Expr {
     match read {
         Expr::Exists { .. } => apply_delete_to_exists(read.clone()),
-        Expr::Call { name, args, .. } if *name == SUBSCRIPT_ADVERB_FN => {
+        Expr::Call { name, args, .. } if *name == crate::sym!(SUBSCRIPT_ADVERB_FN) => {
             let mut args = args.clone();
             args.push(delete_flag());
             Expr::Call {
@@ -601,7 +601,8 @@ pub(crate) fn expand(subscript: Expr, adverbs: &[Adverb], six_e: bool) -> Option
     if let Some(call) = multidim_delete_call(&read, six_e) {
         // A subscript form with no `:delete` candidate (`%h{1;2}:delete` before
         // 6.e) throws whatever the adverb's value is.
-        let assoc = matches!(&call, Expr::Call { name, .. } if *name == MULTIDIM_DELETE_ASSOC);
+        let assoc =
+            matches!(&call, Expr::Call { name, .. } if *name == crate::sym!(MULTIDIM_DELETE_ASSOC));
         return Some(if assoc || is_bool_literal(delete, true) {
             call
         } else {

@@ -8,9 +8,13 @@ use std::sync::{OnceLock, RwLock};
 /// An interned symbol — a lightweight handle that supports O(1) equality
 /// comparison instead of byte-by-byte string comparison.
 ///
-/// Symbol-to-Symbol comparison is O(1) integer comparison.
-/// Symbol-to-`&str` comparison falls back to a table lookup (for migration
-/// convenience — prefer Symbol-to-Symbol where possible).
+/// There is deliberately no `PartialEq<str>` / `PartialEq<&str>`: comparing a
+/// symbol with text resolved the symbol back to its string and compared bytes
+/// on every execution (#19232). Compare with a constant name through
+/// [`sym!`](crate::sym) (one `OnceLock` load and an integer compare) or
+/// [`sym_in!`](crate::sym_in) for several names. Use `sym.as_str()` only where
+/// the text itself is the point: a prefix or substring test, a split, a
+/// message, or a compare against text that exists only at run time.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Symbol(u32);
 
@@ -41,16 +45,36 @@ impl<'de> Deserialize<'de> for Symbol {
     }
 }
 
-impl PartialEq<&str> for Symbol {
-    fn eq(&self, other: &&str) -> bool {
-        self.as_str() == *other
-    }
+/// The [`Symbol`] of a constant name, interned once per call site.
+///
+/// `sym!("Failure")` or `sym!(SOME_CONST)`: the argument must be a `&'static
+/// str` constant expression (it initializes a `const`), so a run-time string
+/// can never be cached here by mistake. After the first evaluation it costs
+/// one `OnceLock` load, so `class_name == sym!("Failure")` is an integer
+/// compare. Interned ids are global and append-only, so the cache is valid
+/// for the process and across threads.
+// Cost: O(1) after the first evaluation; O(n) once to intern n bytes.
+#[macro_export]
+macro_rules! sym {
+    ($name:expr) => {{
+        const SYM_TEXT: &str = $name;
+        static SYM_CELL: ::std::sync::OnceLock<$crate::symbol::Symbol> =
+            ::std::sync::OnceLock::new();
+        *SYM_CELL.get_or_init(|| $crate::symbol::Symbol::intern(SYM_TEXT))
+    }};
 }
 
-impl PartialEq<str> for Symbol {
-    fn eq(&self, other: &str) -> bool {
-        self.as_str() == other
-    }
+/// Whether a [`Symbol`] is one of several constant names:
+/// `sym_in!(class_name, "Instant" | "Duration")`. It expands to one
+/// [`sym!`](crate::sym) compare per name, so it never resolves the symbol's
+/// text.
+// Cost: O(k), k = names listed.
+#[macro_export]
+macro_rules! sym_in {
+    ($sym:expr, $($name:literal)|+ $(,)?) => {{
+        let sym_in_subject: $crate::symbol::Symbol = $sym;
+        false $(|| sym_in_subject == $crate::sym!($name))+
+    }};
 }
 
 /// Interned strings are leaked (`Box::leak`) so a `Symbol` can hand out a
@@ -1009,6 +1033,14 @@ pub(crate) mod wk {
         /// instance (`runtime/which_identity.rs`).
         which_method => "WHICH";
         order_more => "More";
+        /// The OS handle type (`nqp_ops_proc::OS_HANDLE_CLASS`), asked with
+        /// the BOOT scalar types of every instance receiver of a method call
+        /// (`boot_collection::is_boot_collection_invocant`).
+        boot_io => "BOOTIO";
+        /// The built-in `Iterator` class, whose instances' dispatch shape is
+        /// decoded from their attributes; asked of every instance receiver
+        /// (`DispatchShape` of an `Instance`).
+        iterator_class => "Iterator";
         /// The builtin a subscript's value adverbs (`:k`/`:v`/`:kv`/`:p`) lower to
         /// (`ast::SUBSCRIPT_ADVERB_FN`).
         subscript_adverb => "__mutsu_subscript_adverb";
@@ -1823,6 +1855,36 @@ mod tests {
     fn resolve_roundtrip() {
         let sym = Symbol::intern("roundtrip_test");
         assert_eq!(sym.resolve(), "roundtrip_test");
+    }
+
+    #[test]
+    fn sym_macro_names_the_interned_symbol() {
+        const NAME: &str = "sym_macro_test_const";
+        assert_eq!(
+            crate::sym!("sym_macro_test_lit"),
+            Symbol::intern("sym_macro_test_lit")
+        );
+        assert_eq!(crate::sym!(NAME), Symbol::intern(NAME));
+        // One call site keeps answering the same symbol.
+        assert!(
+            (0..3)
+                .all(|_| crate::sym!("sym_macro_test_lit") == Symbol::intern("sym_macro_test_lit"))
+        );
+        // Across threads too: interned ids are global.
+        let other = std::thread::spawn(|| crate::sym!("sym_macro_test_lit"))
+            .join()
+            .unwrap();
+        assert_eq!(other, Symbol::intern("sym_macro_test_lit"));
+    }
+
+    #[test]
+    fn sym_in_macro_tests_membership() {
+        let s = Symbol::intern("Duration");
+        assert!(crate::sym_in!(s, "Instant" | "Duration"));
+        assert!(!crate::sym_in!(s, "Instant" | "Date"));
+        assert!(crate::sym_in!(s, "Duration"));
+        let r = &s;
+        assert!(crate::sym_in!(*r, "Duration" | "Instant",));
     }
 
     #[test]

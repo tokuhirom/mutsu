@@ -12,6 +12,6 @@ impl Interpreter {
             || self
                 .class_mro(class_name)
                 .iter()
-                .any(|c| *c == DECODER_CLASS)
+                .any(|c| *c == crate::sym!(DECODER_CLASS))
     }
 }

@@ -5,7 +5,8 @@ than the page needed. It is gone. The same information now sits in the ordinary 
 
 - each card's "vs rakudo / vs rakupp" line shows the 10-commit median ratios;
 - a losing ratio is red, and lighter red when it is marginal;
-- a ratio that is not engine against engine carries a † with the caveat as its tooltip;
+- a ratio rakupp wins by something other than running the same Raku code faster (its native
+  JSON parser, its non-PIE startup) is not coloured as a loss; the card shows its note, as before;
 - a losing card ends that line with small links to its tracking issues from
   `benchmarks/bench-tracking.toml`.
 

@@ -9,7 +9,7 @@ fn failure_exception(value: &Value) -> Option<Value> {
             class_name,
             attributes,
             ..
-        } if class_name == "Failure" => attributes.as_map().get("exception").cloned(),
+        } if class_name == crate::sym!("Failure") => attributes.as_map().get("exception").cloned(),
         ValueView::Mixin(inner, mixins) => {
             if let Some(mixed) = mixins.get("Failure")
                 && let Some(ex) = failure_exception(mixed)

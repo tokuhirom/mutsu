@@ -133,14 +133,15 @@ fn grow(
     }
     // An `Array` type object in a named binding (`my Array $a; $a.push(1)`)
     // vivifies as an undefined `Any` does.
-    let array_type = matches!(value.view(), ValueView::Package(name) if name == "Array");
+    let array_type =
+        matches!(value.view(), ValueView::Package(name) if name == crate::sym!("Array"));
     // A role's type object is not an `Any` (`my Positional $p; $p.push(1)`
     // matches no `Any:U` candidate), so it is not vivified.
     let role_type = matches!(value.view(), ValueView::Package(name)
         if interp.is_role_type_name(&name.resolve()));
     match value.view() {
         ValueView::Nil => {}
-        ValueView::Package(name) if name == "Any" || name == "Mu" => {}
+        ValueView::Package(name) if name == crate::sym!("Any") || name == crate::sym!("Mu") => {}
         // A typed container's hole (`my Array of Int @x` reads one as
         // `Array[Int]`) vivifies to a container of that type.
         ValueView::Package(name)

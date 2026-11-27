@@ -947,7 +947,9 @@ impl Interpreter {
                 // still reaching `$x` through the topic's container, which is
                 // what made the symptom so confusing). The same rule applies to
                 // the `:=` alias metadata.
-                if (k == "_" || k == "__mutsu_sigilless_alias::_") && binds_own_topic {
+                if (k == crate::sym!("_") || k == crate::sym!("__mutsu_sigilless_alias::_"))
+                    && binds_own_topic
+                {
                     continue;
                 }
                 // Variables declared with `my` inside this block should not

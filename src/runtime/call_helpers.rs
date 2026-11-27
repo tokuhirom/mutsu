@@ -394,7 +394,7 @@ impl Interpreter {
             attributes,
             ..
         } = val.view()
-            && class_name == "Failure"
+            && class_name == crate::sym!("Failure")
             && let Some(exception) = attributes.as_map().get("exception")
         {
             let message = if let ValueView::Instance {

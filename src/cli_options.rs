@@ -146,3 +146,12 @@ pub(crate) fn handle_negated_long_option(
         _ => Err(()),
     })
 }
+
+/// A `-I` argument as a repository spec: a repository class spelled out
+/// (`CompUnit::Repository::Staging#name(site)#PATH`, the `path-spec` zef hands
+/// a dist's test files) becomes `inst#PATH`; anything `repo_spec` does not
+/// recognize is kept as a plain path.
+// Cost: O(n), n = length of the argument.
+pub(crate) fn include_spec(arg: &str) -> String {
+    mutsu::Interpreter::repo_spec(arg).unwrap_or_else(|| arg.to_string())
+}

@@ -70,7 +70,7 @@ impl<'a> CodeText<'a> {
                 }
                 // `trait_mod:<is>($attr, :default($v))` as a statement.
                 if let crate::ast::Stmt::Call { name, args, .. } = stmt
-                    && name.as_str() == "trait_mod:<is>"
+                    && *name == crate::sym!("trait_mod:<is>")
                     && args.iter().any(|arg| {
                         matches!(arg, crate::ast::CallArg::Named { name, .. } if name == "default")
                     })
@@ -91,7 +91,7 @@ impl<'a> CodeText<'a> {
                     self.0.push_str("$!descriptor ");
                 }
                 if let crate::ast::Expr::Call { name, args, .. } = expr
-                    && name.as_str() == "trait_mod:<is>"
+                    && *name == crate::sym!("trait_mod:<is>")
                     && args.iter().any(|arg| {
                         matches!(arg, crate::ast::Expr::Binary {
                             left, op: crate::token_kind::TokenKind::FatArrow, ..
