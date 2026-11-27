@@ -47,8 +47,9 @@ pub(in crate::parser) use begin_at_parse::{
 
 // `pub` re-exports.
 pub use lib_paths::{
-    clear_parser_lib_paths, set_parser_lib_paths, set_parser_module_unit,
-    set_parser_preload_modules, set_parser_program_path, set_parser_source_file,
+    clear_parser_lib_paths, set_parser_lib_paths, set_parser_lib_paths_with_bundle,
+    set_parser_module_unit, set_parser_preload_modules, set_parser_program_path,
+    set_parser_source_file,
 };
 pub(crate) use lib_paths::{
     fold_use_lib_path, parser_module_unit, parser_source_file, try_add_parse_time_lib_path,
@@ -343,7 +344,8 @@ thread_local! {
     static PACKAGE_DECLARED: RefCell<bool> = const { RefCell::new(false) };
 
     /// Library search paths set before parsing, mirroring the runtime's lib_paths.
-    static LIB_PATHS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    static LIB_PATHS: RefCell<lib_paths::ParserLibPaths> =
+        const { RefCell::new(lib_paths::ParserLibPaths::new()) };
 
     /// `-M` modules awaiting the mainline parse (see `set_parser_preload_modules`).
     static PRELOAD_MODULES: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
@@ -568,7 +570,7 @@ pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state
     unit.take(&PACKAGE_PATH, Vec::new());
     unit.take(&UNIT_PACKAGE, None);
     unit.take(&PACKAGE_DECLARED, false);
-    unit.take(&LIB_PATHS, Vec::new());
+    unit.take(&LIB_PATHS, lib_paths::ParserLibPaths::new());
     unit.take(&PRELOAD_MODULES, Vec::new());
     unit.take(&PROGRAM_PATH, None);
     unit.take(&SOURCE_FILE, None);

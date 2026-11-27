@@ -10,6 +10,7 @@ pub(crate) mod builtin_enum_consts;
 pub(crate) mod builtin_functions;
 mod builtin_types;
 mod builtins;
+pub(crate) mod bundle_paths;
 pub(crate) mod chain_compare;
 pub(crate) mod closure_entry_params;
 pub(crate) mod codepoint;

@@ -591,7 +591,7 @@ impl Interpreter {
         let _unit_file = crate::unit_source_file::UnitSourceFileGuard::enter(Some(unit_file));
         let _unit_text = crate::unit_source_text::UnitSourceTextGuard::enter(&preprocessed);
         self.cur_source_line = 1;
-        crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
+        crate::parser::set_parser_lib_paths_with_bundle(self.parser_runtime_lib_paths());
         crate::parser::set_parser_program_path(self.io.program_path.clone());
         crate::parser::set_parser_preload_modules(self.module.preload_modules.clone());
         // `$?FILE` folds to the file of the compilation unit being parsed (see

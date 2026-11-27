@@ -812,8 +812,8 @@ fn find_module_file(module: &str) -> Option<String> {
     // through the dist metadata, like the runtime does (#12626).
     // No implicit fallback to the script's directory or the current
     // directory: the runtime searches neither (#11213), and the two must agree.
-    LIB_PATHS.with(|paths| {
-        let paths = paths.borrow();
+    {
+        let paths = parser_lib_paths();
         for base in paths.iter() {
             if let Some(prefix) = base.strip_prefix("inst#") {
                 if let Some(found) = installed_repo::find_in_installed_repo(prefix, module) {
@@ -841,8 +841,8 @@ fn find_module_file(module: &str) -> Option<String> {
                 return Some(found);
             }
         }
-        None
-    })
+    }
+    None
 }
 
 /// Parse module source and extract names of `is export` sub/proto declarations.

@@ -152,7 +152,7 @@ impl Interpreter {
     /// building [`Self::bundled_core_distribution`].
     // Cost: O(1), a few `stat`s.
     pub(super) fn has_bundled_core_distribution() -> bool {
-        Self::bundle_base().is_some_and(|base| {
+        crate::bundle_paths::bundle_base().is_some_and(|base| {
             let root = base.join(CORE_DIST_DIR);
             root.join("lib").is_dir() && root.join("META6.json").is_file()
         })

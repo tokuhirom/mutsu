@@ -283,7 +283,7 @@ impl Interpreter {
         // a module whose export hook re-exports a `need`ed module's operators
         // would be scanned without them and cached that way for later parses.
         let saved_paths = crate::parser::parser_lib_paths_for_slang();
-        crate::parser::set_parser_lib_paths(self.parser_scan_lib_paths());
+        crate::parser::set_parser_lib_paths_with_bundle(self.parser_runtime_lib_paths());
         let scans = crate::parser::canonical_export_scans(modules.into_iter().map(|module| {
             let path = self
                 .resolve_module_path(module)

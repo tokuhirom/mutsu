@@ -1,16 +1,68 @@
 use super::*;
 
-/// Set the library search paths for the parser (called before parsing).
+/// The parser's module search paths: the runtime's lib paths, then (when the
+/// runtime set them) the bundled batteries, then the parse's own `use lib`
+/// additions. The bundle is expanded only when a parse resolves a module, so
+/// a program that loads none never scans it (#19197).
+#[derive(Default)]
+pub(crate) struct ParserLibPaths {
+    runtime: Vec<String>,
+    bundle: bool,
+    added: Vec<String>,
+}
+
+impl ParserLibPaths {
+    // Cost: O(1).
+    pub(crate) const fn new() -> Self {
+        Self {
+            runtime: Vec::new(),
+            bundle: false,
+            added: Vec::new(),
+        }
+    }
+
+    /// Every path, in search order (scanning the bundle on the process's first
+    /// expansion).
+    // Cost: O(p), p = paths; the process's first expansion with the bundle
+    // also scans it.
+    fn expanded(&self) -> Vec<String> {
+        let mut paths = self.runtime.clone();
+        if self.bundle {
+            paths.extend(crate::bundle_paths::shared().iter().cloned());
+        }
+        paths.extend(self.added.iter().cloned());
+        paths
+    }
+}
+
+/// Set the library search paths for the parser (called before parsing): these
+/// paths only, no bundle.
 pub fn set_parser_lib_paths(paths: Vec<String>) {
     LIB_PATHS.with(|p| {
-        *p.borrow_mut() = paths;
+        *p.borrow_mut() = ParserLibPaths {
+            runtime: paths,
+            bundle: false,
+            added: Vec::new(),
+        };
+    });
+}
+
+/// Set the library search paths for the parser to the runtime's `paths`
+/// followed by the bundled batteries, as the runtime searches them.
+pub fn set_parser_lib_paths_with_bundle(paths: Vec<String>) {
+    LIB_PATHS.with(|p| {
+        *p.borrow_mut() = ParserLibPaths {
+            runtime: paths,
+            bundle: true,
+            added: Vec::new(),
+        };
     });
 }
 
 /// The parser's current module search paths (runtime lib paths + bundled
 /// batteries, plus any parse-time `use lib` additions).
 pub(in crate::parser) fn parser_lib_paths() -> Vec<String> {
-    LIB_PATHS.with(|p| p.borrow().clone())
+    LIB_PATHS.with(|p| p.borrow().expanded())
 }
 
 /// Hand the parser the `-M` modules for the *next* compilation unit it parses
@@ -76,7 +128,7 @@ pub(crate) fn parser_source_file() -> Option<String> {
 /// Clear the library search paths (called after parsing).
 pub fn clear_parser_lib_paths() {
     LIB_PATHS.with(|p| {
-        p.borrow_mut().clear();
+        *p.borrow_mut() = ParserLibPaths::new();
     });
     LOADING_MODULES.with(|m| {
         m.borrow_mut().clear();
@@ -113,9 +165,9 @@ pub(crate) fn use_lib_args(expr: &Expr) -> impl Iterator<Item = &Expr> {
 pub(crate) fn try_add_parse_time_lib_path(expr: &Expr) {
     if let Some(path) = extract_lib_path(expr).map(absolute_parse_time_lib_path) {
         LIB_PATHS.with(|p| {
-            let mut paths = p.borrow_mut();
-            if !paths.contains(&path) {
-                paths.push(path);
+            let known = p.borrow().expanded().contains(&path);
+            if !known {
+                p.borrow_mut().added.push(path);
             }
         });
     }
