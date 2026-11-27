@@ -168,7 +168,6 @@ impl Interpreter {
         code: &CompiledCode,
         target_name: &str,
         target: Value,
-        method: &str,
         method_sym: crate::symbol::Symbol,
         args: Vec<Value>,
     ) -> Result<(), RuntimeError> {
@@ -179,7 +178,6 @@ impl Interpreter {
             code,
             target_name,
             target,
-            method,
             method_sym,
             args,
         );
@@ -306,7 +304,6 @@ impl Interpreter {
                 code,
                 target_name,
                 target,
-                method,
                 method_sym,
                 Vec::new(),
             ));
@@ -363,7 +360,7 @@ impl Interpreter {
                 args,
             ));
         }
-        Some(self.run_plain_method_lane(code, target_name, target, method, method_sym, args))
+        Some(self.run_plain_method_lane(code, target_name, target, method_sym, args))
     }
 
     /// Method names the stretch handles for an instance receiver by reading

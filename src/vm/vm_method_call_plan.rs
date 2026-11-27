@@ -491,14 +491,7 @@ impl Interpreter {
         if CallAttrs::Cell(&attrs_cell).has_alias_meta()
             || (plan.private && !self.can_fast_dispatch_private_method_vm(plan.owner.as_str()))
         {
-            return self.run_plain_method_lane(
-                code,
-                target_name,
-                target,
-                method_sym.as_str(),
-                method_sym,
-                args,
-            );
+            return self.run_plain_method_lane(code, target_name, target, method_sym, args);
         }
         // The per-call half of the gate for a container parameter: an
         // argument this replay cannot bind on the fast binder (a source the
@@ -512,14 +505,7 @@ impl Interpreter {
         let mut args = args;
         if plan.container_params {
             if !self.method_container_args_light(def, cc, &args) {
-                return self.run_plain_method_lane(
-                    code,
-                    target_name,
-                    target,
-                    method_sym.as_str(),
-                    method_sym,
-                    args,
-                );
+                return self.run_plain_method_lane(code, target_name, target, method_sym, args);
             }
             // While the caller's frame is still current, as the tail does.
             self.promote_method_container_args(def, &mut args);
@@ -528,20 +514,11 @@ impl Interpreter {
         // container parameters above; promoted below, once the deferral
         // frame has recorded the arguments as they arrived.
         if !self.method_named_slurpy_args_light(def, &args) {
-            return self.run_plain_method_lane(
-                code,
-                target_name,
-                target,
-                method_sym.as_str(),
-                method_sym,
-                args,
-            );
+            return self.run_plain_method_lane(code, target_name, target, method_sym, args);
         }
         self.dispatch.method_dispatch_pure = false;
         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user");
-        let method = method_sym.as_str();
-        let armed =
-            self.arm_raw_invocant_arrival(code, target_name, &target, method, method_sym, &args);
+        let armed = self.arm_raw_invocant_arrival(code, target_name, &target, method_sym, &args);
         let owner = plan.owner;
         let pushed_dispatch = loan_env!(
             self,
@@ -571,7 +548,7 @@ impl Interpreter {
         let fns_ref = def.compiled_fns.as_deref().unwrap_or(&empty_fns);
         let method_result = if plan.lean && self.lean_args_ok(def, &args) {
             let call = super::vm_method_lean_frame::LeanMethodCall {
-                receiver_class_name: class_sym.as_str(),
+                receiver_class: class_sym,
                 owner_sym: owner,
                 method_sym,
                 method_def: def,
@@ -607,7 +584,7 @@ impl Interpreter {
         self.pop_method_samewith_context();
         self.disarm_raw_invocant_arrival(armed);
         let result = self.finish_compiled_method_mut_call(
-            class_sym.as_str(),
+            class_sym,
             Some(target_id),
             Some(&attrs_cell),
             def,

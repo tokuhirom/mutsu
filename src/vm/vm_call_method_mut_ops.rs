@@ -1108,14 +1108,7 @@ impl Interpreter {
                         args,
                     );
                 }
-                return self.run_plain_method_lane(
-                    code,
-                    target_name,
-                    target,
-                    method,
-                    method_sym,
-                    args,
-                );
+                return self.run_plain_method_lane(code, target_name, target, method_sym, args);
             }
             other => self.caches.plain_method_lane_candidate = other,
         }
@@ -1126,7 +1119,7 @@ impl Interpreter {
         // that binds its invocant raw (`multi method m(::?ROLE:U $self is rw:
         // ...)`) must reach the caller's variable, as it does without a proto.
         let proto_armed = self.proto_method_declared_for(&target, method)
-            && self.arm_raw_invocant_arrival(code, target_name, &target, method, method_sym, &args);
+            && self.arm_raw_invocant_arrival(code, target_name, &target, method_sym, &args);
         let proto_result = self.try_proto_method_body(&target, method, &args);
         self.disarm_raw_invocant_arrival(proto_armed);
         if let Some(result) = proto_result {
@@ -2175,7 +2168,6 @@ impl Interpreter {
                             code,
                             target_name,
                             target,
-                            method,
                             method_sym,
                             args,
                         )
@@ -2186,7 +2178,6 @@ impl Interpreter {
                         code,
                         target_name,
                         target,
-                        method,
                         method_sym,
                         args,
                     )

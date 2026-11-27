@@ -143,8 +143,6 @@ impl Interpreter {
         invocant: Value,
         chosen: Option<(Symbol, &MethodDef)>,
     ) -> Result<bool, RuntimeError> {
-        let receiver_class = receiver_sym.as_str();
-        let method_name = method_sym.as_str();
         // Always push samewith context so samewith() can find the method name/invocant
         let shared_args = self.push_method_samewith_context_named(
             receiver_sym,
@@ -166,6 +164,10 @@ impl Interpreter {
             fingerprint: self.method_def_fingerprint(def),
             rw_params: def.rw_scalar_positionals(),
         });
+        // Resolved only past the `dispatcher_possible` exit: a program with no
+        // deferral builtin never reads them.
+        let receiver_class = receiver_sym.as_str();
+        let method_name = method_sym.as_str();
         if !self.deferral_build_is_context_free_sym(
             receiver_sym,
             method_sym,

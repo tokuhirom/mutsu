@@ -121,15 +121,12 @@ impl Interpreter {
             ..
         } = call;
         self.pending_skip_constraint_recheck = false;
-        let owner_class: &str = owner_sym.as_str();
-        let (role_attrs_cell, inner_attrs_cell) =
-            Self::method_attr_cells_for(&base, owner_class, false);
-        let attrs_cell = role_attrs_cell.or_else(|| inner_attrs_cell.clone());
-        let fallback_attrs_cell = inner_attrs_cell.filter(|cell| {
-            attrs_cell.as_ref().is_some_and(|primary| {
-                crate::gc::Gc::as_ptr(primary) != crate::gc::Gc::as_ptr(cell)
-            })
-        });
+        // A slot-frame owner is never a role (`method_attr_cells_for` with
+        // `owner_is_role = false`): the receiver's own attribute cell is the
+        // only one, so there is no role cell to prefer and no distinct
+        // fallback. Read it directly rather than resolving the owner's name.
+        let attrs_cell = Self::self_instance_attrs(&base);
+        let fallback_attrs_cell: Option<crate::gc::Gc<crate::value::InstanceAttrs>> = None;
         let _mark_context_guard = crate::vm::vm_call_state_guard::MarkContextGuard::new(self);
 
         // The slim record (ADR-18393 D1). No env overlay: the body reads and
@@ -149,9 +146,7 @@ impl Interpreter {
             // scalars in order, and the implicit `*%_` (`lean_param_ok`).
             let inv_pd = method_def.param_defs.iter().find(|pd| pd.is_invocant);
             let invocant = inv_pd
-                .and_then(|pd| {
-                    self.take_implicit_self_invocant_arrival(method_sym.as_str(), Some(pd))
-                })
+                .and_then(|pd| self.take_implicit_self_invocant_arrival_sym(method_sym, Some(pd)))
                 .unwrap_or_else(|| base.clone());
             let inv_offset = usize::from(inv_pd.is_some());
             let param_value = |idx: usize| -> Value {
