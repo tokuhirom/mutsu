@@ -35,11 +35,11 @@ nok $c.version < v2018.12,
   'the compiler version does not select a pre-2018.12 legacy shim';
 
 # 3. The coordinate tracks the Rakudo release the ecosystem oracle and the roast
-#    baseline are measured against (2026.09, #14851): `static` starts with
-#    `die ... if $*RAKU.compiler.version < v2026.09`.
+#    baseline are measured against (2026.11, the pin in `.rakudo-version`):
+#    `static` starts with `die ... if $*RAKU.compiler.version < v2026.09`.
 ok $c.version >= v2026.09,
   'the compiler version passes a `< v2026.09` gate (static)';
-is $c.version, v2026.09, 'the compiler version is the measured Rakudo release';
+is $c.version, v2026.11, 'the compiler version is the measured Rakudo release';
 
 # mutsu never impersonates rakudo: this is what makes `RakudoPrereq`'s
 # `rakudo-only` option, and every `compiler.name ne 'rakudo'` check, still
