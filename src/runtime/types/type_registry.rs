@@ -151,209 +151,56 @@ impl Interpreter {
 }
 
 impl Interpreter {
-    pub(in crate::runtime) fn init_endian_enum(base: &mut HashMap<Symbol, Value>) {
-        let variants = Self::endian_enum_variants();
-        base.insert(Symbol::intern("Endian"), Value::str_from("Endian"));
-        for (index, (key, val)) in variants.iter().enumerate() {
-            let enum_val = Value::enum_parts(
-                Symbol::intern("Endian"),
-                Symbol::intern(key),
-                val.clone(),
-                index,
-            );
-            // Register as both Endian::NativeEndian and bare NativeEndian
-            base.insert(
-                Symbol::intern(&format!("Endian::{}", key)),
-                enum_val.clone(),
-            );
-            base.insert(Symbol::intern(key), enum_val);
-        }
-    }
-
-    pub(in crate::runtime) fn init_protocol_family_enum(base: &mut HashMap<Symbol, Value>) {
-        let variants = Self::protocol_family_enum_variants();
-        base.insert(
-            Symbol::intern("ProtocolFamily"),
-            Value::package(Symbol::intern("ProtocolFamily")),
-        );
-        for (index, (key, val)) in variants.iter().enumerate() {
-            let enum_val = Value::enum_parts(
-                Symbol::intern("ProtocolFamily"),
-                Symbol::intern(key),
-                val.clone(),
-                index,
-            );
-            base.insert(
-                Symbol::intern(&format!("ProtocolFamily::{}", key)),
-                enum_val.clone(),
-            );
-            base.insert(Symbol::intern(key), enum_val);
-        }
-    }
-
-    pub(in crate::runtime) fn init_order_enum(base: &mut HashMap<Symbol, Value>) {
-        let variants = Self::order_enum_variants();
-        base.insert(Symbol::intern("Order"), Value::str_from("Order"));
-        for (index, (key, val)) in variants.iter().enumerate() {
-            let enum_val = Value::enum_parts(
-                Symbol::intern("Order"),
-                Symbol::intern(key),
-                val.clone(),
-                index,
-            );
-            base.insert(Symbol::intern(&format!("Order::{}", key)), enum_val.clone());
-            base.insert(Symbol::intern(key), enum_val);
-        }
-    }
-
-    pub(in crate::runtime) fn init_seek_type_enum(base: &mut HashMap<Symbol, Value>) {
-        // The `SeekType` enum used by IO::Handle.seek (and user IO classes that
-        // subclass it, e.g. IO::Blob): SeekFromBeginning(0)/SeekFromCurrent(1)/
-        // SeekFromEnd(2). Registering it as a real enum makes `SeekType:D`
-        // parameter/default type checks pass and the values smartmatch SeekType.
-        let variants = Self::seek_type_enum_variants();
-        base.insert(Symbol::intern("SeekType"), Value::str_from("SeekType"));
-        for (index, (key, val)) in variants.iter().enumerate() {
-            let enum_val = Value::enum_parts(
-                Symbol::intern("SeekType"),
-                Symbol::intern(key),
-                val.clone(),
-                index,
-            );
-            base.insert(
-                Symbol::intern(&format!("SeekType::{}", key)),
-                enum_val.clone(),
-            );
-            base.insert(Symbol::intern(key), enum_val);
-        }
-    }
-
-    pub(in crate::runtime) fn init_promise_status_enum(base: &mut HashMap<Symbol, Value>) {
-        // `Promise.status` answers one of these, so `$p.status == Kept`
-        // compares enum values numerically and `when Kept` smartmatches the
-        // enum -- mutsu used to model them as the bare strings "Kept" etc.
-        base.insert(
-            Symbol::intern("PromiseStatus"),
-            Value::str_from("PromiseStatus"),
-        );
-        for (key, _) in Self::promise_status_enum_variants() {
-            let enum_val = Self::promise_status_value(&key);
-            base.insert(
-                Symbol::intern(&format!("PromiseStatus::{}", key)),
-                enum_val.clone(),
-            );
-            base.insert(Symbol::intern(&key), enum_val);
-        }
-    }
-
     /// The `PromiseStatus` enum value named `status` (`"Planned"`, `"Kept"` or
     /// `"Broken"`, the promise's internal state string); an unknown name falls
     /// back to `Planned`.
-    /// Cost: O(1).
+    /// Cost: O(v), v = the enum's three variants.
     pub(crate) fn promise_status_value(status: &str) -> Value {
-        let (index, value) = match status {
-            "Kept" => (1, 1),
-            "Broken" => (2, 2),
-            _ => (0, 0),
-        };
-        let key = match index {
-            1 => "Kept",
-            2 => "Broken",
-            _ => "Planned",
-        };
-        Value::enum_parts(
-            Symbol::intern("PromiseStatus"),
-            Symbol::intern(key),
-            EnumValue::Int(value),
-            index,
-        )
+        use crate::builtin_enum_consts::PROMISE_STATUS;
+        PROMISE_STATUS.variant_value(PROMISE_STATUS.variant_index(status).unwrap_or(0))
     }
 
-    pub(in crate::runtime) fn init_signal_enum(base: &mut HashMap<Symbol, Value>) {
-        let variants = Self::signal_enum_variants();
-        base.insert(Symbol::intern("Signal"), Value::str_from("Signal"));
-        for (index, (key, val)) in variants.iter().enumerate() {
-            let enum_val = Value::enum_parts(
-                Symbol::intern("Signal"),
-                Symbol::intern(key),
-                val.clone(),
-                index,
-            );
-            base.insert(
-                Symbol::intern(&format!("Signal::{}", key)),
-                enum_val.clone(),
-            );
-            base.insert(Symbol::intern(key), enum_val);
-        }
-    }
+    // The core enums' variants, from the one table every layer reads
+    // (`builtin_enum_consts`), as the `(name, value)` lists the registry's
+    // enum types and the type-constraint tables hold.
 
-    /// The `Endian` enum's variants. Shared by [`Self::init_endian_enum`] (which
-    /// builds their `Value`s for the global base tier) and
-    /// [`Self::seed_builtin_enum_types`] (which records the type itself in the
-    /// built-in registry template).
+    // Cost: O(v), v = the enum's variants.
     pub(in crate::runtime) fn endian_enum_variants() -> Vec<(String, EnumValue)> {
-        vec![
-            ("NativeEndian".to_string(), EnumValue::Int(0)),
-            ("LittleEndian".to_string(), EnumValue::Int(1)),
-            ("BigEndian".to_string(), EnumValue::Int(2)),
-        ]
+        crate::builtin_enum_consts::ENDIAN.variants_owned()
     }
-    /// The `ProtocolFamily` enum's variants. Shared by [`Self::init_protocol_family_enum`] (which
-    /// builds their `Value`s for the global base tier) and
-    /// [`Self::seed_builtin_enum_types`] (which records the type itself in the
-    /// built-in registry template).
+    // Cost: O(v), v = the enum's variants.
     pub(in crate::runtime) fn protocol_family_enum_variants() -> Vec<(String, EnumValue)> {
-        vec![
-            ("PF_UNSPEC".to_string(), EnumValue::Int(0)),
-            ("PF_INET".to_string(), EnumValue::Int(1)),
-            ("PF_INET6".to_string(), EnumValue::Int(2)),
-            ("PF_LOCAL".to_string(), EnumValue::Int(3)),
-            ("PF_UNIX".to_string(), EnumValue::Int(3)),
-            ("PF_MAX".to_string(), EnumValue::Int(4)),
-        ]
+        crate::builtin_enum_consts::PROTOCOL_FAMILY.variants_owned()
     }
-    /// The `PromiseStatus` enum's variants. Shared by
-    /// [`Self::init_promise_status_enum`] and [`Self::seed_builtin_enum_types`].
+    // Cost: O(v), v = the enum's variants.
     pub(in crate::runtime) fn promise_status_enum_variants() -> Vec<(String, EnumValue)> {
-        vec![
-            ("Planned".to_string(), EnumValue::Int(0)),
-            ("Kept".to_string(), EnumValue::Int(1)),
-            ("Broken".to_string(), EnumValue::Int(2)),
-        ]
+        crate::builtin_enum_consts::PROMISE_STATUS.variants_owned()
     }
-    /// The `Order` enum's variants. Shared by [`Self::init_order_enum`] (which
-    /// builds their `Value`s for the global base tier) and
-    /// [`Self::seed_builtin_enum_types`] (which records the type itself in the
-    /// built-in registry template).
+    // Cost: O(v), v = the enum's variants.
     pub(in crate::runtime) fn order_enum_variants() -> Vec<(String, EnumValue)> {
-        vec![
-            ("Less".to_string(), EnumValue::Int(-1)),
-            ("Same".to_string(), EnumValue::Int(0)),
-            ("More".to_string(), EnumValue::Int(1)),
-        ]
+        crate::builtin_enum_consts::ORDER.variants_owned()
     }
-    /// The `SeekType` enum's variants. Shared by [`Self::init_seek_type_enum`] (which
-    /// builds their `Value`s for the global base tier) and
-    /// [`Self::seed_builtin_enum_types`] (which records the type itself in the
-    /// built-in registry template).
+    // Cost: O(v), v = the enum's variants.
     pub(in crate::runtime) fn seek_type_enum_variants() -> Vec<(String, EnumValue)> {
-        vec![
-            ("SeekFromBeginning".to_string(), EnumValue::Int(0)),
-            ("SeekFromCurrent".to_string(), EnumValue::Int(1)),
-            ("SeekFromEnd".to_string(), EnumValue::Int(2)),
-        ]
+        crate::builtin_enum_consts::SEEK_TYPE.variants_owned()
     }
-    /// The `Signal` enum's variants. Shared by [`Self::init_signal_enum`] (which
-    /// builds their `Value`s for the global base tier) and
-    /// [`Self::seed_builtin_enum_types`] (which records the type itself in the
-    /// built-in registry template).
+    // Cost: O(v), v = the enum's variants.
     pub(in crate::runtime) fn signal_enum_variants() -> Vec<(String, EnumValue)> {
-        // Every signal MoarVM lists, including the ones this platform lacks
-        // (value 0), so `Signal.keys` is complete as in Rakudo.
-        crate::runtime::signal_table::SIGNALS
-            .iter()
-            .map(|(name, num)| (name.to_string(), EnumValue::Int(*num)))
-            .collect()
+        crate::builtin_enum_consts::SIGNAL.variants_owned()
+    }
+
+    /// Whether `name` is a variant of an enum the core declares (`Same`, `Kept`,
+    /// `LittleEndian`, `SIGINT`), which every scope reads as a bare term.
+    // Cost: O(V), V = the core enums' variants (about 55).
+    pub(in crate::runtime) fn is_builtin_enum_variant(name: &str) -> bool {
+        crate::builtin_enum_consts::is_variant(name)
+    }
+
+    /// The value of the core enum variant spelled `name` (`Same` is
+    /// `Order::Same`), or `None` when no core enum has such a variant.
+    // Cost: O(V), V = the core enums' variants (about 55).
+    pub(crate) fn builtin_enum_variant_value(name: &str) -> Option<Value> {
+        crate::builtin_enum_consts::variant_value(name)
     }
 
     /// Record the process-constant built-in enum types (`Endian`,
@@ -361,90 +208,17 @@ impl Interpreter {
     /// `PromiseStatus`) in a registry.
     ///
     /// Called while BUILDING the shared built-in registry template, not per
-    /// interpreter: these five entries are identical in every interpreter, but
+    /// interpreter: these entries are identical in every interpreter, but
     /// writing them through `registry_mut()` from `Interpreter::new` took a
     /// write guard on the shared registry and so deep-cloned all ~450 built-in
     /// `ClassDef`s on every single construction (#7572).
-    /// Whether `name` is a variant of an enum the core declares (`Same`, `Kept`,
-    /// `LittleEndian`, `SIGINT`), which every scope reads as a bare term.
-    // Cost: O(1) expected after the first call, which builds the set once.
-    pub(in crate::runtime) fn is_builtin_enum_variant(name: &str) -> bool {
-        static VARIANTS: std::sync::LazyLock<std::collections::HashSet<String>> =
-            std::sync::LazyLock::new(|| {
-                [
-                    Interpreter::endian_enum_variants(),
-                    Interpreter::protocol_family_enum_variants(),
-                    Interpreter::order_enum_variants(),
-                    Interpreter::seek_type_enum_variants(),
-                    Interpreter::signal_enum_variants(),
-                    Interpreter::file_change_event_enum_variants(),
-                    Interpreter::promise_status_enum_variants(),
-                ]
-                .into_iter()
-                .flatten()
-                .map(|(variant, _)| variant)
-                .collect()
-            });
-        VARIANTS.contains(name)
-    }
-
-    /// The value of the core enum variant spelled `name` (`Same` is
-    /// `Order::Same`), or `None` when no core enum has such a variant.
-    // Cost: O(v), v = variants of the core enums (about 100).
-    pub(crate) fn builtin_enum_variant_value(name: &str) -> Option<Value> {
-        if !Self::is_builtin_enum_variant(name) {
-            return None;
-        }
-        let enums = [
-            ("Endian", Interpreter::endian_enum_variants()),
-            ("ProtocolFamily", Interpreter::protocol_family_enum_variants()),
-            ("Order", Interpreter::order_enum_variants()),
-            ("SeekType", Interpreter::seek_type_enum_variants()),
-            ("Signal", Interpreter::signal_enum_variants()),
-            ("FileChangeEvent", Interpreter::file_change_event_enum_variants()),
-            ("PromiseStatus", Interpreter::promise_status_enum_variants()),
-        ];
-        enums.into_iter().find_map(|(enum_name, variants)| {
-            variants
-                .into_iter()
-                .enumerate()
-                .find(|(_, (variant, _))| variant == name)
-                .map(|(index, (variant, value))| {
-                    Value::enum_parts(
-                        Symbol::intern(enum_name),
-                        Symbol::intern(&variant),
-                        value,
-                        index,
-                    )
-                })
-        })
-    }
-
+    // Cost: O(V), V = the core enums' variants.
     pub(in crate::runtime) fn seed_builtin_enum_types(registry: &mut Registry) {
-        registry
-            .enum_types
-            .insert("Endian".to_string(), Self::endian_enum_variants());
-        registry.enum_types.insert(
-            "ProtocolFamily".to_string(),
-            Self::protocol_family_enum_variants(),
-        );
-        registry
-            .enum_types
-            .insert("Order".to_string(), Self::order_enum_variants());
-        registry
-            .enum_types
-            .insert("SeekType".to_string(), Self::seek_type_enum_variants());
-        registry
-            .enum_types
-            .insert("Signal".to_string(), Self::signal_enum_variants());
-        registry.enum_types.insert(
-            "FileChangeEvent".to_string(),
-            Self::file_change_event_enum_variants(),
-        );
-        registry.enum_types.insert(
-            "PromiseStatus".to_string(),
-            Self::promise_status_enum_variants(),
-        );
+        for e in crate::builtin_enum_consts::ENUMS {
+            registry
+                .enum_types
+                .insert(e.name.to_string(), e.variants_owned());
+        }
     }
 
     pub(in crate::runtime) fn version_from_value(arg: Value) -> Value {

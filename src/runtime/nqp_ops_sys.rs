@@ -74,7 +74,7 @@ impl Interpreter {
             // signal MoarVM knows (0 where this platform lacks it).
             // Cost: O(s), s = signals listed (a constant 35).
             "getsignals" => Ok(Value::vm_array(
-                crate::runtime::signal_table::SIGNALS
+                crate::signal_table::SIGNALS
                     .iter()
                     .flat_map(|(name, num)| [Value::str_from(name), Value::int(*num)])
                     .collect(),

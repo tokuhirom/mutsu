@@ -275,21 +275,11 @@ impl Interpreter {
         interpreter.init_io_environment();
         interpreter.env.insert("Any".to_string(), Value::NIL);
         {
-            // Built-in enum constants (Order/Endian/ProtocolFamily/Signal) are
-            // process-wide immutables: collect them into the shared base tier
-            // instead of every per-frame env overlay (docs/vm-dual-store.md 4b).
+            // The process-wide immutables of the shared base tier. The core
+            // enums' constants (`Order`, `Less`, `Order::Less`, ...) are not
+            // built here: every base tier answers them on first lookup
+            // (`builtin_enum_consts`, #19197).
             let mut enum_base: HashMap<Symbol, Value> = HashMap::new();
-            // Only the base-tier `Value`s are built here; the enum TYPES
-            // themselves are already in the shared built-in registry template
-            // (`seed_builtin_enum_types`), so this no longer takes a registry
-            // write guard — which used to deep-clone the whole registry.
-            Self::init_order_enum(&mut enum_base);
-            Self::init_endian_enum(&mut enum_base);
-            Self::init_protocol_family_enum(&mut enum_base);
-            Self::init_signal_enum(&mut enum_base);
-            Self::init_seek_type_enum(&mut enum_base);
-            Self::init_file_change_event_enum(&mut enum_base);
-            Self::init_promise_status_enum(&mut enum_base);
             // Hoist the immutable process-constant magic/dynamic vars out of every
             // per-frame env overlay into the shared base tier (docs/vm-dual-store.md
             // 4c "natural extension"). These are set once at interpreter start and

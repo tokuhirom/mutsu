@@ -39,8 +39,6 @@ use crate::value::{AttrMap, EnumValue};
 use std::time::Duration;
 use watch_state::{ChangeKind, WatchState};
 
-/// The enum type `IO::Notification::Change.event` holds.
-const FILE_CHANGE_EVENT: &str = "FileChangeEvent";
 /// The event class the watcher emits.
 const CHANGE_CLASS: &str = "IO::Notification::Change";
 /// How often the watcher re-reads its snapshot.
@@ -54,17 +52,18 @@ fn change_value(path: String, kind: ChangeKind) -> Value {
     Value::make_instance(Symbol::intern(CHANGE_CLASS), attrs)
 }
 
+/// The `FileChangeEvent` value of `kind`.
+// Cost: O(1).
 fn file_change_event(kind: ChangeKind) -> Value {
-    let (index, value) = match kind {
-        ChangeKind::Changed => (0, 1),
-        ChangeKind::Renamed => (1, 2),
+    let index = match kind {
+        ChangeKind::Changed => 0,
+        ChangeKind::Renamed => 1,
     };
-    Value::enum_parts(
-        Symbol::intern(FILE_CHANGE_EVENT),
-        Symbol::intern(kind.key()),
-        EnumValue::Int(value),
-        index,
-    )
+    debug_assert_eq!(
+        crate::builtin_enum_consts::FILE_CHANGE_EVENT.variants[index].0,
+        kind.key()
+    );
+    crate::builtin_enum_consts::FILE_CHANGE_EVENT.variant_value(index)
 }
 
 /// libuv's message for a watch on a missing path, as rakudo reports it.
@@ -82,40 +81,10 @@ fn missing_path_exception() -> Value {
 
 impl Interpreter {
     /// The `FileChangeEvent` enum's variants (`enum FileChangeEvent
-    /// (:FileChanged(1), :FileRenamed(2))`). Shared by
-    /// [`Self::init_file_change_event_enum`] and
-    /// [`Self::seed_builtin_enum_types`].
+    /// (:FileChanged(1), :FileRenamed(2))`), from `builtin_enum_consts`.
+    // Cost: O(v), v = the enum's variants.
     pub(in crate::runtime) fn file_change_event_enum_variants() -> Vec<(String, EnumValue)> {
-        vec![
-            ("FileChanged".to_string(), EnumValue::Int(1)),
-            ("FileRenamed".to_string(), EnumValue::Int(2)),
-        ]
-    }
-
-    pub(in crate::runtime) fn init_file_change_event_enum(base: &mut HashMap<Symbol, Value>) {
-        base.insert(
-            Symbol::intern(FILE_CHANGE_EVENT),
-            Value::str_from(FILE_CHANGE_EVENT),
-        );
-        for (index, (key, val)) in Self::file_change_event_enum_variants()
-            .into_iter()
-            .enumerate()
-        {
-            let enum_val = Value::enum_parts(
-                Symbol::intern(FILE_CHANGE_EVENT),
-                Symbol::intern(&key),
-                val,
-                index,
-            );
-            base.insert(
-                crate::qualified::qualified(
-                    Symbol::intern(FILE_CHANGE_EVENT),
-                    Symbol::intern(&key),
-                ),
-                enum_val.clone(),
-            );
-            base.insert(Symbol::intern(&key), enum_val);
-        }
+        crate::builtin_enum_consts::FILE_CHANGE_EVENT.variants_owned()
     }
 
     /// The built-in `IO::Notification` (a placeholder for its `watch-path`

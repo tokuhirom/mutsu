@@ -55,7 +55,7 @@ impl Interpreter {
         let version = Self::parse_version_string(&release);
 
         // Signal names indexed by number, from the one signal table.
-        let signals: Vec<Value> = crate::runtime::signal_table::names_by_number()
+        let signals: Vec<Value> = crate::signal_table::names_by_number()
             .into_iter()
             .map(|name| name.map_or(Value::NIL, Value::str_from))
             .collect();

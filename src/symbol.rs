@@ -360,6 +360,12 @@ pub(crate) mod flags {
     /// record of a plain lexical, ... A function of the string alone, asked on
     /// every by-name lookup that misses a linked frame.
     pub(crate) const LEXICALLY_SCOPED: u32 = 1 << 17;
+    /// A constant of the env's base tiers that is built on first lookup: a
+    /// core enum's type name or one of its variants, bare or qualified
+    /// ([`crate::builtin_enum_consts`]). A function of the string alone. Such
+    /// a symbol is also born with [`EVER_ENV_KEY`] set: a base tier answers it
+    /// without anything having put it there.
+    pub(crate) const BUILTIN_ENUM_CONST: u32 = 1 << 18;
 }
 
 /// The `__mutsu_type::` prefix `flags::SHADOW_META` marks. Kept next to the flag
@@ -529,6 +535,9 @@ fn compute_flags(s: &str) -> u32 {
     }
     if crate::env::lexically_scoped_name(s) {
         f |= flags::LEXICALLY_SCOPED;
+    }
+    if crate::builtin_enum_consts::is_name(s) {
+        f |= flags::BUILTIN_ENUM_CONST | flags::EVER_ENV_KEY;
     }
     f
 }
