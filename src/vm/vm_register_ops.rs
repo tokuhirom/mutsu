@@ -157,8 +157,7 @@ impl Interpreter {
         // pragma of the scope it was written in, whoever matches it later.
         // The pattern test first: `monkey_see_no_eval` is a pragma lookup, and
         // this runs on every evaluation of a regex literal.
-        if facts.has_eval_block && self.monkey_see_no_eval()
-        {
+        if facts.has_eval_block && self.monkey_see_no_eval() {
             // The interpolated string is compiled in the regex's own lexical
             // scope, so its code blocks may name any lexical visible there
             // (`<{$re}>` with `$re ~ ' { $obj.note($/) }'`): capture the
