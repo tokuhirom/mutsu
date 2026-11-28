@@ -402,16 +402,23 @@ impl Interpreter {
             _ => 0,
         };
         // rakudo's `exit` is overridable through the dynamic `&*EXIT` hook: when
-        // a caller has one in scope, `exit` CALLS it with the status and then
-        // returns normally, leaving the process running (measured against raku:
-        // `sub f { my &*EXIT = -> $c { say "trapped $c" }; exit 7; say "continues" }`
-        // prints both lines). The genuine upstream `Test.rakumod`'s `exits-ok`
-        // is built entirely on this hook, but it is a plain language feature —
-        // nothing about it is Test-specific.
+        // a caller has one in scope, `exit` CALLS it with the status instead of
+        // ending the process. In statement (sink) position the call then LEAVES
+        // the enclosing block, which returns Nil, exactly like `leave` (measured
+        // against raku 2026.11: `sub f { my &*EXIT = -> $c { say "trapped $c" };
+        // exit 7; say "continues"; 42 }; say f()` prints `trapped 7` then `Nil`,
+        // and at the mainline the rest of the unit is skipped with status 0).
+        // The genuine upstream `Test.rakumod`'s `exits-ok` is built entirely on
+        // this hook, but it is a plain language feature, nothing Test-specific.
+        // TODO: rakudo leaves only the innermost block (an `if`/bare block/loop
+        // iteration), mutsu leaves the routine or the unit. Also only a sunk
+        // `exit` leaves in rakudo; `my $x = exit 1` keeps going
+        // and yields the hook's value. This leaves in every position.
         if let Some(hook) = self.env.get("&*EXIT").cloned()
             && Self::is_exit_hook_callable(&hook)
         {
-            return self.call_sub_value(hook, vec![Value::int(code)]);
+            self.call_sub_value(hook, vec![Value::int(code)])?;
+            return self.builtin_leave(&[]);
         }
         self.request_process_exit(code);
         Ok(Value::NIL)
