@@ -389,6 +389,12 @@ pub(crate) struct ForLoopSpec {
     /// nothing in the body reads the topic by name, and the env keeps the
     /// enclosing topic, which is what a `$_` after the loop reads anyway.
     pub(crate) topic_slot_only: bool,
+    /// The single named parameter (`-> $w`) is read only through its fresh
+    /// slot `param_local`: the body cannot observe how it is bound
+    /// (`for_topic_alias::param_alias_unobservable`), so the VM may skip its
+    /// per-item env binding and readonly mark. The loop still saves and
+    /// restores the name's prior binding (`RestoreForParam`).
+    pub(crate) param_slot_only: bool,
     /// Local slot of the hidden per-iteration batch (`__mutsu_for_chunk`) a
     /// multi-parameter loop (`-> $k, $v`) hands to its parameter binds. The
     /// binds are compiled into the body prefix and read the slot; without it

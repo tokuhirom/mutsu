@@ -385,6 +385,22 @@ impl Compiler {
         if let Some(p) = &fresh_single_param {
             self.alloc_local(p);
         }
+        // A plain `-> $w` parameter whose body cannot observe how it is bound
+        // (the topic's allow-list, and no write to `$w`) is read only through
+        // its fresh slot: the VM need not bind it in the env or mark it
+        // readonly per item (`ForLoopSpec::param_slot_only`).
+        let threaded = matches!(mode, crate::ast::ForMode::Race | crate::ast::ForMode::Hyper);
+        let param_slot_only = fresh_single_param.as_deref().is_some_and(|p| {
+            p.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_')
+                && !threaded
+                && !has_rw
+                && !has_copy
+                && !has_raw
+                && param_def
+                    .as_ref()
+                    .is_none_or(|d| d.type_constraint.is_none() && !d.sigilless)
+                && super::for_topic_alias::param_alias_unobservable(&loop_body, p)
+        });
         let param_local = param
             .as_ref()
             .and_then(|p| self.local_map.get(p.as_str()).copied());
@@ -451,7 +467,6 @@ impl Compiler {
         // Only an implicit-topic loop rebinds `$_`; see `ForLoopSpec::topic_local`.
         // A multi-parameter loop leaves `$_` alone (its batch travels through
         // a hidden variable), so it has no topic slot to mirror.
-        let threaded = matches!(mode, crate::ast::ForMode::Race | crate::ast::ForMode::Hyper);
         let topic_loop = param.is_none() && params.is_empty();
         let mut topic_local = topic_loop
             .then(|| self.local_map.get("_").copied())
@@ -558,6 +573,7 @@ impl Compiler {
                 param_local,
                 topic_local,
                 topic_slot_only,
+                param_slot_only,
                 chunk_local,
                 source_container_local,
                 body_end: 0,

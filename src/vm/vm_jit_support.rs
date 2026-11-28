@@ -177,6 +177,14 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::IndexArgRef(..)
             | OpCode::RwArgCalleeBindsContainer(..)
             | OpCode::IndexAutovivifyLazy { .. }
+            // `%h{$k}++` / `@a[$i]--` and kin: straight-line (the lean `%`
+            // step, else the generic increment, which may run a user `.succ`
+            // and raise like any other step). Unlisted, every loop counting
+            // into a hash (`for @words -> $w { %c{$w}++ }`) ran interpreted.
+            | OpCode::PreIncrementIndex(..)
+            | OpCode::PreDecrementIndex(..)
+            | OpCode::PostIncrementIndex(..)
+            | OpCode::PostDecrementIndex(..)
             // String / bool / numeric helpers
             | OpCode::StringConcat(_)
             | OpCode::StrCoerce

@@ -46,6 +46,59 @@ pub(crate) fn topic_alias_unobservable(body: &[Stmt]) -> bool {
     true
 }
 
+/// Whether `body`, the statements of a `for ... -> $param` block, cannot
+/// observe how its parameter `$param` (`param` without its sigil) is bound:
+/// the topic's allow-list, and no write to the parameter itself (which is
+/// readonly, so the write would have to raise). The VM may then bind only the
+/// parameter's slot per item (`ForLoopSpec::param_slot_only`).
+// Cost: O(n), n = AST nodes of the body.
+pub(crate) fn param_alias_unobservable(body: &[Stmt], param: &str) -> bool {
+    let mut scan = AliasScan { ok: true };
+    let mut writes = ParamWrites { param, found: false };
+    for stmt in body {
+        scan.visit_stmt(stmt);
+        writes.visit_stmt(stmt);
+        if !scan.ok || writes.found {
+            return false;
+        }
+    }
+    true
+}
+
+/// Finds a write to one scalar name among the forms the allow-list admits:
+/// `=`, a compound assignment, `++`/`--`, or a `my` of the same name (which
+/// would shadow it with a slot of its own).
+struct ParamWrites<'p> {
+    param: &'p str,
+    found: bool,
+}
+
+impl<'ast> Visit<'ast> for ParamWrites<'_> {
+    fn visit_stmt(&mut self, stmt: &'ast Stmt) {
+        match stmt {
+            Stmt::Assign { name, .. } | Stmt::VarDecl { name, .. } if name == self.param => {
+                self.found = true;
+            }
+            _ => walk_stmt(self, stmt),
+        }
+    }
+
+    fn visit_expr(&mut self, expr: &'ast Expr) {
+        let target_is_param = |e: &Expr| matches!(e, Expr::Var(n) if n == self.param);
+        match expr {
+            Expr::AssignExpr { name, .. } if name == self.param => self.found = true,
+            Expr::CompoundAssign { target, .. } if target_is_param(target) => self.found = true,
+            Expr::Unary { op, expr: e, .. } | Expr::PostfixOp { op, expr: e }
+                if matches!(op, TokenKind::PlusPlus | TokenKind::MinusMinus)
+                    && target_is_param(e) =>
+            {
+                self.found = true
+            }
+            _ => walk_expr(self, expr),
+        }
+    }
+}
+
 struct AliasScan {
     ok: bool,
 }
@@ -63,6 +116,20 @@ fn is_plain_scalar(name: &str) -> bool {
 
 fn is_plain_scalar_var(expr: &Expr) -> bool {
     matches!(expr, Expr::Var(name) if is_plain_scalar(name))
+}
+
+/// `%h{$k}`: an element of a `%` variable. Incrementing one (`%h{$w}++`)
+/// writes a hash element, which is never an element of the source array --
+/// the same reasoning that admits `%h{$k} = $v`.
+fn is_hash_element(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Index {
+            target,
+            is_positional: false,
+            ..
+        } if matches!(**target, Expr::HashVar(_))
+    )
 }
 
 fn safe_binary(op: &TokenKind) -> bool {
@@ -172,11 +239,11 @@ impl<'ast> Visit<'ast> for AliasScan {
             Expr::Unary { op, expr, .. } => {
                 safe_unary(op)
                     || (matches!(op, TokenKind::PlusPlus | TokenKind::MinusMinus)
-                        && is_plain_scalar_var(expr))
+                        && (is_plain_scalar_var(expr) || is_hash_element(expr)))
             }
             Expr::PostfixOp { op, expr } => {
                 matches!(op, TokenKind::PlusPlus | TokenKind::MinusMinus)
-                    && is_plain_scalar_var(expr)
+                    && (is_plain_scalar_var(expr) || is_hash_element(expr))
             }
             Expr::AssignExpr { name, is_bind, .. } => !*is_bind && is_plain_scalar(name),
             Expr::CompoundAssign { target, op, .. } => {
@@ -226,6 +293,28 @@ mod tests {
         assert!(unobservable("my %h; for @a { %h{$_ ~ 'x'} = $_ + 1 }"));
         assert!(unobservable("my $n = 0; for @a { $n++ if $_ %% 3 }"));
         assert!(unobservable("my $n = 0; for @a { $n++ if $_ !%% 3 }"));
+    }
+
+    #[test]
+    fn hash_element_increments_are_unobservable() {
+        assert!(unobservable("my %h; for @a { %h{$_}++ }"));
+        assert!(unobservable("my %h; for @a { --%h{$_} }"));
+        assert!(!unobservable("my @o; for @a { @o[$_]++ }"));
+    }
+
+    fn param_unobservable(src: &str, param: &str) -> bool {
+        param_alias_unobservable(&body_of(src), param)
+    }
+
+    #[test]
+    fn named_param_bodies() {
+        assert!(param_unobservable("my %c; for @a -> $w { %c{$w}++ }", "w"));
+        assert!(param_unobservable("my $n = 0; for @a -> $w { $n += $w }", "w"));
+        assert!(!param_unobservable("for @a -> $w { $w = 1 }", "w"));
+        assert!(!param_unobservable("for @a -> $w { $w++ }", "w"));
+        assert!(!param_unobservable("for @a -> $w { my $w = 1 }", "w"));
+        assert!(!param_unobservable("for @a -> $w { foo($w) }", "w"));
+        assert!(!param_unobservable("for @a -> $w { my $f = { $w } }", "w"));
     }
 
     #[test]

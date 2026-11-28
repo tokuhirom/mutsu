@@ -244,7 +244,7 @@ impl Interpreter {
             {
                 self.locals[slot] = item.clone();
             }
-            if let Some(sym) = param_sym {
+            if let Some(sym) = param_sym.filter(|_| !spec.param_slot_only) {
                 self.env_mut().rebind_sym(sym, item.clone());
                 if let Some(alias) = caret_alias_sym {
                     self.env_mut().rebind_sym(alias, item.clone());

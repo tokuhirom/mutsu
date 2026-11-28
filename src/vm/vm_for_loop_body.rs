@@ -1096,7 +1096,9 @@ impl Interpreter {
                 }
                 _ => item,
             };
-            if let Some(ref name) = param_name {
+            if let Some(ref name) = param_name
+                && !spec.param_slot_only
+            {
                 // Interned once per loop, not a `String` key per iteration:
                 // `Env::insert` only interns its key (#19201).
                 let sym = *param_sym.get_or_insert_with(|| Symbol::intern(name));
@@ -1151,6 +1153,7 @@ impl Interpreter {
             // variable.
             let bare_sigilless_source = spec.source_items_are_bare && spec.param_sigilless;
             if (!spec.is_rw || ((bare_buffer_item || bare_sigilless_source) && !param_is_copy))
+                && !spec.param_slot_only
                 && let Some(ref name) = param_name
                 && !name.starts_with('@')
                 && !name.starts_with('%')
