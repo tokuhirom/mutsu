@@ -1484,6 +1484,7 @@ pub(crate) fn dump() {
     eprintln!(
         "[mutsu vm-stats] jit: compiles={jit_compiles} entries={jit_entries} bailouts={jit_bailouts} container_cells={cells} caller_binds={caller_binds} local_read_spoilers={spoilers}"
     );
+    eprintln!("{}", crate::vm::vm_kernel::stats_line());
     eprintln!(
         "[mutsu vm-stats] poll: polls={}",
         crate::vm::vm_poll::polls_so_far()
