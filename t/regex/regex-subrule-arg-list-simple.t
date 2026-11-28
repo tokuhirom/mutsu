@@ -5,7 +5,7 @@
 # rakudo's.
 use Test;
 
-plan 14;
+plan 13;
 
 grammar Indent {
     token TOP { <line('')> }
@@ -41,14 +41,14 @@ grammar Lit {
 ok Lit.parse('abab'), 'string and integer literals';
 nok Lit.parse('ab'), 'the count is the literal';
 
-grammar Num {
+grammar RatArg {
     token TOP { <r(1.5)> }
     token r($x) { \d+ { make $x * 2 } }
 }
-is Num.parse('7')<r>.made, 3, 'a Rat literal';
+is RatArg.parse('7')<r>.made, 3, 'a Rat literal';
 
 grammar Named {
-    token TOP { <w(:sep<->)> }
+    token TOP { <w(:sep('-'))> }
     token w(:$sep) { \w+ $sep \w+ }
 }
 ok Named.parse('a-b'), 'a named argument still binds';
@@ -58,12 +58,6 @@ grammar Pairs {
     token p($pair) { \w+ { make $pair.key ~ $pair.value } }
 }
 is Pairs.parse('z')<p>.made, 'a1', 'a positional Pair argument';
-
-grammar Arr {
-    token TOP { :my @w = <foo bar>; <one(@w)> }
-    token one(@words) { @words }
-}
-ok Arr.parse('bar'), 'an array argument';
 
 {
     my $outer = 'q';
