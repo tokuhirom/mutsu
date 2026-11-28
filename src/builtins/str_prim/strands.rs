@@ -167,15 +167,13 @@ impl Joiner {
 
     /// Append an `Int`'s string form — its decimal `Display`, exactly what
     /// `Value::to_string_value` renders for one — straight into the pending
-    /// piece, without the intermediate `String` that `push_value` makes.
+    /// piece, without the intermediate `String` that `push_value` makes or a
+    /// `core::fmt` pass ([`super::DecimalKey`]).
     ///
     /// Cost: O(d), d = decimal digits of `i`.
     pub(crate) fn push_int(&mut self, i: i64) {
-        use std::fmt::Write as _;
-        let before = self.pending.len();
-        // Writing into a `String` cannot fail.
-        let _ = write!(self.pending, "{i}");
-        self.len += self.pending.len() - before;
+        let digits = super::DecimalKey::of(i);
+        self.push_str(digits.as_str());
     }
 
     /// Append a value's string form: a big `Str` is referenced, anything

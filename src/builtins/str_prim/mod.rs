@@ -26,6 +26,7 @@ pub(crate) mod codepoint;
 mod fold;
 mod strands;
 
+pub(crate) use crate::value::decimal_text::DecimalKey;
 pub(crate) use build::{Normal, concat, flip, join, normalize, repeat, titlecase_each};
 pub(crate) use fold::{Fold, eq_at, find, nomark};
 pub(crate) use strands::Joiner;
