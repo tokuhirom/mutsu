@@ -7,8 +7,8 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 
 | metric | value |
 |---|---|
-| **dist parity** (published headline) | **99.9%** (1337/1338) |
-| file parity | 100.0% (5163/5164) |
+| **dist parity** (published headline) | **100.0%** (1338/1338) |
+| file parity | 100.0% (5164/5164) |
 | assertion parity | 100.0% |
 | accepted divergences (out of the KPI, ADR-0130) | 15 file(s) |
 | out-of-scope distributions (`exclude.txt`, out of the KPI) | 14 |
@@ -17,9 +17,8 @@ definitions: [docs/ecosystem-parity.md](../docs/ecosystem-parity.md).
 |---|---|
 | `blocked_dep` | 3 |
 | `blocked_load` | 3 |
-| `green` | 1337 |
+| `green` | 1338 |
 | `no_baseline` | 330 |
-| `partial` | 1 |
 | out of scope (`exclude.txt`, any status) | 14 |
 
 ## Regressed since the previous ledger
@@ -999,7 +998,7 @@ _None._
 | `Math::Regressionizer` | 0.0.4 | green | 1/1 |
 | `Math::Root` | 0.0.4 | green | 3/3 |
 | `Math::SalvoCombatModeling` | 0.0.1 | green | 1/1 |
-| `Math::Sequences` | 0.1.2 | partial | 8/9 |
+| `Math::Sequences` | 0.1.2 | green | 9/9 |
 | `Math::SparseMatrix` | 0.0.17 | green | 20/20 |
 | `Math::SparseMatrix::Native` | 0.0.10 | no_baseline | — |
 | `Math::SpecialFunctions` | 0.1.1 | green | 4/4 |
