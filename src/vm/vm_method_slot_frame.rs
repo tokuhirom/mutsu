@@ -142,7 +142,20 @@ pub(super) fn slot_frame_body_ok(
         }
         _ => false,
     });
+    // Each parameter seeds one slot: the slot frame moves its argument in.
+    let mut seeded: u64 = 0;
+    let params_unique = plan.locals.iter().all(|init| match init {
+        LocalInit::Param(idx) if *idx < 64 => {
+            let bit = 1u64 << idx;
+            let fresh = seeded & bit == 0;
+            seeded |= bit;
+            fresh
+        }
+        LocalInit::Param(_) => false,
+        _ => true,
+    });
     ops_ok
+        && params_unique
         && plan
             .locals
             .iter()
@@ -227,6 +240,25 @@ impl Interpreter {
     // Cost: O(1) — one attribute-site read (a cache miss costs the general
     // attribute resolution, O(m), m = mixin layers).
     pub(super) fn slot_frame_attr_read(&mut self, code: &CompiledCode, idx: usize) {
+        // The site's cached layout slot, read off the receiver in slot 0
+        // without cloning it: a slot-frame owner is never a role (whose
+        // attribute reads the site cache refuses), and the receiver of a
+        // planned call is an ordinary instance.
+        if let Some((layout_id, slot)) = code.attr_sites.cached(code.attr_site_words(), idx)
+            && let Some(receiver) = self.locals.first()
+            && let ValueView::Instance { attributes, .. } = receiver.view()
+        {
+            let map = attributes.as_map();
+            if map.layout().is_some_and(|layout| layout.id() == layout_id)
+                && !map.has_undeclared()
+                && let Some(val) = map.slot_vivify(slot)
+            {
+                let val = val.deref_container();
+                drop(map);
+                self.stack.push(val);
+                return;
+            }
+        }
         if let Some(val) = self.read_self_attr_cell_slot(code, idx) {
             self.stack.push(val);
             return;
@@ -291,13 +323,18 @@ impl Interpreter {
                 .and_then(|pd| self.take_implicit_self_invocant_arrival_sym(method_sym, Some(pd)))
                 .unwrap_or_else(|| base.clone());
             let inv_offset = usize::from(inv_pd.is_some());
-            let param_value = |idx: usize| -> Value {
+            // Each parameter seeds exactly one slot (`slot_frame_body_ok`), so
+            // its argument is moved into it rather than cloned and dropped.
+            let mut args = args;
+            let mut param_value = |idx: usize| -> Value {
                 match method_def.param_defs.get(idx) {
                     Some(pd) if pd.is_invocant => invocant.clone(),
                     Some(pd) if pd.slurpy => Value::NIL,
                     pd => args
-                        .get(idx - inv_offset)
-                        .map(|v| Self::itemize_fast_method_arg(pd, v.clone()))
+                        .get_mut(idx - inv_offset)
+                        .map(|v| {
+                            Self::itemize_fast_method_arg(pd, std::mem::replace(v, Value::NIL))
+                        })
                         .unwrap_or(Value::NIL),
                 }
             };
