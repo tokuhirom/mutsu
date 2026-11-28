@@ -341,6 +341,8 @@ mod vm_kernel_admit;
 mod vm_kernel_compile;
 #[cfg(feature = "jit")]
 mod vm_kernel_elem;
+#[cfg(feature = "jit")]
+mod vm_kernel_hash;
 mod vm_lazy_front_mutate;
 mod vm_lazy_index_prefix;
 mod vm_lazy_slip;
