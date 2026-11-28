@@ -441,6 +441,15 @@ fn build(
                 let tb = tier_b.as_ref().unwrap();
                 tb.emit_int_num_arith(&mut b, IntArith::Mul, helpers::mul as *const () as usize);
             }
+            OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor if let Some(tb) = &tier_b => {
+                use super::vm_jit_tier_b_bitop::IntBitOp;
+                let (bop, shim) = match op {
+                    OpCode::BitAnd => (IntBitOp::And, helpers::bit_and as *const () as usize),
+                    OpCode::BitOr => (IntBitOp::Or, helpers::bit_or as *const () as usize),
+                    _ => (IntBitOp::Xor, helpers::bit_xor as *const () as usize),
+                };
+                tb.emit_int_bitop(&mut b, bop, shim);
+            }
             OpCode::IntDiv if tier_b.is_some() => {
                 let tb = tier_b.as_ref().unwrap();
                 tb.emit_int_divmod(
