@@ -39,6 +39,14 @@ pub(super) struct ForParts<'a> {
 }
 
 impl Compiler {
+    /// Whether a multi-dimensional subscript's dimension is written as a slice
+    /// (`*`, an index list, a range).
+    // Cost: O(1).
+    fn multidim_dim_is_slice_syntax(dim: &Expr) -> bool {
+        matches!(dim, Expr::Whatever | Expr::ArrayLiteral(_))
+            || Self::for_index_is_slice(dim)
+    }
+
     /// Compile a `for` construct in either position.
     ///
     /// Statement callers must have run the statement-level source desugars
@@ -267,14 +275,23 @@ impl Compiler {
         // read would copy each nested Hash and make its `:delete` invisible
         // to the source.  Keep positional slices on their existing path: that
         // family has separate pending writeback semantics.
+        //
+        // A positional slice (`for @a[1;*] <-> $x { ... }`) does the same for
+        // an rw loop: the op promotes each selected leaf to a cell, so the loop
+        // variable aliases the leaf (#19339).
         if let Expr::MultiDimIndex {
             target,
             dimensions,
-            is_positional: false,
+            is_positional,
         } = &normalized_iterable
-            && dimensions
-                .iter()
-                .all(|dimension| matches!(dimension, Expr::Whatever))
+            && if *is_positional {
+                ((param.is_none() && params.is_empty()) || has_rw && !has_copy)
+                    && dimensions.iter().any(Self::multidim_dim_is_slice_syntax)
+            } else {
+                dimensions
+                    .iter()
+                    .all(|dimension| matches!(dimension, Expr::Whatever))
+            }
         {
             self.compile_expr(target);
             for dimension in dimensions {
@@ -282,7 +299,7 @@ impl Compiler {
             }
             self.code.emit(OpCode::MultiDimIndexBindRef {
                 ndims: dimensions.len() as u32,
-                is_positional: false,
+                is_positional: *is_positional,
             });
         } else if let Expr::Index {
             target,

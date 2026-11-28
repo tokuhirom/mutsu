@@ -530,7 +530,7 @@ impl Compiler {
     /// index that is not one of these shapes may still hold a `Range` or a
     /// list at runtime (`my $r := 0..2; @a[$r]`), which
     /// [`Self::desugar_for_scalar_element_source`] handles with a runtime guard.
-    fn for_index_is_slice(index: &Expr) -> bool {
+    pub(super) fn for_index_is_slice(index: &Expr) -> bool {
         // `@a[1..*-1]`: a range with a WhateverCode endpoint curries into a
         // WhateverCode that yields the range.
         let index = match index {
