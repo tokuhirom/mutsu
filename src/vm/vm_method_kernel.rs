@@ -197,7 +197,7 @@ impl MethodKernel {
                 | KOp::Param(_)
                 | KOp::Attr(_)
                 | KOp::ParamAccessor(..)
-                | KOp::SelfAccessor(_) => depth + 1,
+                | KOp::SelfAccessor(..) => depth + 1,
                 KOp::Add | KOp::Sub | KOp::Mul => depth.checked_sub(1)?,
                 KOp::PowConst(_) | KOp::Sqrt => {
                     if depth == 0 {
