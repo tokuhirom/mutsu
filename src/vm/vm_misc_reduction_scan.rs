@@ -356,10 +356,9 @@ impl Interpreter {
             code,
             tc_idx,
             var_name_idx,
-            TypeCheckMode::Assignment,
+            TypeCheckMode::Assignment { feeds_decl_store },
             has_explicit_initializer,
             smiley_from_pragma,
-            feeds_decl_store,
         )
     }
 
@@ -378,7 +377,6 @@ impl Interpreter {
             TypeCheckMode::Binding,
             false,
             false,
-            false,
         )
     }
 
@@ -395,7 +393,6 @@ impl Interpreter {
             tc_idx,
             var_name_idx,
             TypeCheckMode::Parameter,
-            false,
             false,
             false,
         )

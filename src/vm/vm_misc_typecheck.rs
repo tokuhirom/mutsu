@@ -3,7 +3,9 @@ use super::*;
 use crate::value::ValueMap;
 
 pub(super) enum TypeCheckMode {
-    Assignment,
+    /// `feeds_decl_store`: the statement-form declaration store follows the
+    /// check directly (see `type_check_plain_scalar_fast`).
+    Assignment { feeds_decl_store: bool },
     Binding,
     Parameter,
 }
@@ -17,9 +19,11 @@ impl Interpreter {
         mode: TypeCheckMode,
         has_explicit_initializer: bool,
         smiley_from_pragma: bool,
-        feeds_decl_store: bool,
     ) -> Result<(), RuntimeError> {
-        let bind_mode = !matches!(mode, TypeCheckMode::Assignment);
+        let (bind_mode, feeds_decl_store) = match mode {
+            TypeCheckMode::Assignment { feeds_decl_store } => (false, feeds_decl_store),
+            _ => (true, false),
+        };
         let parameter_mode = matches!(mode, TypeCheckMode::Parameter);
         let var_name: Option<&str> = var_name_idx.map(|idx| Self::const_str(code, idx));
         // Set again below only when this check fully matched the value, so the
