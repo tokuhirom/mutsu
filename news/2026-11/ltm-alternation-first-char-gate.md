@@ -22,4 +22,7 @@ activation, because a run reads that activation's seed through a call
 without testing a character.
 
 One warm `load-yaml` of `bench-yaml-parse-big`'s document, `MUTSU_JIT=off`,
-callgrind: see the PR for the before and after (#12917).
+callgrind: **131.7M -> 121.1M instructions (-8.0%)**, allocations unchanged
+(#12917). `bench-regex-match`'s alternation line (`"level=" [ "debug" | "info"
+| "warn" | "error" | "fatal" ]`, five branches with five different first
+letters): **18.6k -> 15.9k instructions per match (-14.5%)** (#19296).
