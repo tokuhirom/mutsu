@@ -102,12 +102,16 @@ impl Compiler {
         // parameter; without it a closure over one of them captures it by
         // value and never sees the writeback.
         let arg_sources_idx = self.add_arg_sources_constant(args);
+        let static_arg_types = self.static_arg_types(args);
+        let static_site = crate::runtime::StaticCallSite::of(&self.code, static_arg_types);
+        let static_var_types = static_site.var_type_names();
         let site_idx = self.code.trir_call_sites.len() as u32;
         self.code.trir_call_sites.push(TrCallSite {
             link,
             name: *name,
             arg_slots,
-            static_arg_types: self.static_arg_types(args),
+            static_arg_types: static_site.is_static,
+            static_var_types,
         });
         self.code.emit(OpCode::CallTrir {
             site: site_idx,

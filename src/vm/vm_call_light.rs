@@ -825,7 +825,7 @@ impl Interpreter {
         }
         // The binding is done: the call site's `static_arg_types` must not
         // reach a call the body makes through a route that publishes none.
-        self.static_call_args = false;
+        self.static_call_args = crate::runtime::StaticCallSite::default();
         for (param_idx, slot) in param_slots.iter().enumerate() {
             let is_rw_param = cf.has_rw_positional_param
                 && param_idx < actual_count

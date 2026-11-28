@@ -605,7 +605,7 @@ impl Interpreter {
         }
         // The binding is done: the call site's `static_arg_types` must not
         // reach a call the body makes through a route that publishes none.
-        self.static_call_args = false;
+        self.static_call_args = crate::runtime::StaticCallSite::default();
         // A slot-only parameter that was not mirrored into `env` is not recorded
         // here: a reader of this frame by name is reached through
         // `push_caller_env`, which copies the live frame's slot-only locals,

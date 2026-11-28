@@ -105,7 +105,7 @@ impl Compiler {
             arity,
             arg_sources_idx: None,
             literal_native_args: 0,
-            static_arg_types: false,
+            static_arg_types: crate::opcode::StaticArgTypes::NONE,
         });
         true
     }

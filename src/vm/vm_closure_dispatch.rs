@@ -978,7 +978,7 @@ impl Interpreter {
         self.finish_call_capture(&args);
         // The binding is done: the call site's `static_arg_types` must not
         // reach a call the body makes through a route that publishes none.
-        self.static_call_args = false;
+        self.static_call_args = crate::runtime::StaticCallSite::default();
 
         // Placeholder parameters (`{ $^x = ... }`) are readonly aliases in
         // Raku, just like ordinary non-rw scalar parameters. They use the

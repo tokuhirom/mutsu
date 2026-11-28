@@ -353,7 +353,7 @@ impl Compiler {
                     arity: merge_arity,
                     arg_sources_idx: None,
                     literal_native_args: 0,
-                    static_arg_types: false,
+                    static_arg_types: crate::opcode::StaticArgTypes::NONE,
                 });
                 self.emit_set_named_var(&format!("@{}", name));
                 // The value is the slots as the assignment left them, cycled to
@@ -369,7 +369,7 @@ impl Compiler {
                     arity: 2,
                     arg_sources_idx: None,
                     literal_native_args: 0,
-                    static_arg_types: false,
+                    static_arg_types: crate::opcode::StaticArgTypes::NONE,
                 });
                 return;
             }
