@@ -265,3 +265,136 @@ pub(super) unsafe extern "C" fn kernel_elem_store_num(
     let vm = unsafe { &*interp };
     store_element(vm, slot, index, Value::num(value))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The mainline of `src`, with the slot and store name operand of its
+    /// first `IndexAssignLocal`.
+    fn compile(src: &str) -> (CompiledCode, u32, u32) {
+        let (stmts, _) = crate::parse_dispatch::parse_source(src).expect("source parses");
+        let (code, _) = crate::compiler::Compiler::new().compile(&stmts);
+        let (slot, name_idx) = code
+            .ops
+            .iter()
+            .find_map(|op| match op {
+                OpCode::IndexAssignLocal { slot, name_idx, .. } => Some((*slot, *name_idx)),
+                _ => None,
+            })
+            .expect("an element store");
+        (code, slot, name_idx)
+    }
+
+    /// An interpreter whose root frame holds `value` in every slot of `code`.
+    fn interp_with(code: &CompiledCode, slot: u32, value: Value) -> Interpreter {
+        let mut interp = Interpreter::new();
+        let mut slots = vec![Value::NIL; code.locals.len()];
+        slots[slot as usize] = value;
+        interp.locals.install_root_frame(&slots);
+        interp
+    }
+
+    fn read_int(interp: &mut Interpreter, slot: u32, index: i64) -> Option<i64> {
+        let mut out = 0i64;
+        // SAFETY: a live interpreter, a writable `out`; `code` is unused.
+        let status =
+            unsafe { kernel_elem_read_int(interp, std::ptr::null(), slot, index, &mut out) };
+        (status == KERNEL_ELEM_OK).then_some(out)
+    }
+
+    fn read_num(interp: &mut Interpreter, slot: u32, index: i64) -> Option<f64> {
+        let mut out = 0f64;
+        // SAFETY: as `read_int`.
+        let status =
+            unsafe { kernel_elem_read_num(interp, std::ptr::null(), slot, index, &mut out) };
+        (status == KERNEL_ELEM_OK).then_some(out)
+    }
+
+    fn store_int(interp: &mut Interpreter, slot: u32, index: i64, value: i64) -> u32 {
+        // SAFETY: a live interpreter; `code` is unused.
+        unsafe { kernel_elem_store_int(interp, std::ptr::null(), slot, index, value) }
+    }
+
+    fn elements(interp: &Interpreter, slot: u32) -> Vec<Value> {
+        match interp.locals[slot as usize].view() {
+            ValueView::Array(items, _) => items.items().to_vec(),
+            _ => panic!("slot holds an array"),
+        }
+    }
+
+    const SRC: &str = "my @a = 1, 2; @a[0] = 5;";
+
+    fn plain() -> Value {
+        Value::real_array(vec![Value::int(10), Value::num(2.5), Value::str_from("x")])
+    }
+
+    #[test]
+    fn a_plain_declared_array_slot_qualifies() {
+        let (code, slot, name_idx) = compile(SRC);
+        assert!(kernel_elem_slot_ok(&code, slot));
+        let interp = interp_with(&code, slot, plain());
+        assert!(kernel_elem_entry_ok(&interp, &code, slot, name_idx, false));
+        assert!(kernel_elem_entry_ok(&interp, &code, slot, name_idx, true));
+    }
+
+    #[test]
+    fn a_scalar_slot_does_not_qualify() {
+        let (stmts, _) = crate::parse_dispatch::parse_source("my $x = 1;").expect("parses");
+        let (code, _) = crate::compiler::Compiler::new().compile(&stmts);
+        assert!(!kernel_elem_slot_ok(&code, 0));
+    }
+
+    #[test]
+    fn reads_take_only_an_element_of_the_asked_kind() {
+        let (code, slot, _) = compile(SRC);
+        let mut interp = interp_with(&code, slot, plain());
+        assert_eq!(read_int(&mut interp, slot, 0), Some(10));
+        assert_eq!(read_num(&mut interp, slot, 1), Some(2.5));
+        // The other kind, a Str, out of range, negative: all declined.
+        assert_eq!(read_num(&mut interp, slot, 0), None);
+        assert_eq!(read_int(&mut interp, slot, 1), None);
+        assert_eq!(read_int(&mut interp, slot, 2), None);
+        assert_eq!(read_int(&mut interp, slot, 3), None);
+        assert_eq!(read_int(&mut interp, slot, -1), None);
+    }
+
+    #[test]
+    fn stores_write_in_range_and_append_only() {
+        let (code, slot, _) = compile(SRC);
+        let mut interp = interp_with(&code, slot, plain());
+        assert_eq!(store_int(&mut interp, slot, 1, 7), KERNEL_ELEM_OK);
+        // One past the end appends; the next read sees the new length.
+        assert_eq!(store_int(&mut interp, slot, 3, 8), KERNEL_ELEM_OK);
+        assert_eq!(read_int(&mut interp, slot, 3), Some(8));
+        // SAFETY: as `store_int`.
+        let status =
+            unsafe { kernel_elem_store_num(&mut interp, std::ptr::null(), slot, 0, 1.5) };
+        assert_eq!(status, KERNEL_ELEM_OK);
+        assert_eq!(read_num(&mut interp, slot, 0), Some(1.5));
+        let before = elements(&interp, slot);
+        // A gap and a negative index decline and change nothing.
+        assert_eq!(store_int(&mut interp, slot, 9, 1), KERNEL_ELEM_DECLINE);
+        assert_eq!(store_int(&mut interp, slot, -1, 1), KERNEL_ELEM_DECLINE);
+        let after = elements(&interp, slot);
+        assert_eq!(before.len(), after.len());
+        assert_eq!(after.len(), 4);
+    }
+
+    #[test]
+    fn a_slot_that_no_longer_holds_an_array_declines_every_access() {
+        let (code, slot, _) = compile(SRC);
+        let mut interp = interp_with(&code, slot, Value::int(3));
+        assert_eq!(read_int(&mut interp, slot, 0), None);
+        assert_eq!(store_int(&mut interp, slot, 0, 1), KERNEL_ELEM_DECLINE);
+        assert!(matches!(interp.locals[slot as usize].view(), ValueView::Int(3)));
+    }
+
+    #[test]
+    fn a_list_value_in_the_slot_declines() {
+        let (code, slot, _) = compile(SRC);
+        let mut interp = interp_with(&code, slot, Value::array(vec![Value::int(1)]));
+        assert_eq!(read_int(&mut interp, slot, 0), None);
+        assert_eq!(store_int(&mut interp, slot, 0, 1), KERNEL_ELEM_DECLINE);
+    }
+}
