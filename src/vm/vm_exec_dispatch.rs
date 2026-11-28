@@ -6112,11 +6112,7 @@ impl Interpreter {
             // under 256 bytes) when the result is built as strands (ADR-0120);
             // O(n), n = total chars, for a result under `STRAND_MIN_BYTES`.
             OpCode::StringConcat(n) => {
-                self.sync_source_line(code, *ip);
-                // #11217: a render truncated by a stack overflow raises.
-                crate::value::render_guard::check_render(
-                    self.exec_string_concat_op(*n, code.interp_part_names_at(*ip)),
-                )?;
+                self.exec_string_concat_at(code, *ip, *n)?;
                 *ip += 1;
             }
 
