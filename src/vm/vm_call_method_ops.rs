@@ -991,7 +991,6 @@ impl Interpreter {
                 && self.caches.method_site_ic_site.is_some()
             {
                 self.install_method_site_ic(
-                    code,
                     class_name,
                     name.sym,
                     0,

@@ -415,7 +415,7 @@ pub(crate) struct ResolutionCaches {
         rustc_hash::FxHashMap<(usize, u32), crate::vm::vm_method_site_ic::MethodSiteIcEntry>,
     pub(crate) method_site_ic_generation: u64,
     /// The site the current method dispatch may record its answer for.
-    pub(crate) method_site_ic_site: Option<(usize, u32)>,
+    pub(crate) method_site_ic_site: Option<crate::vm::vm_method_site_ic::MethodSiteIcArm>,
     /// `(class, accessor) ->` [`Interpreter::rw_accessor_type_constraint`]'s
     /// answer (`None`: not a public `is rw` attribute; `Some(tc)`: its type
     /// constraint). Cleared with the other method caches on a method

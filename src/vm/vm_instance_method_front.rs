@@ -88,7 +88,6 @@ impl Interpreter {
         {
             crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "accessor");
             self.install_method_site_ic(
-                code,
                 class_name,
                 name.sym,
                 0,

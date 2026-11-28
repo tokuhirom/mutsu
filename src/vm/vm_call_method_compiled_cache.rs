@@ -1007,6 +1007,9 @@ impl Interpreter {
         // key can never resolve at call time (ADR-0019 C6e-3c).
         let fns_ref = method_def.compiled_fns.as_deref().unwrap_or(&empty_fns);
         let method_result = if let Some(csm) = can_skip_merge {
+            // A `CallMethod` site may replay this call's plan from now on
+            // (`vm_method_site_ic`).
+            self.note_call_method_site_plan(owner_class, method_sym, method_def, &target, &args);
             // The real receiver, never its type object: a deferral candidate
             // constrained `(A:D:)` / `(Str:D:)` must see a DEFINED invocant.
             let invocant_for_dispatch = target.clone();

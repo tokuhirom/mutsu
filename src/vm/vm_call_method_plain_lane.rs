@@ -293,7 +293,6 @@ impl Interpreter {
             if let Some(plan) = plan {
                 if !want_ref && let ValueView::Instance { class_name, .. } = target.view() {
                     self.install_method_site_ic(
-                        code,
                         class_name,
                         method_sym,
                         0,
@@ -367,7 +366,6 @@ impl Interpreter {
                 let mut arg_keys = Vec::with_capacity(args.len());
                 if self.plain_lane_arg_keys_into(&args, &mut arg_keys) {
                     self.install_method_site_ic(
-                        code,
                         class_name,
                         method_sym,
                         args.len(),

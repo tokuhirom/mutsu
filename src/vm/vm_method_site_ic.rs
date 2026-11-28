@@ -51,6 +51,9 @@ pub(crate) enum MethodSiteIcAction {
         arg_keys: Vec<Symbol>,
         plan: std::sync::Arc<super::vm_method_call_plan::MethodCallPlan>,
     },
+    /// A `CallMethod` site whose call was found unplannable: the full path
+    /// runs, without deciding the plan again.
+    Unplanned,
 }
 
 /// One site's recorded answer.
@@ -61,6 +64,17 @@ pub(crate) struct MethodSiteIcEntry {
     method_generation: u64,
     write_generation: u64,
     action: MethodSiteIcAction,
+}
+
+/// The site the current method dispatch may record its answer for, with the
+/// call shape its op had when it was armed.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct MethodSiteIcArm {
+    key: (usize, u32),
+    method: Symbol,
+    arity: usize,
+    /// A `CallMethod` (not a `CallMethodMut`) site.
+    call_method: bool,
 }
 
 /// The key of the site at `code.ops[ip]`.
@@ -117,30 +131,28 @@ impl Interpreter {
             && !crate::runtime::find_method_intercept::any_user_find_method()
     }
 
-    /// Record `action` for the armed site, if it is `code`'s and its op is a
-    /// call of `method` with `arity` arguments on a receiver of `class`.
+    /// Record `action` for the armed site, if its op is a call of `method`
+    /// with `arity` arguments (the receiver's class is `class`).
+    ///
+    /// An entry is a function of the op's call shape, the class, the argument
+    /// keys and the registry generations only, so it is right for whichever
+    /// site of that shape the arm names.
     // Cost: O(a) to clone the argument keys, a = arguments; once per site and
     // generation.
     pub(super) fn install_method_site_ic(
         &mut self,
-        code: &CompiledCode,
         class: Symbol,
         method: Symbol,
         arity: usize,
         action: MethodSiteIcAction,
     ) {
-        let Some(key) = self.caches.method_site_ic_site.take() else {
+        let Some(arm) = self.caches.method_site_ic_site.take() else {
             return;
         };
-        if key.0 != code as *const CompiledCode as usize || site_name_excluded(method) {
+        if arm.method != method || arm.arity != arity || site_name_excluded(method) {
             return;
         }
-        let Some((site_method, site_arity, _)) = site_shape(code, key.1 as usize) else {
-            return;
-        };
-        if site_method != method || site_arity != arity {
-            return;
-        }
+        let key = arm.key;
         if let MethodSiteIcAction::Plan { plan, .. } = &action
             && !plan.lean
         {
@@ -178,18 +190,21 @@ impl Interpreter {
         ip: usize,
     ) -> Option<Result<(), RuntimeError>> {
         let key = site_key(code, ip);
-        self.caches.method_site_ic_site = Some(key);
+        let Some((method, arity, mutating)) = site_shape(code, ip) else {
+            self.caches.method_site_ic_site = None;
+            return None;
+        };
+        self.caches.method_site_ic_site = Some(MethodSiteIcArm {
+            key,
+            method,
+            arity,
+            call_method: !mutating,
+        });
         if self.caches.method_site_ic.is_empty() {
             return None;
         }
         // Only an instance receiver can hit: refuse every other call before
         // hashing the site.
-        let arity = match code.ops[ip] {
-            OpCode::CallMethodMut { arity, .. } | OpCode::CallMethod { arity, .. } => {
-                arity as usize
-            }
-            _ => return None,
-        };
         let target_idx = self.stack.len().checked_sub(arity + 1)?;
         if !self.stack[target_idx].is_instance_value() {
             return None;
@@ -199,6 +214,51 @@ impl Interpreter {
             self.caches.method_site_ic_site = None;
         }
         hit
+    }
+
+    /// The `CallMethod` dispatch tail (`dispatch_compiled_method`) reached a
+    /// compiled user method on an ordinary instance from an armed
+    /// `CallMethod` site: every probe of that op's preamble declined it.
+    /// Decide the call's plan here, as the `CallMethodMut` tail decides its
+    /// own (`install_method_call_plan`), and record it for the site.
+    // Cost: O(1) when no `CallMethod` site is armed; otherwise once per site
+    // and generation, the plan decision, O(p * a), p = parameters, a =
+    // arguments.
+    pub(super) fn note_call_method_site_plan(
+        &mut self,
+        owner: Symbol,
+        method: Symbol,
+        def: &std::sync::Arc<crate::runtime::MethodDef>,
+        target: &Value,
+        args: &[Value],
+    ) {
+        if !self
+            .caches
+            .method_site_ic_site
+            .is_some_and(|arm| arm.call_method && arm.method == method && arm.arity == args.len())
+        {
+            return;
+        }
+        let ValueView::Instance { class_name, .. } = target.view() else {
+            return;
+        };
+        if !self.plain_method_lane_class_eligible(class_name)
+            || !self.method_site_ic_gates_clear()
+            || self.registry().method_name_ever_wrapped(method.as_str())
+        {
+            self.caches.method_site_ic_site = None;
+            return;
+        }
+        let mut arg_keys = Vec::with_capacity(args.len());
+        if !args.is_empty() && !self.plain_lane_arg_keys_into(args, &mut arg_keys) {
+            self.caches.method_site_ic_site = None;
+            return;
+        }
+        let action = match self.method_call_plan_for(method, owner, def, target, args) {
+            Some(plan) if plan.lean => MethodSiteIcAction::Plan { arg_keys, plan },
+            _ => MethodSiteIcAction::Unplanned,
+        };
+        self.install_method_site_ic(class_name, method, args.len(), action);
     }
 
     fn method_site_ic_hit(
@@ -240,9 +300,13 @@ impl Interpreter {
                 self.caches.ctor_lane_candidate = None;
                 Some(Ok(()))
             }
+            MethodSiteIcAction::Unplanned => {
+                // Nothing to replay, and nothing to decide again.
+                self.caches.method_site_ic_site = None;
+                None
+            }
             MethodSiteIcAction::Plan { arg_keys, plan } => {
-                if !mutating
-                    || self.registry_write_generation() != write_generation
+                if self.registry_write_generation() != write_generation
                     || self.registry().method_name_ever_wrapped(method.as_str())
                 {
                     return None;
@@ -263,14 +327,25 @@ impl Interpreter {
         arg_keys: &[Symbol],
         plan: &std::sync::Arc<super::vm_method_call_plan::MethodCallPlan>,
     ) -> Option<Result<(), RuntimeError>> {
-        let OpCode::CallMethodMut {
-            arity,
-            arg_sources_idx,
-            target_name_idx,
-            ..
-        } = code.ops[ip]
-        else {
-            return None;
+        let (arity, arg_sources_idx, target_name) = match code.ops[ip] {
+            OpCode::CallMethodMut {
+                arity,
+                arg_sources_idx,
+                target_name_idx,
+                ..
+            } => (
+                arity,
+                arg_sources_idx,
+                Self::const_str(code, target_name_idx),
+            ),
+            // A `CallMethod` receiver is a value, not a variable: no name to
+            // arm a raw invocant from, as on its own dispatch tail.
+            OpCode::CallMethod {
+                arity,
+                arg_sources_idx,
+                ..
+            } => (arity, arg_sources_idx, ""),
+            _ => return None,
         };
         let arity = arity as usize;
         let target_idx = self.stack.len().checked_sub(arity + 1)?;
@@ -299,7 +374,6 @@ impl Interpreter {
         } else if !arg_keys.is_empty() {
             return None;
         }
-        let target_name = Self::const_str(code, target_name_idx);
         self.sync_source_line(code, ip);
         let Some(target) = self.stack.pop() else {
             self.stack.extend(args);

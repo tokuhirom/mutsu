@@ -5,7 +5,7 @@ use Test;
 # answer depends on: the receiver's class, the argument types, and every
 # registry change (a new method, a wrap, `^add_method`, `augment`).
 
-plan 13;
+plan 16;
 
 class A {
     has $.x = 1;
@@ -62,4 +62,20 @@ is call-d(D2.new), 'new', 'a site sees a method augmented into the subclass';
     my $o = A.new;
     my $r = try { call-m($o, 'abc') };
     ok $! ~~ X::Str::Numeric, 'an exception through a warm site';
+}
+
+{
+    # A call on a value (`CallMethod`) replays its plan too, and a slot-frame
+    # body calls a method on `self`.
+    class S {
+        has $.n = 'S';
+        method inner() { 'inner of ' ~ $.n }
+        method outer() { return self.inner() ~ '!' }
+    }
+    class T is S { method inner() { 'T-inner' } }
+    my @o;
+    @o.push: S.new.outer for ^5;
+    is-deeply @o, ['inner of S!' xx 5], 'self.m() from a warm site';
+    is T.new.outer, 'T-inner!', 'the subclass override at the same site';
+    is S.new(n => 'x').outer, 'inner of x!', 'and the base class again';
 }
