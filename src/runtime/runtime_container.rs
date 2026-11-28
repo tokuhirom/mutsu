@@ -146,6 +146,17 @@ impl Interpreter {
         // (`BagHash[Int]`, read by `QuantHash.keyof`), set by its constructor or
         // its `is` trait. The variable-constraint registration that follows an
         // `is BagHash[Int]` trait names no declared type and must not erase it.
+        // A shaped hash's key spec (`Str;Int`, #19283) is its dimensions: the
+        // hash is keyed by a `List` of them.
+        if let Some(spec) = info.key_type.as_deref().filter(|k| k.contains(';'))
+            && let Some(declared) = crate::value::shaped_hash::declared_type_for(
+                if info.value_type.is_empty() { "Any" } else { &info.value_type },
+                spec,
+            )
+        {
+            info.declared_type = Some(declared);
+            info.key_type = Some("List".to_string());
+        }
         if info.declared_type.is_none() {
             info.declared_type = match value.view() {
                 ValueView::Set(data, _) => data.declared_type.clone(),
@@ -419,13 +430,15 @@ impl Interpreter {
             && let Some(key_type) = key_part.strip_suffix('}')
         {
             let value_type = value_type.trim();
-            // A key type per dimension (`my %h{Str;Int}`) makes a shaped hash,
-            // keyed by a `List` of them (#19283).
-            if let Some(declared) = crate::value::shaped_hash::declared_type_for(value_type, key_type) {
+            // A key type per dimension (`my %h{Str;Int}`) makes a shaped hash
+            // (#19283): the key spec travels whole, and `tag_container_metadata`
+            // turns it into the hash's `List` key type and `Hash[V,(K1,K2)]`
+            // declared type.
+            if crate::value::shaped_hash::declared_type_for(value_type, key_type).is_some() {
                 return ContainerConstraintParts {
                     value_type,
-                    key_type: Some("List"),
-                    declared_type: Some(declared),
+                    key_type: Some(key_type.trim()),
+                    declared_type: None,
                 };
             }
             let key_type = crate::runtime::types::first_key_dimension(key_type);

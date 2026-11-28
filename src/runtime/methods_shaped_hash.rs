@@ -49,6 +49,21 @@ impl Interpreter {
         Ok((key, Value::array_with_kind(crate::gc::Gc::new(crate::value::ArrayData::new(keys)), crate::value::ArrayKind::List)))
     }
 
+    /// A single-key subscript (`%h<a>`, `%h{$keys}`) of a shaped hash whose
+    /// key spec is `spec` (`Str;Int`): the key list it names, with rakudo's
+    /// dimension and key type errors.
+    // Cost: O(d), d = dimensions.
+    pub(crate) fn shaped_hash_single_key(
+        &mut self,
+        spec: &str,
+        key: &Value,
+        operation: &str,
+    ) -> Result<Value, RuntimeError> {
+        let dims: Vec<String> = spec.split(';').map(|d| d.trim().to_string()).collect();
+        let parts = Self::shaped_hash_parts(key);
+        Ok(self.shaped_hash_key(&dims, &parts, operation)?.1)
+    }
+
     /// `%h{a;b}` on the shaped hash `target`: the value the key list names, or
     /// the value type object when there is no such entry.
     // Cost: O(d), d = dimensions.
@@ -106,6 +121,40 @@ impl Interpreter {
                 .insert(key, list);
         });
         Ok(true)
+    }
+
+    /// The entries of a hash assigned to a shaped hash variable
+    /// (`my %h{Str;Int} = ("a", 1) => 5`), filed under their key lists with
+    /// each key and value checked; `original` holds the key objects the
+    /// source hash recorded.
+    // Cost: O(n·d), n = entries, d = dimensions.
+    pub(crate) fn coerce_shaped_hash_entries(
+        &mut self,
+        source: &crate::value::HashData,
+        original: Option<&ValueMap>,
+        dims: &[String],
+        value_type: Option<&str>,
+    ) -> Result<Value, RuntimeError> {
+        let mut map = crate::value::user_key_map::with_capacity(source.map.len());
+        let mut keys = ValueMap::default();
+        for (key, value) in source.map.iter() {
+            let key_object = original
+                .and_then(|orig| orig.get(key))
+                .cloned()
+                .unwrap_or_else(|| Value::hash_key_decode(key));
+            let parts = Self::shaped_hash_parts(&key_object);
+            let (stored, list) = self.shaped_hash_key(dims, &parts, "assign to")?;
+            let value = value.deref_container();
+            if let Some(of) = value_type
+                && !value.is_nil()
+                && !self.type_matches_value(of, &value)
+            {
+                return Err(self.type_check_assignment_failure("", of, &value));
+            }
+            map.insert(stored.clone(), Self::itemize_value_for_element_store(value));
+            keys.insert(stored, list);
+        }
+        Ok(crate::runtime::utils::set_hash_original_keys(Value::hash(map), keys))
     }
 
     /// `%h{a;b}:exists` / `:delete` on the shaped hash `target`: whether the

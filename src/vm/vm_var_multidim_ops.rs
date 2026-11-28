@@ -300,6 +300,14 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        // A shaped hash (#19283) reads the entry the key list names.
+        if !is_positional
+            && !dims.iter().any(Self::dim_is_multi)
+            && let Some(value) = self.shaped_hash_read(&target, &dims)?
+        {
+            self.stack.push(value);
+            return Ok(());
+        }
         let assoc_scalar_slice = Self::assoc_multislice(is_positional)
             && dims.len() >= 2
             && Self::walks_associative(&target)

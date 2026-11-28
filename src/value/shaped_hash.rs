@@ -41,6 +41,18 @@ pub(crate) fn declared_type_for(value_type: &str, spec: &str) -> Option<String> 
     (dims.len() >= 2).then(|| format!("Hash[{value_type},({})]", dims.join(",")))
 }
 
+/// The `{...}` a typed hash's `.raku` shows after its `%`: a shaped hash's
+/// dimension types (`{Str;Int}`), an object hash's key type (`{Int}`), or
+/// nothing.
+// Cost: O(n), n = length of the type names.
+pub(crate) fn raku_key_suffix(key_type: Option<&str>, declared_type: Option<&str>) -> String {
+    match (declared_type.and_then(dims_of_declared_type), key_type) {
+        (Some(dims), _) => format!("{{{}}}", dims.join(";")),
+        (None, Some(kt)) => format!("{{{}}}", super::type_arg_display_name(kt)),
+        (None, None) => String::new(),
+    }
+}
+
 /// The storage key of the key list `parts`: each key's `.WHICH`, prefixed
 /// with its length so no two lists join to the same string.
 // Cost: O(k), k = total length of the parts' WHICH strings.

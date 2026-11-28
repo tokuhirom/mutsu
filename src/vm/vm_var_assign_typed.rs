@@ -309,6 +309,17 @@ impl Interpreter {
                 runtime::utils::hash_original_keys_snapshot(&Value::hash_with_data(map.clone()));
             let value_constraint = self.decl_type_constraint(decl, var_name);
             let key_constraint = self.decl_hash_key_constraint(decl, var_name);
+            // A shaped hash (`my %h{Str;Int} = ...`, #19283): each key is a
+            // list of one key per dimension.
+            if let Some(spec) = key_constraint.as_deref().filter(|k| k.contains(';')) {
+                let dims: Vec<String> = spec.split(';').map(|d| d.trim().to_string()).collect();
+                return self.coerce_shaped_hash_entries(
+                    &map,
+                    saved_original_keys.as_ref(),
+                    &dims,
+                    value_constraint.as_deref(),
+                );
+            }
             let mut coerced_map = crate::value::user_key_map::with_capacity(map.len());
             // For an object hash (`my Int %h{Int}`) whose key type is not the
             // default `Str`, record the reconstructed typed key alongside the

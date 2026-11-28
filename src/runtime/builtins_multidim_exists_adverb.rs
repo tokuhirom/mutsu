@@ -32,7 +32,7 @@ impl Interpreter {
         let raw_indices = &args[3..];
         let indices = self.resolve_multidim_indices(target, raw_indices)?;
         // A shaped hash (#19283) tests the entry the key list names.
-        if adverb.is_empty()
+        if adverb == "none"
             && let Some((exists, _)) =
                 self.shaped_hash_exists_or_delete(&mut target.clone(), &indices, false)?
         {

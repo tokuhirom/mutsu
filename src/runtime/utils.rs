@@ -278,12 +278,26 @@ pub(crate) fn set_hash_original_keys(mut value: Value, original_keys: ValueMap) 
 /// a hash already `.WHICH`-keyed is left untouched (checked first, so a
 /// shared Gc is not cloned).
 pub(crate) fn ensure_object_hash_which_keys(value: &mut crate::gc::Gc<crate::value::HashData>) {
+    // A shaped hash files each key list under the joined WHICH of its keys
+    // (#19283), not under the list's own identity.
+    let shaped = value
+        .declared_type
+        .as_deref()
+        .and_then(crate::value::shaped_hash::dims_of_declared_type)
+        .is_some();
+    let key_of = |obj: &Value| {
+        if shaped && let Some(parts) = obj.as_list_items() {
+            crate::value::shaped_hash::storage_key(parts)
+        } else {
+            value_which_key(obj)
+        }
+    };
     let which_keyed = value.map.keys().all(|k| {
         value
             .original_keys
             .as_ref()
             .and_then(|orig| orig.get(k))
-            .is_some_and(|obj| value_which_key(obj) == *k)
+            .is_some_and(|obj| key_of(obj) == *k)
     });
     if which_keyed {
         return;
@@ -298,7 +312,7 @@ pub(crate) fn ensure_object_hash_which_keys(value: &mut crate::gc::Gc<crate::val
             .get(&key)
             .cloned()
             .unwrap_or_else(|| Value::hash_key_decode(&key));
-        let which = value_which_key(&key_obj);
+        let which = key_of(&key_obj);
         new_orig.insert(which.clone(), key_obj);
         new_map.insert(which, val);
     }

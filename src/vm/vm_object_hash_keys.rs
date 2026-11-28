@@ -77,6 +77,12 @@ impl Interpreter {
         if matches!(constraint.as_str(), "Any" | "Mu") {
             return Ok(());
         }
+        // A shaped hash's key spec (`Str;Int`, #19283) takes a key list.
+        if constraint.contains(';') {
+            return self
+                .shaped_hash_single_key(&constraint, index, "access")
+                .map(|_| ());
+        }
         if index.is_range() {
             return Ok(());
         }
