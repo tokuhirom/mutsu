@@ -302,11 +302,13 @@ impl Interpreter {
         if constraint == "Variable" && matches!(value_type, "Scalar" | "Array" | "Hash" | "Sub") {
             return true;
         }
-        // Exception hierarchy: all X::* types are subtypes of Exception
+        // Exception hierarchy: the X::* types are subtypes of Exception, but
+        // for the few whose catalogue row descends from `Any` directly.
         if constraint == "Exception"
             && (value_type.starts_with("X::")
                 || value_type.starts_with("CX::")
                 || value_type == "Exception")
+            && !crate::runtime::builtin_class_catalogue::is_non_exception_x_class(value_type)
         {
             return true;
         }

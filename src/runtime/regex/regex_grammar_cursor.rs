@@ -152,7 +152,25 @@ impl Interpreter {
         // `self.new` of a parse called on an instance runs on that instance.
         let invocant = match receiver {
             Some(r) if matches!(r.view(), ValueView::Instance { .. }) => {
-                self.try_compiled_method_or_interpret(r.clone(), "new", Vec::new())?
+                // With no user `new` anywhere in the MRO (and no replaced
+                // BUILDPLAN), `self.new` on an instance is `Mu.new`, whose
+                // `bless` builds a fresh object of the invocant's class -- the
+                // same object the native default constructor builds for the
+                // type-object form below. Only a user `new` can tell the two
+                // invocants apart, so only then does it take the general call.
+                let class = match r.view() {
+                    ValueView::Instance { class_name, .. } => class_name,
+                    _ => pkg,
+                };
+                let native = !self.buildplan_replaced_in_mro(class)
+                    && self.native_ctor_plan(class).eligible;
+                match native
+                    .then(|| self.try_native_default_construct(class, &[]))
+                    .flatten()
+                {
+                    Some(built) => built?,
+                    None => self.try_compiled_method_or_interpret(r.clone(), "new", Vec::new())?,
+                }
             }
             // `G.new` built as a call site builds it: the native default
             // constructor when the grammar's plan admits it (no user `new`,

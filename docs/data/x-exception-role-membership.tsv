@@ -288,6 +288,8 @@ X::Syntax::Extension::Category	X::Syntax::Extension::Category,Exception,Any,Mu	X
 X::Syntax::Extension::Null	X::Syntax::Extension::Null,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
 X::Syntax::Extension::SpecialForm	X::Syntax::Extension::SpecialForm,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
 X::Syntax::Extension::TooComplex	X::Syntax::Extension::TooComplex,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Heredoc::AmbiguousName	X::Syntax::Heredoc::AmbiguousName,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
+X::Syntax::Heredoc::HiddenName	X::Syntax::Heredoc::HiddenName,X::Undeclared,Exception,Any,Mu	X::Comp	X::Comp,X::Comp
 X::Syntax::InfixInTermPosition	X::Syntax::InfixInTermPosition,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
 X::Syntax::KeywordAsFunction	X::Syntax::KeywordAsFunction,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
 X::Syntax::Malformed	X::Syntax::Malformed,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
@@ -365,6 +367,8 @@ X::UnitScope::MustHaveUnit	X::UnitScope::MustHaveUnit,Exception,Any,Mu	X::Syntax
 X::UnitScope::TooLate	X::UnitScope::TooLate,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
 X::Useless::Declaration	X::Useless::Declaration,Exception,Any,Mu	X::Comp	X::Comp
 X::Value::Dynamic	X::Value::Dynamic,Exception,Any,Mu	X::Comp	X::Comp
+X::Whatever::ShortCircuit	X::Whatever::ShortCircuit,Any,Mu		
+X::WhateverCode::SmartMatch::LHS	X::WhateverCode::SmartMatch::LHS,Any,Mu		
 X::WheneverOutOfScope	X::WheneverOutOfScope,Exception,Any,Mu		
 X::Worry	X::Worry,Exception,Any,Mu		
 X::Worry::P5	X::Worry::P5,X::Worry,Exception,Any,Mu		

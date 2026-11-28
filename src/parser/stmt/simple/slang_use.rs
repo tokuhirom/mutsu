@@ -379,3 +379,31 @@ mod respell_tests {
         assert!(!respells_sub_keyword("'sub' <.end-keyword> <routine-def>"));
     }
 }
+
+#[cfg(test)]
+mod core_rule_tests {
+    use super::is_core_grammar_rule;
+
+    #[test]
+    fn snapshot_is_sorted_for_binary_search() {
+        let rules: Vec<&str> = include_str!("core_grammar_rules.txt")
+            .lines()
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .collect();
+        assert!(rules.windows(2).all(|w| w[0] < w[1]));
+    }
+
+    #[test]
+    fn knows_rules_rakudo_2026_11_added() {
+        for rule in [
+            "claim-leading-doc",
+            "enter-package-body",
+            "leave-package-header",
+            "vet-c-style-for",
+        ] {
+            assert!(is_core_grammar_rule(rule), "{rule}");
+        }
+        assert!(is_core_grammar_rule("statementlist"));
+        assert!(!is_core_grammar_rule("eel-body"));
+    }
+}

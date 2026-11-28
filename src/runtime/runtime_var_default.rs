@@ -26,6 +26,15 @@ use crate::meta_ns::MetaNs;
 /// but starts with fresh fields. An over-set only makes the (correct) probe run.
 static VAR_DEFAULT_SEEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Whether any lexical `is default(...)` has been registered in the process
+/// (monotonic). `false` means [`Interpreter::var_default`] answers `None` for
+/// every non-attribute name, so a hot caller can skip building the name.
+// Cost: O(1).
+#[inline]
+pub(crate) fn var_default_possible() -> bool {
+    VAR_DEFAULT_SEEN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Whether `name` is one of the twigil names attribute defaults are
 /// registered under (`!x`, `.x`, `@!x`, `%.x`, ...), as against a lexical.
 // Cost: O(1).

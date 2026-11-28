@@ -161,6 +161,7 @@ impl Interpreter {
         // ADR-19288 D5: a body of closed Int/Num arithmetic runs the rest of
         // the range as one native loop. A bail hands back the iteration to
         // rerun; a decline changes nothing.
+        #[cfg_attr(not(feature = "jit"), allow(unused_mut))]
         let mut kernel_done = false;
         #[cfg(feature = "jit")]
         if nested_entry.is_none()
