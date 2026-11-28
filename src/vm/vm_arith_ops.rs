@@ -312,6 +312,17 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        // Fast path: a plain Rat/Int pair whose result fits an i64 Rat (#19312).
+        // No junction, Range instance or bridge coercion applies to it, and
+        // only a result that does not fit consults `$*RAT-OVERFLOW`, so the
+        // overflow scope and the wrapper below have nothing to do for it.
+        if !has_override
+            && let Some(result) =
+                crate::builtins::arith::plain_rat_small(&left, &right, crate::builtins::arith::RatOp::Add)
+        {
+            self.stack.push(result);
+            return Ok(());
+        }
         let _rat_overflow_scope = self.rat_overflow_scope_for(&left, &right);
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             if let Some(result) = vm.try_user_infix("infix:<+>", &l, &r)? {
@@ -359,6 +370,17 @@ impl Interpreter {
         }
         // Fast path: big-integer subtraction -- see the note in `exec_add_op`.
         if !has_override && let Some(result) = crate::builtins::arith::big_int_sub(&left, &right) {
+            self.stack.push(result);
+            return Ok(());
+        }
+        // Fast path: a plain Rat/Int pair whose result fits an i64 Rat (#19312).
+        // No junction, Range instance or bridge coercion applies to it, and
+        // only a result that does not fit consults `$*RAT-OVERFLOW`, so the
+        // overflow scope and the wrapper below have nothing to do for it.
+        if !has_override
+            && let Some(result) =
+                crate::builtins::arith::plain_rat_small(&left, &right, crate::builtins::arith::RatOp::Sub)
+        {
             self.stack.push(result);
             return Ok(());
         }
@@ -660,6 +682,17 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        // Fast path: a plain Rat/Int pair whose result fits an i64 Rat (#19312).
+        // No junction, Range instance or bridge coercion applies to it, and
+        // only a result that does not fit consults `$*RAT-OVERFLOW`, so the
+        // overflow scope and the wrapper below have nothing to do for it.
+        if !has_override
+            && let Some(result) =
+                crate::builtins::arith::plain_rat_small(&left, &right, crate::builtins::arith::RatOp::Mul)
+        {
+            self.stack.push(result);
+            return Ok(());
+        }
         let _rat_overflow_scope = self.rat_overflow_scope_for(&left, &right);
         // Fast path: Rat * Rat or Rat * Int. Neither operand is a junction, a
         // Range instance or a value the numeric bridge would coerce, so the
@@ -688,6 +721,18 @@ impl Interpreter {
     pub(super) fn exec_div_op(&mut self) -> Result<(), RuntimeError> {
         let right = self.stack.pop().unwrap();
         let left = self.stack.pop().unwrap();
+        let has_override = self.user_infix_override("infix:</>");
+        // Fast path: a plain Rat/Int pair whose result fits an i64 Rat (#19312).
+        // No junction, Range instance or bridge coercion applies to it, and
+        // only a result that does not fit consults `$*RAT-OVERFLOW`, so the
+        // overflow scope and the wrapper below have nothing to do for it.
+        if !has_override
+            && let Some(result) =
+                crate::builtins::arith::plain_rat_small(&left, &right, crate::builtins::arith::RatOp::Div)
+        {
+            self.stack.push(result);
+            return Ok(());
+        }
         let _rat_overflow_scope = self.rat_overflow_scope_for(&left, &right);
         let result = self.eval_binary_with_junctions(left, right, |vm, l, r| {
             if let Some(result) = vm.try_user_infix("infix:</>", &l, &r)? {
