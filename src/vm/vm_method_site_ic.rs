@@ -326,6 +326,12 @@ impl Interpreter {
                 {
                     return None;
                 }
+                if self
+                    .try_method_site_ic_kernel(code, ip, arity, &arg_keys, &plan)
+                    .is_some()
+                {
+                    return Some(Ok(()));
+                }
                 self.run_method_site_ic_plan(code, ip, method, &arg_keys, &plan)
             }
         }
