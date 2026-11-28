@@ -1260,6 +1260,14 @@ impl Interpreter {
         {
             return Err(RuntimeError::assignment_ro_value(cell.load()));
         }
+        // A row stored into a jagged array (`@a[1] = (1, 2)`, #19282) becomes a
+        // row of its row shape, as rakudo's STORE of the row makes it.
+        let val = match index_target_deref.as_ref() {
+            Some(container) if is_positional && !bind_mode => {
+                self.jagged_row_store_value(container, &idx, val)?
+            }
+            _ => val,
+        };
         let val = if let Some(cell) = &bound_cell {
             self.element_store_through_cell(cell, val)?
         } else if val.is_nil() && !bind_mode {

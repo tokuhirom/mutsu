@@ -1332,6 +1332,7 @@ impl Interpreter {
             {
                 Ok(())
             } else {
+                slf.prepare_jagged_write(container, &resolved_dims, Some(&assign_value))?;
                 slf.multi_dim_assign(
                     container,
                     &dims,

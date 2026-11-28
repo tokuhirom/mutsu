@@ -347,7 +347,14 @@ impl Interpreter {
         if captures.positional.is_empty() {
             context.push(("0".to_string(), Value::NIL));
         }
-        let named_v = match_obj.match_named();
+        // Reading `.hash` off the lazy Match forces its whole attribute map
+        // (~3.5k instructions per occurrence). With no named captures there
+        // is nothing to publish, so a pattern without any skips the read.
+        let named_v = if captures.named.is_empty() {
+            None
+        } else {
+            match_obj.match_named()
+        };
         if let Some(ValueView::Hash(named_hash)) = named_v.as_ref().map(Value::view) {
             for (k, v) in named_hash.iter() {
                 context.push((format!("<{}>", k), v.clone()));

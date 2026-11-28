@@ -81,44 +81,11 @@ impl Interpreter {
         arity: usize,
     ) -> Option<Value> {
         use std::sync::atomic::Ordering::Relaxed;
-        if !kernels_enabled() {
+        if self.stack.len() < arity {
             return None;
         }
+        let info = self.kernel_for_call(cf, name_sym, cur_pkg_sym, arity, false)?;
         let slot = &cf.code.jit.kernel;
-        if slot.disabled.load(Relaxed) {
-            return None;
-        }
-        let info = match slot.info.get() {
-            Some(Some(info)) => *info,
-            Some(None) => return None,
-            None => {
-                let calls = slot.calls.fetch_add(1, Relaxed) + 1;
-                if calls < super::vm_jit::jit_threshold() {
-                    return None;
-                }
-                let compiled = super::vm_kernel_compile::compile(cf);
-                if compiled.is_some() {
-                    KERNEL_COMPILES.fetch_add(1, Relaxed);
-                }
-                (*slot.info.get_or_init(|| compiled))?
-            }
-        };
-        if info.arity as usize != arity || self.stack.len() < arity {
-            return None;
-        }
-        if let Some(self_name) = info.self_name
-            && (self_name != name_sym
-                || cf.package_sym() != cur_pkg_sym
-                || crate::parser::static_outer_latch::static_outer_observed()
-                || self
-                    .env()
-                    .frame_activation_binds_routine(&self_name.resolve()))
-        {
-            return None;
-        }
-        if super::vm_jit::USER_INFIX_DECLS.load(Relaxed) != 0 || self.any_routine_wrapped() {
-            return None;
-        }
         let base = self.stack.len() - arity;
         let mut a = [0i64; super::vm_kernel_compile::MAX_KERNEL_PARAMS];
         for (dst, v) in a.iter_mut().zip(&self.stack[base..]) {
@@ -135,16 +102,7 @@ impl Interpreter {
                 _ => return None,
             };
         }
-        let depth_limit = match crate::native_stack::headroom_bytes() {
-            Some(bytes) => ((bytes / BYTES_PER_FRAME) as u32).min(MAX_DEPTH_LIMIT),
-            None => DEFAULT_DEPTH_LIMIT,
-        };
-        let mut ctx = super::vm_kernel_compile::KernelCtx {
-            bail: 0,
-            depth: 0,
-            poll: super::vm_kernel_compile::POLL_EVERY,
-            depth_limit,
-        };
+        let mut ctx = fresh_kernel_ctx();
         KERNEL_ENTRIES.fetch_add(1, Relaxed);
         let r = run_kernel(info, &mut ctx, &a);
         if ctx.bail != 0 {
@@ -159,6 +117,63 @@ impl Interpreter {
         Some(Value::int(r))
     }
 
+    /// `cf`'s kernel, when a call to it under `name_sym` from package
+    /// `cur_pkg_sym` with `arity` arguments may enter it: compiled (once hot,
+    /// or at once when `eager`, for a caller that is itself a hot kernel),
+    /// not disabled, and every per-entry guard of ADR-19288 D2 but the
+    /// arguments' holding.
+    // Cost: O(1), plus one compile the first time.
+    #[cfg(feature = "jit")]
+    pub(super) fn kernel_for_call(
+        &self,
+        cf: &CompiledFunction,
+        name_sym: Symbol,
+        cur_pkg_sym: Symbol,
+        arity: usize,
+        eager: bool,
+    ) -> Option<crate::opcode::kernel_slot::KernelInfo> {
+        use std::sync::atomic::Ordering::Relaxed;
+        if !kernels_enabled() {
+            return None;
+        }
+        let slot = &cf.code.jit.kernel;
+        if slot.disabled.load(Relaxed) {
+            return None;
+        }
+        let info = match slot.info.get() {
+            Some(Some(info)) => *info,
+            Some(None) => return None,
+            None => {
+                let calls = slot.calls.fetch_add(1, Relaxed) + 1;
+                if !eager && calls < super::vm_jit::jit_threshold() {
+                    return None;
+                }
+                let compiled = super::vm_kernel_compile::compile(cf);
+                if compiled.is_some() {
+                    KERNEL_COMPILES.fetch_add(1, Relaxed);
+                }
+                (*slot.info.get_or_init(|| compiled))?
+            }
+        };
+        if info.arity as usize != arity {
+            return None;
+        }
+        if let Some(self_name) = info.self_name
+            && (self_name != name_sym
+                || cf.package_sym() != cur_pkg_sym
+                || crate::parser::static_outer_latch::static_outer_observed()
+                || self
+                    .env()
+                    .frame_activation_binds_routine(&self_name.resolve()))
+        {
+            return None;
+        }
+        if super::vm_jit::USER_INFIX_DECLS.load(Relaxed) != 0 || self.any_routine_wrapped() {
+            return None;
+        }
+        Some(info)
+    }
+
     /// JIT-less builds have no kernels.
     #[cfg(not(feature = "jit"))]
     #[inline(always)]
@@ -170,6 +185,22 @@ impl Interpreter {
         _arity: usize,
     ) -> Option<Value> {
         None
+    }
+}
+
+/// A sub-kernel context for one entry: no bail, no frames, a full poll
+/// countdown, and a depth bound derived from the native stack's headroom.
+#[cfg(feature = "jit")]
+pub(super) fn fresh_kernel_ctx() -> super::vm_kernel_compile::KernelCtx {
+    let depth_limit = match crate::native_stack::headroom_bytes() {
+        Some(bytes) => ((bytes / BYTES_PER_FRAME) as u32).min(MAX_DEPTH_LIMIT),
+        None => DEFAULT_DEPTH_LIMIT,
+    };
+    super::vm_kernel_compile::KernelCtx {
+        bail: 0,
+        depth: 0,
+        poll: super::vm_kernel_compile::POLL_EVERY,
+        depth_limit,
     }
 }
 

@@ -247,6 +247,15 @@ impl Interpreter {
             self.stack.push(result);
             return Ok(());
         }
+        // A jagged array whose first dimension has a set length (`my @a[2;*]`,
+        // #19282) refuses to grow, as a shaped one does.
+        if self
+            .push_target(decl, target_sym)
+            .and_then(|t| t.with_deref(crate::value::shaped_array::jagged_array_shape))
+            .is_some_and(|shape| shape[0].is_some())
+        {
+            return Err(RuntimeError::illegal_on_fixed_dimension_array("push"));
+        }
         // TODO: compile to bytecode — shaped-array push, blocked-by: shaped
         // dimension metadata check in Interpreter. See ledger §1.
         // Check for shaped arrays — must fall back to interpreter

@@ -52,8 +52,8 @@ pub(crate) fn stats_line() -> String {
 }
 
 impl Interpreter {
-    /// Run the rest of the loop at `ip` (`shape`) natively, starting at the
-    /// counter value `start` for a `for` (`range` = its end and inclusivity).
+    /// Run the rest of the loop at `ip` (`shape`) natively; for a `for`,
+    /// `range` is the counter value to start at, the end and its inclusivity.
     /// `hot` says the driver already knows the loop is long.
     // Cost: O(c) entry and exit work plus the native run, c = carried slots;
     // O(n) once per site, n = ops in the region.
@@ -62,9 +62,9 @@ impl Interpreter {
         code: &CompiledCode,
         ip: usize,
         shape: LoopShape,
-        start: i64,
-        range: Option<(i64, bool)>,
+        range: Option<(i64, i64, bool)>,
         hot: bool,
+        compiled_fns: &CompiledFns,
     ) -> Result<LoopOutcome, RuntimeError> {
         use std::sync::atomic::Ordering::Relaxed;
         if !super::vm_kernel::kernels_enabled()
@@ -142,14 +142,38 @@ impl Interpreter {
                 return Ok(LoopOutcome::Declined);
             }
         }
+        // Each sub call must reach a sub kernel, as the generic call would.
+        let mut callees = [0usize; super::vm_loop_kernel_compile::MAX_CALLS];
+        for (k, &(call_ip, arity)) in info.calls.iter().enumerate() {
+            let OpCode::CallFunc {
+                name_idx,
+                arg_sources_idx,
+                ..
+            } = code.ops[call_ip as usize]
+            else {
+                return Ok(LoopOutcome::Declined);
+            };
+            let Some((cf, name_sym, pkg_sym)) =
+                self.light_cache_callee(code, name_idx, arg_sources_idx, compiled_fns)
+            else {
+                return Ok(LoopOutcome::Declined);
+            };
+            let Some(kernel) = self.kernel_for_call(cf, name_sym, pkg_sym, arity as usize, true)
+            else {
+                return Ok(LoopOutcome::Declined);
+            };
+            callees[k] = kernel.entry;
+        }
         let mut buf = [0u64; 2 + MAX_CARRIED + MAX_DECLS];
+        let (start, end, inclusive) = range.unwrap_or((0, 0, false));
         buf[0] = start as u64;
         buf[2..2 + n].copy_from_slice(&words[..n]);
-        let (end, inclusive) = range.unwrap_or((0, false));
         let mut ctx = LoopCtx {
             poll: LOOP_POLL_EVERY,
             inclusive: inclusive as u32,
             end,
+            kctx: super::vm_kernel::fresh_kernel_ctx(),
+            callees,
         };
         LOOP_KERNEL_ENTRIES.fetch_add(1, Relaxed);
         // SAFETY: `info.entry` is a finalized loop kernel compiled for this
@@ -239,6 +263,7 @@ impl Interpreter {
                         .collect(),
                     readonly_checks: typed.readonly_checks.clone().into_boxed_slice(),
                     num_sites: typed.num_sites.clone().into_boxed_slice(),
+                    calls: typed.calls.clone().into_boxed_slice(),
                 }))
             });
         if compiled.is_some() {
