@@ -174,6 +174,17 @@ impl Interpreter {
         let idx = slot as usize;
         let raw = self.stack.pop().unwrap_or(Value::NIL);
         let local_name = code.locals[idx].clone();
+        // A bodiless `our &name;` redeclaring a routine the package already has
+        // (`our sub name {...}` elsewhere) names that routine: leave the slot to
+        // it rather than shadowing it with an empty cell.
+        if raw.is_nil()
+            && let Some(bare) = local_name.strip_prefix('&')
+            && !bare.is_empty()
+            && self.resolve_function(bare).is_some()
+        {
+            self.locals[idx] = Value::NIL;
+            return;
+        }
         let raw = if raw.is_nil() && constraint_idx.is_some() {
             self.our_scalar_nil_default(&local_name)
         } else if raw.is_nil() {
