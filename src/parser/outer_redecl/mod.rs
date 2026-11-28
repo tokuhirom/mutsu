@@ -183,7 +183,9 @@ impl Ctx {
         if self.found.is_none() && self.scopes[depth - 1].ref_outer.contains(&key) {
             self.found = Some(ScopeDiagnostic::OuterRedeclaration(key.clone(), self.line));
         }
-        self.scopes[depth - 1].decl_lines.insert(key.clone(), self.line);
+        self.scopes[depth - 1]
+            .decl_lines
+            .insert(key.clone(), self.line);
         self.scopes[depth - 1].declared.insert(key);
     }
 

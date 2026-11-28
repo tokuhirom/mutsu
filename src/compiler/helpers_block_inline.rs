@@ -855,4 +855,3 @@ impl Compiler {
         ))
     }
 }
-

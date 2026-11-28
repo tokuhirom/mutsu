@@ -88,8 +88,9 @@ impl Ctx {
         if self.heredocs.iter().all(|h| h.line >= line) {
             return;
         }
-        let (due, rest): (Vec<_>, Vec<_>) =
-            std::mem::take(&mut self.heredocs).into_iter().partition(|h| h.line < line);
+        let (due, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut self.heredocs)
+            .into_iter()
+            .partition(|h| h.line < line);
         self.heredocs = rest;
         for heredoc in due {
             self.check_heredoc(&heredoc);
@@ -114,8 +115,9 @@ impl Ctx {
     pub(super) fn close_scope(&mut self, id: u64) {
         // A start scope outside the ones that close on the heredoc's line
         // closes after the body: the body is written before it.
-        let (due, rest): (Vec<_>, Vec<_>) =
-            std::mem::take(&mut self.heredocs).into_iter().partition(|h| {
+        let (due, rest): (Vec<_>, Vec<_>) = std::mem::take(&mut self.heredocs)
+            .into_iter()
+            .partition(|h| {
                 h.start
                     .iter()
                     .position(|(sid, _)| *sid == id)
@@ -139,7 +141,12 @@ impl Ctx {
             .iter()
             .find(|w| w.scope == id && declared.contains(&w.key))
             // Rakudo reports it at the later declaration.
-            .map(|w| (w.key.clone(), scope.decl_lines.get(&w.key).copied().unwrap_or(w.line)));
+            .map(|w| {
+                (
+                    w.key.clone(),
+                    scope.decl_lines.get(&w.key).copied().unwrap_or(w.line),
+                )
+            });
         self.watches.retain(|w| w.scope != id);
         if let Some((key, line)) = fired
             && self.found.is_none()
@@ -185,7 +192,9 @@ impl Ctx {
         // Where the heredoc starts: the innermost scope that declared `key`
         // by then. A scope inside it that declares `key` later, before the
         // body, makes the body text mean that later declaration.
-        let found_at = start.iter().rposition(|(_, declared)| declared.contains(key));
+        let found_at = start
+            .iter()
+            .rposition(|(_, declared)| declared.contains(key));
         let inner_from = found_at.map_or(0, |i| i + 1);
         let later = start[inner_from..].iter().any(|(id, declared_then)| {
             let declared_now = self
