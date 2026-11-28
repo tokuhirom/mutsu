@@ -173,8 +173,13 @@ fn apply(
             make_x_immutable_error(method, "List")
         });
     }
-    // A shaped (multidimensional) array has fixed dimensions.
-    if is_shaped_array(place.value().descalarize()) {
+    // A shaped (multidimensional) array has fixed dimensions, and so does a
+    // jagged one whose first dimension has a set length (`my @a[2;*]`).
+    let receiver = place.value().descalarize();
+    if is_shaped_array(receiver)
+        || crate::value::shaped_array::jagged_array_shape(receiver)
+            .is_some_and(|shape| shape[0].is_some())
+    {
         return Err(RuntimeError::illegal_on_fixed_dimension_array(method));
     }
     match op {

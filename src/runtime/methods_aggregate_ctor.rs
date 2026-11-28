@@ -39,6 +39,21 @@ impl Interpreter {
                 "Must use a native array with a type parameter (e.g. array[int].new)",
             ));
         }
+        if let Some(shape) = self.jagged_dims_from_new_args(args)? {
+            let data = args.iter().find_map(|arg| match arg.view() {
+                ValueView::Pair(name, value) if name == "data" => Some(value.clone()),
+                _ => None,
+            });
+            let data = data.or_else(|| {
+                let positional: Vec<Value> = args
+                    .iter()
+                    .filter(|arg| !arg.is_string_pair_value())
+                    .cloned()
+                    .collect();
+                (!positional.is_empty()).then(|| Value::array(positional))
+            });
+            return self.construct_jagged_array(&shape, data, type_args);
+        }
         if let Some(dims) = self.shaped_dims_from_new_args(args)? {
             // Check for :data argument to populate the shaped array
             let data = args.iter().find_map(|arg| match arg.view() {

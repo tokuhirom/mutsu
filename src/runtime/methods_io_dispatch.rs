@@ -266,6 +266,14 @@ impl Interpreter {
     }
 
     pub(crate) fn dispatch_shape(&self, target: &Value) -> Option<Result<Value, RuntimeError>> {
+        if let Some(shape) = crate::value::shaped_array::jagged_array_shape(target) {
+            return Some(Ok(Value::array(
+                shape
+                    .into_iter()
+                    .map(|d| d.map_or(Value::WHATEVER, |n| Value::int(n as i64)))
+                    .collect(),
+            )));
+        }
         if let ValueView::Array(_, kind) = target.view() {
             if kind == crate::value::ArrayKind::Shaped
                 && let Some(shape) = Self::infer_array_shape(target)

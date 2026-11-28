@@ -107,6 +107,15 @@ impl Interpreter {
         current: &Value,
         assigned: &Value,
     ) -> Result<Option<Value>, RuntimeError> {
+        // A jagged array (#19282) keeps its shape as a shaped one does.
+        if let Some(shape) = current.with_deref(crate::value::shaped_array::jagged_array_shape)
+            && crate::value::shaped_array::jagged_array_shape(assigned).is_none()
+        {
+            let current = current.deref_container();
+            return self
+                .refill_jagged_array(&current, &shape, assigned.clone())
+                .map(Some);
+        }
         let Some(shape) = current.with_deref(crate::runtime::utils::shaped_array_shape) else {
             return Ok(None);
         };

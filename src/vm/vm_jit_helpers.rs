@@ -121,7 +121,7 @@ pub(super) unsafe extern "C" fn mark_failure_top(interp: *mut Interpreter) {
 
 /// Park `e` in the interpreter's JIT error slot and report error status.
 #[inline]
-fn park_err(interp: &mut Interpreter, e: RuntimeError) -> u32 {
+pub(super) fn park_err(interp: &mut Interpreter, e: RuntimeError) -> u32 {
     interp.jit_error = Some(e);
     JIT_STATUS_ERR
 }

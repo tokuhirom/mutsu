@@ -95,7 +95,12 @@ impl Interpreter {
         else {
             return false;
         };
-        if items.has_type_meta() || items.has_native_backing() || items.default.is_some() {
+        // A jagged array's element store makes a row (#19282).
+        if items.has_type_meta()
+            || items.has_native_backing()
+            || items.default.is_some()
+            || items.shape.is_some()
+        {
             return false;
         }
         if !Self::element_slot_takes_plain_store(&items, i) {

@@ -683,6 +683,18 @@ fn raku_value_array(items: &[Value], kind: ArrayKind, v: &Value) -> String {
         }
     };
 
+    // A jagged array (`my @a[2;*]`, #19282): `Array.new(:shape(2, *), (ROW, ...))`,
+    // each row rendered as the array it is.
+    if let Some(shape) = crate::value::shaped_array::jagged_array_shape(v) {
+        let dims = shape
+            .iter()
+            .map(|d| d.map_or_else(|| "*".to_string(), |d| d.to_string()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let rows = items.iter().map(raku_value_as_element).collect::<Vec<_>>();
+        let comma = if rows.len() == 1 { "," } else { "" };
+        return format!("Array.new(:shape({dims}), ({}{comma}))", rows.join(", "));
+    }
     // Shaped arrays: Array.new(:shape(d1, d2), [row1], [row2])
     // For 1D: Array.new(:shape(N,), [elem1, elem2, ...])
     // Only render shaped prefix for the top-level shaped array, not sub-arrays.
@@ -812,7 +824,7 @@ fn raku_value_node_into(v: &Value, out: &mut String) {
 /// rendered straight into `out` between them.
 // Cost: O(t), t = total output length of the elements' subtrees.
 fn raku_value_array_into(items: &[Value], kind: ArrayKind, v: &Value, out: &mut String) {
-    if kind == ArrayKind::Shaped {
+    if kind == ArrayKind::Shaped || crate::value::shaped_array::jagged_array_shape(v).is_some() {
         out.push_str(&raku_value_array(items, kind, v));
         return;
     }
