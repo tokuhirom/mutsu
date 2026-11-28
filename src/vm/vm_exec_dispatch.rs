@@ -310,16 +310,20 @@ impl Interpreter {
             }
             // Cost: O(c), c = captured names (one scope-map insert, and a name copy, each);
             // O(1) (one payload allocation) for a literal that captures nothing.
+            // What the pattern text says is settled once per chunk
+            // (`regex_literal_facts`).
             OpCode::LoadRegexClosure {
                 const_idx,
                 topic,
                 captures,
             } => {
+                let facts = Self::regex_literal_facts(code, *const_idx);
                 let v = self.capture_regex_closure(
                     code,
                     &code.constants[*const_idx as usize],
                     *topic,
                     captures,
+                    facts,
                 );
                 self.stack.push(v);
                 *ip += 1;
