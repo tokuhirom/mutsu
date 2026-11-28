@@ -1,6 +1,8 @@
 use super::*;
 use crate::ast::{Expr, Stmt};
 use crate::token_kind::TokenKind;
+use super::sort_merge::merge_sort_with_cmp;
+use super::sort_merge::{merge_sort_indices, pure_sort, pure_sort_keys};
 
 /// A value that `<=>` coerces to its *element count* (`.Numeric` = `.elems`)
 /// rather than comparing structurally: aggregates and ranges. `compare_values`
@@ -363,45 +365,6 @@ pub(crate) fn dispatched_cmp_ordering(
     }
 }
 
-/// Stable merge sort that always calls the comparator with (left, right)
-/// ordering, matching Raku's requirement that the comparator sees elements in
-/// their relative position order.
-pub(crate) fn merge_sort_with_cmp<F>(items: &mut [Value], cmp: &mut F)
-where
-    F: FnMut(&Value, &Value) -> std::cmp::Ordering,
-{
-    let len = items.len();
-    if len <= 1 {
-        return;
-    }
-    let mid = len / 2;
-    merge_sort_with_cmp(&mut items[..mid], cmp);
-    merge_sort_with_cmp(&mut items[mid..], cmp);
-    let left = items[..mid].to_vec();
-    let right = items[mid..].to_vec();
-    let (mut i, mut j, mut k) = (0, 0, 0);
-    while i < left.len() && j < right.len() {
-        if cmp(&left[i], &right[j]) != std::cmp::Ordering::Greater {
-            items[k] = left[i].clone();
-            i += 1;
-        } else {
-            items[k] = right[j].clone();
-            j += 1;
-        }
-        k += 1;
-    }
-    while i < left.len() {
-        items[k] = left[i].clone();
-        i += 1;
-        k += 1;
-    }
-    while j < right.len() {
-        items[k] = right[j].clone();
-        j += 1;
-        k += 1;
-    }
-}
-
 /// Map a comparator block's return value to an `Ordering`.
 pub(crate) fn sort_result_to_ordering(result: &Value) -> std::cmp::Ordering {
     // A block hands back the container of its last statement (#17094), so a
@@ -454,6 +417,12 @@ pub(crate) fn sort_items_generic(
                 if let Some((reverse, is_string_cmp)) = detect_simple_cmp_block(&data)
                     && (is_string_cmp || can_inline_numeric_cmp(items))
                 {
+                    // All plain Ints (`<=>`) or all plain Strs (`cmp`): a total
+                    // order no user code observes, so an adaptive stable sort.
+                    if let Some(keys) = pure_sort_keys(items, !is_string_cmp) {
+                        pure_sort(items, keys, reverse);
+                        return;
+                    }
                     merge_sort_with_cmp(items, &mut |a: &Value, b: &Value| {
                         let (l, r) = if reverse { (b, a) } else { (a, b) };
                         if is_string_cmp {
@@ -601,43 +570,6 @@ pub(crate) fn sort_indices_generic(
         None => perm.sort_by(|&i, &j| compare_values(&items[i], &items[j]).cmp(&0)),
     }
     perm.into_iter().map(|i| Value::int(i as i64)).collect()
-}
-
-/// Stable merge sort over a permutation array, comparing the underlying values.
-fn merge_sort_indices<F>(perm: &mut [usize], items: &[Value], cmp: &mut F)
-where
-    F: FnMut(&Value, &Value) -> std::cmp::Ordering,
-{
-    let len = perm.len();
-    if len <= 1 {
-        return;
-    }
-    let mid = len / 2;
-    merge_sort_indices(&mut perm[..mid], items, cmp);
-    merge_sort_indices(&mut perm[mid..], items, cmp);
-    let left = perm[..mid].to_vec();
-    let right = perm[mid..].to_vec();
-    let (mut i, mut j, mut k) = (0, 0, 0);
-    while i < left.len() && j < right.len() {
-        if cmp(&items[left[i]], &items[right[j]]) != std::cmp::Ordering::Greater {
-            perm[k] = left[i];
-            i += 1;
-        } else {
-            perm[k] = right[j];
-            j += 1;
-        }
-        k += 1;
-    }
-    while i < left.len() {
-        perm[k] = left[i];
-        i += 1;
-        k += 1;
-    }
-    while j < right.len() {
-        perm[k] = right[j];
-        j += 1;
-        k += 1;
-    }
 }
 
 pub(crate) fn detect_simple_cmp_block(data: &crate::value::SubData) -> Option<(bool, bool)> {
