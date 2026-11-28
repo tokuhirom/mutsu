@@ -861,6 +861,17 @@ fn build(
                         &[interp, codep, opidx, fnsp],
                     )?;
                     check_status(&mut b, status);
+                } else if super::vm_jit_element_step::is_element_step_op(op) {
+                    // An element read or store: its fast lane without the
+                    // interpreter dispatch (#19286), else the generic op.
+                    let opidx = b.ins().iconst(types::I32, i as i64);
+                    let status = call_helper(
+                        &mut b,
+                        sigs.s_call,
+                        super::vm_jit_element_step::element_step as *const () as usize,
+                        &[interp, codep, opidx, fnsp],
+                    )?;
+                    check_status(&mut b, status);
                 } else if step_supported(op) {
                     // Generic straight-line step: one interpreter dispatch.
                     let opidx = b.ins().iconst(types::I32, i as i64);
