@@ -61,6 +61,7 @@ mod rakuast_diagnostics;
 mod rakuast_doc_edit;
 mod rakuast_doc_row;
 mod rakuast_dump;
+mod rakuast_external_value;
 pub(crate) mod rakuast_fileline;
 mod rakuast_finish;
 mod rakuast_literal_queries;
