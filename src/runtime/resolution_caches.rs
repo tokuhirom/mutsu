@@ -407,6 +407,11 @@ pub(crate) struct ResolutionCaches {
     /// the whole probe chain into the native `bless`, with the plan that
     /// construction used. See `vm_bless_lane`.
     pub(crate) bless_lane: rustc_hash::FxHashMap<Symbol, Arc<NativeCtorPlan>>,
+    /// Classes whose `.new(named...)` dispatch was observed to reach the
+    /// class's own `method new(*%_)`, with the replayable plan. See
+    /// `vm_user_new_lane`.
+    pub(crate) user_new_lane:
+        rustc_hash::FxHashMap<Symbol, Arc<crate::vm::vm_user_new_lane::UserNewPlan>>,
     /// ADR-0121 D3: `(layout id, method name) -> slot` for a `CallMethodMut`
     /// whose whole dispatch was the generated accessor's plain slot read.
     /// Written only from that outcome, and cleared with the other method caches
