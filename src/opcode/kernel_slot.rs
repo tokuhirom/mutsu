@@ -55,6 +55,10 @@ pub(crate) struct LoopKernelInfo {
     pub(crate) readonly_checks: Box<[(bool, u32)]>,
 }
 
+/// A loop site's variant: the carried kinds it was compiled for, and the
+/// kernel (`None` when that variant declined).
+pub(crate) type LoopVariant = (Box<[SlotKind]>, Option<std::sync::Arc<LoopKernelInfo>>);
+
 /// One loop op's kernel state.
 #[derive(Debug)]
 pub(crate) struct LoopSite {
@@ -66,7 +70,7 @@ pub(crate) struct LoopSite {
     /// be a kernel.
     pub(crate) carried: Option<std::sync::Arc<[u32]>>,
     /// Compiled (or declined) variants, keyed by the carried slots' kinds.
-    pub(crate) variants: Vec<(Box<[SlotKind]>, Option<std::sync::Arc<LoopKernelInfo>>)>,
+    pub(crate) variants: Vec<LoopVariant>,
 }
 
 /// Every loop site of one `CompiledCode`.

@@ -1,7 +1,7 @@
 //! Loop kernels: the entry point the loop drivers call (ADR-19288 D5).
 //!
 //! At an iteration boundary of a counted `for` over an int `Range` or of a
-//! `while`, the driver asks [`Interpreter::try_loop_kernel`] to run the rest of
+//! `while`, the driver asks `Interpreter::try_loop_kernel` to run the rest of
 //! the loop natively. The kernel reads every slot the loop carries (each must
 //! hold a plain `Int` or `Num`), runs whole iterations over machine words, and
 //! writes the slots back through the ordinary store. If an iteration cannot
@@ -220,18 +220,18 @@ impl Interpreter {
         let compiled = type_region(code, shape, carried)
             .filter(|typed| typed.decls.len() <= MAX_DECLS)
             .and_then(|typed| {
-            let entry = super::vm_loop_kernel_compile::compile(code, shape, carried, &typed)?;
-            Some(std::sync::Arc::new(LoopKernelInfo {
-                entry,
-                carried: carried.to_vec().into_boxed_slice(),
-                decls: typed
-                    .decls
-                    .iter()
-                    .map(|&(dip, slot)| (dip, slot, typed.slot_kind[&slot]))
-                    .collect(),
-                readonly_checks: typed.readonly_checks.clone().into_boxed_slice(),
-            }))
-        });
+                let entry = super::vm_loop_kernel_compile::compile(code, shape, carried, &typed)?;
+                Some(std::sync::Arc::new(LoopKernelInfo {
+                    entry,
+                    carried: carried.to_vec().into_boxed_slice(),
+                    decls: typed
+                        .decls
+                        .iter()
+                        .map(|&(dip, slot)| (dip, slot, typed.slot_kind[&slot]))
+                        .collect(),
+                    readonly_checks: typed.readonly_checks.clone().into_boxed_slice(),
+                }))
+            });
         if compiled.is_some() {
             LOOP_KERNEL_COMPILES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }

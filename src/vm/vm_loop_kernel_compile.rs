@@ -144,7 +144,11 @@ impl Em<'_, '_> {
             stack.iter().map(|(v, _)| (*v).into()).collect()
         };
         let target = |t: usize, blocks: &std::collections::BTreeMap<usize, (Block, Vec<K>)>| {
-            if t == end { Some(end_blk) } else { blocks.get(&t).map(|b| b.0) }
+            if t == end {
+                Some(end_blk)
+            } else {
+                blocks.get(&t).map(|b| b.0)
+            }
         };
         for i in start..end {
             if let Some((blk, kinds)) = blocks.get(&i).cloned() {
@@ -445,7 +449,8 @@ fn build(
     }
     for (j, (_, slot)) in typed.decls.iter().enumerate() {
         let v = em.b.use_var(em.vars.get(slot)?.0);
-        em.b.ins().store(mf, v, buf, 8 * (2 + carried.len() as i32 + j as i32));
+        em.b.ins()
+            .store(mf, v, buf, 8 * (2 + carried.len() as i32 + j as i32));
     }
     let ok = em.b.ins().iconst(types::I32, 0);
     em.b.ins().return_(&[ok]);

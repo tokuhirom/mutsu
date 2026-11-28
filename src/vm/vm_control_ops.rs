@@ -621,7 +621,8 @@ impl Interpreter {
                     cond: (cond_start, body_start),
                     body_end: loop_end,
                 };
-                match self.try_loop_kernel(code, cond_start - 1, shape, 0, None, iterations == 256) {
+                match self.try_loop_kernel(code, cond_start - 1, shape, 0, None, iterations == 256)
+                {
                     Ok(super::vm_loop_kernel::LoopOutcome::Declined) => {}
                     Ok(super::vm_loop_kernel::LoopOutcome::Done) => break 'while_loop,
                     Ok(super::vm_loop_kernel::LoopOutcome::Bailed(_)) => kernel_tried = true,

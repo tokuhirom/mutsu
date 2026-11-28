@@ -23,7 +23,10 @@ pub(super) enum LoopShape {
     Range { body: (usize, usize), var: LoopVar },
     /// `while COND { BODY }`: the condition ops `[cond.0, cond.1)` leave one
     /// value, then the body ops `[cond.1, body_end)` run.
-    While { cond: (usize, usize), body_end: usize },
+    While {
+        cond: (usize, usize),
+        body_end: usize,
+    },
 }
 
 /// How a `for` body reads its loop variable.
@@ -211,8 +214,8 @@ pub(super) fn type_region(
         let mut open = true;
         let mut incoming: std::collections::BTreeMap<usize, Vec<K>> = Default::default();
         let edge = |incoming: &mut std::collections::BTreeMap<usize, Vec<K>>,
-                        t: usize,
-                        stack: &[K]|
+                    t: usize,
+                    stack: &[K]|
          -> Option<()> {
             if t <= start || t > end {
                 return None;
@@ -319,7 +322,10 @@ pub(super) fn type_region(
                 }
                 OpCode::SetVarDynamic { .. } => {
                     let slot = plain_decl(op)?;
-                    if pending.is_some() || Some(slot) == var_slot || carried.iter().any(|c| c.0 == slot) {
+                    if pending.is_some()
+                        || Some(slot) == var_slot
+                        || carried.iter().any(|c| c.0 == slot)
+                    {
                         return None;
                     }
                     if decls.iter().any(|(_, d)| *d == slot) {

@@ -1,6 +1,6 @@
 //! Native int kernels: admission and Cranelift lowering (ADR-19288 stage 1).
 //!
-//! A sub whose signature and bytecode pass [`admit`] is lowered to one native
+//! A sub whose signature and bytecode pass `vm_kernel_admit` is lowered to one native
 //! function over `i64` values: `extern "C" fn(ctx, a0, .., an) -> i64`. Every
 //! value of the body is a machine integer or a comparison result, so nothing is
 //! boxed, nothing is dispatched and a self-call is a direct machine call. Any
