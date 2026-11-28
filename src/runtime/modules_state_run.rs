@@ -63,6 +63,7 @@ mod builtin_class_catalogue_core;
 mod builtin_class_catalogue_core_a;
 mod builtin_class_catalogue_core_b;
 mod builtin_class_catalogue_core_c;
+mod builtin_class_catalogue_index;
 mod builtin_class_catalogue_x_rows;
 mod builtin_composed_role_seeds;
 mod builtin_exception_attrs;

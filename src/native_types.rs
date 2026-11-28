@@ -40,8 +40,16 @@ pub(crate) const NATIVE_INT_TYPES: &[&str] = &[
 
 /// Returns true if `name` is a native integer type.
 pub(crate) fn is_native_int_type(name: &str) -> bool {
-    NATIVE_INT_TYPES.contains(&name)
+    NATIVE_INT_SET.contains(name)
 }
+
+const NATIVE_INT_SECTIONS: &[&[&str]] = &[NATIVE_INT_TYPES];
+
+/// [`NATIVE_INT_TYPES`] as a hashed set: the slice's `contains` compared a
+/// non-native name against every entry.
+static NATIVE_INT_SET: crate::static_str_set::StaticStrSet<
+    { crate::static_str_set::slots_for(NATIVE_INT_SECTIONS) },
+> = crate::static_str_set::StaticStrSet::new(NATIVE_INT_SECTIONS);
 
 /// Whether a binding declared with the type `name` is a native-integer
 /// container of the machine's native size, which the integer atomics (`⚛++`,
