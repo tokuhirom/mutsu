@@ -470,104 +470,72 @@ impl Interpreter {
             return None;
         };
         let cn = class_name.as_str();
-        // A wrapped accessor must use the full dispatch path so its wrapper's
-        // `callsame` can reach the accessor terminal. The pure read below has
-        // no dispatch frame and would otherwise bypass the wrapper entirely.
-        if let Some(owner) = self.attribute_accessor_owner(cn, method)
-            && self
-                .registry()
-                .method_wrap_chain(owner.as_str(), method, 0)
-                .is_some()
-        {
-            return None;
-        }
-        // CStruct fields live in native memory rather than the instance's
-        // attribute map. Resolve their generated accessors before the builtin
-        // method-name exclusions below, so fields such as `first` and `gist`
-        // shadow inherited methods just like ordinary public attributes do.
-        // An explicit method with the same name still wins the resolver race.
-        //
-        // The accessor is looked up under the class's *registered* name, not the
-        // handle's: `nativecast` tags a handle with the short base name, so a
-        // CStruct declared inside a module (`MoarVM::Guts::REPRs::MVMArrayB`) is
-        // reached as `MVMArrayB` and the attribute lookup would miss. Only field
-        // names that also name a builtin ever noticed — `MVMArrayB.elems`
-        // answered `1` and `.any` built a Junction, which is how
-        // `NativeHelpers::Blob` came away with a junction instead of a body.
-        if let Some(registered) = self.cstruct_class_name(cn)
-            && matches!(
-                self.resolve_user_method_or_accessor_sym(&registered, method_sym),
-                Some(crate::runtime::UserMethodOrAccessor::Accessor)
-            )
-        {
-            // An `is rw` field asked for as a location (`$!content.top` as an
-            // `is rw` routine's tail, a `:=` bind) is a native attribute
-            // reference into the struct, not a copy of its value.
-            if want_ref
+        // Every gate below is a registry probe; when all of them pass for this
+        // `(class, method)` the memoized answer skips straight to the read.
+        if !self.accessor_read_is_plain(class_name, method_sym) {
+            // A wrapped accessor must use the full dispatch path so its wrapper's
+            // `callsame` can reach the accessor terminal. The pure read below has
+            // no dispatch frame and would otherwise bypass the wrapper entirely.
+            if let Some(owner) = self.attribute_accessor_owner(cn, method)
                 && self
-                    .collect_class_attributes(&registered)
-                    .iter()
-                    .any(|attr| attr.is_public && attr.name == method && attr.is_rw)
-                && let Some(reference) = self.cstruct_field_ref(target, method)
+                    .registry()
+                    .method_wrap_chain(owner.as_str(), method, 0)
+                    .is_some()
             {
-                return Some(Ok(reference));
+                return None;
             }
-            return self.cstruct_field_value(target, method).map(Ok);
-        }
-        if matches!(
-            method,
-            "new"
-                | "BUILD"
-                | "TWEAK"
-                | "BUILDALL"
-                | "DESTROY"
-                | "Bool"
-                | "so"
-                | "not"
-                | "defined"
-                | "DEFINITE"
-                | "WHAT"
-                | "WHO"
-                | "HOW"
-                | "WHY"
-                | "WHICH"
-                | "WHERE"
-                | "VAR"
-                | "Str"
-                | "gist"
-                | "raku"
-                | "ACCEPTS"
-                | "isa"
-                | "does"
-                | "can"
-                | "^name"
-                | "^mro"
-                | "^methods"
-                | "^attributes"
-                | "sink"
-                | "self"
-                | "clone"
-                | "return"
-                | "handled"
-                | "bytes"
-        ) {
-            return None;
-        }
-        // The fast accessor read proceeds only when the public attribute
-        // accessor wins the per-MRO-level race against user methods of the
-        // same name: an explicit method at the same or a more-derived level
-        // overrides the accessor (bail to full dispatch), while a child's
-        // accessor shadows a parent's method and a class accessor beats a
-        // role-composed method at its own level (6.c S14-roles/attributes.t
-        // "Class prioritization"). This gate also keeps private attributes
-        // private: `has $!secret` is stored under the `secret!` key and never
-        // reports as a public accessor, so reading it by the bare name falls
-        // through to the interpreter (which denies the access).
-        if !matches!(
-            self.resolve_user_method_or_accessor_sym(cn, method_sym),
-            Some(crate::runtime::UserMethodOrAccessor::Accessor)
-        ) {
-            return None;
+            // CStruct fields live in native memory rather than the instance's
+            // attribute map. Resolve their generated accessors before the builtin
+            // method-name exclusions below, so fields such as `first` and `gist`
+            // shadow inherited methods just like ordinary public attributes do.
+            // An explicit method with the same name still wins the resolver race.
+            //
+            // The accessor is looked up under the class's *registered* name, not the
+            // handle's: `nativecast` tags a handle with the short base name, so a
+            // CStruct declared inside a module (`MoarVM::Guts::REPRs::MVMArrayB`) is
+            // reached as `MVMArrayB` and the attribute lookup would miss. Only field
+            // names that also name a builtin ever noticed — `MVMArrayB.elems`
+            // answered `1` and `.any` built a Junction, which is how
+            // `NativeHelpers::Blob` came away with a junction instead of a body.
+            if let Some(registered) = self.cstruct_class_name(cn)
+                && matches!(
+                    self.resolve_user_method_or_accessor_sym(&registered, method_sym),
+                    Some(crate::runtime::UserMethodOrAccessor::Accessor)
+                )
+            {
+                // An `is rw` field asked for as a location (`$!content.top` as an
+                // `is rw` routine's tail, a `:=` bind) is a native attribute
+                // reference into the struct, not a copy of its value.
+                if want_ref
+                    && self
+                        .collect_class_attributes(&registered)
+                        .iter()
+                        .any(|attr| attr.is_public && attr.name == method && attr.is_rw)
+                    && let Some(reference) = self.cstruct_field_ref(target, method)
+                {
+                    return Some(Ok(reference));
+                }
+                return self.cstruct_field_value(target, method).map(Ok);
+            }
+            if super::vm_accessor_read_plan::accessor_fast_read_excluded(method) {
+                return None;
+            }
+            // The fast accessor read proceeds only when the public attribute
+            // accessor wins the per-MRO-level race against user methods of the
+            // same name: an explicit method at the same or a more-derived level
+            // overrides the accessor (bail to full dispatch), while a child's
+            // accessor shadows a parent's method and a class accessor beats a
+            // role-composed method at its own level (6.c S14-roles/attributes.t
+            // "Class prioritization"). This gate also keeps private attributes
+            // private: `has $!secret` is stored under the `secret!` key and never
+            // reports as a public accessor, so reading it by the bare name falls
+            // through to the interpreter (which denies the access).
+            if !matches!(
+                self.resolve_user_method_or_accessor_sym(cn, method_sym),
+                Some(crate::runtime::UserMethodOrAccessor::Accessor)
+            ) {
+                return None;
+            }
         }
         // `:=` bind RHS / `.VAR` chain / `is rw` routine tail: return the
         // attribute slot's container identity (promoting the slot to a shared

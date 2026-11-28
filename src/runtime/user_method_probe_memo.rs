@@ -40,6 +40,7 @@ pub(crate) struct UserMethodProbeMemo {
     method_candidate_levels: FxHashMap<(Symbol, Symbol), Arc<[u32]>>,
     all_outranked_by_builtin: FxHashMap<(Symbol, Symbol), bool>,
     method_return_fast: FxHashMap<(Symbol, Symbol), Option<(FastParamType, Symbol)>>,
+    accessor_read_plain: FxHashMap<(Symbol, Symbol), bool>,
 }
 
 /// Selects one of the memo's answer tables.
@@ -108,6 +109,14 @@ impl ProbeTable for MethodReturnFast {
     }
 }
 
+struct AccessorReadPlain;
+impl ProbeTable for AccessorReadPlain {
+    type Answer = bool;
+    fn table(memo: &mut UserMethodProbeMemo) -> &mut FxHashMap<(Symbol, Symbol), bool> {
+        &mut memo.accessor_read_plain
+    }
+}
+
 struct HasPublicAccessor;
 impl ProbeTable for HasPublicAccessor {
     type Answer = bool;
@@ -161,6 +170,7 @@ impl Interpreter {
             memo.method_candidate_levels.clear();
             memo.all_outranked_by_builtin.clear();
             memo.method_return_fast.clear();
+            memo.accessor_read_plain.clear();
         } else if let Some(answer) = T::table(memo).get(&(class, method)) {
             return answer.clone();
         }
@@ -289,6 +299,19 @@ impl Interpreter {
                 method.as_str(),
             )
         })
+    }
+
+    /// Whether a 0-arg read of `method` on an instance of `class` is a plain
+    /// public-accessor read (the VM's accessor gate, `compute`), memoized per
+    /// `(class, method)`: every input of that gate lives in the registry.
+    // Cost: O(1) on a hit; a miss costs `compute`.
+    pub(crate) fn accessor_read_plain_memo(
+        &mut self,
+        class: Symbol,
+        method: Symbol,
+        compute: impl FnOnce(&mut Self) -> bool,
+    ) -> bool {
+        self.probe_memo::<AccessorReadPlain>(class, method, compute)
     }
 
     /// [`Self::first_public_accessor_owner_uncached`], memoized per

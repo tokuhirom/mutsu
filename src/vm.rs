@@ -209,6 +209,7 @@ mod vm_call_method_compiled_mut;
 mod vm_call_method_compiled_mut_tail;
 mod vm_call_method_mut_ops;
 mod vm_call_method_mut_prenative;
+mod vm_accessor_read_plan;
 mod vm_call_method_ops;
 mod vm_call_method_plain_lane;
 mod vm_call_named;
