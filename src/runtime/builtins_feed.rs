@@ -175,8 +175,8 @@ impl Interpreter {
             return Ok(cond);
         }
         let saved_topic = self.env.get("_").cloned();
-        self.env.insert("_".to_string(), cond);
-        let result = self.eval_call_on_value(args[1].clone(), Vec::new());
+        self.env.insert("_".to_string(), cond.clone());
+        let result = self.eval_call_on_value(args[1].clone(), vec![cond]);
         match saved_topic {
             Some(value) => {
                 self.env.insert("_".to_string(), value);

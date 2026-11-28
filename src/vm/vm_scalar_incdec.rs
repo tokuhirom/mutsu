@@ -211,7 +211,7 @@ impl Interpreter {
         // `$CALLER::x++` and friends step the caller's variable.
         if let Some((bare_name, depth)) = crate::compiler::Compiler::parse_caller_prefix(name) {
             let raw_val = loan_env!(self, get_caller_var(&bare_name, depth))?;
-            let old = Self::normalize_incdec_source(raw_val);
+            let old = Self::normalize_incdec_source(raw_val.into_deref());
             let new = self.incdec_step(k, &old)?;
             loan_env!(self, set_caller_var(&bare_name, depth, new.clone()))?;
             self.stack.push(k.result(old, new));
