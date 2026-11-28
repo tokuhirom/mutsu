@@ -351,11 +351,17 @@ fn build(
 
     // `open` = the current block still needs a terminator.
     let mut open = true;
+    // The op just emitted together with the one before it (a fused
+    // element store and its sink): skip it.
+    let mut fused_next = false;
     for (i, op) in code.ops[start..end]
         .iter()
         .enumerate()
         .map(|(k, op)| (start + k, op))
     {
+        if std::mem::take(&mut fused_next) {
+            continue;
+        }
         if let Some(&blk) = block_at.get(&i) {
             if open {
                 b.ins().jump(blk, &[]);
@@ -873,6 +879,19 @@ fn build(
                         &[interp, codep, opidx, fnsp],
                     )?;
                     check_status(&mut b, status);
+                } else if super::vm_jit_element_step::sunk_element_store_at(code, i, end)
+                    && !block_at.contains_key(&(i + 1))
+                {
+                    // An element store statement and its sink, as one shim.
+                    let opidx = b.ins().iconst(types::I32, i as i64);
+                    let status = call_helper(
+                        &mut b,
+                        sigs.s_call,
+                        super::vm_jit_element_step::element_store_sunk as *const () as usize,
+                        &[interp, codep, opidx, fnsp],
+                    )?;
+                    check_status(&mut b, status);
+                    fused_next = true;
                 } else if super::vm_jit_element_step::is_element_step_op(op) {
                     // An element read or store: its fast lane without the
                     // interpreter dispatch (#19286), else the generic op.

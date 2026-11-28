@@ -62,6 +62,59 @@ pub(super) unsafe extern "C" fn element_step(
     unsafe { super::vm_jit_helpers::step(interp, code, op_idx, fns) }
 }
 
+/// Whether the JIT may run the `IndexAssignLocal` at `i` and the
+/// `SinkPopAssign` right after it as one [`element_store_sunk`] call: the
+/// store is followed by its statement's sink, which no jump enters.
+// Cost: O(1).
+pub(super) fn sunk_element_store_at(code: &CompiledCode, i: usize, end: usize) -> bool {
+    matches!(code.ops.get(i), Some(OpCode::IndexAssignLocal { .. }))
+        && i + 1 < end
+        && matches!(code.ops.get(i + 1), Some(OpCode::SinkPopAssign))
+}
+
+/// `extern "C"` shim: `IndexAssignLocal` at `op_idx` and the `SinkPopAssign`
+/// at `op_idx + 1` (an element store statement, `%h{$k} = $v;`). When the
+/// lean store serves it, the store's result is the plain scalar it stored,
+/// whose sink is a no-op (no lazy list, `Seq` or `Failure` to drain or
+/// raise), so it is popped here; otherwise both ops run generically.
+///
+/// # Safety
+/// As [`element_step`].
+// Cost: O(1) on the lean lane; the two generic ops' cost otherwise.
+pub(super) unsafe extern "C" fn element_store_sunk(
+    interp: *mut Interpreter,
+    code: *const CompiledCode,
+    op_idx: u32,
+    fns: *const CompiledFns,
+) -> u32 {
+    {
+        // SAFETY: see the function's safety contract; the borrows end before
+        // `step` re-derives its own.
+        let (vm, chunk) = unsafe { (&mut *interp, &*code) };
+        if let Some(OpCode::IndexAssignLocal {
+            slot,
+            name_idx,
+            is_positional,
+            index_first,
+            concat_append: false,
+            element_share: false,
+        }) = chunk.ops.get(op_idx as usize)
+            && vm.try_lean_local_element_store(chunk, *slot, *name_idx, *is_positional, *index_first)
+        {
+            // What the `SinkPopAssign` arm does with a plain scalar.
+            vm.sync_source_line(chunk, op_idx as usize + 1);
+            vm.stack.pop();
+            return JIT_STATUS_OK;
+        }
+    }
+    // SAFETY: the same pointers, passed on unchanged, for each op in turn.
+    let status = unsafe { super::vm_jit_helpers::step(interp, code, op_idx, fns) };
+    if status != JIT_STATUS_OK {
+        return status;
+    }
+    unsafe { super::vm_jit_helpers::step(interp, code, op_idx + 1, fns) }
+}
+
 impl Interpreter {
     /// The `Index` arm's ordinary-read prefix, for the JIT shim: outside an
     /// `is rw` return context, answer the read from `index_fast_path_element`
