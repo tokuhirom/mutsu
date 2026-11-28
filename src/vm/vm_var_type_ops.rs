@@ -184,14 +184,13 @@ impl Interpreter {
         if let Some(slot) = env_free_slot
             && constraint != "Nil"
         {
-            let init_val = match self.unshadowed_native_nil_seed(&constraint) {
-                Some(native) => native,
-                None if plain_user => Value::package(code.const_sym(tc_idx)),
-                None => {
-                    let base = self.var_type_constraint_sym(name_sym);
-                    self.typed_scalar_nil_seed_value_with_base(&constraint, base.as_deref())
-                }
-            };
+            let init_val = self.decl_nil_seed(
+                code,
+                tc_idx,
+                name_sym,
+                &constraint,
+                (plain_user, plain_builtin, scoped),
+            );
             self.locals[slot] = init_val;
         } else if !name.starts_with('@') && !name.starts_with('%') && constraint != "Nil" {
             // On the hoist an EXISTING binding is the enclosing scope's, and
@@ -267,14 +266,13 @@ impl Interpreter {
             if is_nil || is_dead_seed {
                 // The declaration's own symbol: the by-name forms re-interned
                 // `name` three times per execution (#12151).
-                let init_val = match self.unshadowed_native_nil_seed(&constraint) {
-                    Some(native) => native,
-                    None if plain_user => Value::package(code.const_sym(tc_idx)),
-                    None => {
-                        let base = self.var_type_constraint_sym(name_sym);
-                        self.typed_scalar_nil_seed_value_with_base(&constraint, base.as_deref())
-                    }
-                };
+                let init_val = self.decl_nil_seed(
+                    code,
+                    tc_idx,
+                    name_sym,
+                    &constraint,
+                    (plain_user, plain_builtin, scoped),
+                );
                 if hoisted {
                     // The seed creates a binding for a name nothing bound yet.
                     // Record that absence for the innermost branch/loop body
@@ -445,98 +443,6 @@ impl Interpreter {
             let prev = self.env().get_sym(key).cloned();
             if let Some(scope) = self.topic_state.loop_local_saved_env.last_mut() {
                 scope.insert(key, prev);
-            }
-        }
-    }
-
-    /// The value a Nil-valued typed scalar holds under constraint `constraint`:
-    /// the nominal type object, except native types (zero/empty defaults) and
-    /// parameterized roles (the ParametricRole type object, so `.WHAT`/`.raku`
-    /// keep the type arguments). Used both by the declaration-time seeding
-    /// above and by the SetLocal store path when a Nil is ASSIGNED to a typed
-    /// scalar — the read paths deliberately do not consult env-scoped
-    /// constraints for Nil→type-object conversion (a `= Nil` parameter default
-    /// must stay Nil), so the stored value itself must carry the type object.
-    pub(crate) fn typed_scalar_nil_seed_value(&mut self, name: &str, constraint: &str) -> Value {
-        if !self.constraint_is_user_subset(constraint)
-            && let Some(native) = Self::native_nil_seed_value(constraint)
-        {
-            return native;
-        }
-        let base = loan_env!(self, var_type_constraint(name));
-        self.typed_scalar_nil_seed_value_with_base(constraint, base.as_deref())
-    }
-
-    /// [`Self::native_nil_seed_value`] unless a user subset spelled like the
-    /// native type shadows it (#12359).
-    // Cost: O(1).
-    fn unshadowed_native_nil_seed(&self, constraint: &str) -> Option<Value> {
-        if self.constraint_is_user_subset(constraint) {
-            None
-        } else {
-            Self::native_nil_seed_value(constraint)
-        }
-    }
-
-    /// The zero/empty default of a native scalar constraint (`int` -> 0,
-    /// `num` -> 0e0, `str` -> ""), which needs neither the registered base
-    /// name nor a registry probe — so a caller that has to FETCH that base
-    /// (an env read plus a `String` copy) asks this first and skips it
-    /// (#12151).
-    // Cost: O(1).
-    pub(crate) fn native_nil_seed_value(constraint: &str) -> Option<Value> {
-        if crate::runtime::native_types::is_native_int_type(constraint) {
-            Some(Value::int(0))
-        } else if matches!(constraint, "num" | "num32" | "num64") {
-            Some(Value::num(0.0))
-        } else if constraint == "str" {
-            Some(Value::str(String::new()))
-        } else {
-            None
-        }
-    }
-
-    /// [`Self::typed_scalar_nil_seed_value`] with the declared constraint
-    /// supplied by the caller rather than read back by name — for a store
-    /// whose constraint came from the cell it lands in (a routine's write to
-    /// its own free variable), where the name-keyed entry may belong to an
-    /// unrelated same-named variable of the calling scope (#10049).
-    pub(crate) fn typed_scalar_nil_seed_value_with_base(
-        &mut self,
-        constraint: &str,
-        base: Option<&str>,
-    ) -> Value {
-        // A user subset spelled like a native type shadows it (#12359).
-        if !self.constraint_is_user_subset(constraint)
-            && let Some(native) = Self::native_nil_seed_value(constraint)
-        {
-            native
-        } else {
-            // A parameterized role constraint (`my Cup of EggNog $mug` /
-            // `my Cup[EggNog] $mug`) resolves to the ParametricRole type
-            // object. The stored constraint metadata normalizes to the base
-            // name, so probe the raw constraint here.
-            let parametric = constraint
-                .contains('[')
-                .then(|| loan_env!(self, type_arg_value_from_name(constraint)));
-            match parametric {
-                Some(v) if matches!(v.view(), ValueView::ParametricRole { .. }) => v,
-                // A class with its own `^parameterize` (upstream NativeCall's
-                // `Pointer[uint16]`): the type object that meta-method built.
-                _ if constraint.contains('[')
-                    && let Some(v) = loan_env!(self, meta_parameterized_type(constraint)) =>
-                {
-                    v
-                }
-                _ => {
-                    // The seeded package must carry the NOMINAL type name —
-                    // smileys stripped (`my Int:_ $a` seeds `Int`, not
-                    // `Int:_`) and coercion parens unwrapped — same as the
-                    // read-path Nil→type-object conversion it replaces.
-                    Value::package(
-                        self.nominal_type_object_sym_for_constraint(base.unwrap_or(constraint)),
-                    )
-                }
             }
         }
     }

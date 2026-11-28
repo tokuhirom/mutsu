@@ -350,6 +350,7 @@ impl Interpreter {
         var_name_idx: Option<u32>,
         has_explicit_initializer: bool,
         smiley_from_pragma: bool,
+        feeds_decl_store: bool,
     ) -> Result<(), RuntimeError> {
         self.exec_type_check_op_inner(
             code,
@@ -358,6 +359,7 @@ impl Interpreter {
             TypeCheckMode::Assignment,
             has_explicit_initializer,
             smiley_from_pragma,
+            feeds_decl_store,
         )
     }
 
@@ -376,6 +378,7 @@ impl Interpreter {
             TypeCheckMode::Binding,
             false,
             false,
+            false,
         )
     }
 
@@ -392,6 +395,7 @@ impl Interpreter {
             tc_idx,
             var_name_idx,
             TypeCheckMode::Parameter,
+            false,
             false,
             false,
         )

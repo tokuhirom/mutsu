@@ -7660,12 +7660,22 @@ impl Interpreter {
                 smiley_from_pragma,
             ) => {
                 self.sync_source_line(code, *ip);
+                // The statement-form declaration store follows its check
+                // directly; an expression-form one has a `Dup` in between.
+                let feeds_decl_store = matches!(
+                    code.ops.get(*ip + 1),
+                    Some(OpCode::SetLocalDecl {
+                        typechecked: true,
+                        ..
+                    })
+                );
                 self.exec_type_check_op(
                     code,
                     *tc_idx,
                     *var_name_idx,
                     *has_explicit_initializer,
                     *smiley_from_pragma,
+                    feeds_decl_store,
                 )?;
                 *ip += 1;
             }
