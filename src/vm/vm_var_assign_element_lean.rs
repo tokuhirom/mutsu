@@ -197,13 +197,9 @@ impl Interpreter {
             // A new `Str` key: its buffer moves into the map when the key word
             // was its only holder (`"key-$i"` just built by the
             // interpolation), instead of being copied and then freed.
-            None => Self::lean_hash_commit(
-                &hash,
-                false,
-                "",
-                Some(key_value.into_owned_string()),
-                val,
-            ),
+            None => {
+                Self::lean_hash_commit(&hash, false, "", Some(key_value.into_owned_string()), val)
+            }
         };
         self.stack.push(result);
         true
