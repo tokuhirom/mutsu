@@ -410,7 +410,9 @@ impl Interpreter {
         // and at the mainline the rest of the unit is skipped with status 0).
         // The genuine upstream `Test.rakumod`'s `exits-ok` is built entirely on
         // this hook, but it is a plain language feature, nothing Test-specific.
-        // TODO: only a sunk `exit` leaves in rakudo; `my $x = exit 1` keeps going
+        // TODO: rakudo leaves only the innermost block (an `if`/bare block/loop
+        // iteration), mutsu leaves the routine or the unit. Also only a sunk
+        // `exit` leaves in rakudo; `my $x = exit 1` keeps going
         // and yields the hook's value. This leaves in every position.
         if let Some(hook) = self.env.get("&*EXIT").cloned()
             && Self::is_exit_hook_callable(&hook)

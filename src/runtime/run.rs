@@ -944,6 +944,10 @@ impl Interpreter {
         // `X::ControlFlow` "succeed without when clause" rather than ending the
         // program silently.
         let body_result = match body_result {
+            // A trapped `exit` (a `&*EXIT` hook ran) leaves the block it was
+            // called in; at the mainline that ends the unit silently, with
+            // status 0 and the END phasers still to run.
+            Err(e) if e.is_leave && e.leave_callable_id().is_none() => Ok(e.return_value),
             Err(e) if e.is_succeed() => {
                 if crate::compiler::Compiler::body_has_toplevel_when(&body_main) {
                     Ok(e.return_value)

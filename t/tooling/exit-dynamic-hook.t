@@ -11,18 +11,20 @@ plan 8;
 {
     my $seen;
     my $after = 'not run';
-    {
+    sub run-it {
         my &*EXIT = -> $c { $seen = $c };
         exit 4;
         $after = 'ran';
     }
+    run-it();
     is $seen, 4, 'exit called the dynamic &*EXIT hook with its status';
-    is $after, 'not run', 'and the rest of the block was skipped';
+    is $after, 'not run', 'and the rest of the routine was skipped';
 }
 
 {
     my $seen = -1;
-    { my &*EXIT = -> $c { $seen = $c }; exit; }
+    sub bare { my &*EXIT = -> $c { $seen = $c }; exit; }
+    bare();
     is $seen, 0, 'a bare exit hands the hook the default status 0';
 }
 
@@ -39,20 +41,23 @@ plan 8;
 # Its dynamic scope ends with the block that declared it.
 {
     my $outer;
-    {
+    sub inner-scope {
         my &*EXIT = -> $c { $outer = "inner-$c" };
         exit 1;
     }
+    inner-scope();
     is $outer, 'inner-1', 'the innermost hook in scope wins';
 }
 
-# Sibling blocks each see only their own hook.
+# Sibling routines each see only their own hook.
 {
     my $first = 0;
     my $second = 0;
-    { my &*EXIT = -> $c { $first = $c }; exit 5 }
-    { my &*EXIT = -> $c { $second = $c }; exit 6 }
-    is-deeply ($first, $second), (5, 6), 'sibling blocks each get their own hook';
+    sub one { my &*EXIT = -> $c { $first = $c }; exit 5 }
+    sub two { my &*EXIT = -> $c { $second = $c }; exit 6 }
+    one();
+    two();
+    is-deeply ($first, $second), (5, 6), 'sibling routines each get their own hook';
 }
 
 # A routine whose `exit` is trapped returns Nil, not what follows the exit.
