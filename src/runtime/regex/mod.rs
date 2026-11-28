@@ -10,6 +10,7 @@ pub(crate) mod regex_builtin_rule;
 mod regex_call_graph;
 mod regex_casefold;
 mod regex_code_atom;
+mod regex_code_env_keys;
 pub(in crate::runtime) mod regex_code_interp;
 pub(crate) mod regex_cursor;
 pub(crate) mod regex_dynparams;

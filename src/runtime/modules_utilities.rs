@@ -8,6 +8,7 @@ mod parametric_role_pun_memo;
 pub(crate) use parametric_role_pun_memo::ParamRolePunEntries;
 mod plain_fn_resolve_memo;
 mod proto_resolve_memo;
+mod proto_token_memo;
 pub(crate) use proto_resolve_memo::ProtoResolveMemo;
 pub(crate) mod registry_gen;
 /// A world table shared live by every thread (ADR-17216).
