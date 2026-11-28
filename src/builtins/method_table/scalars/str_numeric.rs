@@ -298,6 +298,9 @@ fn cool_ast(
         return None;
     }
     let source = target.to_string_value();
+    // The parser receives source codepoints, not Str's doubled marker for a
+    // literal U+10FFFD. Otherwise `.AST` escapes that marker a second time.
+    let source = crate::grapheme_break::unescape_literal_marker(&source);
     if let [slang] = args {
         return Some(interp.str_ast_with_slang(&source, slang));
     }
