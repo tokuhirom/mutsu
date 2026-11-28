@@ -5,6 +5,18 @@
 use super::*;
 use crate::value::shaped_hash::{shaped_hash_dims, storage_key};
 
+/// A key list as the `:k` / `:kv` adverbs report it: one itemized value.
+// Cost: O(1).
+fn itemized(list: Value) -> Value {
+    match list.view() {
+        ValueView::Array(items, _) => Value::array_with_kind(
+            crate::gc::Gc::new(crate::value::ArrayData::new(items.to_vec())),
+            crate::value::ArrayKind::ItemList,
+        ),
+        _ => list,
+    }
+}
+
 /// What a partial-depth subscript of a shaped hash does to the entries it
 /// names (see [`Interpreter::shaped_hash_prefix_op`]).
 #[derive(Clone, Copy)]
@@ -143,14 +155,83 @@ impl Interpreter {
         let items = match op {
             PrefixOp::Exists { negated } => hits.iter().map(|_| Value::truth(!negated)).collect(),
             PrefixOp::Read(adverb) => match adverb {
-                "kv" => hits.into_iter().flat_map(|(k, v)| [k, v]).collect(),
+                "kv" => hits.into_iter().flat_map(|(k, v)| [itemized(k), v]).collect(),
                 "p" => hits.into_iter().map(|(k, v)| Value::value_pair(k, v)).collect(),
-                "k" => hits.into_iter().map(|(k, _)| k).collect(),
+                "k" => hits.into_iter().map(|(k, _)| itemized(k)).collect(),
                 _ => hits.into_iter().map(|(_, v)| v).collect(),
             },
             PrefixOp::Delete => hits.into_iter().map(|(_, v)| v).collect(),
         };
         Ok(Some(list(items)))
+    }
+
+    /// Validates the subscript `key` of a shaped hash whose key spec is
+    /// `spec`: a whole key list, or a prefix of one (see
+    /// [`Self::shaped_hash_prefix_op`]).
+    // Cost: O(d), d = dimensions.
+    pub(crate) fn shaped_hash_validate_index(
+        &mut self,
+        spec: &str,
+        key: &Value,
+    ) -> Result<(), RuntimeError> {
+        let dims: Vec<String> = spec.split(';').map(|d| d.trim().to_string()).collect();
+        let parts = Self::shaped_hash_parts(key);
+        if parts.len() < dims.len() {
+            for (i, (part, ty)) in parts.iter().zip(&dims).enumerate() {
+                let part = part.deref_container();
+                if !self.type_matches_value(ty, &part) {
+                    let repr = self.type_check_got_repr(&part);
+                    return Err(key_type_error(i + 1, ty, &part, &repr));
+                }
+            }
+            return Ok(());
+        }
+        self.shaped_hash_key(&dims, &parts, "access").map(|_| ())
+    }
+
+    /// `%h{a;b}:kv` (also `:k`, `:p`, `:v`) on the shaped hash `target`: the
+    /// entries a whole or partial key list names, shaped by the adverb; an
+    /// absent entry gives the empty list. `None` when `target` is not a
+    /// shaped hash.
+    // Cost: O(d + n), d = dimensions, n = entries of the hash.
+    pub(crate) fn shaped_hash_adverb_read(
+        &mut self,
+        target: &Value,
+        parts: &[Value],
+        adverb: &str,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let target = target.deref_container();
+        let Some(dims) = shaped_hash_dims(&target) else {
+            return Ok(None);
+        };
+        if parts.len() < dims.len() {
+            return self.shaped_hash_prefix_op(&target, parts, PrefixOp::Read(adverb));
+        }
+        let (key, list) = self.shaped_hash_key(&dims, parts, "access")?;
+        let ValueView::Hash(hash) = target.view() else {
+            return Ok(None);
+        };
+        let items = match hash.map.get(&key) {
+            None => Vec::new(),
+            Some(value) => {
+                let value = value.deref_container();
+                match adverb {
+                    "kv" => vec![itemized(list), value],
+                    "p" => vec![Value::value_pair(list, value)],
+                    "k" => vec![itemized(list)],
+                    _ => vec![value],
+                }
+            }
+        };
+        // A whole key list names one entry: `:k` / `:v` / `:kv` / `:p` answer
+        // it bare, not wrapped in a list (`%h{"a";"b"}:v` is `5`).
+        if items.len() == 1 && adverb != "kv" {
+            return Ok(Some(items.into_iter().next().unwrap_or(Value::NIL)));
+        }
+        Ok(Some(Value::array_with_kind(
+            crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+            crate::value::ArrayKind::List,
+        )))
     }
 
     /// `%h{a;b}` on the shaped hash `target`: the value the key list names, or

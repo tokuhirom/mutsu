@@ -79,9 +79,7 @@ impl Interpreter {
         }
         // A shaped hash's key spec (`Str;Int`, #19283) takes a key list.
         if constraint.contains(';') {
-            return self
-                .shaped_hash_single_key(&constraint, index, "access")
-                .map(|_| ());
+            return self.shaped_hash_validate_index(&constraint, index);
         }
         if index.is_range() {
             return Ok(());

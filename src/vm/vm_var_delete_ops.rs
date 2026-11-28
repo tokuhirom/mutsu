@@ -319,6 +319,17 @@ impl Interpreter {
         // read and `:exists` paths (which carry `is_positional` / `kind`), this
         // one only has the variable name. A `%h`-shaped target is exactly the
         // case that must not numify.
+        if let Some(target) = self.place_env_get(place, &var_name).cloned() {
+            let parts = Self::shaped_hash_parts(&idx);
+            if let Some(list) = self.shaped_hash_prefix_op(
+                &target,
+                &parts,
+                crate::runtime::methods_shaped_hash::PrefixOp::Delete,
+            )? {
+                self.stack.push(list);
+                return Ok(());
+            }
+        }
         let target_is_hash = self
             .place_env_get(place, &var_name)
             .map(|v| matches!(v.deref_container().view(), ValueView::Hash(_)))

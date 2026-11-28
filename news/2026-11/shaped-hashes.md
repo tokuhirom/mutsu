@@ -24,5 +24,8 @@ under the joined `.WHICH` of its keys, as rakudo's `shaped-key` does
 (`value::shaped_hash`). The object hash re-keying step now uses that same
 joined key for a shaped hash.
 
-Still to do: a single subscript holding the whole key list
-(`%h{$("a", 1)}`), and `++`/`--` on any multi-dimensional subscript (#19318).
+A subscript with fewer keys than dimensions (`%h{"a";"b"}` on a three
+dimension hash, or `%h<a>`) names every entry whose key list starts with
+those keys: a read gives their values, `:exists` one `True` per entry (empty
+when none), `:delete` the removed values, and `:k`/`:v`/`:kv`/`:p` shape the
+matches. Still to do: `++`/`--` on a multi-dimensional subscript (#19318).
