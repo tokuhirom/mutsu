@@ -172,7 +172,6 @@ pub(crate) use slang_multiness::{Multiness, take_slang_multiness};
 pub(crate) use slang_use::apply_slang_overrides;
 pub(in crate::parser) use slang_use::maybe_activate_slang_use;
 pub(in crate::parser) use slang_wrapper_block::announce_routine_body;
-pub(crate) use user_ops::is_user_declared_value_term;
 pub(crate) use user_ops::{DeclaredNameKind, declared_name_kind};
 pub(in crate::parser) use user_ops::{
     is_circumfix_close_delimiter, is_circumfix_close_delimiter_word, is_declared_symbol_name,
@@ -183,6 +182,7 @@ pub(in crate::parser) use user_ops::{
     register_user_callable_term_symbol, register_user_sigiled_value_term,
     register_user_term_symbol,
 };
+pub(crate) use user_ops::{is_statement_prefix_word, is_user_declared_value_term};
 
 /// A single lexical scope frame tracking both user-declared subs and module imports.
 #[derive(Clone)]
