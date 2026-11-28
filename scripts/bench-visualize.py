@@ -762,7 +762,7 @@ const noteFor = (b) => b.notes && b.notes[metric] && b.notes[metric].html;
 // "vs rakudo / vs rakupp" line shows in every metric -- that ratio needs its
 // explanation next to it whatever is selected.
 const cardNoteFor = (b) => noteFor(b)
-  || (b.notes && b.standing && REFS.map(([k]) => b.standing[k] && b.notes[k] && b.notes[k].html)
+  || (b.notes && b.standing && shownRefs().map(([k]) => b.standing[k] && b.notes[k] && b.notes[k].html)
         .find(Boolean));
 // A caveated ratio (rakupp answering natively, its non-PIE startup) is not a
 // loss to act on: it is shown uncoloured, with the note on the card.
@@ -770,6 +770,10 @@ const caveated = (b, k) => !!(b.notes && b.notes[k] && b.notes[k].engine === fal
 const RECENT = DATA.recent;
 const ISSUE_URL = 'https://github.com/tokuhirom/mutsu/issues/';
 const REFS = [['ratio', 'rakudo'], ['ratiopp', 'rakupp']];
+// The references a view emphasizes: a ratio tab shows only its own reference
+// (numbers, colouring, notes, table columns); every other metric shows both.
+const shownRefs = () => REFS.filter(([k]) => metric !== 'ratio' && metric !== 'ratiopp' || metric === k);
+const showsRef = (k) => shownRefs().some(([r]) => r === k);
 const median = (xs) => {
   const v = [...xs].sort((a, b) => a - b), m = v.length >> 1;
   return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
@@ -919,7 +923,7 @@ function card(b) {
   // read.
   const st = b.standing || {};
   const standing = el('div', { class: 'standing' });
-  for (const [k, ref] of REFS) {
+  for (const [k, ref] of shownRefs()) {
     if (!st[k]) continue;
     standing.append(el('span', { title: ratioTitle(st[k]) }, `vs ${ref} `,
       el('b', { class: 'mono ' + (caveated(b, k) ? '' : ratioClass(st[k])) }, st[k].med.toFixed(2) + '×'),
@@ -927,7 +931,7 @@ function card(b) {
   }
   // A losing card names the issues that track the gap (bench-tracking.toml;
   // numbers only, validated by the generator), quietly, after its ratios.
-  const losing = REFS.some(([k]) => st[k] && st[k].losing && !caveated(b, k));
+  const losing = shownRefs().some(([k]) => st[k] && st[k].losing && !caveated(b, k));
   if (losing && b.tracking) {
     const links = el('span', { title: b.tracking.note || 'tracking issues' });
     b.tracking.issues.forEach((n, i) => {
@@ -940,7 +944,7 @@ function card(b) {
   const wst = b.wholeStanding;
   if (wst) {
     const parts = [];
-    for (const [k, ref] of REFS) {
+    for (const [k, ref] of shownRefs()) {
       if (!wst[k]) continue;
       parts.push(el('span', { title: ratioTitle(wst[k]) }, `${ref} `,
         el('b', { class: 'mono' }, wst[k].med.toFixed(2) + '×')));
@@ -1039,14 +1043,21 @@ function renderTable() {
              rk: st.ratio ? st.ratio.med : null, pp: st.ratiopp ? st.ratiopp.med : null,
              wrk: b.wholeStanding && b.wholeStanding.ratio ? b.wholeStanding.ratio.med : null };
   });
+  // A hidden reference's column cannot be the sort key: fall back to the
+  // shown reference's.
+  const colOk = (k) => !(k === 'rk' || k === 'wrk') || showsRef('ratio');
+  const key = !colOk(sortKey) ? 'pp' : (sortKey === 'pp' && !showsRef('ratiopp')) ? 'rk' : sortKey;
   rows.sort((a, x) => {
-    const av = a[sortKey], xv = x[sortKey];
+    const av = a[key], xv = x[key];
     if (av == null) return 1; if (xv == null) return -1;
     return (av > xv ? 1 : av < xv ? -1 : 0) * sortDir;
   });
-  const th = (k, label) => `<th data-k="${k}">${label}${sortKey===k?(sortDir>0?' ↑':' ↓'):''}</th>`;
+  const th = (k, label) => `<th data-k="${k}">${label}${key===k?(sortDir>0?' ↑':' ↓'):''}</th>`;
   let h = `<table><thead><tr>${th('name','benchmark')}${th('base','interp (JIT off) '+unit())}${th('jit','+jit '+unit())}${th('rk','vs rakudo')}${th('pp','vs rakupp')}${th('wrk','whole script vs rakudo')}</tr></thead><tbody></tbody></table>`;
   wrap.innerHTML = h;
+  // The columns of a reference this tab does not emphasize are not shown.
+  const hide = [['rk', 'ratio'], ['pp', 'ratiopp'], ['wrk', 'ratio']].filter(([, r]) => !showsRef(r)).map(([k]) => k);
+  wrap.querySelectorAll('th').forEach(t => { if (hide.includes(t.dataset.k)) t.remove(); });
   const body = wrap.querySelector('tbody');
   for (const r of rows) {
     // The table has no room for the note itself: mark the row and carry the
@@ -1057,9 +1068,10 @@ function renderTable() {
       el('td', { class: 'mono', title: isRatio() ? 'JIT off: mutsu\'s own baseline, no ratio against rakudo or rakupp is read from it' : '' },
         (r.base == null || isRatio()) ? '—' : fmt(r.base)),
       el('td', { class: 'mono' }, r.jit == null ? '—' : fmt(r.jit)),
-      ratioCell(r.b, 'ratio'), ratioCell(r.b, 'ratiopp'),
-      el('td', { class: 'mono', title: 'secondary: the whole-script ratio, including interpreter startup' },
-        r.wrk == null ? '—' : r.wrk.toFixed(2) + '×')));
+      showsRef('ratio') ? ratioCell(r.b, 'ratio') : null,
+      showsRef('ratiopp') ? ratioCell(r.b, 'ratiopp') : null,
+      showsRef('ratio') ? el('td', { class: 'mono', title: 'secondary: the whole-script ratio, including interpreter startup' },
+        r.wrk == null ? '—' : r.wrk.toFixed(2) + '×') : null));
   }
   wrap.querySelectorAll('th').forEach(t => t.onclick = () => {
     const k = t.dataset.k; if (k === sortKey) sortDir *= -1; else { sortKey = k; sortDir = k === 'name' ? 1 : -1; }

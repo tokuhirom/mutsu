@@ -376,6 +376,14 @@ try {
          && await page.locator('#legendBase:not(.hidden)').count() === 1,
          'the seconds chart still draws the JIT-off series as mutsu\'s own baseline');
 
+  // Each ratio tab emphasizes only its own reference: the rakudo tab shows no
+  // rakupp ratio and none of the rakupp notes, and the rakupp tab the reverse.
+  assert(await page.locator('.bench-card .standing', { hasText: 'vs rakupp' }).count() === 0
+         && await page.locator('.bench-note').count() === 0,
+         'the rakudo tab shows no rakupp ratio and no rakupp note');
+  await page.goto(`${BASE}/bench-trend.html?lang=en#metric=ratiopp`, { waitUntil: 'networkidle' });
+  assert(await page.locator('.bench-card .standing', { hasText: 'vs rakudo' }).count() === 0,
+         'the rakupp tab shows no rakudo ratio');
   await page.goto(`${BASE}/bench-trend.html?lang=en#metric=ratiopp`,
                   { waitUntil: 'networkidle' });
   assert(await page.getAttribute('#metric button[data-v="ratiopp"]', 'aria-pressed') === 'true',

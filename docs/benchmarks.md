@@ -152,6 +152,10 @@ previous commit", because a one-commit move on this runner pool is mostly noise:
   Raku code faster (its native JSON parser, its non-PIE startup) is not coloured and does not
   count as a loss: the card shows its note instead, in every metric. Wins are not coloured,
   so the losses read at a glance.
+- **Each ratio tab emphasizes only its own reference.** On "ratio vs rakudo" the cards, the red/win
+  colouring, the notes and the table columns are rakudo's alone; on "ratio vs rakupp" they are
+  rakupp's alone, including the "rakupp does not run JSON::Fast's Raku code" note. The seconds and
+  counter metrics show both. A table sort key of the hidden reference falls back to the shown one.
 - A ratio is only as stable as its baseline. Each history row records the reference versions it
   ran against (the `rakudo` and `rakupp` columns, the first line of each `--version`), and the
   page names the current ones at the top ("vs Rakudo 2026.11 · Raku++ v5.9.0"). A ratio chart

@@ -8,5 +8,10 @@ ratio charts, the win/loss colouring, the sort order, the table and `--report` n
 `@section+jit` (else `+jit`) only. The JIT-off series stays on the seconds and counter charts as
 mutsu's own JIT-on vs JIT-off comparison, with no ratio.
 
+Each ratio tab now shows only its own reference: the "ratio vs rakudo" tab drops the rakupp
+ratios, the rakupp-only notes (such as rakupp answering JSON::Fast natively) and the rakupp table
+column, and "ratio vs rakupp" drops the rakudo ones, so headline numbers, colouring and table
+columns follow the selected tab.
+
 `docs/benchmarks.md` and `docs/rakupp-gap-survey.md` state the rule; the site e2e test pins
 that a ratio chart draws no JIT-off line.
