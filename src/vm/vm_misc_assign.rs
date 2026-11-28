@@ -1063,6 +1063,7 @@ impl Interpreter {
         code: &CompiledCode,
         name_idx: u32,
         slot: u32,
+        named_arg: bool,
     ) -> Result<(), RuntimeError> {
         if code.const_sym(name_idx).as_str().starts_with('.')
             && self.stack.last().is_some_and(Value::is_proxy_value)
@@ -1072,11 +1073,20 @@ impl Interpreter {
             self.stack.push(fetched);
             return Ok(());
         }
-        self.exec_wrap_var_ref_op(code, name_idx, slot);
+        self.exec_wrap_var_ref_op(code, name_idx, slot, named_arg);
         Ok(())
     }
 
-    pub(super) fn exec_wrap_var_ref_op(&mut self, code: &CompiledCode, name_idx: u32, slot: u32) {
+    /// `named_arg`: the VarRef is the value of a named argument, which the
+    /// next op (`MakeNamedArg`) captures as the variable's cell, so the
+    /// declared type no binder will read is left unresolved.
+    pub(super) fn exec_wrap_var_ref_op(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        slot: u32,
+        named_arg: bool,
+    ) {
         // A readonly sigilless term has no container to hand on: its value is
         // what a callee or a bind receives, and it is readonly there by
         // construction (ADR-17376). A term bound to a call result that handed
@@ -1147,7 +1157,11 @@ impl Interpreter {
         // CSV::Table loop-param case, t/list-alias-shadowed-name.t). Only a
         // VarRef built without compiler slot info (`slot: None`, the legacy
         // constructors) keeps the by-name fallback.
-        let declared = self.wrap_var_ref_declared(code, slot, sym);
+        let declared = if named_arg {
+            crate::value::VarRefDeclared::Unresolved
+        } else {
+            self.wrap_var_ref_declared(code, slot, sym)
+        };
         self.stack
             .push(Value::varref_resolved(sym, value, Some(slot), declared));
     }
@@ -1173,7 +1187,7 @@ impl Interpreter {
                 self.stack.pop();
                 self.stack.push(cell);
             }
-            None => self.exec_wrap_var_ref_op(code, name_idx, u32::MAX),
+            None => self.exec_wrap_var_ref_op(code, name_idx, u32::MAX, false),
         }
     }
 
