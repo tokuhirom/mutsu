@@ -241,9 +241,21 @@ mod tests {
             .chain(crate::native_types::NATIVE_INT_TYPES)
         {
             assert!(is_known_type_constraint(name), "{name}");
-            assert!(is_known_type_constraint(&format!("{name}[Int]")), "{name}[Int]");
+            assert!(
+                is_known_type_constraint(&format!("{name}[Int]")),
+                "{name}[Int]"
+            );
         }
-        for name in ["", "Tag", "int128", "Str:D", "Strx", "[Int]", "Tag[Int]", "RakuAST::Node"] {
+        for name in [
+            "",
+            "Tag",
+            "int128",
+            "Str:D",
+            "Strx",
+            "[Int]",
+            "Tag[Int]",
+            "RakuAST::Node",
+        ] {
             assert!(!is_known_type_constraint(name), "{name}");
         }
         assert!(crate::native_types::is_native_int_type("uint8"));
