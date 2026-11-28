@@ -1,9 +1,9 @@
 use super::vm_call_helpers::CallArgKinds;
 use super::*;
-use crate::runtime::dispatch_key;
-use crate::runtime::native_increment_dispatch::IncrementOp;
 use crate::opcode::StaticArgTypes;
 use crate::runtime::StaticCallSite;
+use crate::runtime::dispatch_key;
+use crate::runtime::native_increment_dispatch::IncrementOp;
 use crate::symbol::Symbol;
 
 /// Where [`Interpreter::exec_call_on_code_var_op`] finds the code object a

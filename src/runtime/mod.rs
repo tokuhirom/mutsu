@@ -2165,7 +2165,9 @@ impl StaticCallSite {
     pub(crate) fn of(code: &crate::opcode::CompiledCode, s: crate::opcode::StaticArgTypes) -> Self {
         Self {
             is_static: s.is_static(),
-            var_types: s.var_types_idx().map(|i| code.constants[i as usize].clone()),
+            var_types: s
+                .var_types_idx()
+                .map(|i| code.constants[i as usize].clone()),
         }
     }
 }

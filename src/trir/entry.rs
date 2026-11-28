@@ -477,7 +477,10 @@ impl Interpreter {
         let saved = std::mem::replace(&mut self.literal_native_args, 0);
         let saved_static = std::mem::replace(
             &mut self.static_call_args,
-            crate::runtime::StaticCallSite::from_trir(site.static_arg_types, &site.static_var_types),
+            crate::runtime::StaticCallSite::from_trir(
+                site.static_arg_types,
+                &site.static_var_types,
+            ),
         );
         let (args, callsite_line) = self.sanitize_call_args_owned(args);
         self.test_pending_callsite_line = callsite_line;
