@@ -1691,11 +1691,27 @@ impl Interpreter {
         }
         // An unshadowed one-argument `make` goes straight to the builtin
         // (`try_make_builtin_call`), after the same argument normalization.
-        if name_sym == crate::symbol::wk::make()
-            && let Some(result) = self.try_make_builtin_call(code, name_sym, &args)
-        {
-            self.stack.push(result?);
-            return Ok(());
+        if name_sym == crate::symbol::wk::make() {
+            let generation = self.registry_write_generation();
+            if let Some(result) = self.try_make_builtin_call(code, name_sym, &args) {
+                let value = result?;
+                // The site remembers the lane (`ROUTE_MAKE`), so its next
+                // call skips the funnel ahead of it (`try_native_call_site`).
+                if !skip_name_caches
+                    && !call_has_slip
+                    && !call_has_named
+                    && self.registry_write_generation() == generation
+                {
+                    code.native_call_sites.remember(
+                        code.constants.len(),
+                        name_idx as usize,
+                        generation,
+                        super::vm_native_call_site::ROUTE_MAKE,
+                    );
+                }
+                self.stack.push(value);
+                return Ok(());
+            }
         }
         // A lexically-bound `&callsame`/`&callwith`/`&nextsame`/`&nextwith`/
         // `&samewith` (`my &callwith := -> ... { ... }`) shadows the built-in
