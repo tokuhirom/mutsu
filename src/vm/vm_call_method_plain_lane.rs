@@ -291,6 +291,18 @@ impl Interpreter {
             self.pending_call_arg_source_slots.clear();
             self.set_pending_call_arg_sources(None);
             if let Some(plan) = plan {
+                if !want_ref && let ValueView::Instance { class_name, .. } = target.view() {
+                    self.install_method_site_ic(
+                        code,
+                        class_name,
+                        method_sym,
+                        0,
+                        super::vm_method_site_ic::MethodSiteIcAction::Plan {
+                            arg_keys: Vec::new(),
+                            plan: std::sync::Arc::clone(&plan),
+                        },
+                    );
+                }
                 return Some(self.run_method_call_plan(
                     code,
                     target_name,
@@ -351,6 +363,21 @@ impl Interpreter {
             return Some(Err(e));
         }
         if let Some(plan) = plan {
+            if !want_ref && let ValueView::Instance { class_name, .. } = target.view() {
+                let mut arg_keys = Vec::with_capacity(args.len());
+                if self.plain_lane_arg_keys_into(&args, &mut arg_keys) {
+                    self.install_method_site_ic(
+                        code,
+                        class_name,
+                        method_sym,
+                        args.len(),
+                        super::vm_method_site_ic::MethodSiteIcAction::Plan {
+                            arg_keys,
+                            plan: std::sync::Arc::clone(&plan),
+                        },
+                    );
+                }
+            }
             return Some(self.run_method_call_plan(
                 code,
                 target_name,

@@ -406,6 +406,16 @@ pub(crate) struct ResolutionCaches {
     /// Written only from that outcome, and cleared with the other method caches
     /// on a registry generation change. See `vm_accessor_lane`.
     pub(crate) accessor_lane: rustc_hash::FxHashMap<(u32, Symbol), u32>,
+    /// #18267: per call site `(chunk address, ip)`, the accessor-lane or
+    /// method-call-plan answer it was last given, replayed in front of every
+    /// dispatch layer (`vm_method_site_ic`). Valid for the registry method
+    /// generation in [`Self::method_site_ic_generation`]; each entry also
+    /// carries the registry write generation its plan was decided under.
+    pub(crate) method_site_ic:
+        rustc_hash::FxHashMap<(usize, u32), crate::vm::vm_method_site_ic::MethodSiteIcEntry>,
+    pub(crate) method_site_ic_generation: u64,
+    /// The site the current method dispatch may record its answer for.
+    pub(crate) method_site_ic_site: Option<(usize, u32)>,
     /// `(class, accessor) ->` [`Interpreter::rw_accessor_type_constraint`]'s
     /// answer (`None`: not a public `is rw` attribute; `Some(tc)`: its type
     /// constraint). Cleared with the other method caches on a method

@@ -87,6 +87,13 @@ impl Interpreter {
             && let Some(val) = self.try_accessor_lane(name.sym)
         {
             crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "accessor");
+            self.install_method_site_ic(
+                code,
+                class_name,
+                name.sym,
+                0,
+                super::vm_method_site_ic::MethodSiteIcAction::Accessor,
+            );
             self.stack.pop();
             self.stack.push(val);
             return InstanceFront::Done(Ok(()));
