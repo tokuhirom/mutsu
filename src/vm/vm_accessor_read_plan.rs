@@ -81,11 +81,13 @@ impl Interpreter {
             ) {
                 return false;
             }
-            !this.attribute_accessor_owner(cn, name).is_some_and(|owner| {
-                this.registry()
-                    .method_wrap_chain(owner.as_str(), name, 0)
-                    .is_some()
-            })
+            !this
+                .attribute_accessor_owner(cn, name)
+                .is_some_and(|owner| {
+                    this.registry()
+                        .method_wrap_chain(owner.as_str(), name, 0)
+                        .is_some()
+                })
         })
     }
 }
