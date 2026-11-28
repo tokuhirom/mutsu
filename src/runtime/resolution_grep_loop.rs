@@ -413,8 +413,11 @@ impl Interpreter {
                             list_items.len() - i
                         )));
                     }
+                    // The topic element, and (arity > 1 only) the whole chunk: an
+                    // arity-1 callback takes no per-element `Vec` (#19323).
+                    let first = list_items[i].clone();
                     let chunk: Vec<Value> = if arity == 1 {
-                        vec![list_items[i].clone()]
+                        Vec::new()
                     } else {
                         list_items[i..i + arity].to_vec()
                     };
@@ -434,23 +437,23 @@ impl Interpreter {
                             }
                             if arity == 1 {
                                 if let Some(&p) = plan.param_syms.get(assumed_count) {
-                                    vm.env_mut().insert_sym_noting(p, chunk[0].clone());
+                                    vm.env_mut().insert_sym_noting(p, first.clone());
                                 }
                                 bind_loop_topic(
                                     vm.env_mut(),
-                                    &chunk[0],
+                                    &first,
                                     keeps_outer_topic,
                                     &outer_topic,
                                 );
                                 if !keeps_outer_topic {
-                                    vm.env_mut().insert_sym(topic_source_key, chunk[0].clone());
+                                    vm.env_mut().insert_sym(topic_source_key, first.clone());
                                 }
                             } else {
                                 // The topic is the first element; a `$_` parameter among the
                                 // block's own is bound after it and wins.
                                 bind_loop_topic(
                                     vm.env_mut(),
-                                    &chunk[0],
+                                    &first,
                                     keeps_outer_topic,
                                     &outer_topic,
                                 );
@@ -465,10 +468,16 @@ impl Interpreter {
                         }
                         // `$_` holding the caller's topic is not an alias for the
                         // element, so it must not write back to it.
-                        vm.set_topic_source_var(
-                            (arity == 1 && !keeps_outer_topic)
-                                .then(|| topic_source_key.as_str().to_string()),
-                        );
+                        // Set per element (the body may have changed it), but
+                        // without a fresh `String` when it already names the key.
+                        let wants_source = arity == 1 && !keeps_outer_topic;
+                        if vm.topic_state.topic_source_var.as_deref()
+                            != wants_source.then(|| topic_source_key.as_str())
+                        {
+                            vm.set_topic_source_var(
+                                wants_source.then(|| topic_source_key.as_str().to_string()),
+                            );
+                        }
                         let saved_when_matched = vm.when_matched();
                         // Same per-iteration readonly scope the two map loops
                         // open: this loop also binds the block's params by a
@@ -494,18 +503,18 @@ impl Interpreter {
                                         .env()
                                         .get_sym(topic_source_key)
                                         .cloned()
-                                        .unwrap_or_else(|| chunk[0].clone());
+                                        .unwrap_or_else(|| first.clone());
                                     // The loop aliases a source item that has no
                                     // container (a literal list) through a
                                     // scratch cell: the result is its (possibly
                                     // updated) value, not that cell.
-                                    if chunk[0].is_container_ref() {
+                                    if first.is_container_ref() {
                                         topic
                                     } else {
                                         topic.deref_container()
                                     }
                                 } else {
-                                    chunk[0].clone()
+                                    first.clone()
                                 };
                                 if arity == 1 {
                                     list_items[i] = updated_item.clone();
@@ -539,18 +548,18 @@ impl Interpreter {
                                         .env()
                                         .get_sym(topic_source_key)
                                         .cloned()
-                                        .unwrap_or_else(|| chunk[0].clone());
+                                        .unwrap_or_else(|| first.clone());
                                     // The loop aliases a source item that has no
                                     // container (a literal list) through a
                                     // scratch cell: the result is its (possibly
                                     // updated) value, not that cell.
-                                    if chunk[0].is_container_ref() {
+                                    if first.is_container_ref() {
                                         topic
                                     } else {
                                         topic.deref_container()
                                     }
                                 } else {
-                                    chunk[0].clone()
+                                    first.clone()
                                 };
                                 if arity == 1 {
                                     list_items[i] = updated_item.clone();
