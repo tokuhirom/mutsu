@@ -303,4 +303,69 @@ impl Compiler {
             self.code.emit(OpCode::GetGlobal(tmp_new_idx));
         }
     }
+
+    /// `++`/`--` (either side) on a multi-dimensional subscript
+    /// (`@a[0;1]++`, `--%h{"a";1}` of a shaped hash): read the element, step
+    /// it in a temp and write the temp back through the same subscript, as
+    /// the single-index nested forms do. A subscript that is evaluated more
+    /// than once (a call, `$++`) is hoisted into a temp first. Returns
+    /// `false` for any other operand.
+    pub(super) fn compile_multidim_incdec(
+        &mut self,
+        expr: &Expr,
+        increment: bool,
+        postfix: bool,
+    ) -> bool {
+        let Expr::MultiDimIndex {
+            target,
+            dimensions,
+            is_positional,
+        } = expr
+        else {
+            return false;
+        };
+        let seq = self.code.constants.len();
+        let mut hoisted = Vec::with_capacity(dimensions.len());
+        for (i, dim) in dimensions.iter().enumerate() {
+            if matches!(dim, Expr::Literal(_) | Expr::Var(_) | Expr::Whatever) {
+                hoisted.push(dim.clone());
+                continue;
+            }
+            let tmp = format!("__mutsu_multidim_incdec_dim_{seq}_{i}");
+            let tmp_idx = self.code.add_constant(Value::str(tmp.clone()));
+            self.compile_expr(dim);
+            self.code.emit(OpCode::SetGlobal(tmp_idx));
+            hoisted.push(Expr::Var(tmp));
+        }
+        let element = Expr::MultiDimIndex {
+            target: target.clone(),
+            dimensions: hoisted.clone(),
+            is_positional: *is_positional,
+        };
+        let tmp_val = format!("__mutsu_multidim_incdec_val_{seq}");
+        let tmp_val_idx = self.code.add_constant(Value::str(tmp_val.clone()));
+        let tmp_result_idx = self.code.add_constant(Value::str(format!(
+            "__mutsu_multidim_incdec_result_{seq}"
+        )));
+        // The element's current value, stepped in a temp. The step leaves the
+        // old value (postfix) or the new one (prefix) on the stack: keep it.
+        self.compile_expr(&element);
+        self.code.emit(OpCode::SetGlobal(tmp_val_idx));
+        self.code.emit(match (postfix, increment) {
+            (true, true) => OpCode::PostIncrement(tmp_val_idx, None),
+            (true, false) => OpCode::PostDecrement(tmp_val_idx, None),
+            (false, true) => OpCode::PreIncrement(tmp_val_idx, None),
+            (false, false) => OpCode::PreDecrement(tmp_val_idx, None),
+        });
+        self.code.emit(OpCode::SetGlobal(tmp_result_idx));
+        self.compile_expr(&Expr::MultiDimIndexAssign {
+            target: target.clone(),
+            dimensions: hoisted,
+            value: Box::new(Expr::Var(tmp_val)),
+            is_positional: *is_positional,
+        });
+        self.code.emit(OpCode::Pop);
+        self.code.emit(OpCode::GetGlobal(tmp_result_idx));
+        true
+    }
 }
