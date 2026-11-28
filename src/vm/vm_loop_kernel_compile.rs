@@ -227,7 +227,7 @@ fn build(
                 LoopVar::Slot(s) if list => {
                     let (v, _) = *em.vars.get(&s)?;
                     let base = em.b.ins().load(ptr, mf, ctxp, CTX_LIST);
-                    let off = em.b.ins().ishl_imm(i, 3);
+                    let off = em.b.ins().ishl_imm_u(i, 3);
                     let addr = em.b.ins().iadd(base, off);
                     let item = em.b.ins().load(types::I64, mf, addr, 0);
                     em.b.def_var(v, item);
