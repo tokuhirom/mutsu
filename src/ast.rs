@@ -1618,15 +1618,13 @@ pub(crate) enum Expr {
     /// the qq:to declaration was parsed. This is needed because Raku resolves
     /// heredoc body variables in the scope of the terminator, not the declaration.
     ///
-    /// The second field is true when the source text remaining on the heredoc
-    /// marker's own physical line (before its terminator's body is spliced in)
-    /// contains a `}` — i.e. an enclosing block closes on that same line, before
-    /// the heredoc's own terminator is reached. Only then can a `my` local
-    /// declared inside that block be out of scope by the time Raku resolves the
-    /// heredoc body (see `check_heredoc_scope_errors`); a heredoc whose marker
-    /// line has no closing brace leaves every enclosing block open through the
-    /// whole heredoc, so ordinary lexical scoping applies.
-    HeredocInterpolation(String, bool),
+    /// The second field counts the enclosing blocks that close on the heredoc
+    /// marker's own physical line (unbalanced `}` in the text after the marker,
+    /// before the body is spliced in), ahead of the body. A `my` local of such
+    /// a block is out of scope where the body is written, which the heredoc
+    /// body name checks report (`parser::outer_redecl::heredoc`, #19284); with
+    /// none, every enclosing block stays open through the whole heredoc.
+    HeredocInterpolation(String, u32),
     Var(String),
     CaptureVar(String),
     ArrayVar(String),

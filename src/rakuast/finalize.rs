@@ -385,7 +385,7 @@ impl VisitMut for Finalize<'_> {
         // An interpolating heredoc: its body is read as a `qq` string here, in the
         // finalization, where a parse that keeps spellings has none left to read. A
         // heredoc that closes an enclosing block on its marker line stays converted.
-        if let Expr::HeredocInterpolation(content, false) = inner
+        if let Expr::HeredocInterpolation(content, 0) = inner
             && let Ok(body) = crate::parser::interpolate_heredoc_content(content)
         {
             *expr = body;

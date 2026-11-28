@@ -163,7 +163,8 @@ pub(super) fn lower(names: &NameScope, node: &RakuAstNode) -> Result<Expr, Runti
         let ValueView::Str(content) = content.view() else {
             return Err(unsupported(node));
         };
-        return Ok(Expr::HeredocInterpolation(content.to_string(), true));
+        // The count is not kept; one closed block is what the field records.
+        return Ok(Expr::HeredocInterpolation(content.to_string(), 1));
     }
     if let Some(literal) = super::nf_quote::lower(node) {
         return literal;
