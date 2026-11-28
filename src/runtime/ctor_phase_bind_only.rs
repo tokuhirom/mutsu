@@ -9,7 +9,7 @@
 //! `bench-ctor`'s `Spec::TWEAK(:$!spec) { }`).
 //!
 //! A bind-only step binds through the very code the fast binder runs
-//! (`call_compiled_method_fast_in_unit`'s named-parameter arm), and only when
+//! (`bind_named_param_fast`, the fast binders' shared named arm), and only when
 //! the fast-path gate admits the call, so the attributes end up exactly as
 //! the frame would have left them; any call the gate refuses (a typed or
 //! defaulted parameter, a `Mu` argument, alias metadata on the cell, ...)
@@ -96,46 +96,10 @@ impl Interpreter {
             if pd.is_invocant || !pd.named {
                 continue;
             }
-            // The fast binder's named arm, for the shapes `phase_step_bind_only`
-            // admits (attributive, untyped, no default).
-            let bound = Self::named_param_fast_match_key(pd).and_then(|key| {
-                args.iter().rev().find_map(|a| {
-                    let a = a.unwrap_varref();
-                    if !a.is_string_pair_value() {
-                        return None;
-                    }
-                    match a.view() {
-                        ValueView::Pair(k, v) if k.as_str() == key => Some(v.deref_container()),
-                        _ => None,
-                    }
-                })
-            });
-            let val = match bound {
-                Some(v) if pd.name.starts_with("@!") || pd.name.starts_with("@.") => {
-                    Self::attributive_array_param_value(v)
-                }
-                Some(v) if pd.name.starts_with('%') => v,
-                Some(v) => Self::itemize_plain_scalar_param(pd, v),
-                None => match def.named_fast(idx).and_then(|plan| plan.fill.clone()) {
-                    Some(default) => default,
-                    None => Self::missing_optional_param_value(pd),
-                },
-            };
-            let val = if val.is_nil() && pd.name.starts_with('!') {
-                self.attr_store_nil_default(owner, &pd.name[1..], '$', val)
-            } else {
-                val
-            };
-            let Some((attr_name, is_private)) = crate::value::attr_twigil_base(&pd.name) else {
-                continue;
-            };
-            let bare_sym = Symbol::intern(attr_name);
-            let sigil = crate::value::attr_twigil_sigil(&pd.name).unwrap_or('$');
-            let attr_sym =
-                Self::attr_key_in_map(Some(owner_sym), bare_sym, is_private, sigil, &cell.as_map())
-                    .unwrap_or(bare_sym);
-            self.record_build_attr_write(cell, attr_sym);
-            cell.insert(attr_sym, val);
+            // The fast binder's own named arm (`vm_named_param_bind`); the
+            // shapes `phase_step_bind_only` admits need nothing of the caller
+            // beyond the attribute write it performs.
+            self.bind_named_param_fast(owner_sym, def, idx, pd, args, Some(cell));
         }
         true
     }
