@@ -1075,6 +1075,9 @@ pub(crate) mod wk {
         /// The method name `new`, which the constructor lane gates every
         /// `CallMethodMut` on (see `vm_ctor_lane`).
         new_method => "new";
+        /// The method name `bless`, which the bless lane gates on (see
+        /// `vm_bless_lane`).
+        bless_method => "bless";
         /// The attribute keys of a materialized `Match`
         /// (`MatchNode::materialize_map`). A grammar parse with actions
         /// materializes every node the action walk visits, and each key was

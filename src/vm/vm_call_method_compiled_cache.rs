@@ -120,6 +120,7 @@ impl Interpreter {
         self.caches.accessor_lane.clear();
         self.caches.rw_accessor_constraint.clear();
         self.caches.ctor_lane.clear();
+        self.caches.bless_lane.clear();
         self.caches.ctor_lane_candidate = None;
         self.caches.native_ctor_plan_cache.clear();
         self.caches.native_ctor_plan_builtin.clear();

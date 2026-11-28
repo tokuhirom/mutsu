@@ -602,6 +602,17 @@ impl Interpreter {
         ) {
             return result;
         }
+        // Its `bless` twin (`vm_bless_lane`).
+        if let Some(result) = self.try_bless_early_lane(
+            code,
+            name.sym,
+            arity as usize,
+            modifier_idx,
+            quoted,
+            arg_sources_idx,
+        ) {
+            return result;
+        }
         // #8880: the plain-method lane's early form for a call on an
         // ordinary object (`try_plain_method_early_lane`).
         if modifier_idx.is_none()
@@ -1100,9 +1111,17 @@ impl Interpreter {
         // `Class.new(named...)` on a class whose `.new` has been observed to
         // walk the whole chain into the native default constructor goes
         // straight there. See `vm_ctor_lane`.
+        // `self.bless(named...)` is nominated the same way for the bless lane
+        // (`vm_bless_lane`), which installs where the chain reaches the
+        // native `bless`.
         self.caches.ctor_lane_candidate =
-            Self::ctor_lane_key(&target, &args, modifier, quoted, want_ref, method_sym);
-        if let Some(class_sym) = self.caches.ctor_lane_candidate
+            Self::ctor_lane_key(&target, &args, modifier, quoted, want_ref, method_sym)
+                .or_else(|| {
+                    Self::bless_lane_key(&target, &args, modifier, quoted, want_ref, method_sym)
+                })
+                .map(|class_sym| (class_sym, method_sym));
+        if let Some((class_sym, lane_method)) = self.caches.ctor_lane_candidate
+            && lane_method == crate::symbol::wk::new_method()
             && let Some(result) = self.try_ctor_lane(class_sym, &args)
         {
             self.caches.ctor_lane_candidate = None;

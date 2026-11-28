@@ -141,7 +141,7 @@ impl Interpreter {
     // Cost: O(1) when the candidate does not match; otherwise one plan fetch
     // and the eligibility checks, once per class and generation.
     pub(crate) fn note_ctor_lane_reached(&mut self, class_sym: crate::symbol::Symbol) {
-        if self.caches.ctor_lane_candidate != Some(class_sym) {
+        if self.caches.ctor_lane_candidate != Some((class_sym, crate::symbol::wk::new_method())) {
             return;
         }
         self.caches.ctor_lane_candidate = None;

@@ -399,8 +399,14 @@ pub(crate) struct ResolutionCaches {
     /// registry generation change. See `vm_ctor_lane`.
     pub(crate) ctor_lane: rustc_hash::FxHashMap<Symbol, Arc<NativeCtorPlan>>,
     /// The class the *current* `CallMethodMut` dispatch may install into
-    /// [`Self::ctor_lane`]; set (or cleared) by that opcode's gate.
-    pub(crate) ctor_lane_candidate: Option<Symbol>,
+    /// [`Self::ctor_lane`] (method `new`) or [`Self::bless_lane`] (method
+    /// `bless`), with that method; set (or cleared) by that opcode's gate.
+    pub(crate) ctor_lane_candidate: Option<(Symbol, Symbol)>,
+    /// The `bless` twin of [`Self::ctor_lane`]: classes whose
+    /// `self.bless(named...)` `CallMethodMut` dispatch was observed to walk
+    /// the whole probe chain into the native `bless`, with the plan that
+    /// construction used. See `vm_bless_lane`.
+    pub(crate) bless_lane: rustc_hash::FxHashMap<Symbol, Arc<NativeCtorPlan>>,
     /// ADR-0121 D3: `(layout id, method name) -> slot` for a `CallMethodMut`
     /// whose whole dispatch was the generated accessor's plain slot read.
     /// Written only from that outcome, and cleared with the other method caches

@@ -294,6 +294,9 @@ impl Interpreter {
             };
             let plan = self.native_ctor_plan(class_sym);
             self.dispatch.method_dispatch_pure = !(plan.has_build || plan.has_tweak);
+            if result.is_ok() {
+                self.note_bless_lane_reached(&target, class_sym);
+            }
             return result;
         }
         if let ValueView::Instance { class_name, .. } = target.view() {
