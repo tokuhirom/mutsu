@@ -366,6 +366,14 @@ pub(crate) fn slip(target: &Value, _args: &[Value]) -> Option<Result<Value, Runt
     let ValueView::Array(items, kind) = target.view() else {
         return None;
     };
+    // A row view of a multi-dimensional shaped array slips its elements' own
+    // containers, as an Array's iterator does: `for @a[1] <-> $x` aliases the
+    // row's elements (#19322).
+    if crate::value::shaped_array::is_row_view(target)
+        && let Some(cells) = crate::runtime::Interpreter::array_element_cells(target)
+    {
+        return Some(Ok(Value::slip(cells)));
+    }
     let vec: Vec<Value> = if let Some(def) = items.default.as_deref() {
         items
             .iter()

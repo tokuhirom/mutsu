@@ -285,12 +285,7 @@ impl Interpreter {
         let structure = crate::value::container_lock::ContainerStructGuard::acquire_for(None, &arr);
         let (len, first) = match arr.view() {
             ValueView::Array(data, kind)
-                if !matches!(
-                    kind,
-                    crate::value::ArrayKind::Shaped | crate::value::ArrayKind::Lazy
-                ) && !kind.is_immutable_list()
-                    && data.shape.is_none()
-                    && data.native_storage_node().is_none() =>
+                if Self::array_kind_is_aliasable(&data, kind) =>
             {
                 (data.len(), data.items().first().cloned())
             }
@@ -627,16 +622,30 @@ impl Interpreter {
     /// `ItemArray`, which an allow list silently dropped back onto the
     /// writeback — and that writeback rebuilds a fresh `ArrayData`, severing
     /// `@row` from the `@m` element it was sharing (row 37).
+    fn array_kind_is_aliasable(
+        data: &crate::value::ArrayData,
+        kind: crate::value::ArrayKind,
+    ) -> bool {
+        if kind.is_immutable_list()
+            || matches!(kind, crate::value::ArrayKind::Lazy)
+            || data.native_storage_node().is_some()
+        {
+            return false;
+        }
+        // A one-dimensional shaped array (`my @s[3]`, or a row of a
+        // multi-dimensional one) keeps its elements in ordinary slots, which
+        // `promotable_array_len` already hands out; a multi-dimensional one
+        // keeps rows there instead.
+        match &data.shape {
+            None => !matches!(kind, crate::value::ArrayKind::Shaped),
+            Some(shape) => shape.len() == 1,
+        }
+    }
+
     fn array_is_aliasable(v: &Value, idx: Option<usize>) -> bool {
         match v.view() {
             ValueView::Array(data, kind) => {
-                !matches!(
-                    kind,
-                    crate::value::ArrayKind::Shaped | crate::value::ArrayKind::Lazy
-                ) && !kind.is_immutable_list()
-                    && data.shape.is_none()
-                    && data.native_storage_node().is_none()
-                    && idx.is_none_or(|i| i < data.len())
+                Self::array_kind_is_aliasable(&data, kind) && idx.is_none_or(|i| i < data.len())
             }
             _ => false,
         }
