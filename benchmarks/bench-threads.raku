@@ -27,7 +27,7 @@ sub workload() {
     for ^4 {
         @readers.push: start {
             my $s = 0;
-            for ^150000 -> $i {
+            for ^50000 -> $i {
                 $s += @alias[$i +& 255] + $sref;
             }
             $s
@@ -44,7 +44,7 @@ sub workload() {
     my @writers;
     for ^4 -> $t {
         @writers.push: start {
-            for ^20000 -> $i {
+            for ^7000 -> $i {
                 @slots[$t * 16 + ($i +& 15)] = $t * 1000 + $i;
             }
             1

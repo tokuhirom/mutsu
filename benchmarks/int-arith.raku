@@ -1,6 +1,6 @@
 sub workload() {
     my $sum = 0;
-    for ^100000 {
+    for ^2500000 {
         $sum += $_ * 3 + 1;
     }
     "{$sum}";

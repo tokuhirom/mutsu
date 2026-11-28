@@ -3,7 +3,7 @@
 # multiply/subtract with no allocation.
 sub workload() {
     my $x = 0.5e0;
-    for ^200000 {
+    for ^3000000 {
         $x = 3.9e0 * $x * (1e0 - $x);
     }
     "{$x}";

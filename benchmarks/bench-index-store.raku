@@ -15,9 +15,9 @@
 sub workload() {
     my $checksum = 0;
 
-    # Array: overwrite 16 slots of a 64-element array, 500000 times.
+    # Array: overwrite 16 slots of a 64-element array, 170000 times.
     my @arr = 0 xx 64;
-    loop (my $i = 0; $i < 500000; $i++) {
+    loop (my $i = 0; $i < 170000; $i++) {
         @arr[$i +& 15] = $i;
     }
     $checksum += @arr[0] + @arr[15];
@@ -26,7 +26,7 @@ sub workload() {
     # the store and not repeated growth.
     my %h;
     %h{$_} = 0 for ^16;
-    loop (my $j = 0; $j < 200000; $j++) {
+    loop (my $j = 0; $j < 70000; $j++) {
         %h{$j +& 15} = $j;
     }
     $checksum += %h<0> + %h<15>;
@@ -35,7 +35,7 @@ sub workload() {
     # from the single-subscript one above (ADR-0068 §4 step 3).
     my @grid;
     @grid[$_] = [0 xx 8] for ^8;
-    loop (my $k = 0; $k < 100000; $k++) {
+    loop (my $k = 0; $k < 35000; $k++) {
         @grid[$k +& 7][($k +> 3) +& 7] = $k;
     }
     $checksum += @grid[0][0];

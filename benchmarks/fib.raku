@@ -3,7 +3,7 @@ sub fib($n) {
     return fib($n - 1) + fib($n - 2);
 }
 sub workload() {
-    "{fib(25)}";
+    "{fib(28)}";
 }
 
 # Warm timed section (convention: benchmarks/bench-regex-match.raku, docs/benchmarks.md):

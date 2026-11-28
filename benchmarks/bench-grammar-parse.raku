@@ -44,12 +44,12 @@ sub workload() {
     END
 
     my $ok = 0;
-    for ^3 {
+    for ^100 {
         my $m = JsonLike.parse($doc);
         die "parse failed" unless $m;
         $ok++ if $m<value><object><pairlist><pair>[0]<value><string><str>[0].Str eq 'bench';
     }
-    "grammar-parse: $ok/3 ok";
+    "grammar-parse: $ok/100 ok";
 }
 
 # Warm timed section (convention: benchmarks/bench-regex-match.raku, docs/benchmarks.md):

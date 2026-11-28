@@ -1,7 +1,7 @@
 # Decompose timestamps into days/hours/minutes/seconds.
 sub workload() {
     my $total = 0;
-    for ^100000 -> $i {
+    for ^350000 -> $i {
         my $ts      = $i * 97 + 13;
         my $days    = $ts div (60 * 60 * 24);
         my $hours   = ($ts mod (60 * 60 * 24)) div (60 * 60);

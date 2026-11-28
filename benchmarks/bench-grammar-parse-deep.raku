@@ -36,8 +36,8 @@ grammar JsonLike {
 }
 
 sub workload() {
-    my $PAIRS = 5;
-    my $ARR   = 4;
+    my $PAIRS = 60;
+    my $ARR   = 10;
     my $inner = '[' ~ (1..$ARR).map({ "[$_,$_]" }).join(',') ~ ']';
     my $doc   = '{' ~ (1..$PAIRS).map({ "\"k$_\":$inner" }).join(',') ~ '}';
 

@@ -14,7 +14,7 @@ sub step(Int $x) {
 
 sub workload() {
     my $sum = 0;
-    for ^100000 -> $i {
+    for ^500000 -> $i {
         $sum += step($i) mod 1000;
     }
     "{$sum}";

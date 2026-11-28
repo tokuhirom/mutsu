@@ -1,6 +1,6 @@
 sub workload() {
     my $s = '';
-    for ^10000 {
+    for ^150000 {
         $s ~= 'x';
     }
     "{$s.chars}";

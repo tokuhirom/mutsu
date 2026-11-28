@@ -5,7 +5,7 @@
 # `array-ops` and `hash-access` measure grep/map/elems and whole-hash lookup
 # routines, not `@a[$i]` and `%h{$k}` themselves, so the read path's own cost
 # was as invisible as the store's had been — and on a read-dominated program it
-# is the whole gap. `bench-threads-serial` does 600000 celled reads against
+# is the whole gap. `bench-threads-serial` does 200000 celled reads against
 # 80000 stores; at the ~330 ns of marginal cost #8308 measured, the reads alone
 # were ~200 ms of a ~790 ms run.
 #
@@ -21,10 +21,10 @@
 sub workload() {
     my $checksum = 0;
 
-    # Array: read 16 slots of a 64-element array, 500000 times.
+    # Array: read 16 slots of a 64-element array, 170000 times.
     my @arr = ^64;
     my $asum = 0;
-    loop (my $i = 0; $i < 500000; $i++) {
+    loop (my $i = 0; $i < 170000; $i++) {
         $asum = $asum + @arr[$i +& 15];
     }
     $checksum += $asum;
@@ -34,7 +34,7 @@ sub workload() {
     my %h;
     %h{$_} = $_ for ^16;
     my $hsum = 0;
-    loop (my $j = 0; $j < 200000; $j++) {
+    loop (my $j = 0; $j < 70000; $j++) {
         $hsum = $hsum + %h{$j +& 15};
     }
     $checksum += $hsum;
@@ -44,7 +44,7 @@ sub workload() {
     my @grid;
     @grid[$_] = [($_ * 8) ..^ ($_ * 8 + 8)] for ^8;
     my $gsum = 0;
-    loop (my $k = 0; $k < 100000; $k++) {
+    loop (my $k = 0; $k < 35000; $k++) {
         $gsum = $gsum + @grid[$k +& 7][($k +> 3) +& 7];
     }
     $checksum += $gsum;
@@ -54,7 +54,7 @@ sub workload() {
     my @backing = ^64;
     my @alias := @backing;
     my $csum = 0;
-    loop (my $m = 0; $m < 200000; $m++) {
+    loop (my $m = 0; $m < 70000; $m++) {
         $csum = $csum + @alias[$m +& 15];
     }
     $checksum += $csum;

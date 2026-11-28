@@ -8,10 +8,10 @@ sub fib(Int $n --> Int) {
 
 sub workload() {
     my $result = 0;
-    for 1..25 -> $i {
+    for 1..27 -> $i {
         $result = fib($i);
     }
-    "fib(25) = $result";
+    "fib(27) = $result";
 }
 
 # Warm timed section (convention: benchmarks/bench-regex-match.raku, docs/benchmarks.md):

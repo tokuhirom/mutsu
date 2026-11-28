@@ -48,7 +48,7 @@ class Dist is Spec {
 
 sub workload() {
     my $checksum = 0;
-    for 1..5000 -> $i {
+    for 1..1800 -> $i {
         my $d = Dist.new(
             name => "Example::Dist",
             auth => "zef:someone",

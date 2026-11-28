@@ -20,3 +20,12 @@ startup metric. A dotted line marks the commit where a card's section series sta
 missing earlier points read as a new series rather than a drop.
 
 See `docs/benchmarks.md`.
+
+Iteration counts were changed where a file left the 0.1-0.4 s whole-file range once it ran the
+workload three times, or where its timed section was too short to resolve (the JIT runs several of
+these loops in well under a millisecond): `fib`, `bench-fib`, `bench-tak`, `bench-mandelbrot`,
+`debug-guard`, `int-arith`, `num-arith`, `time-parts`, `string-concat`, `bench-grammar-parse` and
+`bench-grammar-parse-deep` grew, aimed at a JIT-off section near 0.3 s so the callgrind series
+stays affordable; `bench-ctor`, `bench-index-read`, `bench-index-store`, `bench-threads` and
+`bench-threads-serial` (which stay identical to each other) shrank about 3x. This steps those
+files' deterministic and whole-script series once, at this commit.

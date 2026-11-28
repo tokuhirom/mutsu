@@ -8,7 +8,7 @@ sub tak($x, $y, $z) {
     return $z;
 }
 sub workload() {
-    "{tak(21, 14, 7)}";
+    "{tak(24, 16, 8)}";
 }
 
 # Warm timed section (convention: benchmarks/bench-regex-match.raku, docs/benchmarks.md):
