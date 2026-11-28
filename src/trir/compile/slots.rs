@@ -108,8 +108,9 @@ impl TrirCompiler<'_> {
             self.nqp_bound.insert(slot);
         }
         self.store(slot, kind);
-        if kind == TrKind::Obj && self.nqp_bound.contains(&slot) {
-            // The declaration's own store is the binding, not a later write.
+        if kind == TrKind::Obj {
+            // The declaration's own store initializes the fresh slot; it is
+            // not a reassignment (`obj_written` tracks those).
             self.obj_written[slot as usize] = false;
         }
         if keep {

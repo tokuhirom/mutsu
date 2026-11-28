@@ -193,6 +193,15 @@ impl TrirCompiler<'_> {
             if ik != TrKind::Int {
                 return None;
             }
+            // The fused form reads the slot AFTER the second operand ran, the
+            // generic form before it: a second operand that writes the slot
+            // (`nqp::atpos_i($c, ($c := $d, 0))`) would tell them apart.
+            if let TrOp::OrdAtLocal(slot) | TrOp::AtPosILocal(slot) = fused
+                && self.obj_slot_written(slot)
+            {
+                self.note_decline(|| "a fused read whose index writes its operand".to_string());
+                return None;
+            }
             self.ops.push(fused);
             return Some(TrKind::Int);
         }
@@ -421,6 +430,8 @@ impl TrirCompiler<'_> {
 
     /// The operand-direct form of a two-operand string/list read whose first
     /// argument is a plain, never-reassigned boxed slot or an outer lexical.
+    /// "Never reassigned" so far: the caller re-checks after compiling the
+    /// second operand, which could write the slot.
     fn try_fused_two(&mut self, op: &str, first: &Expr) -> Option<TrOp> {
         let Expr::Var(n) = first else { return None };
         let make: fn(u16) -> TrOp = match op {
