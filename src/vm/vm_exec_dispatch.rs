@@ -6358,30 +6358,44 @@ impl Interpreter {
             }
             // Cost: O(1) for a single index/key.
             OpCode::PostIncrementIndex(name_idx, slot, is_positional) => {
-                self.with_package_lexical_seeded(code, *name_idx, |vm| {
-                    vm.exec_inc_dec_index_dispatch(
-                        code,
-                        *name_idx,
-                        *slot,
-                        true,
-                        false,
-                        *is_positional,
-                    )
-                })?;
+                // The plain declared-`%`-local step (`vm_var_incdec_lean`).
+                let lean = !*is_positional
+                    && slot.is_some_and(|slot| {
+                        self.try_lean_local_hash_incdec(code, slot, *name_idx, true, false)
+                    });
+                if !lean {
+                    self.with_package_lexical_seeded(code, *name_idx, |vm| {
+                        vm.exec_inc_dec_index_dispatch(
+                            code,
+                            *name_idx,
+                            *slot,
+                            true,
+                            false,
+                            *is_positional,
+                        )
+                    })?;
+                }
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key.
             OpCode::PostDecrementIndex(name_idx, slot, is_positional) => {
-                self.with_package_lexical_seeded(code, *name_idx, |vm| {
-                    vm.exec_inc_dec_index_dispatch(
-                        code,
-                        *name_idx,
-                        *slot,
-                        false,
-                        false,
-                        *is_positional,
-                    )
-                })?;
+                // The plain declared-`%`-local step (`vm_var_incdec_lean`).
+                let lean = !*is_positional
+                    && slot.is_some_and(|slot| {
+                        self.try_lean_local_hash_incdec(code, slot, *name_idx, false, false)
+                    });
+                if !lean {
+                    self.with_package_lexical_seeded(code, *name_idx, |vm| {
+                        vm.exec_inc_dec_index_dispatch(
+                            code,
+                            *name_idx,
+                            *slot,
+                            false,
+                            false,
+                            *is_positional,
+                        )
+                    })?;
+                }
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key; O(k) for a slice (see
@@ -6592,30 +6606,44 @@ impl Interpreter {
             }
             // Cost: O(1) for a single index/key.
             OpCode::PreIncrementIndex(name_idx, slot, is_positional) => {
-                self.with_package_lexical_seeded(code, *name_idx, |vm| {
-                    vm.exec_inc_dec_index_dispatch(
-                        code,
-                        *name_idx,
-                        *slot,
-                        true,
-                        true,
-                        *is_positional,
-                    )
-                })?;
+                // The plain declared-`%`-local step (`vm_var_incdec_lean`).
+                let lean = !*is_positional
+                    && slot.is_some_and(|slot| {
+                        self.try_lean_local_hash_incdec(code, slot, *name_idx, true, true)
+                    });
+                if !lean {
+                    self.with_package_lexical_seeded(code, *name_idx, |vm| {
+                        vm.exec_inc_dec_index_dispatch(
+                            code,
+                            *name_idx,
+                            *slot,
+                            true,
+                            true,
+                            *is_positional,
+                        )
+                    })?;
+                }
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key.
             OpCode::PreDecrementIndex(name_idx, slot, is_positional) => {
-                self.with_package_lexical_seeded(code, *name_idx, |vm| {
-                    vm.exec_inc_dec_index_dispatch(
-                        code,
-                        *name_idx,
-                        *slot,
-                        false,
-                        true,
-                        *is_positional,
-                    )
-                })?;
+                // The plain declared-`%`-local step (`vm_var_incdec_lean`).
+                let lean = !*is_positional
+                    && slot.is_some_and(|slot| {
+                        self.try_lean_local_hash_incdec(code, slot, *name_idx, false, true)
+                    });
+                if !lean {
+                    self.with_package_lexical_seeded(code, *name_idx, |vm| {
+                        vm.exec_inc_dec_index_dispatch(
+                            code,
+                            *name_idx,
+                            *slot,
+                            false,
+                            true,
+                            *is_positional,
+                        )
+                    })?;
+                }
                 *ip += 1;
             }
 
