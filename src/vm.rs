@@ -263,6 +263,7 @@ pub(crate) mod vm_compunit_lexicals;
 mod vm_container_store;
 mod vm_core_infix;
 mod vm_data_ops;
+mod vm_data_push_lean;
 mod vm_data_push_ops;
 mod vm_dispatch_helpers;
 pub(crate) mod vm_do_block;
