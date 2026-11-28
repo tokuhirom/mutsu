@@ -77,6 +77,10 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::GetCodeVarLocal { .. }
             | OpCode::GetSelfOrNoSelf(_)
             | OpCode::GetUpvalue { .. }
+            // `GetUpvalue` fused with the `Index` reading it (ADR-18637):
+            // straight-line like both halves. Unlisted, a `start` block reading
+            // a captured array in a loop (`@alias[$i +& 255]`) ran interpreted.
+            | OpCode::IndexUpvalue { .. }
             | OpCode::GetLexFree { .. }
             // Variable writes / declarations
             | OpCode::SetGlobal(_)
