@@ -377,6 +377,12 @@ impl Value {
             if let Some(def) = default {
                 cell.set_default(def);
             }
+            // The element's container is named after its owner (`my $y := @a[1];
+            // $y.VAR.name` is `@a`), before a bind names the cell after the
+            // alias; an anonymous owner leaves it to the bind (#19157).
+            if owner.len() > 1 {
+                cell.name_once(crate::symbol::Symbol::intern(&owner));
+            }
             *elem = Value::ContainerRef(cell.clone());
             Some(Value::ContainerRef(cell))
         } else {

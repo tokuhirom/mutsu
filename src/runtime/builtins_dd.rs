@@ -134,8 +134,16 @@ impl Interpreter {
                 && Self::dd_is_scalar_key(source)
                 && !self.is_readonly(source) =>
             {
+                // An element alias (`my $y := @a[1]`) is named after its owner.
                 let name = self
                     .scalar_container_name(source, value)
+                    .map(|n| {
+                        if n.starts_with(['@', '%']) {
+                            format!("element of {n}")
+                        } else {
+                            n
+                        }
+                    })
                     .unwrap_or_else(|| format!("${source}"));
                 let cell_of = || match value.view() {
                     ValueView::ContainerRef(cell) => crate::value::lookup_container_constraint(&cell),
