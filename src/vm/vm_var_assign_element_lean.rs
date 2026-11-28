@@ -35,6 +35,28 @@
 
 use super::*;
 
+/// The container node a store addresses: an ordinary `Array` (or itemized
+/// `Array`) node, or a `Hash` node.
+enum LeanStoreNode {
+    Array(crate::gc::Gc<crate::value::ArrayData>),
+    Hash(crate::gc::Gc<crate::value::HashData>),
+}
+
+impl LeanStoreNode {
+    // Cost: O(1).
+    #[inline]
+    fn of(value: &Value) -> Option<Self> {
+        match value.view() {
+            ValueView::Array(
+                items,
+                crate::value::ArrayKind::Array | crate::value::ArrayKind::ItemArray,
+            ) => Some(Self::Array(items.clone())),
+            ValueView::Hash(hash) => Some(Self::Hash(hash.clone())),
+            _ => None,
+        }
+    }
+}
+
 /// Where the value and index sit on the stack for a store the lane accepted
 /// up to the container checks.
 struct LeanStoreOperands {
@@ -66,6 +88,7 @@ impl Interpreter {
     }
 
     // Cost: O(1) amortized.
+    #[inline]
     fn try_lean_local_array_store(
         &mut self,
         code: &CompiledCode,
@@ -85,14 +108,7 @@ impl Interpreter {
         let Ok(i) = usize::try_from(i) else {
             return false;
         };
-        let Some((container, slot_cell)) = self.lean_store_slot_container(slot) else {
-            return false;
-        };
-        let ValueView::Array(
-            items,
-            crate::value::ArrayKind::Array | crate::value::ArrayKind::ItemArray,
-        ) = container.view()
-        else {
+        let Some((LeanStoreNode::Array(items), slot_cell)) = self.lean_store_slot_node(slot) else {
             return false;
         };
         // A jagged array's element store makes a row (#19282).
@@ -156,10 +172,7 @@ impl Interpreter {
             }
             _ => return false,
         };
-        let Some((container, slot_cell)) = self.lean_store_slot_container(slot) else {
-            return false;
-        };
-        let ValueView::Hash(hash) = container.view() else {
+        let Some((LeanStoreNode::Hash(hash), slot_cell)) = self.lean_store_slot_node(slot) else {
             return false;
         };
         if hash.has_type_meta()
@@ -209,6 +222,7 @@ impl Interpreter {
     /// variable's `:=` pair, readonly flag, `is default` and constraint.
     /// `None` = decline.
     // Cost: O(1) expected (a few latch loads and symbol-keyed probes).
+    #[inline]
     fn lean_store_preamble(
         &self,
         code: &CompiledCode,
@@ -271,29 +285,32 @@ impl Interpreter {
         unconstrained.then_some(ops)
     }
 
-    /// The container the slot holds: its own word, or the value inside its
-    /// binding cell (a non-itemized `ContainerRef`), with that cell.
-    // Cost: O(1) (a clone of one word; one uncontended cell lock).
-    fn lean_store_slot_container(
+    /// The container node the slot holds -- in its own word, or inside its
+    /// binding cell (a non-itemized `ContainerRef`) -- with that cell. Only the
+    /// node's `Gc` handle is cloned, never the slot's word.
+    // Cost: O(1) (one refcount bump; one uncontended cell lock).
+    #[inline]
+    fn lean_store_slot_node(
         &self,
         slot: usize,
-    ) -> Option<(Value, Option<crate::gc::Gc<crate::value::ContainerCell>>)> {
+    ) -> Option<(LeanStoreNode, Option<crate::gc::Gc<crate::value::ContainerCell>>)> {
         let word = &self.locals[slot];
         match word.view() {
             ValueView::ContainerRef(cell) => {
                 if word.container_ref_is_itemized() {
                     return None;
                 }
-                let inner = cell.lock().ok()?.clone();
-                Some((inner, Some(crate::gc::Gc::clone(&cell))))
+                let node = LeanStoreNode::of(&*cell.lock().ok()?)?;
+                Some((node, Some(crate::gc::Gc::clone(&cell))))
             }
-            _ => Some((word.clone(), None)),
+            _ => Some((LeanStoreNode::of(word)?, None)),
         }
     }
 
     /// Pop the index and the value of an accepted store; the value is
     /// returned.
     // Cost: O(1).
+    #[inline]
     fn lean_store_take_value(&mut self, ops: &LeanStoreOperands) -> Value {
         let val = self.stack.swap_remove(ops.value_at);
         self.stack.pop();
