@@ -94,6 +94,9 @@ pub(crate) struct MethodCallPlan {
     /// (`vm_method_slot_frame::slot_frame_body_code`): built once with the
     /// plan, so the per-call path makes no decision about it.
     pub(crate) slot_body: Option<std::sync::Arc<CompiledCode>>,
+    /// The method kernel of a slot-frame body that is closed arithmetic
+    /// (`vm_method_kernel`), tried before the slot frame.
+    pub(crate) kernel: Option<super::vm_method_kernel::MethodKernel>,
     /// What the fast binder's prologue asks of the owner and the method on
     /// every call, answered once for this plan (#18267 D1a); `None` when the
     /// answer can change without a registry write (a published mixin owner).
@@ -469,6 +472,8 @@ impl Interpreter {
                 role_context: MethodFrameFacts::role_context_of(owner_is_role, owner, def),
             }
         });
+        let slot_body = slot_frame
+            .then(|| std::sync::Arc::new(super::vm_method_slot_frame::slot_frame_body_code(cc)));
         Some(std::sync::Arc::new(MethodCallPlan {
             owner,
             def: std::sync::Arc::clone(def),
@@ -478,9 +483,10 @@ impl Interpreter {
             container_params: def.has_container_params(),
             private,
             named_slurpy: Self::method_has_light_named_slurpy(def),
-            slot_body: slot_frame.then(|| {
-                std::sync::Arc::new(super::vm_method_slot_frame::slot_frame_body_code(cc))
+            kernel: slot_body.as_deref().and_then(|body| {
+                super::vm_method_kernel::MethodKernel::compile(def, cc, body, owner)
             }),
+            slot_body,
             facts,
         }))
     }
@@ -537,6 +543,20 @@ impl Interpreter {
         // frame has recorded the arguments as they arrived.
         if plan.named_slurpy && !self.method_named_slurpy_args_light(def, &args) {
             return self.run_plain_method_lane(code, target_name, target, method_sym, args);
+        }
+        // A method kernel answers a closed-arithmetic slot body without a
+        // frame; a bail leaves everything as it was for the frame below.
+        if let (Some(kernel), Some(body)) = (&plan.kernel, plan.slot_body.as_deref())
+            && plan.lean
+            && self.slot_frame_entry_ok()
+            && self.lean_args_ok(def, &args)
+            && let Some(value) = self.try_method_kernel(kernel, body, &target, &args)
+        {
+            self.discard_pending_call_arg_sources();
+            self.pending_skip_constraint_recheck = false;
+            self.pending_rw_writeback_sources.clear();
+            self.stack.push(value);
+            return Ok(());
         }
         self.dispatch.method_dispatch_pure = false;
         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user");
