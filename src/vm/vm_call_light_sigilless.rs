@@ -116,11 +116,21 @@ impl Interpreter {
                 if name.is_frame_fixture() {
                     return Some(LightSigillessBind::Readonly);
                 }
-                // The topic, the routine-reset magic, pseudo-packages,
-                // dynamics, attributes, aggregates and qualified names each
-                // have their own rule in the general binder.
+                // The topic: a cell (an element of a `for` over an Array, a
+                // `given`/`with` block's container) is bound as that cell, as
+                // the general binder's shared-cell rule does; a plain value (a
+                // `for` over a List's values) is the value itself, the
+                // general binder's `bare_topic_value` rule, read-only as in
+                // rakudo. `jsonify($_)` in JSON::Fast's `for` loops and
+                // `str-escape($_)` inside its `with` blocks are these shapes.
+                if source == "_" {
+                    return self.light_sigilless_topic_bind(value);
+                }
+                // The routine-reset magic, pseudo-packages, dynamics,
+                // attributes, aggregates and qualified names each have their
+                // own rule in the general binder.
                 if source.is_empty()
-                    || matches!(source, "_" | "!" | "/")
+                    || matches!(source, "!" | "/")
                     || source.starts_with(['?', '*', '@', '%', '&', '!', '.', '^', ':'])
                     || crate::qualified::is_qualified(name)
                 {
@@ -179,6 +189,28 @@ impl Interpreter {
                 Some(LightSigillessBind::Readonly)
             }
         }
+    }
+
+    /// [`Self::light_sigilless_bind`] for a `$_` argument whose `WrapVarRef`
+    /// carried `value`. `None` for a shape the general binder must take: a
+    /// Proxy, a read-only binding cell, or a plain value while the live
+    /// topic binding is a cell (the two would disagree about what aliases).
+    // Cost: O(1), plus [`Self::light_sigilless_cell_ok`] for a cell.
+    fn light_sigilless_topic_bind(&self, value: &Value) -> Option<LightSigillessBind> {
+        if value.is_proxy_value() {
+            return None;
+        }
+        if value.is_container_ref() {
+            return Self::light_sigilless_cell_ok(value).then_some(LightSigillessBind::Relay);
+        }
+        if matches!(value.view(), ValueView::HashEntryRef { .. }) {
+            return None;
+        }
+        let live_topic_is_cell = self
+            .env()
+            .get_sym(crate::symbol::wk::topic())
+            .is_some_and(|v| v.is_container_ref());
+        (!live_topic_is_cell).then_some(LightSigillessBind::Readonly)
     }
 
     /// A cell that is not a read-only binding (`my $x := 5` holds one, and
