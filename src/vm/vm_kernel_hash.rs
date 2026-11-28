@@ -311,6 +311,93 @@ pub(super) unsafe extern "C" fn kernel_hash_store_prefixed_num(
     store_value_prefixed(vm, code, slot, prefix, key, Value::num(value))
 }
 
+/// Step `%h{key}` by one, as the lean `%h{$k}++` does
+/// (`vm_var_incdec_lean`): an absent element counts from `Int` 0 (the entry
+/// checked that the hash has no `is default` and no element type), a present
+/// plain small `Int` is stepped in place; anything else -- a container, a bind
+/// token, a Proxy, a big `Int`, a `Str` stepped by `.succ`, an overflow --
+/// declines before anything is written. The old and new values are not
+/// returned: the region only sinks them.
+// Cost: O(1) expected, plus O(k) to copy a new key, k = key bytes.
+#[inline(always)]
+fn incdec_value(interp: &Interpreter, slot: u32, key: &str, increment: bool) -> u32 {
+    let Some(hash) = plain_hash_node(interp, slot, true) else {
+        return KERNEL_ELEM_DECLINE;
+    };
+    let step = |old: i64| {
+        if increment {
+            old.checked_add(1)
+        } else {
+            old.checked_sub(1)
+        }
+    };
+    // SAFETY: as in `store_value`: the audited aliased in-place write the
+    // lean store makes, with no borrow into the node live across it and this
+    // thread the only writer (`kernel_hash_entry_ok` checked
+    // `multi_mutator_threads_live`). `key` borrows a list item or a stack
+    // buffer, never the node.
+    let data: &mut HashData = unsafe { crate::value::gc_contents_mut(&hash) };
+    match data.map.get_mut(key) {
+        Some(entry) => {
+            let Some(new) = entry.as_int().and_then(step) else {
+                return KERNEL_ELEM_DECLINE;
+            };
+            *entry = Value::int(new);
+        }
+        None => {
+            let Some(new) = step(0) else {
+                return KERNEL_ELEM_DECLINE;
+            };
+            data.map.insert(key.to_owned(), Value::int(new));
+        }
+    }
+    KERNEL_ELEM_OK
+}
+
+/// `%h{$w}++` / `--` (pre or post, sunk) keyed by item `index` of a `Str`
+/// list loop's items (`flags` bit 0: increment). An item that is not a plain
+/// `Str` declines.
+///
+/// # Safety
+/// As [`kernel_hash_store_int`]; `items` points to the list loop's items,
+/// which the driver holds alive for the run, and `index` is in range (the
+/// loop test bounds the counter by the list's length).
+// Cost: O(1) expected, plus a new key's copy.
+pub(super) unsafe extern "C" fn kernel_hash_incdec_item(
+    interp: *mut Interpreter,
+    _code: *const CompiledCode,
+    slot: u32,
+    items: *const Value,
+    index: i64,
+    flags: u32,
+) -> u32 {
+    // SAFETY: see the function's safety contract.
+    let (vm, item) = unsafe { (&*interp, &*items.add(index as usize)) };
+    match item.view() {
+        ValueView::Str(key) => incdec_value(vm, slot, key.as_str(), flags & 1 != 0),
+        _ => KERNEL_ELEM_DECLINE,
+    }
+}
+
+/// `%h{$int}++` / `--` (pre or post, sunk), the key filed under its decimal
+/// text (`flags` bit 0: increment).
+///
+/// # Safety
+/// As [`kernel_hash_store_int`].
+// Cost: O(1) expected, plus a new key's copy.
+pub(super) unsafe extern "C" fn kernel_hash_incdec_int(
+    interp: *mut Interpreter,
+    _code: *const CompiledCode,
+    slot: u32,
+    key: i64,
+    flags: u32,
+) -> u32 {
+    // SAFETY: see the function's safety contract.
+    let vm = unsafe { &*interp };
+    let key = DecimalKey::of(key);
+    incdec_value(vm, slot, key.as_str(), flags & 1 != 0)
+}
+
 /// `%h{$int} = $v` for an `Int` value.
 ///
 /// # Safety

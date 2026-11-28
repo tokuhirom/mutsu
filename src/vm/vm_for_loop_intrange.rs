@@ -197,6 +197,7 @@ impl Interpreter {
                         end: end_val,
                         inclusive,
                         list: None,
+                        items: None,
                     }),
                     trips >= 16 || !first,
                     compiled_fns,
@@ -244,7 +245,7 @@ impl Interpreter {
             {
                 self.locals[slot] = item.clone();
             }
-            if let Some(sym) = param_sym {
+            if let Some(sym) = param_sym.filter(|_| !spec.param_slot_only) {
                 self.env_mut().rebind_sym(sym, item.clone());
                 if let Some(alias) = caret_alias_sym {
                     self.env_mut().rebind_sym(alias, item.clone());
@@ -442,7 +443,7 @@ impl Interpreter {
         Some(move |start, end| LoopShape::Range {
             body: (start, end),
             var,
-            list: false,
+            list: super::vm_loop_kernel_types::ListKind::No,
         })
     }
 }

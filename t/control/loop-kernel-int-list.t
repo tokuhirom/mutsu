@@ -8,7 +8,7 @@
 # `MUTSU_JIT=off`. The shapes live in t/fixtures/kernel-list-shapes.raku.
 use Test;
 
-plan 9;
+plan 10;
 
 my $fixture = $?FILE.IO.parent(2).add('fixtures/kernel-list-shapes.raku').Str;
 ok $fixture.IO.e, "fixture is where this test expects it ($fixture)";
@@ -51,3 +51,9 @@ is-deeply
     ('1000,0,1998,999000', '-25,25,101', '300,300,300', '456556915824311402496,100',
      '50,490', '1225').List,
     'the prefixed-key store shapes carry the expected answers';
+
+# `%h{$w}++` over a list of Strs (a `Str` list kernel).
+is-deeply
+    %got<str-words str-topic str-succ str-outer>.List,
+    ('a=600,b=400,c=200', '0,0', '10,b4,5', 'outer,10').List,
+    'the Str list shapes carry the expected answers';
