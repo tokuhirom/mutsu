@@ -1,0 +1,1 @@
+RakuAST lowering now keeps `cmp` and `leg` in the compiler's native binary operator form when a lexical operator shadows them. AST EVAL uses the block's `&infix:<cmp>` or `&infix:<leg>` binding, as ordinary source execution does.

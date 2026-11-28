@@ -224,7 +224,8 @@ fn infix_name(infix: &RakuAstNode) -> Option<String> {
 /// The operators whose parser layer builds a `Binary` even when the unit
 /// declares `infix:<op>`: measured by declaring each core operator and
 /// reading `--dump-ast` back (`+ - * / % %% ** <=> div mod gcd lcm`, the
-/// integer bitwise `+& +| +^` and the string bitwise `~& ~| ~^`).
+/// integer bitwise `+& +| +^`, string bitwise `~& ~| ~^`, and the
+/// three-way comparisons `cmp` and `leg`).
 // Cost: O(1).
 fn keeps_native_dispatch(name: &str) -> bool {
     matches!(
@@ -239,6 +240,8 @@ fn keeps_native_dispatch(name: &str) -> bool {
             | "mod"
             | "gcd"
             | "lcm"
+            | "cmp"
+            | "leg"
             | "+&"
             | "+|"
             | "+^"
