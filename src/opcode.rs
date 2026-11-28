@@ -9449,6 +9449,15 @@ impl CompiledCode {
     // Cost: O(1) after the first call, which is O(f + c), f = free
     // variables, c = constants.
     pub(crate) fn mentions_name_memo(&self, key: Symbol) -> Option<bool> {
+        self.mentioned_names().map(|set| set.contains(&key))
+    }
+
+    /// Every name a lookup in this chunk's body can reach -- the set
+    /// [`Self::mentions_name_memo`] answers from -- or `None` when that cannot
+    /// be bounded. Memoized per chunk.
+    // Cost: O(1) after the first call, which is O(f + c), f = free
+    // variables, c = constants.
+    pub(crate) fn mentioned_names(&self) -> Option<&rustc_hash::FxHashSet<Symbol>> {
         self.mentioned_name_set
             .get_or_init(|| {
                 if self.needs_reflective_capture
@@ -9473,7 +9482,6 @@ impl CompiledCode {
                 Some(set)
             })
             .as_ref()
-            .map(|set| set.contains(&key))
     }
 
     /// Whether `name` is mentioned by this chunk: one of its free variables, or
