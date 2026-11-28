@@ -559,6 +559,11 @@ impl Trace for super::ContainerCell {
             return false;
         }
         drop(inner);
+        // Neither side field has ever been given a value: both are `None`
+        // without taking their locks (`ContainerCell::side_edges`).
+        if !self.may_have_side_edges() {
+            return true;
+        }
         matches!(self.quanthash_weight.try_lock(), Ok(w) if w.is_none())
             && matches!(self.default.try_lock(), Ok(d) if d.is_none())
     }
