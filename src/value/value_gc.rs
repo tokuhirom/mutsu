@@ -505,6 +505,12 @@ impl Trace for super::MatchNode {
         if let Some(attrs) = self.forced() {
             visit(&attrs.erased());
         }
+        if let Some(list) = self.memoized_list() {
+            list.gc_trace(visit);
+        }
+        if let Some(named) = self.memoized_named() {
+            named.gc_trace(visit);
+        }
     }
     fn drop_gc_edges(&mut self) {
         self.take_attrs_for_gc();
@@ -516,7 +522,7 @@ impl Trace for super::MatchNode {
     /// next drain) for a node the program usually never materializes.
     // Cost: O(1).
     fn currently_acyclic(&self) -> bool {
-        self.forced().is_none()
+        self.forced().is_none() && self.memoized_list().is_none() && self.memoized_named().is_none()
     }
 }
 

@@ -5350,19 +5350,20 @@ impl Interpreter {
                             if matches!(inner.view(), ValueView::Instance { class_name, .. }
                                 if self.has_user_method(class_name.as_str(), "STORE")))
                         && self.mixin_composes_method(&val, "sink");
-                    let sink_class = if !user_sink || mixin_sink {
+                    // A lazy Match answers its class without the view, which
+                    // would force its materialization.
+                    let instance_class = if !user_sink || mixin_sink {
                         None
+                    } else if val.is_lazy_match_value() {
+                        Some(val.match_dispatch_class().to_string())
                     } else if let ValueView::Instance { class_name, .. } = val.view() {
-                        let cn = class_name.resolve();
-                        if self.has_user_method(&cn, "sink") && !self.has_user_method(&cn, "STORE")
-                        {
-                            Some(cn)
-                        } else {
-                            None
-                        }
+                        Some(class_name.resolve())
                     } else {
                         None
                     };
+                    let sink_class = instance_class.filter(|cn| {
+                        self.has_user_method(cn, "sink") && !self.has_user_method(cn, "STORE")
+                    });
                     if mixin_sink {
                         // Same captured-outer writeback as the class arm below:
                         // the doc idiom `($b + 1) does role { method sink { $b++
@@ -5406,6 +5407,12 @@ impl Interpreter {
                             Some(val.clone()),
                         );
                         self.apply_pending_caller_var_writeback(code);
+                        *ip += 1;
+                        return Ok(());
+                    }
+                    // A lazy Match is none of the kinds below, and viewing it
+                    // would force its materialization: sinking it does nothing.
+                    if val.is_lazy_match_value() {
                         *ip += 1;
                         return Ok(());
                     }
