@@ -67,29 +67,33 @@ impl Interpreter {
         let target_idx = self.stack.len().checked_sub(arity + 1)?;
         // The arguments where they lie: each a plain instance of exactly the
         // class its key names.
-        let mut args: smallvec::SmallVec<[Value; KERNEL_LANE_MAX_ARGS]> =
-            smallvec::SmallVec::new();
-        for (arg, key) in self.stack[target_idx + 1..].iter().zip(arg_keys) {
+        let mut buf: [Value; KERNEL_LANE_MAX_ARGS] = std::array::from_fn(|_| Value::NIL);
+        for ((arg, key), slot) in self.stack[target_idx + 1..]
+            .iter()
+            .zip(arg_keys)
+            .zip(buf.iter_mut())
+        {
             if !(arg.is_instance_value()
                 && matches!(arg.view(), ValueView::Instance { class_name, .. } if class_name == *key))
             {
                 return None;
             }
-            args.push(arg.clone());
+            *slot = arg.clone();
         }
+        let args = &buf[..arity];
         let target = self.stack[target_idx].clone();
         let ValueView::Instance { attributes, .. } = target.view() else {
             return None;
         };
-        if super::vm_method_call_attrs::CallAttrs::Cell(attributes).has_alias_meta()
+        if super::vm_method_call_attrs::CallAttrs::Cell(&attributes).has_alias_meta()
             || !self.slot_frame_entry_ok()
-            || !self.lean_args_ok(&plan.def, &args)
+            || !self.lean_args_ok(&plan.def, args)
         {
             return None;
         }
-        let value = self.try_method_kernel(kernel, body, &target, &args)?;
+        let value = self.try_method_kernel(kernel, body, &target, args)?;
         self.sync_source_line(code, ip);
-        drop(args);
+        drop(buf);
         self.stack.truncate(target_idx);
         self.stack.push(value);
         // The site's entry effects (`run_method_site_ic_plan`), the kernel
