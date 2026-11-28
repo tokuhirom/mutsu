@@ -620,6 +620,33 @@ pub(in crate::value) fn word_is_refcount_free(bits: u64) -> bool {
     }
 }
 
+/// Whether the value in word `bits` holds no cycle-collected (`Gc`) edge: a
+/// payload-free word, or an `Arc`-backed number or string whose payload holds
+/// no `Value` (a `Str`, a big or boxed `Int`, a `Rat`/`FatRat`/`BigRat`, a
+/// `Complex`). Used by a node's `Trace::currently_acyclic`.
+// Cost: O(1).
+#[inline]
+pub(in crate::value) fn word_has_no_gc_edge(bits: u64) -> bool {
+    match classify(bits) {
+        Classified::Int(_) | Classified::Num(_) => true,
+        Classified::Kind(k) => matches!(
+            k,
+            Kind::Nil
+                | Kind::Whatever
+                | Kind::HyperWhatever
+                | Kind::Bool
+                | Kind::Package
+                | Kind::Str
+                | Kind::BigInt
+                | Kind::IntBoxed
+                | Kind::Rat
+                | Kind::FatRat
+                | Kind::BigRat
+                | Kind::Complex
+        ),
+    }
+}
+
 /// Rebuild a payload-free word from its bits, or `None` when `bits` is not
 /// one: page 0 (the niche, which `cell_publish` uses for its sentinels) or a
 /// word that owns a payload reference. A payload-free word owns nothing, so a

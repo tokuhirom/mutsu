@@ -238,6 +238,26 @@ impl InstanceAttrs {
 
     /// The native RakuAST node whose model fields a user subclass inherits.
     // Cost: O(1).
+    /// Whether this object holds no `Gc` edge right now: every attribute is
+    /// an edgeless value and it carries no RakuAST base. Conservatively
+    /// `false` while lazy attributes are pending (materializing allocates)
+    /// or when either lock is busy -- this runs inside `Gc::drop`, possibly
+    /// while the caller holds one of them, so it never blocks.
+    // Cost: O(a), a = attributes.
+    pub(crate) fn currently_edgeless(&self) -> bool {
+        if self.lazy_pending.load(std::sync::atomic::Ordering::Acquire) {
+            return false;
+        }
+        if !matches!(self.side.try_read(), Ok(side) if side.rakuast_base.is_none()) {
+            return false;
+        }
+        let Ok(map) = self.attributes.try_read() else {
+            return false;
+        };
+        map.values()
+            .all(|v| super::nanbox::word_has_no_gc_edge(v.nanbox_bits()))
+    }
+
     pub(crate) fn rakuast_base(&self) -> Option<Value> {
         self.side
             .read()
