@@ -33,6 +33,7 @@ use crate::symbol::Symbol;
 use std::collections::{HashMap, HashSet};
 
 use super::conditional;
+use super::names::{bare_name, is_term_decl, term_name};
 
 /// The lexical scope of one statement list below the unit's top level.
 pub(super) struct Frame {
@@ -99,14 +100,6 @@ pub(super) struct Scan {
     /// body's routine is reachable in more ways (an `import`, an exported
     /// symbol, a closure handed out) than a call's scope rules model.
     pub(super) code_vars: Vec<(String, i64)>,
-}
-
-/// A declared name with its sigil and twigil removed.
-fn bare_name(name: &str) -> &str {
-    let bare = name.strip_prefix('\\').unwrap_or(name);
-    bare.strip_prefix(['$', '@', '%', '&'])
-        .unwrap_or(bare)
-        .trim_start_matches(['!', '.', '*', '^', ':'])
 }
 
 impl Scan {
@@ -263,18 +256,6 @@ impl Scan {
     }
 }
 
-/// The bare term a `term:<x>` routine declares.
-fn term_name(bare: &str) -> Option<&str> {
-    bare.strip_prefix("term:<")
-        .and_then(|s| s.strip_suffix('>'))
-}
-
-/// Whether a declared variable name is a sigilless term (`my \x`, `constant x`).
-fn is_term_decl(name: &str) -> bool {
-    let bare = name.strip_prefix('\\').unwrap_or(name);
-    !bare.is_empty() && !bare.starts_with(['$', '@', '%', '&'])
-}
-
 impl<'ast> Visit<'ast> for Scan {
     /// Every statement list below the unit's top level is a lexical scope of
     /// its own.
@@ -316,8 +297,12 @@ impl<'ast> Visit<'ast> for Scan {
                     }
                 }
             }
-            Stmt::No { .. } | Stmt::Need { .. } | Stmt::Import { .. } if !self.eval => {
-                self.bail = true;
+            Stmt::No { .. } | Stmt::Need { .. } | Stmt::Import { .. } if !self.eval => self.bail = true,
+            Stmt::Import { .. } => {
+                // An EVAL import may bind routines unknown to the parser.
+                if let Some(frame) = self.current {
+                    self.frames[frame].opaque_imports = true;
+                }
             }
             // Dynamically-named sub: the declared name is unknowable.
             Stmt::SubDecl {

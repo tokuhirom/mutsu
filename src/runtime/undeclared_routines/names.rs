@@ -1,4 +1,24 @@
-//! The static name tables the undeclared-routine check consults.
+//! Name helpers and static tables for the undeclared-routine check.
+
+/// A declared name with its sigil and twigil removed.
+pub(super) fn bare_name(name: &str) -> &str {
+    let bare = name.strip_prefix('\\').unwrap_or(name);
+    bare.strip_prefix(['$', '@', '%', '&'])
+        .unwrap_or(bare)
+        .trim_start_matches(['!', '.', '*', '^', ':'])
+}
+
+/// The bare term a `term:<x>` routine declares.
+pub(super) fn term_name(bare: &str) -> Option<&str> {
+    bare.strip_prefix("term:<")
+        .and_then(|s| s.strip_suffix('>'))
+}
+
+/// Whether a declared variable name is a sigilless term (`my \x`, `constant x`).
+pub(super) fn is_term_decl(name: &str) -> bool {
+    let bare = name.strip_prefix('\\').unwrap_or(name);
+    !bare.is_empty() && !bare.starts_with(['$', '@', '%', '&'])
+}
 
 /// Core *term* constants: names that resolve to a value in CORE but are not
 /// routines. Calling one of them is not the same error as calling a name
