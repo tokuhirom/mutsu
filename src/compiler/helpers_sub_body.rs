@@ -288,18 +288,6 @@ impl Compiler {
         self.attach_param_chunks(param_defs, name);
         let hoisted_enter_body = Self::hoist_enter_phaser_exprs(body);
         let body: &[Stmt] = hoisted_enter_body.as_deref().unwrap_or(body);
-        // Before compiling the sub body, check for heredoc interpolations
-        // that reference variables not visible at the outer scope (where the
-        // heredoc terminator physically appears in Raku).
-        if let Some(err) = self.check_heredoc_scope_errors(body) {
-            let idx = self.code.add_constant(err);
-            self.code.emit(OpCode::LoadConst(idx));
-            self.code.emit(OpCode::Die {
-                user_throw: false,
-                list_arg: false,
-            });
-            return None;
-        }
         // Only a spec the parser can classify sinks the body here; an
         // undecidable one keeps the value for the runtime to decide (#11706).
         let sink_last_expr = return_type

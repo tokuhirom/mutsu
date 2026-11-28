@@ -12,7 +12,38 @@ pub(crate) fn scope_diagnostic_error(diag: ScopeDiagnostic) -> RuntimeError {
         ScopeDiagnostic::SelfInitializer(symbol, line) => {
             build_self_initializer_error(&symbol, line)
         }
+        ScopeDiagnostic::HeredocHiddenName(symbol, line) => {
+            build_heredoc_error("X::Syntax::Heredoc::HiddenName", &symbol, line)
+        }
+        ScopeDiagnostic::HeredocAmbiguousName(symbol, line) => {
+            build_heredoc_error("X::Syntax::Heredoc::AmbiguousName", &symbol, line)
+        }
     }
+}
+
+/// Build the compile-time error rakudo 2026.11 raises for a heredoc body name
+/// that does not mean the same declaration where the heredoc starts and where
+/// its body is written (`class` is `X::Syntax::Heredoc::HiddenName` or
+/// `::AmbiguousName`).
+fn build_heredoc_error(class: &str, symbol: &str, line: i64) -> RuntimeError {
+    let mut attrs = crate::value::AttrMap::new();
+    attrs.insert("symbol", Value::str(symbol.to_string()));
+    let message = crate::value::exception_message::format_exception_message(class, &attrs)
+        .unwrap_or_default();
+    attrs.insert("message", Value::str(message.clone()));
+    if line > 0 {
+        attrs.insert("line", Value::int(line));
+    }
+    let mut err = RuntimeError::new(message);
+    err.set_code(Some(RuntimeErrorCode::ParseGeneric));
+    if line > 0 {
+        err.set_line(Some(line as usize));
+    }
+    err.exception = Some(Box::new(Value::make_instance(
+        crate::symbol::Symbol::intern(class),
+        attrs,
+    )));
+    err
 }
 
 /// Build the compile-time error rakudo raises when a lexical is redeclared with

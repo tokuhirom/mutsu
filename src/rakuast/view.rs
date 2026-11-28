@@ -3946,8 +3946,8 @@ fn view_expr_at(names: &NameScope, expr: &Expr) -> Result<RakuAstNode, RuntimeEr
         // renders as the quoted string it evaluates to. One that closes an
         // enclosing block on its own line is a scope diagnostic the
         // interpolation would lose.
-        Expr::HeredocInterpolation(content, closes_block_same_line) => {
-            if *closes_block_same_line {
+        Expr::HeredocInterpolation(content, closes_blocks) => {
+            if *closes_blocks > 0 {
                 return super::quoted_string::view_closed_block_heredoc(names, content);
             }
             // The interpolated code is parsed here, after the unit's own parse

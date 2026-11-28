@@ -152,11 +152,11 @@ pub(crate) fn parse_to_heredoc_with_flags<'a>(
         // block closes on that same line, ahead of this heredoc's terminator —
         // the one shape where a `my` local declared in that block can be out
         // of scope by the time Raku resolves the heredoc body. See the
-        // `HeredocInterpolation` doc comment and `check_heredoc_scope_errors`.
+        // `HeredocInterpolation` doc comment and `parser::outer_redecl::heredoc`.
         // Only an *unbalanced* `}` closes an enclosing block: the braces of a
         // subscript or a block opened on the same line (`... unless
         // %h{$k}{$v};`) close nothing.
-        let closes_block_same_line = closes_enclosing_block(rest_of_line);
+        let closes_blocks = enclosing_blocks_closed(rest_of_line);
         let expr = if interpolate {
             // The body is read as a `qq` string when the unit compiles; its
             // unrecognized escapes are rejected with the unit's parse.
@@ -166,7 +166,7 @@ pub(crate) fn parse_to_heredoc_with_flags<'a>(
                     &crate::parser::primary::quote_adverbs::QuoteFlags::qq_double(),
                 )?;
             }
-            Expr::HeredocInterpolation(content, closes_block_same_line)
+            Expr::HeredocInterpolation(content, closes_blocks)
         } else if flags.has_interpolation() || flags.words || flags.backslash {
             // Use flags-based processing for heredoc with adverbs
             process_content_with_flags(&content, flags)?
@@ -321,33 +321,35 @@ pub(crate) fn dedent_heredoc_by_columns(content: &str, target_cols: usize) -> St
     dedented
 }
 
-/// Whether `rest` (the text after a heredoc marker on its own line) closes a
-/// block that was open before the marker: a `}` with no matching `{` earlier
-/// on the line.
+/// How many blocks open before the marker `rest` (the text after a heredoc
+/// marker on its own line) closes: its `}` with no matching `{` earlier on the
+/// line.
 // Cost: O(n), n = `rest.len()`.
-fn closes_enclosing_block(rest: &str) -> bool {
+fn enclosing_blocks_closed(rest: &str) -> u32 {
     let mut depth = 0usize;
+    let mut closed = 0u32;
     for c in rest.chars() {
         match c {
             '{' => depth += 1,
-            '}' if depth == 0 => return true,
+            '}' if depth == 0 => closed += 1,
             '}' => depth -= 1,
             _ => {}
         }
     }
-    false
+    closed
 }
 
 #[cfg(test)]
-mod closes_enclosing_block_tests {
-    use super::closes_enclosing_block;
+mod enclosing_blocks_closed_tests {
+    use super::enclosing_blocks_closed;
 
     #[test]
     fn only_an_unbalanced_brace_closes_a_block() {
-        assert!(closes_enclosing_block(" }"));
-        assert!(closes_enclosing_block("; say 1 }"));
-        assert!(!closes_enclosing_block(")).throw unless %h{$a}{$b};"));
-        assert!(closes_enclosing_block(" if %h{$a} }"));
-        assert!(!closes_enclosing_block(";"));
+        assert_eq!(enclosing_blocks_closed(" }"), 1);
+        assert_eq!(enclosing_blocks_closed("; say 1 }"), 1);
+        assert_eq!(enclosing_blocks_closed(")).throw unless %h{$a}{$b};"), 0);
+        assert_eq!(enclosing_blocks_closed(" if %h{$a} }"), 1);
+        assert_eq!(enclosing_blocks_closed(";"), 0);
+        assert_eq!(enclosing_blocks_closed(" } }"), 2);
     }
 }

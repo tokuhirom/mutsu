@@ -1509,7 +1509,7 @@ pub(crate) fn parse_program_unfinalized(
 // `.AST` parse only).
 fn settle_unit(
     source: &str,
-    passes: unit_passes::UnitPasses,
+    mut passes: unit_passes::UnitPasses,
     stmts: &mut [Stmt],
 ) -> Result<(), RuntimeError> {
     if let Some(line) = passes.whenever_out_of_scope() {
@@ -1522,6 +1522,7 @@ fn settle_unit(
         // already in scope, or supersedes one that does not exist.
         return Err(build_exporthow_error(error));
     }
+    passes.finish_scopes();
     if let Some(diag) = passes.scope_diagnostic() {
         // Redeclaring a lexical after referencing its outer binding in the
         // same scope (X::Redeclaration::Outer), or `my $x = $x`

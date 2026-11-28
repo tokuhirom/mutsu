@@ -43,6 +43,7 @@
 //! (`my $*X = $*X`) are exempt: rakudo lets that read the fresh `Any`.
 
 mod errors;
+mod heredoc;
 mod visit;
 
 pub(crate) use errors::scope_diagnostic_error;
@@ -54,14 +55,21 @@ use std::collections::HashSet;
 /// A single lexical scope: names declared here so far, and names referenced here
 /// that resolved to an enclosing scope (before any local redeclaration).
 struct Scope {
+    /// Tells this scope from a later one at the same depth (the heredoc
+    /// checks compare scopes across the walk).
+    id: u64,
     declared: HashSet<String>,
+    /// The line each `my`/`state` declaration of this scope is on.
+    decl_lines: std::collections::HashMap<String, i64>,
     ref_outer: HashSet<String>,
 }
 
 impl Scope {
-    fn new() -> Self {
+    fn new(id: u64) -> Self {
         Scope {
+            id,
             declared: HashSet::new(),
+            decl_lines: std::collections::HashMap::new(),
             ref_outer: HashSet::new(),
         }
     }
@@ -74,6 +82,10 @@ pub(crate) enum ScopeDiagnostic {
     OuterRedeclaration(String, i64),
     /// `X::Syntax::Variable::Initializer` for `(sigil+name, line)`.
     SelfInitializer(String, i64),
+    /// `X::Syntax::Heredoc::HiddenName` for `(sigil+name, line)`.
+    HeredocHiddenName(String, i64),
+    /// `X::Syntax::Heredoc::AmbiguousName` for `(sigil+name, line)`.
+    HeredocAmbiguousName(String, i64),
 }
 
 /// A declaration whose initializer is being walked.
@@ -96,6 +108,13 @@ struct Ctx {
     declaring_where: Vec<String>,
     /// The first offense found, if any.
     found: Option<ScopeDiagnostic>,
+    /// The id the next scope gets.
+    next_scope_id: u64,
+    /// Heredocs whose body the walk has not reached yet.
+    heredocs: Vec<heredoc::PendingHeredoc>,
+    /// Names heredoc bodies used that scopes opened later on their line must
+    /// not declare after the body.
+    watches: Vec<heredoc::Watch>,
 }
 
 impl Ctx {
@@ -164,6 +183,9 @@ impl Ctx {
         if self.found.is_none() && self.scopes[depth - 1].ref_outer.contains(&key) {
             self.found = Some(ScopeDiagnostic::OuterRedeclaration(key.clone(), self.line));
         }
+        self.scopes[depth - 1]
+            .decl_lines
+            .insert(key.clone(), self.line);
         self.scopes[depth - 1].declared.insert(key);
     }
 
@@ -220,6 +242,7 @@ pub(crate) fn find_scope_diagnostic(stmts: &mut [Stmt]) -> Option<ScopeDiagnosti
     for stmt in stmts.iter_mut() {
         scan.scan(stmt);
     }
+    scan.finish();
     scan.0.found
 }
 
@@ -231,12 +254,22 @@ impl UnitScan {
     // Cost: O(1).
     pub(in crate::parser) fn new() -> Self {
         UnitScan(Ctx {
-            scopes: vec![Scope::new()],
+            scopes: vec![Scope::new(0)],
             line: 0,
             initializing: Vec::new(),
             declaring_where: Vec::new(),
             found: None,
+            next_scope_id: 1,
+            heredocs: Vec::new(),
+            watches: Vec::new(),
         })
+    }
+
+    /// The unit ended: settle the heredoc checks still waiting for a body.
+    // Cost: O(h·k·d + w), h = pending heredocs, k = names per body, d =
+    // scope depth, w = watches.
+    pub(in crate::parser) fn finish(&mut self) {
+        self.0.finish_heredocs();
     }
 
     /// The unit's next top-level statement.

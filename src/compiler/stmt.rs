@@ -2946,25 +2946,6 @@ impl Compiler {
                 is_statement_modifier,
                 ..
             } => {
-                // Check for heredoc scope violations in then/else branches
-                if let Some(err) = self.check_heredoc_scope_errors(then_branch) {
-                    let idx = self.code.add_constant(err);
-                    self.code.emit(OpCode::LoadConst(idx));
-                    self.code.emit(OpCode::Die {
-                        user_throw: false,
-                        list_arg: false,
-                    });
-                    return;
-                }
-                if let Some(err) = self.check_heredoc_scope_errors(else_branch) {
-                    let idx = self.code.add_constant(err);
-                    self.code.emit(OpCode::LoadConst(idx));
-                    self.code.emit(OpCode::Die {
-                        user_throw: false,
-                        list_arg: false,
-                    });
-                    return;
-                }
                 // Check if the then_branch uses @_ (bare if blocks receive
                 // the condition value as @_ in Raku).
                 let needs_at_underscore = binding_var.is_none()
