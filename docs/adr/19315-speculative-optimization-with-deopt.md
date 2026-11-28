@@ -1,6 +1,6 @@
 # ADR-19315: Speculative optimization with deoptimization is not needed for the remaining rows; build it only when a measured workload requires it
 
-- **Status**: Proposed (2026-11-28)
+- **Status**: Accepted (maintainer decision 2026-11-28; proposed 2026-11-28)
 - **Issue**: [#19315](https://github.com/tokuhirom/mutsu/issues/19315); campaign A carrier
   [#19288](https://github.com/tokuhirom/mutsu/issues/19288)
 - **Related**:
