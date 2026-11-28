@@ -131,18 +131,17 @@ pub(super) fn scan(code: &CompiledCode, params: &[usize]) -> Option<Shape> {
     let mut live = true;
     let mut self_name: Option<Symbol> = None;
     let mut pending_decl: Option<u32> = None;
-    let merge = |incoming: &mut std::collections::BTreeMap<usize, Vec<bool>>,
-                 t: usize,
-                 a: &[bool]| {
-        incoming
-            .entry(t)
-            .and_modify(|cur| {
-                for (c, x) in cur.iter_mut().zip(a) {
-                    *c &= *x;
-                }
-            })
-            .or_insert_with(|| a.to_vec());
-    };
+    let merge =
+        |incoming: &mut std::collections::BTreeMap<usize, Vec<bool>>, t: usize, a: &[bool]| {
+            incoming
+                .entry(t)
+                .and_modify(|cur| {
+                    for (c, x) in cur.iter_mut().zip(a) {
+                        *c &= *x;
+                    }
+                })
+                .or_insert_with(|| a.to_vec());
+        };
     for (i, op) in ops.iter().enumerate() {
         if targets.contains(&i) {
             // Statement-level control flow only: nothing on the stack at a join.
@@ -223,7 +222,10 @@ pub(super) fn scan(code: &CompiledCode, params: &[usize]) -> Option<Shape> {
             }
             OpCode::SetVarDynamic { .. } => {
                 let slot = plain_decl(op)?;
-                if pending_decl.is_some() || (slot as usize) >= nslots || params.contains(&(slot as usize)) {
+                if pending_decl.is_some()
+                    || (slot as usize) >= nslots
+                    || params.contains(&(slot as usize))
+                {
                     return None;
                 }
                 pending_decl = Some(slot);

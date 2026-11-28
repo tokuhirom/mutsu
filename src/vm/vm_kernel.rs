@@ -110,7 +110,9 @@ impl Interpreter {
             && (self_name != name_sym
                 || cf.package_sym() != cur_pkg_sym
                 || crate::parser::static_outer_latch::static_outer_observed()
-                || self.env().frame_activation_binds_routine(&self_name.resolve()))
+                || self
+                    .env()
+                    .frame_activation_binds_routine(&self_name.resolve()))
         {
             return None;
         }
@@ -186,22 +188,23 @@ fn run_kernel(
     // the process. The kernel touches only `*ctx`, which outlives the call.
     unsafe {
         match info.arity {
-            1 => std::mem::transmute::<usize, extern "C" fn(*mut C, i64) -> i64>(info.entry)(
-                p, a[0],
+            1 => {
+                std::mem::transmute::<usize, extern "C" fn(*mut C, i64) -> i64>(info.entry)(p, a[0])
+            }
+            2 => std::mem::transmute::<usize, extern "C" fn(*mut C, i64, i64) -> i64>(info.entry)(
+                p, a[0], a[1],
             ),
-            2 => std::mem::transmute::<usize, extern "C" fn(*mut C, i64, i64) -> i64>(
-                info.entry,
-            )(p, a[0], a[1]),
             3 => std::mem::transmute::<usize, extern "C" fn(*mut C, i64, i64, i64) -> i64>(
                 info.entry,
             )(p, a[0], a[1], a[2]),
             4 => std::mem::transmute::<usize, extern "C" fn(*mut C, i64, i64, i64, i64) -> i64>(
                 info.entry,
             )(p, a[0], a[1], a[2], a[3]),
-            5 => std::mem::transmute::<
-                usize,
-                extern "C" fn(*mut C, i64, i64, i64, i64, i64) -> i64,
-            >(info.entry)(p, a[0], a[1], a[2], a[3], a[4]),
+            5 => {
+                std::mem::transmute::<usize, extern "C" fn(*mut C, i64, i64, i64, i64, i64) -> i64>(
+                    info.entry,
+                )(p, a[0], a[1], a[2], a[3], a[4])
+            }
             _ => std::mem::transmute::<
                 usize,
                 extern "C" fn(*mut C, i64, i64, i64, i64, i64, i64) -> i64,

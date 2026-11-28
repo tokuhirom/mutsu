@@ -119,8 +119,11 @@ fn build(
     }
 
     let bail = b.create_block();
-    let blocks: std::collections::BTreeMap<usize, Block> =
-        shape.targets.iter().map(|t| (*t, b.create_block())).collect();
+    let blocks: std::collections::BTreeMap<usize, Block> = shape
+        .targets
+        .iter()
+        .map(|t| (*t, b.create_block()))
+        .collect();
 
     // Prologue: the depth bound and the safepoint countdown.
     let depth = b.ins().load(types::I32, mf, ctxp, CTX_DEPTH);
@@ -138,7 +141,9 @@ fn build(
     let start = b.create_block();
     b.ins().brif(left, start, &[], poll_blk, &[]);
     b.switch_to_block(poll_blk);
-    let poll_fn = b.ins().iconst(ptr, kernel_poll as *const () as usize as i64);
+    let poll_fn = b
+        .ins()
+        .iconst(ptr, kernel_poll as *const () as usize as i64);
     b.ins().call_indirect(poll_sig, poll_fn, &[ctxp]);
     b.ins().jump(start, &[]);
     b.switch_to_block(start);
