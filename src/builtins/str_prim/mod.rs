@@ -23,9 +23,11 @@
 
 mod build;
 pub(crate) mod codepoint;
+mod decimal;
 mod fold;
 mod strands;
 
+pub(crate) use decimal::IntDecimal;
 pub(crate) use build::{Normal, concat, flip, join, normalize, repeat, titlecase_each};
 pub(crate) use fold::{Fold, eq_at, find, nomark};
 pub(crate) use strands::Joiner;
