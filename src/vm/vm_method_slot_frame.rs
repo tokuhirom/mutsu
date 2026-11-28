@@ -60,8 +60,14 @@ pub(super) fn slot_frame_body_ok(
         return false;
     }
     let plan = def.frame_plan(owner, cc);
-    let is_param_slot =
-        |slot: u32| matches!(plan.locals.get(slot as usize), Some(LocalInit::Param(_)));
+    // A parameter or the invocant: both are readonly bindings nothing may
+    // rebind, so a call on one never needs the by-name rebinding machinery.
+    let is_param_slot = |slot: u32| {
+        matches!(
+            plan.locals.get(slot as usize),
+            Some(LocalInit::Param(_) | LocalInit::Invocant)
+        )
+    };
     let ops_ok = cc.ops.iter().all(|op| match op {
         OpCode::LoadConst(_)
         | OpCode::LoadNil
@@ -70,9 +76,33 @@ pub(super) fn slot_frame_body_ok(
         | OpCode::Add
         | OpCode::Sub
         | OpCode::Mul
-        // A quotient (`$b * $h / 2`): like the other arithmetic ops it reads
-        // and writes no name; an `infix:</>` candidate builds its own frame.
+        // A quotient (`$b * $h / 2`), a power (`$d ** 2`), a modulus and the
+        // numeric and string comparisons: like the other arithmetic ops they
+        // read and write no name; a user candidate of the operator builds its
+        // own frame over the unchanged caller env.
         | OpCode::Div
+        | OpCode::Pow
+        | OpCode::Mod
+        | OpCode::IntDiv
+        | OpCode::Negate
+        | OpCode::NumEq
+        | OpCode::NumNe
+        | OpCode::NumLt
+        | OpCode::NumLe
+        | OpCode::NumGt
+        | OpCode::NumGe
+        | OpCode::StrEq
+        | OpCode::StrNe
+        // `~`: a `.Str`/`.Stringy` coercion of an object operand is a call
+        // that builds its own frame, as for the arithmetic ops.
+        | OpCode::Concat
+        // Item-wraps the value on the stack.
+        | OpCode::Itemize
+        // `return EXPR`: the return signal the shared body loop
+        // (`run_compiled_method_body`) catches for this frame's callable id.
+        // Its one by-name read, a lexically rebound `&return`, is refused per
+        // call (`slot_frame_entry_ok`).
+        | OpCode::Return
         // Unwraps the value on the stack; reads and writes no name.
         | OpCode::DerefContainer => true,
         // A method call on a stack value with no arguments (`($r * 4).Int`):
@@ -87,7 +117,8 @@ pub(super) fn slot_frame_body_ok(
             arg_sources_idx: None,
             ..
         } => true,
-        // The same call on one of this method's parameters (`$s.chars`).
+        // The same call on one of this method's parameters (`$s.chars`) or
+        // on the invocant (`self.describe()`).
         // `CallMethodMut` treats its receiver as a variable it may rebind,
         // which it does by name; a lean parameter is a readonly binding that
         // nothing may rebind, so the slot frame's copy of the body
@@ -174,6 +205,8 @@ impl Interpreter {
     pub(super) fn slot_frame_entry_ok(&self) -> bool {
         crate::vm::vm_jit::local_read_unspoiled()
             && self.lexicals.var_bindings.is_empty()
+            // A `return` would look a rebound `&return` up by name.
+            && !crate::env::return_rebound_possible()
             // The attribute read below answers from the instance cell; the
             // general `GetLocal` arm consults an atomic registration, a
             // cross-thread dirty copy or a container request first, so any
