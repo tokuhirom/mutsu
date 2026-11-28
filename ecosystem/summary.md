@@ -28,7 +28,7 @@ Distributions measured at the same version in the ledger commit this
 rollup replaces that got a worse status, or a baseline file that
 lost parity (a file rakudo now fails is not counted).
 
-- `Math::Sequences` 0.1.2: green → partial (1 file lost parity: `t/OEIS.rakutest`)
+_None._
 
 ## Distributions
 
