@@ -149,7 +149,11 @@ impl Compiler {
     /// declares (`decl_slots`, baked from `local_map`) that the bodies read.
     /// The VM takes the cell from the running sub's capture bucket.
     // Cost: as `assign_lexsub_free_slots`.
-    pub(super) fn assign_mainline_free_slots(&mut self, keys: &[Symbol], decl_slots: &[(Symbol, u32)]) {
+    pub(super) fn assign_mainline_free_slots(
+        &mut self,
+        keys: &[Symbol],
+        decl_slots: &[(Symbol, u32)],
+    ) {
         if self.binds_lexsub_free_vars()
             || !crate::qualified::is_global_package(Symbol::intern(&self.current_package))
         {
