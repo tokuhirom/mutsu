@@ -383,21 +383,25 @@ impl Interpreter {
     // Cost: O(m * a), m = MRO length, a = attributes per class.
     fn collect_smiley_rules(&mut self, class_name: &str) -> crate::runtime::SmileyRules {
         let mut rules = crate::runtime::SmileyRules::default();
+        let mut required = std::collections::HashSet::new();
         let mro = self.class_mro(class_name);
         let registry = self.registry();
         for mro_class in mro.iter().map(|s| s.as_str()) {
             if let Some(class_def) = registry.classes.get(mro_class) {
                 for (attr_name, smiley) in &class_def.attribute_smileys {
-                    if !rules.smileys.iter().any(|(name, _)| name == attr_name) {
-                        rules.smileys.push((attr_name.clone(), smiley.clone()));
+                    if !rules.smileys.iter().any(|(name, _, _)| name == attr_name) {
+                        rules.smileys.push((attr_name.clone(), smiley.clone(), false));
                     }
                 }
                 for attr in &class_def.attributes {
                     if attr.is_required.is_some() {
-                        rules.required.insert(attr.name.clone());
+                        required.insert(attr.name.clone());
                     }
                 }
             }
+        }
+        for (name, _, is_required) in &mut rules.smileys {
+            *is_required = required.contains(name);
         }
         rules
     }
@@ -406,7 +410,7 @@ impl Interpreter {
         &mut self,
         class_name: &str,
         attrs: &AttrMap,
-        provided: Option<&std::collections::HashSet<String>>,
+        provided: Option<crate::runtime::ProvidedNamed<'_>>,
     ) -> Result<(), RuntimeError> {
         // A registered class answers from its memoized plan; an unregistered
         // one (whose plan is not memoized) is collected on the spot.
@@ -437,11 +441,10 @@ impl Interpreter {
             return Ok(());
         }
         let smileys = &rules.smileys;
-        let required_attrs = &rules.required;
         let class_attrs = &class_attrs;
         let attr_type_constraints = &attr_type_constraints;
 
-        for (attr_name, smiley) in smileys {
+        for (attr_name, smiley, is_required) in smileys {
             // For an @/% attribute the declared type and its definedness smiley
             // constrain each element/value, not the collection itself. An empty
             // collection is therefore valid for either :D or :U, while a
@@ -505,7 +508,7 @@ impl Interpreter {
             // `:D` attribute that WAS supplied with an undefined value fails
             // the assignment typecheck, like rakudo (JSON::Unmarshal 040:
             // `unmarshal('{"attr": null}', IntDClass)`).
-            if required_attrs.contains(attr_name) {
+            if *is_required {
                 if smiley == "D"
                     && provided.is_some_and(|p| p.contains(attr_name))
                     && let Some(value) = attrs.get(attr_name)
