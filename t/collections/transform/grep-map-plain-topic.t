@@ -5,7 +5,7 @@ use Test;
 # including for elements an earlier grep turned into shared cells, and that a
 # block that does write `$_` still writes through.
 
-plan 20;
+plan 24;
 
 my @a = 1..10;
 is-deeply @a.grep({ $_ %% 3 }), (3, 6, 9), 'grep with a pure predicate';
@@ -55,3 +55,9 @@ is-deeply (1, 2, 3).map({ $_ > 1 ?? "big" !! "small" }), ("small", "big", "big")
 is-deeply (1..5).first({ $_ > 3 }), 4, '.first shares the compiled body';
 my @said = (1, 2).map({ say $_ });
 is-deeply @said, [True, True], 'a body ending in say yields its True';
+
+# A WhateverCode's only parameter is its topic, so it takes the same path.
+is-deeply (1..10).grep(* %% 2).map(* + 1), (3, 5, 7, 9, 11), 'WhateverCode grep then map';
+is-deeply (1..10).first(* > 4), 5, 'WhateverCode .first';
+is-deeply <a b>.map(*.uc), <A B>, 'a WhateverCode method call';
+is-deeply (1..5).map(-> $_ { $_ * 3 }), (3, 6, 9, 12, 15), 'an explicit $_ parameter';
