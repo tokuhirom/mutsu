@@ -18,12 +18,14 @@
 //! holds no `Value`.
 
 use super::vm_jit_compile::with_engine;
-use super::vm_loop_kernel_types::{K, LoopShape, LoopVar, Typed, num_const};
+use super::vm_loop_kernel_emit::Em;
+use super::vm_loop_kernel_types::{LoopShape, LoopVar};
+use super::vm_loop_kernel_typing::Typed;
 use super::*;
 use crate::opcode::kernel_slot::SlotKind;
 
-use cranelift_codegen::ir::condcodes::{FloatCC, IntCC};
-use cranelift_codegen::ir::{AbiParam, Block, InstBuilder, MemFlagsData, Value as ClValue, types};
+use cranelift_codegen::ir::condcodes::IntCC;
+use cranelift_codegen::ir::{AbiParam, InstBuilder, MemFlagsData, types};
 use cranelift_frontend::{FunctionBuilder, FunctionBuilderContext, Variable};
 use cranelift_module::{Linkage, Module};
 
@@ -67,248 +69,6 @@ pub(super) fn compile(
     typed: &Typed,
 ) -> Option<usize> {
     with_engine(|module, n| build(module, n, code, shape, carried, typed))
-}
-
-struct Em<'f, 'c> {
-    b: FunctionBuilder<'f>,
-    code: &'c CompiledCode,
-    vars: std::collections::BTreeMap<u32, (Variable, SlotKind)>,
-    bail: Block,
-    var: Option<LoopVar>,
-    counter: Variable,
-}
-
-impl Em<'_, '_> {
-    fn guard(&mut self, ok: ClValue) {
-        let cont = self.b.create_block();
-        self.b.ins().brif(ok, cont, &[], self.bail, &[]);
-        self.b.switch_to_block(cont);
-    }
-
-    /// `v` of kind `k` as an `f64`.
-    fn as_f64(&mut self, v: ClValue, k: K) -> ClValue {
-        if k == K::Int {
-            self.b.ins().fcvt_from_sint(types::F64, v)
-        } else {
-            v
-        }
-    }
-
-    /// The truthiness of `v` of kind `k` as a branch condition.
-    fn truthy(&mut self, v: ClValue, k: K) -> ClValue {
-        match k {
-            K::Num => {
-                let zero = self.b.ins().f64const(0.0);
-                // `NotEqual` is unordered-or-not-equal: NaN is true, as in Raku.
-                self.b.ins().fcmp(FloatCC::NotEqual, v, zero)
-            }
-            _ => v,
-        }
-    }
-
-    /// Emit the ops of one segment. Returns the stack left at its end.
-    fn segment(
-        &mut self,
-        start: usize,
-        end: usize,
-        joins: &std::collections::BTreeMap<usize, Vec<K>>,
-    ) -> Option<Vec<(ClValue, K)>> {
-        // Join blocks, with one block parameter per stack entry.
-        let mut blocks: std::collections::BTreeMap<usize, (Block, Vec<K>)> = Default::default();
-        for (&t, kinds) in joins.range(start + 1..end) {
-            let blk = self.b.create_block();
-            for k in kinds {
-                let t = match k {
-                    K::Num => types::F64,
-                    K::Int => types::I64,
-                    K::Bool => types::I8,
-                };
-                self.b.append_block_param(blk, t);
-            }
-            blocks.insert(t, (blk, kinds.clone()));
-        }
-        // The segment's own end, reached by fall-through or by a jump.
-        let end_kinds: Vec<K> = joins.get(&end).cloned()?;
-        let end_blk = self.b.create_block();
-        for k in &end_kinds {
-            let t = match k {
-                K::Num => types::F64,
-                K::Int => types::I64,
-                K::Bool => types::I8,
-            };
-            self.b.append_block_param(end_blk, t);
-        }
-        let mut stack: Vec<(ClValue, K)> = Vec::new();
-        let mut open = true;
-        let jump_args = |stack: &[(ClValue, K)]| -> Vec<cranelift_codegen::ir::BlockArg> {
-            stack.iter().map(|(v, _)| (*v).into()).collect()
-        };
-        let target = |t: usize, blocks: &std::collections::BTreeMap<usize, (Block, Vec<K>)>| {
-            if t == end {
-                Some(end_blk)
-            } else {
-                blocks.get(&t).map(|b| b.0)
-            }
-        };
-        for i in start..end {
-            if let Some((blk, kinds)) = blocks.get(&i).cloned() {
-                if open {
-                    let args = jump_args(&stack);
-                    self.b.ins().jump(blk, &args);
-                }
-                self.b.switch_to_block(blk);
-                let params = self.b.block_params(blk).to_vec();
-                stack = params.into_iter().zip(kinds).collect();
-                open = true;
-            }
-            if !open {
-                continue;
-            }
-            let op = &self.code.ops[i];
-            match op {
-                OpCode::GetLocal(s) | OpCode::GetLocalMetaAssign { slot: s, .. } => {
-                    let (v, k) = *self.vars.get(s)?;
-                    stack.push((self.b.use_var(v), K::of(k)));
-                }
-                OpCode::GetGlobal(_) => {
-                    debug_assert_eq!(self.var, Some(LoopVar::Topic));
-                    stack.push((self.b.use_var(self.counter), K::Int));
-                }
-                OpCode::LoadConst(c) => {
-                    let (k, iv, fv) = num_const(self.code, *c)?;
-                    let v = if k == K::Int {
-                        self.b.ins().iconst(types::I64, iv)
-                    } else {
-                        self.b.ins().f64const(fv)
-                    };
-                    stack.push((v, k));
-                }
-                OpCode::Add | OpCode::Sub | OpCode::Mul => {
-                    let (y, ky) = stack.pop()?;
-                    let (x, kx) = stack.pop()?;
-                    if kx == K::Int && ky == K::Int {
-                        let (r, of) = match op {
-                            OpCode::Add => self.b.ins().sadd_overflow(x, y),
-                            OpCode::Sub => self.b.ins().ssub_overflow(x, y),
-                            _ => self.b.ins().smul_overflow(x, y),
-                        };
-                        let ok = self.b.ins().icmp_imm_s(IntCC::Equal, of, 0);
-                        self.guard(ok);
-                        stack.push((r, K::Int));
-                    } else {
-                        let x = self.as_f64(x, kx);
-                        let y = self.as_f64(y, ky);
-                        let r = match op {
-                            OpCode::Add => self.b.ins().fadd(x, y),
-                            OpCode::Sub => self.b.ins().fsub(x, y),
-                            _ => self.b.ins().fmul(x, y),
-                        };
-                        stack.push((r, K::Num));
-                    }
-                }
-                OpCode::IntDiv | OpCode::IntMod => {
-                    // Floored, as `Integer::div_floor`/`mod_floor` and Tier B's
-                    // `emit_int_divmod`; a zero divisor and `MIN div -1` bail.
-                    let (y, _) = stack.pop()?;
-                    let (x, _) = stack.pop()?;
-                    let nonzero = self.b.ins().icmp_imm_s(IntCC::NotEqual, y, 0);
-                    self.guard(nonzero);
-                    let is_min = self.b.ins().icmp_imm_s(IntCC::Equal, x, i64::MIN);
-                    let is_m1 = self.b.ins().icmp_imm_s(IntCC::Equal, y, -1);
-                    let both = self.b.ins().band(is_min, is_m1);
-                    let fine = self.b.ins().icmp_imm_s(IntCC::Equal, both, 0);
-                    self.guard(fine);
-                    let rem = self.b.ins().srem(x, y);
-                    let rem_nz = self.b.ins().icmp_imm_s(IntCC::NotEqual, rem, 0);
-                    let sx = self.b.ins().bxor(x, y);
-                    let differ = self.b.ins().icmp_imm_s(IntCC::SignedLessThan, sx, 0);
-                    let correct = self.b.ins().band(rem_nz, differ);
-                    let zero = self.b.ins().iconst(types::I64, 0);
-                    let r = if matches!(op, OpCode::IntDiv) {
-                        let q = self.b.ins().sdiv(x, y);
-                        let one = self.b.ins().iconst(types::I64, 1);
-                        let adj = self.b.ins().select(correct, one, zero);
-                        self.b.ins().isub(q, adj)
-                    } else {
-                        let adj = self.b.ins().select(correct, y, zero);
-                        self.b.ins().iadd(rem, adj)
-                    };
-                    stack.push((r, K::Int));
-                }
-                OpCode::NumLt
-                | OpCode::NumLe
-                | OpCode::NumGt
-                | OpCode::NumGe
-                | OpCode::NumEq
-                | OpCode::NumNe => {
-                    let (y, k) = stack.pop()?;
-                    let (x, _) = stack.pop()?;
-                    let r = if k == K::Int {
-                        let cc = match op {
-                            OpCode::NumLt => IntCC::SignedLessThan,
-                            OpCode::NumLe => IntCC::SignedLessThanOrEqual,
-                            OpCode::NumGt => IntCC::SignedGreaterThan,
-                            OpCode::NumGe => IntCC::SignedGreaterThanOrEqual,
-                            OpCode::NumEq => IntCC::Equal,
-                            _ => IntCC::NotEqual,
-                        };
-                        self.b.ins().icmp(cc, x, y)
-                    } else {
-                        let cc = match op {
-                            OpCode::NumLt => FloatCC::LessThan,
-                            OpCode::NumLe => FloatCC::LessThanOrEqual,
-                            OpCode::NumGt => FloatCC::GreaterThan,
-                            OpCode::NumGe => FloatCC::GreaterThanOrEqual,
-                            OpCode::NumEq => FloatCC::Equal,
-                            _ => FloatCC::NotEqual,
-                        };
-                        self.b.ins().fcmp(cc, x, y)
-                    };
-                    stack.push((r, K::Bool));
-                }
-                OpCode::Dup => stack.push(*stack.last()?),
-                OpCode::Pop => {
-                    stack.pop()?;
-                }
-                OpCode::JumpIfFalse(t) | OpCode::JumpIfTrue(t) => {
-                    let (c, k) = stack.pop()?;
-                    let c = self.truthy(c, k);
-                    let to = target(*t as usize, &blocks)?;
-                    let next = self.b.create_block();
-                    let args = jump_args(&stack);
-                    if matches!(op, OpCode::JumpIfFalse(_)) {
-                        self.b.ins().brif(c, next, &[], to, &args);
-                    } else {
-                        self.b.ins().brif(c, to, &args, next, &[]);
-                    }
-                    self.b.switch_to_block(next);
-                }
-                OpCode::Jump(t) => {
-                    let to = target(*t as usize, &blocks)?;
-                    let args = jump_args(&stack);
-                    self.b.ins().jump(to, &args);
-                    open = false;
-                }
-                OpCode::CheckReadOnly(_)
-                | OpCode::CheckReadOnlyModify(_)
-                | OpCode::MarkArrayShareSource(_)
-                | OpCode::SetVarDynamic { .. } => {}
-                OpCode::SetLocal(s) | OpCode::SetLocalDecl { slot: s, .. } => {
-                    let (v, _) = stack.pop()?;
-                    let (var, _) = *self.vars.get(s)?;
-                    self.b.def_var(var, v);
-                }
-                _ => return None,
-            }
-        }
-        if open {
-            let args = jump_args(&stack);
-            self.b.ins().jump(end_blk, &args);
-        }
-        self.b.switch_to_block(end_blk);
-        let params = self.b.block_params(end_blk).to_vec();
-        Some(params.into_iter().zip(end_kinds).collect())
-    }
 }
 
 fn build(
@@ -378,18 +138,6 @@ fn build(
         let v = b.use_var(vars.get(slot)?.0);
         b.def_var(*snap, v);
     }
-    let left = b.ins().load(types::I32, mf, ctxp, CTX_POLL);
-    let left = b.ins().iadd_imm_s(left, -1);
-    b.ins().store(mf, left, ctxp, CTX_POLL);
-    let poll_blk = b.create_block();
-    let test = b.create_block();
-    b.ins().brif(left, test, &[], poll_blk, &[]);
-    b.switch_to_block(poll_blk);
-    let poll_fn = b.ins().iconst(ptr, loop_poll as *const () as usize as i64);
-    b.ins().call_indirect(poll_sig, poll_fn, &[ctxp]);
-    b.ins().jump(test, &[]);
-    b.switch_to_block(test);
-
     let mut em = Em {
         b,
         code,
@@ -397,7 +145,13 @@ fn build(
         bail,
         var: shape.loop_var(),
         counter,
+        ctxp,
+        poll_sig,
+        poll_fn: loop_poll as *const () as usize,
+        poll_offset: CTX_POLL,
+        ptr,
     };
+    em.poll();
     let body_blk = em.b.create_block();
     match *shape {
         LoopShape::Range { var, .. } => {

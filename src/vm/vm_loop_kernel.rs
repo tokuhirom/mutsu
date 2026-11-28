@@ -10,7 +10,8 @@
 //! resumed mid-iteration and the rerun sees exactly the state the kernel saw.
 
 use super::vm_loop_kernel_compile::{LOOP_POLL_EVERY, LoopCtx};
-use super::vm_loop_kernel_types::{LoopShape, carried_slots, type_region};
+use super::vm_loop_kernel_types::{LoopShape, carried_slots, num_method_call};
+use super::vm_loop_kernel_typing::type_region;
 use super::*;
 use crate::opcode::kernel_slot::{LoopKernelInfo, LoopSite, SlotKind};
 
@@ -134,6 +135,13 @@ impl Interpreter {
                 return Ok(LoopOutcome::Declined);
             }
         }
+        // Each `.Num` site must reach the built-in method: the method lane
+        // answers it (no augment, wrap or user `find_method`), with a Num.
+        for &(site_ip, kind) in info.num_sites.iter() {
+            if !self.num_site_is_builtin(code, site_ip as usize, kind) {
+                return Ok(LoopOutcome::Declined);
+            }
+        }
         let mut buf = [0u64; 2 + MAX_CARRIED + MAX_DECLS];
         buf[0] = start as u64;
         buf[2..2 + n].copy_from_slice(&words[..n]);
@@ -230,6 +238,7 @@ impl Interpreter {
                         .map(|&(dip, slot)| (dip, slot, typed.slot_kind[&slot]))
                         .collect(),
                     readonly_checks: typed.readonly_checks.clone().into_boxed_slice(),
+                    num_sites: typed.num_sites.clone().into_boxed_slice(),
                 }))
             });
         if compiled.is_some() {
@@ -237,5 +246,24 @@ impl Interpreter {
         }
         site.variants.push((kinds, compiled.clone()));
         compiled
+    }
+
+    /// Whether the `.Num` call at `ip` on a receiver of `kind` is answered by
+    /// the built-in method: the method-site lane (which refuses an augmented,
+    /// wrapped or `find_method`-intercepted call) answers a sample receiver
+    /// with the Num the kernel would compute.
+    // Cost: O(1), one lane probe.
+    fn num_site_is_builtin(&mut self, code: &CompiledCode, ip: usize, kind: SlotKind) -> bool {
+        let Some((name_idx, target)) = num_method_call(code, &code.ops[ip]) else {
+            return false;
+        };
+        let (sample, expect) = match kind {
+            SlotKind::Int => (Value::int(7), 7.0),
+            SlotKind::Num => (Value::num(7.5), 7.5),
+        };
+        self.stack.push(sample);
+        let answer = self.site_lane_answer(code, ip, name_idx, 0, target);
+        self.stack.pop();
+        matches!(answer.map(|a| a.result), Some(Ok(v)) if matches!(v.view(), ValueView::Num(f) if f == expect))
     }
 }

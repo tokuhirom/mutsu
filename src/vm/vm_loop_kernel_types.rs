@@ -72,14 +72,6 @@ impl K {
             SlotKind::Num => K::Num,
         }
     }
-
-    fn slot(self) -> Option<SlotKind> {
-        match self {
-            K::Int => Some(SlotKind::Int),
-            K::Num => Some(SlotKind::Num),
-            K::Bool => None,
-        }
-    }
 }
 
 /// A numeric constant operand.
@@ -112,6 +104,97 @@ pub(super) fn is_topic(code: &CompiledCode, name_idx: u32) -> bool {
     matches!(code.constants.get(name_idx as usize).map(|v| v.view()), Some(ValueView::Str(s)) if &**s == "_")
 }
 
+/// Whether an int-range `for`'s spec is one a kernel can serve: one plain
+/// readonly scalar parameter (or the topic), nothing the driver must do per
+/// iteration beyond binding it.
+pub(super) fn plain_range_spec(spec: &crate::opcode::ForLoopSpec) -> bool {
+    !(spec.collect
+        || spec.threaded
+        || spec.is_rw
+        || spec.kv_mode
+        || spec.arity != 1
+        || spec.chunk_local.is_some()
+        || spec.source_container_local.is_some()
+        || spec.block_callable_local.is_some()
+        || spec.body_declares_routines
+        || spec.param_type_constraint.is_some()
+        || !spec.multi_param_names.is_empty()
+        || !spec.source_var_names.is_empty()
+        || spec.autothread_junctions
+        || spec.values_mode
+        || spec.param_sigilless
+        || spec.param_raw
+        || spec.do_writeback)
+}
+
+/// A counted loop nested in a region: `MakeRange`/`MakeRangeExcl` at `i`,
+/// then a `ForLoop` over it with a named parameter. Returns its
+/// inclusivity, its parameter's slot, its body `[start, end)` and the index
+/// after it (past its `RestoreForParam`).
+pub(super) fn nested_range(code: &CompiledCode, i: usize) -> Option<(bool, u32, usize, usize, usize)> {
+    let inclusive = match code.ops.get(i)? {
+        OpCode::MakeRange => true,
+        OpCode::MakeRangeExcl => false,
+        _ => return None,
+    };
+    let OpCode::ForLoop(spec) = code.ops.get(i + 1)? else {
+        return None;
+    };
+    if !plain_range_spec(spec) || spec.param_idx.is_none() {
+        return None;
+    }
+    let var = spec.param_local?;
+    let end = spec.body_end as usize;
+    let resume = if matches!(code.ops.get(end), Some(OpCode::RestoreForParam)) {
+        end + 1
+    } else {
+        end
+    };
+    Some((inclusive, var, i + 2, end, resume))
+}
+
+/// A `while` nested in a region at `i`: its condition `[start, end)` and the
+/// end of its body.
+pub(super) fn nested_while(code: &CompiledCode, i: usize) -> Option<(usize, usize, usize)> {
+    match code.ops.get(i)? {
+        OpCode::WhileLoop {
+            cond_end,
+            body_end,
+            collect: false,
+            isolate_topic: false,
+            ..
+        } => Some((i + 1, *cond_end as usize, *body_end as usize)),
+        _ => None,
+    }
+}
+
+/// Whether `op` is a `.Num` call with no arguments (`$i.Num`): a kernel turns
+/// an Int into a Num, or keeps a Num, once the method lane vouches at entry
+/// that the call reaches the built-in method.
+pub(super) fn num_method_call(code: &CompiledCode, op: &OpCode) -> Option<(u32, Option<u32>)> {
+    let (name_idx, target) = match op {
+        OpCode::CallMethodMut {
+            name_idx,
+            arity: 0,
+            target_name_idx,
+            modifier_idx: None,
+            quoted: false,
+            arg_sources_idx: None,
+            ..
+        } => (*name_idx, Some(*target_name_idx)),
+        OpCode::CallMethod {
+            name_idx,
+            arity: 0,
+            modifier_idx: None,
+            quoted: false,
+            arg_sources_idx: None,
+        } => (*name_idx, None),
+        _ => return None,
+    };
+    matches!(code.constants.get(name_idx as usize).map(|v| v.view()), Some(ValueView::Str(s)) if &**s == "Num")
+        .then_some((name_idx, target))
+}
+
 /// The slots a region reads or writes that it does not declare and that are
 /// not its loop variable: the frame state the kernel carries in and out.
 /// `None` when the region contains an op no loop kernel admits, so the loop
@@ -119,10 +202,21 @@ pub(super) fn is_topic(code: &CompiledCode, name_idx: u32) -> bool {
 // Cost: O(n), n = ops in the region.
 pub(super) fn carried_slots(code: &CompiledCode, shape: &LoopShape) -> Option<Vec<u32>> {
     let mut declared = Vec::new();
+    // Nested loops' parameters: readonly per-iteration bindings the kernel
+    // owns, neither carried nor `my` declarations.
+    let mut loop_vars = Vec::new();
     let mut used = Vec::new();
     for (start, end, _) in shape.segments() {
         for op in code.ops.get(start..end)? {
+            if num_method_call(code, op).is_some() {
+                continue;
+            }
             match op {
+                OpCode::ForLoop(spec) => loop_vars.push(spec.param_local?),
+                OpCode::MakeRange
+                | OpCode::MakeRangeExcl
+                | OpCode::RestoreForParam
+                | OpCode::WhileLoop { .. } => {}
                 OpCode::GetLocal(s) | OpCode::SetLocal(s) => used.push(*s),
                 OpCode::GetLocalMetaAssign { slot, .. } => used.push(*slot),
                 OpCode::SetVarDynamic { .. } => declared.push(plain_decl(op)?),
@@ -159,7 +253,7 @@ pub(super) fn carried_slots(code: &CompiledCode, shape: &LoopShape) -> Option<Ve
     };
     let mut out: Vec<u32> = used
         .into_iter()
-        .filter(|s| !declared.contains(s) && Some(*s) != var)
+        .filter(|s| !declared.contains(s) && !loop_vars.contains(s) && Some(*s) != var)
         .collect();
     out.sort_unstable();
     out.dedup();
@@ -172,196 +266,4 @@ pub(super) fn carried_slots(code: &CompiledCode, shape: &LoopShape) -> Option<Ve
         return None;
     }
     Some(out)
-}
-
-/// What the typing pass settled.
-pub(super) struct Typed {
-    /// The kind of every slot the region touches, by slot.
-    pub(super) slot_kind: std::collections::BTreeMap<u32, SlotKind>,
-    /// The declarations `(SetVarDynamic ip, slot)` in region order.
-    pub(super) decls: Vec<(u32, u32)>,
-    /// The readonly checks of the region.
-    pub(super) readonly_checks: Vec<(bool, u32)>,
-    /// Every join point (a jump target, and each segment's end) with the
-    /// stack kinds it is entered with.
-    pub(super) joins: std::collections::BTreeMap<usize, Vec<K>>,
-}
-
-/// Type the region with the carried slots' kinds. `None` declines.
-// Cost: O(n), n = ops in the region.
-pub(super) fn type_region(
-    code: &CompiledCode,
-    shape: &LoopShape,
-    carried: &[(u32, SlotKind)],
-) -> Option<Typed> {
-    let mut slot_kind: std::collections::BTreeMap<u32, SlotKind> =
-        carried.iter().copied().collect();
-    let var_slot = match shape.loop_var() {
-        Some(LoopVar::Slot(s)) => {
-            slot_kind.insert(s, SlotKind::Int);
-            Some(s)
-        }
-        _ => None,
-    };
-    let mut decls = Vec::new();
-    let mut readonly_checks = Vec::new();
-    let mut joins: std::collections::BTreeMap<usize, Vec<K>> = Default::default();
-    // Declared slots that are assigned in the current iteration so far.
-    let mut live_decls: Vec<u32> = Vec::new();
-    for (start, end, leaves) in shape.segments() {
-        let mut stack: Vec<K> = Vec::new();
-        let mut pending: Option<u32> = None;
-        let mut open = true;
-        let mut incoming: std::collections::BTreeMap<usize, Vec<K>> = Default::default();
-        let edge = |incoming: &mut std::collections::BTreeMap<usize, Vec<K>>,
-                    t: usize,
-                    stack: &[K]|
-         -> Option<()> {
-            if t <= start || t > end {
-                return None;
-            }
-            match incoming.get(&t) {
-                Some(k) if k.as_slice() != stack => None,
-                Some(_) => Some(()),
-                None => {
-                    incoming.insert(t, stack.to_vec());
-                    Some(())
-                }
-            }
-        };
-        for i in start..=end {
-            if let Some(k) = incoming.get(&i).cloned() {
-                if open && stack != k {
-                    return None;
-                }
-                stack = k.clone();
-                open = true;
-                if i < end {
-                    joins.insert(i, k);
-                }
-            }
-            if i == end {
-                break;
-            }
-            if !open {
-                continue;
-            }
-            let op = &code.ops[i];
-            match op {
-                OpCode::GetLocal(s) | OpCode::GetLocalMetaAssign { slot: s, .. } => {
-                    let k = *slot_kind.get(s)?;
-                    // A declared slot is readable only after its declaration
-                    // in this iteration.
-                    if decls.iter().any(|(_, d)| d == s) && !live_decls.contains(s) {
-                        return None;
-                    }
-                    stack.push(K::of(k));
-                }
-                OpCode::GetGlobal(n)
-                    if is_topic(code, *n) && shape.loop_var() == Some(LoopVar::Topic) =>
-                {
-                    stack.push(K::Int)
-                }
-                OpCode::LoadConst(c) => stack.push(num_const(code, *c)?.0),
-                OpCode::Add | OpCode::Sub | OpCode::Mul => {
-                    let y = stack.pop()?;
-                    let x = stack.pop()?;
-                    stack.push(match (x, y) {
-                        (K::Int, K::Int) => K::Int,
-                        (K::Bool, _) | (_, K::Bool) => return None,
-                        _ => K::Num,
-                    });
-                }
-                OpCode::IntDiv | OpCode::IntMod => {
-                    if stack.pop()? != K::Int || stack.pop()? != K::Int {
-                        return None;
-                    }
-                    stack.push(K::Int);
-                }
-                OpCode::NumLt
-                | OpCode::NumLe
-                | OpCode::NumGt
-                | OpCode::NumGe
-                | OpCode::NumEq
-                | OpCode::NumNe => {
-                    let y = stack.pop()?;
-                    let x = stack.pop()?;
-                    // Mixed Int/Num comparisons are left to the generic path.
-                    if x != y || x == K::Bool {
-                        return None;
-                    }
-                    stack.push(K::Bool);
-                }
-                OpCode::Dup => stack.push(*stack.last()?),
-                OpCode::Pop => {
-                    stack.pop()?;
-                }
-                OpCode::JumpIfFalse(t) | OpCode::JumpIfTrue(t) => {
-                    stack.pop()?;
-                    edge(&mut incoming, *t as usize, &stack)?;
-                }
-                OpCode::Jump(t) => {
-                    edge(&mut incoming, *t as usize, &stack)?;
-                    open = false;
-                }
-                OpCode::CheckReadOnly(n) => readonly_checks.push((false, *n)),
-                OpCode::CheckReadOnlyModify(n) => readonly_checks.push((true, *n)),
-                OpCode::MarkArrayShareSource(_) => {
-                    if stack.last()? == &K::Bool {
-                        return None;
-                    }
-                }
-                OpCode::SetLocal(s) => {
-                    let v = stack.pop()?.slot()?;
-                    if Some(*s) == var_slot || slot_kind.get(s) != Some(&v) {
-                        return None;
-                    }
-                    if decls.iter().any(|(_, d)| d == s) && !live_decls.contains(s) {
-                        return None;
-                    }
-                }
-                OpCode::SetVarDynamic { .. } => {
-                    let slot = plain_decl(op)?;
-                    if pending.is_some()
-                        || Some(slot) == var_slot
-                        || carried.iter().any(|c| c.0 == slot)
-                    {
-                        return None;
-                    }
-                    if decls.iter().any(|(_, d)| *d == slot) {
-                        return None;
-                    }
-                    pending = Some(slot);
-                    decls.push((i as u32, slot));
-                }
-                OpCode::SetLocalDecl {
-                    slot,
-                    explicit_init: true,
-                    typechecked: false,
-                } => {
-                    if pending != Some(*slot) {
-                        return None;
-                    }
-                    pending = None;
-                    let v = stack.pop()?.slot()?;
-                    if slot_kind.insert(*slot, v).is_some_and(|old| old != v) {
-                        return None;
-                    }
-                    live_decls.push(*slot);
-                }
-                _ => return None,
-            }
-        }
-        if !open || stack.len() != leaves || pending.is_some() {
-            return None;
-        }
-        // The stack every edge brings to the segment's end.
-        joins.insert(end, stack);
-    }
-    Some(Typed {
-        slot_kind,
-        decls,
-        readonly_checks,
-        joins,
-    })
 }

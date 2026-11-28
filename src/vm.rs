@@ -348,7 +348,11 @@ mod vm_loop_kernel;
 #[cfg(feature = "jit")]
 mod vm_loop_kernel_compile;
 #[cfg(feature = "jit")]
+mod vm_loop_kernel_emit;
+#[cfg(feature = "jit")]
 mod vm_loop_kernel_types;
+#[cfg(feature = "jit")]
+mod vm_loop_kernel_typing;
 mod vm_loop_writeback;
 mod vm_loop_writeback_quant;
 mod vm_loop_writeback_shaped;

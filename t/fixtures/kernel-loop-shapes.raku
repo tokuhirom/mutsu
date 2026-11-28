@@ -106,5 +106,22 @@ my $l = 0;
 for ^100 -> $i { last if $i == 50; $l = $l + $i }
 say "last=", $l;
 
+# Nested loops in one kernel, `.Num` on an Int and on a Num.
+my $nest = 0e0;
+for ^30 -> $a {
+    my $fa = $a.Num * 0.5e0;
+    for ^30 -> $b {
+        my $k2 = 0;
+        while $k2 < 3 { $k2 = $k2 + 1 }
+        $nest = $nest + $fa * $b.Num + $k2 + $fa.Num;
+    }
+}
+say "nested=", $nest;
+
+# An overflow in an inner loop reruns the outer iteration generically.
+my $big = 1;
+for 1..3 -> $o { for 1..40 -> $i { $big = $big * 2 } }
+say "nested-overflow=", $big;
+
 # From several threads.
 say "threads=", await((^4).map(-> $o { start { my $z = 0; for ^10000 -> $i { $z = $z + $i * $o }; $z } })).join(",");

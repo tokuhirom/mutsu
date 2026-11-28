@@ -404,25 +404,8 @@ impl Interpreter {
         implicit_topic: bool,
         topic_local: Option<usize>,
     ) -> Option<impl Fn(usize, usize) -> super::vm_loop_kernel_types::LoopShape> {
-        use super::vm_loop_kernel_types::{LoopShape, LoopVar};
-        if spec.collect
-            || spec.threaded
-            || spec.is_rw
-            || spec.kv_mode
-            || spec.arity != 1
-            || spec.chunk_local.is_some()
-            || spec.source_container_local.is_some()
-            || spec.block_callable_local.is_some()
-            || spec.body_declares_routines
-            || spec.param_type_constraint.is_some()
-            || !spec.multi_param_names.is_empty()
-            || !spec.source_var_names.is_empty()
-            || spec.autothread_junctions
-            || spec.values_mode
-            || spec.param_sigilless
-            || spec.param_raw
-            || spec.do_writeback
-        {
+        use super::vm_loop_kernel_types::{LoopShape, LoopVar, plain_range_spec};
+        if !plain_range_spec(spec) {
             return None;
         }
         let var = match (implicit_topic, spec.param_local, topic_local) {
