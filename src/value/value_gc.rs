@@ -44,6 +44,16 @@ impl Trace for super::PairData {
         self.value = Value::NIL;
         self.source = None;
     }
+    /// A pair of edgeless values (`name => "Rex"`, a named argument) cannot
+    /// be on a cycle.
+    // Cost: O(1).
+    fn currently_acyclic(&self) -> bool {
+        let key_ok = match &self.key {
+            super::PairKey::Value(key) => super::nanbox::word_has_no_gc_edge(key.nanbox_bits()),
+            _ => true,
+        };
+        key_ok && super::nanbox::word_has_no_gc_edge(self.value.nanbox_bits())
+    }
 }
 
 /// Whether an `Arc`-shared wrapper is *uniquely owned* — its only holder is the
@@ -444,6 +454,18 @@ impl Trace for InstanceAttrs {
     }
     fn finalize_clones_edges(&self) -> bool {
         self.queue_destroy && !self.finalized.load(std::sync::atomic::Ordering::Relaxed)
+    }
+    /// An object whose attributes are all strings, numbers and other
+    /// edgeless values cannot be on a cycle. A loop that builds such objects
+    /// (`Dog.new(name => "Rex", legs => 4)`) survivor-drops each one at least
+    /// once, and each collect then trial-deleted thousands of them for
+    /// nothing (#19293). Asked at collect time only: a reused instance is
+    /// survivor-dropped on every method call, where the already-buffered
+    /// one-load fast path must stay (asking at every drop made those calls
+    /// ~2k instructions dearer).
+    // Cost: O(a), a = attributes.
+    fn acyclic_at_collect(&self) -> bool {
+        self.currently_edgeless()
     }
 }
 
