@@ -368,8 +368,7 @@ mod tests {
         assert_eq!(store_int(&mut interp, slot, 3, 8), KERNEL_ELEM_OK);
         assert_eq!(read_int(&mut interp, slot, 3), Some(8));
         // SAFETY: as `store_int`.
-        let status =
-            unsafe { kernel_elem_store_num(&mut interp, std::ptr::null(), slot, 0, 1.5) };
+        let status = unsafe { kernel_elem_store_num(&mut interp, std::ptr::null(), slot, 0, 1.5) };
         assert_eq!(status, KERNEL_ELEM_OK);
         assert_eq!(read_num(&mut interp, slot, 0), Some(1.5));
         let before = elements(&interp, slot);
@@ -387,7 +386,10 @@ mod tests {
         let mut interp = interp_with(&code, slot, Value::int(3));
         assert_eq!(read_int(&mut interp, slot, 0), None);
         assert_eq!(store_int(&mut interp, slot, 0, 1), KERNEL_ELEM_DECLINE);
-        assert!(matches!(interp.locals[slot as usize].view(), ValueView::Int(3)));
+        assert!(matches!(
+            interp.locals[slot as usize].view(),
+            ValueView::Int(3)
+        ));
     }
 
     #[test]
