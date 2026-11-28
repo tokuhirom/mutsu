@@ -14,7 +14,8 @@ use super::vm_kernel_elem::{
 };
 use super::vm_kernel_hash::{
     kernel_elem2_read_int, kernel_elem2_read_num, kernel_hash_read_int, kernel_hash_read_num,
-    kernel_hash_store_int, kernel_hash_store_num,
+    kernel_hash_store_int, kernel_hash_store_num, kernel_hash_store_prefixed_int,
+    kernel_hash_store_prefixed_num,
 };
 use super::vm_loop_kernel_emit::Em;
 use super::vm_loop_kernel_types::K;
@@ -37,6 +38,10 @@ pub(super) struct ElemSigs {
     pub(super) store_num: SigRef,
     /// `(interp, code, slot, i, j, out) -> status`, for both grid reads.
     pub(super) read2: SigRef,
+    /// `(interp, code, slot, prefix, key, value: i64) -> status`.
+    pub(super) store_prefixed_int: SigRef,
+    /// `(interp, code, slot, prefix, key, value: f64) -> status`.
+    pub(super) store_prefixed_num: SigRef,
     /// Offsets of the interpreter and code pointers in the loop context.
     pub(super) interp_offset: i32,
     pub(super) code_offset: i32,
@@ -148,6 +153,39 @@ impl Em<'_, '_> {
             kernel_hash_store_num as *const () as usize
         };
         self.store_via(f, slot, key, value, k);
+    }
+
+    /// `%h{"prefix$key"} = value` for the stored hash in `slot`, the prefix
+    /// being the `Str` constant at index `prefix`.
+    pub(super) fn hash_store_prefixed(
+        &mut self,
+        slot: u32,
+        prefix: u32,
+        key: ClValue,
+        value: ClValue,
+        k: K,
+    ) {
+        let (f, sig) = if k == K::Int {
+            (
+                kernel_hash_store_prefixed_int as *const () as usize,
+                self.elem.store_prefixed_int,
+            )
+        } else {
+            (
+                kernel_hash_store_prefixed_num as *const () as usize,
+                self.elem.store_prefixed_num,
+            )
+        };
+        let (interp, code) = self.elem_ptrs();
+        let slot_v = self.b.ins().iconst(types::I32, slot as i64);
+        let prefix_v = self.b.ins().iconst(types::I32, prefix as i64);
+        let f = self.b.ins().iconst(self.ptr, f as i64);
+        let call = self
+            .b
+            .ins()
+            .call_indirect(sig, f, &[interp, code, slot_v, prefix_v, key, value]);
+        let status = self.b.inst_results(call)[0];
+        self.guard_status(status);
     }
 
     /// A store helper `f` on `slot`; a decline bails.

@@ -79,6 +79,13 @@ pub(super) enum K {
     /// A grid's row index already applied (`@g[$i]` before `[$j]`), carrying
     /// `$i`: only a second `Index` consumes it.
     Row(u32),
+    /// A `Str` constant (`"key-"` in `"key-$i"`): only an interpolation of it
+    /// and one `Int` consumes it.
+    StrConst(u32),
+    /// The interpolation of the `Str` constant at this index and an `Int`
+    /// (`"key-$i"`), carrying the `Int`: only a hash store's key consumes it,
+    /// and the store's helper writes the key's text itself.
+    IntKey(u32),
 }
 
 /// What a read element slot holds, settled at kernel entry.
@@ -119,7 +126,7 @@ impl K {
         match self {
             K::Int => Some(SlotKind::Int),
             K::Num => Some(SlotKind::Num),
-            K::Bool | K::Arr(_) | K::Row(_) => None,
+            K::Bool | K::Arr(_) | K::Row(_) | K::StrConst(_) | K::IntKey(_) => None,
         }
     }
 
@@ -127,6 +134,18 @@ impl K {
     pub(super) fn numeric(self) -> bool {
         self.slot_kind().is_some()
     }
+}
+
+/// Whether this kind may not sit on the stack across a join: an aggregate
+/// about to be subscripted, or a string piece about to be joined or keyed.
+pub(super) fn k_is_pending(k: &K) -> bool {
+    matches!(k, K::Arr(_) | K::Row(_) | K::StrConst(_) | K::IntKey(_))
+}
+
+/// Whether constant `idx` is a `Str` (the prefix of a `"key-$i"` key).
+// Cost: O(1).
+pub(super) fn str_const(code: &CompiledCode, idx: u32) -> bool {
+    matches!(code.constants.get(idx as usize).map(Value::view), Some(ValueView::Str(_)))
 }
 
 /// A numeric constant operand.
@@ -335,6 +354,7 @@ pub(super) fn carried_slots(
                 | OpCode::BitXor
                 | OpCode::BitShiftRight
                 | OpCode::Index { .. }
+                | OpCode::StringConcat(2)
                 | OpCode::SinkPopAssign
                 | OpCode::NumLt
                 | OpCode::NumLe
