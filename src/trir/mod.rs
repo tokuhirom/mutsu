@@ -212,6 +212,12 @@ pub(crate) struct TrParam {
     /// stand in for, so every door declines such an argument and admits
     /// only a computed value.
     pub(crate) sigilless: bool,
+    /// For a sigilless parameter: every read of it in the body runs before
+    /// anything that could change a caller's variable (see
+    /// `TrirCompiler::mark_sigilless_value_at_entry`). Binding the value the
+    /// argument holds at entry is then indistinguishable from binding its
+    /// container, so the doors admit a variable argument too.
+    pub(crate) value_at_entry: bool,
     /// An untyped routine parameter, implicitly `Any`: a `Mu`-only argument
     /// declines the call, so the untyped path raises (#10878). A block's
     /// parameter is implicitly `Mu` and never sets this.

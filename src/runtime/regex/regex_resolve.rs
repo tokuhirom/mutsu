@@ -827,6 +827,9 @@ impl Interpreter {
         exprs: &[String],
         caps: &RegexCaptures,
     ) -> Option<Vec<Value>> {
+        if let Some(values) = self.eval_regex_arg_list_simple(exprs, caps) {
+            return Some(values);
+        }
         // Compile the complete argument list as a Capture, exactly as an
         // ordinary call does. Evaluating arguments as isolated expressions and
         // converting every Pair with a string key loses positional Pair data.
@@ -855,7 +858,7 @@ impl Interpreter {
     /// enclosing scope ([`crate::opcode::OpCode::LoadRegexClosure`]); keeping
     /// the list positive means a new `Value` kind has to be admitted here
     /// explicitly rather than inherited by accident.
-    fn constant_stmt_value(stmts: &[crate::ast::Stmt]) -> Option<Value> {
+    pub(super) fn constant_stmt_value(stmts: &[crate::ast::Stmt]) -> Option<Value> {
         let mut found: Option<&Value> = None;
         for stmt in stmts {
             match stmt {
@@ -874,20 +877,7 @@ impl Interpreter {
             }
         }
         let v = found?;
-        matches!(
-            v.view(),
-            ValueView::Int(_)
-                | ValueView::BigInt(_)
-                | ValueView::Num(_)
-                | ValueView::Str(_)
-                | ValueView::Bool(_)
-                | ValueView::Rat(..)
-                | ValueView::FatRat(..)
-                | ValueView::BigRat(..)
-                | ValueView::Complex(..)
-                | ValueView::Nil
-        )
-        .then(|| v.clone())
+        Self::is_plain_scalar_value(v).then(|| v.clone())
     }
 
     pub(in crate::runtime) fn eval_regex_expr_value(
@@ -896,40 +886,14 @@ impl Interpreter {
         caps: &RegexCaptures,
     ) -> Option<Value> {
         let trimmed = expr_src.trim();
-        if let Some(name) = trimmed.strip_prefix('$')
-            && !name.is_empty()
-            && {
-                // A bare variable reference only — `$p-1` (kebab `-` followed
-                // by a digit is NOT part of a raku identifier) must fall to
-                // the general expression evaluator below.
-                let bytes: Vec<char> = name.chars().collect();
-                let mut ok = bytes[0].is_alphabetic() || bytes[0] == '_';
-                let mut k = 1;
-                while ok && k < bytes.len() {
-                    let c = bytes[k];
-                    let kebab = c == '-'
-                        && bytes
-                            .get(k + 1)
-                            .is_some_and(|n| n.is_alphabetic() || *n == '_');
-                    if c.is_alphanumeric() || c == '_' || kebab {
-                        k += 1;
-                    } else {
-                        ok = false;
-                    }
-                }
-                ok
-            }
-        {
+        if let Some(name) = Self::bare_scalar_var_name(trimmed) {
             // Read the two candidate keys directly instead of materializing the
-            // whole evaluation env for them. `make_regex_eval_env` clones the
-            // caller's env and then layers the positional captures (all-digit
-            // keys), `/`, the named captures (`<...>`-wrapped keys) and the
-            // in-regex lexicals on top. `name` is an identifier here — the guard
-            // above admits nothing else — so it can collide with none of the
-            // first three shapes, which leaves exactly the two sources this
-            // reads, in the same precedence (`regex_vars` last-inserted, so
-            // first). `trimmed` is `$name`, kept as the second probe because an
-            // in-regex `:my $x` is filed under its sigil-ful spelling.
+            // whole evaluation env (`make_regex_eval_env`) for them: `name` is
+            // an identifier, so it collides with none of the capture keys that
+            // env layers on top, which leaves exactly the in-regex lexicals
+            // (`regex_vars`, first) and the caller's env. `trimmed` is `$name`,
+            // kept as the second probe because an in-regex `:my $x` is filed
+            // under its sigil-ful spelling.
             let lookup = |k: &str| {
                 caps.regex_vars()
                     .get(k)

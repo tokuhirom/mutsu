@@ -52,6 +52,13 @@ pub(crate) struct MatchNode {
     pub(in crate::value) id: u64,
     /// Memoized materialization, built on first `view()` decode.
     attrs: OnceLock<crate::gc::Gc<InstanceAttrs>>,
+    /// The memoized positional-capture list (`.list`, `$/[i]`), built on
+    /// first read without forcing [`Self::attrs`], which then holds this
+    /// same list: a repeated read hands out the same child values either way.
+    list: OnceLock<Value>,
+    /// The memoized named-capture hash (`named`), on the same terms as
+    /// [`Self::list`].
+    named: OnceLock<Value>,
 }
 
 impl std::fmt::Debug for MatchNode {
@@ -72,6 +79,8 @@ impl MatchNode {
             cap,
             id: next_instance_id(),
             attrs: OnceLock::new(),
+            list: OnceLock::new(),
+            named: OnceLock::new(),
         }
     }
 
@@ -129,9 +138,67 @@ impl MatchNode {
         }
     }
 
-    /// Sever the memoized `Gc` edge (cycle-collector reclaim).
+    /// Sever the memoized `Gc` edges (cycle-collector reclaim).
     pub(in crate::value) fn take_attrs_for_gc(&mut self) {
         let _ = self.attrs.take();
+        let _ = self.list.take();
+        let _ = self.named.take();
+    }
+
+    /// The memoized positional-capture list, if already built.
+    pub(in crate::value) fn memoized_list(&self) -> Option<&Value> {
+        self.list.get()
+    }
+
+    /// The memoized named-capture hash, if already built.
+    pub(in crate::value) fn memoized_named(&self) -> Option<&Value> {
+        self.named.get()
+    }
+
+    /// The memoized named-capture hash, built from the capture node on first
+    /// use. Silent-action captures (a hidden `<.foo>`, under a marker-prefixed
+    /// key) are not in it.
+    // Cost: O(1) once built; the first read is O(n), n = named captures.
+    fn memo_named(&self) -> &Value {
+        self.named.get_or_init(|| {
+            let mut sub_named: ValueMap = ValueMap::default();
+            for (key, slot) in &self.cap.kids().named {
+                if key.starts_with(SILENT_ACTION_MARKER_PREFIX) {
+                    continue;
+                }
+                sub_named.insert(key.resolve(), Value::named_slot_value(slot, &self.target));
+            }
+            Value::hash_bare_values(sub_named)
+        })
+    }
+
+    /// The positional-capture list (`list`), without forcing the
+    /// materialization: the forced map's own list when it is forced, else the
+    /// memoized one, built on first read.
+    // Cost: O(1) once built; the first read is O(p), p = positional captures.
+    pub(in crate::value) fn positional_list(&self) -> Value {
+        if let Some(attrs) = self.attrs.get() {
+            return attrs
+                .as_map()
+                .get(wk::match_list())
+                .cloned()
+                .unwrap_or_else(|| Value::array(Vec::new()));
+        }
+        self.memo_list().clone()
+    }
+
+    /// The memoized list, built from the capture node on first use.
+    fn memo_list(&self) -> &Value {
+        self.list.get_or_init(|| {
+            Value::array(
+                self.cap
+                    .kids()
+                    .positional
+                    .iter()
+                    .map(|slot| Value::pos_slot_value(slot, &self.target))
+                    .collect(),
+            )
+        })
     }
 
     /// This node's matched text, derived from the recorded span.
@@ -145,8 +212,9 @@ impl MatchNode {
     }
 
     /// Read one attribute, without forcing when it is derivable from the
-    /// capture node. Structural attributes (`list`, `named`, `silent_caps`,
-    /// `reduce_time_vars`, `capture_alias_map`) force the materialization.
+    /// capture node. `list` and `named` are memoized on their own (and shared
+    /// with a later materialization); the other structural attributes
+    /// (`silent_caps`, `reduce_time_vars`, `capture_alias_map`) force it.
     pub(in crate::value) fn attr(&self, name: &str) -> Option<Value> {
         if let Some(attrs) = self.attrs.get() {
             return attrs.as_map().get(name).cloned();
@@ -168,6 +236,8 @@ impl MatchNode {
             "actions" => self.cap.kids().actions.clone(),
             "__failed_match__" => None,
             crate::value::match_view::CURSOR_REGEXSUB_ATTR => None,
+            "list" => Some(self.memo_list().clone()),
+            "named" => Some(self.memo_named().clone()),
             _ => self.force_attrs().as_map().get(name).cloned(),
         }
     }
@@ -186,25 +256,16 @@ impl MatchNode {
         }
         let kids = cap.kids();
 
-        let pos_vals: Vec<Value> = kids
-            .positional
-            .iter()
-            .map(|slot| Value::pos_slot_value(slot, &self.target))
-            .collect();
-
         // Silent-action captures: hidden `<.foo>` subrule matches (stored
         // under a marker-prefixed key). Absent from `.hash`, but the grammar
         // action walk fires their action methods via `silent_caps`.
-        let mut sub_named: ValueMap = ValueMap::default();
         let mut silent_caps_vals: Vec<Value> = Vec::new();
         for (key, slot) in &kids.named {
             if key.starts_with(SILENT_ACTION_MARKER_PREFIX) {
                 for sc in &slot.nodes {
                     silent_caps_vals.push(self.lazy_child(sc));
                 }
-                continue;
             }
-            sub_named.insert(key.resolve(), Value::named_slot_value(slot, &self.target));
         }
 
         // The fixed keys below plus the optional ones: sized up front so the
@@ -228,8 +289,8 @@ impl MatchNode {
         if let Some(pos) = kids.pos {
             attrs.insert(wk::match_pos(), Value::Int(pos as i64));
         }
-        attrs.insert(wk::match_list(), Value::array(pos_vals));
-        attrs.insert(wk::match_named(), Value::hash_bare_values(sub_named));
+        attrs.insert(wk::match_list(), self.memo_list().clone());
+        attrs.insert(wk::match_named(), self.memo_named().clone());
         if !silent_caps_vals.is_empty() {
             attrs.insert(wk::match_silent_caps(), Value::real_array(silent_caps_vals));
         }

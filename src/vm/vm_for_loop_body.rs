@@ -9,6 +9,10 @@ use super::*;
 pub(super) enum LoopItemSink {
     /// The topic `$_` (and the frame's topic slot): a one-parameter loop.
     Topic,
+    /// Only the loop's own topic slot (`ForLoopSpec::topic_slot_only`): the
+    /// body reads `$_` through it alone, so the env's `_` keeps the
+    /// enclosing topic.
+    TopicSlot(usize),
     /// A multi-parameter loop's batch, by name in `env`.
     ChunkEnv,
     /// A multi-parameter loop's batch, in this local slot.
@@ -19,7 +23,10 @@ impl LoopItemSink {
     // Cost: O(1).
     pub(super) fn of(spec: &ForLoopSpec) -> Self {
         if spec.multi_param_names.is_empty() {
-            LoopItemSink::Topic
+            match spec.topic_local {
+                Some(slot) if spec.topic_slot_only => LoopItemSink::TopicSlot(slot as usize),
+                _ => LoopItemSink::Topic,
+            }
         } else if let Some(slot) = spec.chunk_local {
             LoopItemSink::ChunkLocal(slot as usize)
         } else {
@@ -111,7 +118,7 @@ impl Interpreter {
     ) {
         match chunk_mode {
             LoopItemSink::Topic => {}
-            LoopItemSink::ChunkLocal(slot) => {
+            LoopItemSink::TopicSlot(slot) | LoopItemSink::ChunkLocal(slot) => {
                 self.locals[slot] = val;
                 return;
             }

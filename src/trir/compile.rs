@@ -63,6 +63,9 @@ pub(crate) struct TrirCompiler<'a> {
     /// Set while compiling an expression that is DIRECTLY an `nqp::` op's
     /// operand, and consumed by the sigilless-parameter read it admits.
     pub(super) nqp_operand: bool,
+    /// Every read of a sigilless parameter: `(slot, index of the load op)`.
+    /// Decides [`TrParam::value_at_entry`] once the body is compiled.
+    pub(super) sigilless_reads: Vec<(u16, usize)>,
     /// The routine declares `--> Nil`, so every `return` discards its value.
     pub(super) returns_nil: bool,
     /// The routine declares a definite return value (`--> True`): the body
@@ -188,6 +191,7 @@ impl<'a> TrirCompiler<'a> {
             nqp_sourced: false,
             nqp_int_result: false,
             nqp_operand: false,
+            sigilless_reads: Vec::new(),
             returns_nil: return_type == Some("Nil") || definite_return.is_some(),
             definite_return,
             nqp_bound: HashSet::new(),
@@ -219,6 +223,7 @@ impl<'a> TrirCompiler<'a> {
             (false, Some(TrKind::Obj)) => c.ops.push(TrOp::ReturnObj),
         }
         c.apply_inline_outer_fixups();
+        c.mark_sigilless_value_at_entry();
         Some(TrChunk {
             id: super::next_chunk_id(),
             ops: super::peephole::optimize(c.ops),
@@ -508,7 +513,9 @@ mod method;
 mod nqp;
 mod params;
 mod ret;
+mod sigilless;
 mod slots;
+mod unary;
 
 /// Compile a routine to TRIR at declaration time, or answer `None`.
 ///

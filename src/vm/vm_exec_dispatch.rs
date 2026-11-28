@@ -5350,19 +5350,20 @@ impl Interpreter {
                             if matches!(inner.view(), ValueView::Instance { class_name, .. }
                                 if self.has_user_method(class_name.as_str(), "STORE")))
                         && self.mixin_composes_method(&val, "sink");
-                    let sink_class = if !user_sink || mixin_sink {
+                    // A lazy Match answers its class without the view, which
+                    // would force its materialization.
+                    let instance_class = if !user_sink || mixin_sink {
                         None
+                    } else if val.is_lazy_match_value() {
+                        Some(val.match_dispatch_class().to_string())
                     } else if let ValueView::Instance { class_name, .. } = val.view() {
-                        let cn = class_name.resolve();
-                        if self.has_user_method(&cn, "sink") && !self.has_user_method(&cn, "STORE")
-                        {
-                            Some(cn)
-                        } else {
-                            None
-                        }
+                        Some(class_name.resolve())
                     } else {
                         None
                     };
+                    let sink_class = instance_class.filter(|cn| {
+                        self.has_user_method(cn, "sink") && !self.has_user_method(cn, "STORE")
+                    });
                     if mixin_sink {
                         // Same captured-outer writeback as the class arm below:
                         // the doc idiom `($b + 1) does role { method sink { $b++
@@ -5406,6 +5407,12 @@ impl Interpreter {
                             Some(val.clone()),
                         );
                         self.apply_pending_caller_var_writeback(code);
+                        *ip += 1;
+                        return Ok(());
+                    }
+                    // A lazy Match is none of the kinds below, and viewing it
+                    // would force its materialization: sinking it does nothing.
+                    if val.is_lazy_match_value() {
                         *ip += 1;
                         return Ok(());
                     }
@@ -6011,11 +6018,17 @@ impl Interpreter {
             // Cost: O(1) amortized for a single index/key; O(k) for a slice (see
             // exec_delete_index_named_op).
             OpCode::DeleteIndexNamed(name_idx, slot, kind) => {
-                let pre = self.attr_elem_env_snapshot(code, *name_idx);
-                self.with_package_lexical_seeded(code, *name_idx, |vm| {
-                    vm.exec_delete_index_named_op(code, *name_idx, *slot, *kind)
-                })?;
-                self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
+                // The plain declared-`%`-local delete (`vm_var_delete_lean`).
+                let lean = slot.is_some_and(|slot| {
+                    self.try_lean_local_hash_delete(code, slot, *name_idx, *kind)
+                });
+                if !lean {
+                    let pre = self.attr_elem_env_snapshot(code, *name_idx);
+                    self.with_package_lexical_seeded(code, *name_idx, |vm| {
+                        vm.exec_delete_index_named_op(code, *name_idx, *slot, *kind)
+                    })?;
+                    self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
+                }
                 *ip += 1;
             }
             // Cost: O(1) amortized for a single index/key; O(k) for a slice, k = indices.
@@ -6358,30 +6371,44 @@ impl Interpreter {
             }
             // Cost: O(1) for a single index/key.
             OpCode::PostIncrementIndex(name_idx, slot, is_positional) => {
-                self.with_package_lexical_seeded(code, *name_idx, |vm| {
-                    vm.exec_inc_dec_index_dispatch(
-                        code,
-                        *name_idx,
-                        *slot,
-                        true,
-                        false,
-                        *is_positional,
-                    )
-                })?;
+                // The plain declared-`%`-local step (`vm_var_incdec_lean`).
+                let lean = !*is_positional
+                    && slot.is_some_and(|slot| {
+                        self.try_lean_local_hash_incdec(code, slot, *name_idx, true, false)
+                    });
+                if !lean {
+                    self.with_package_lexical_seeded(code, *name_idx, |vm| {
+                        vm.exec_inc_dec_index_dispatch(
+                            code,
+                            *name_idx,
+                            *slot,
+                            true,
+                            false,
+                            *is_positional,
+                        )
+                    })?;
+                }
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key.
             OpCode::PostDecrementIndex(name_idx, slot, is_positional) => {
-                self.with_package_lexical_seeded(code, *name_idx, |vm| {
-                    vm.exec_inc_dec_index_dispatch(
-                        code,
-                        *name_idx,
-                        *slot,
-                        false,
-                        false,
-                        *is_positional,
-                    )
-                })?;
+                // The plain declared-`%`-local step (`vm_var_incdec_lean`).
+                let lean = !*is_positional
+                    && slot.is_some_and(|slot| {
+                        self.try_lean_local_hash_incdec(code, slot, *name_idx, false, false)
+                    });
+                if !lean {
+                    self.with_package_lexical_seeded(code, *name_idx, |vm| {
+                        vm.exec_inc_dec_index_dispatch(
+                            code,
+                            *name_idx,
+                            *slot,
+                            false,
+                            false,
+                            *is_positional,
+                        )
+                    })?;
+                }
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key; O(k) for a slice (see
@@ -6592,30 +6619,44 @@ impl Interpreter {
             }
             // Cost: O(1) for a single index/key.
             OpCode::PreIncrementIndex(name_idx, slot, is_positional) => {
-                self.with_package_lexical_seeded(code, *name_idx, |vm| {
-                    vm.exec_inc_dec_index_dispatch(
-                        code,
-                        *name_idx,
-                        *slot,
-                        true,
-                        true,
-                        *is_positional,
-                    )
-                })?;
+                // The plain declared-`%`-local step (`vm_var_incdec_lean`).
+                let lean = !*is_positional
+                    && slot.is_some_and(|slot| {
+                        self.try_lean_local_hash_incdec(code, slot, *name_idx, true, true)
+                    });
+                if !lean {
+                    self.with_package_lexical_seeded(code, *name_idx, |vm| {
+                        vm.exec_inc_dec_index_dispatch(
+                            code,
+                            *name_idx,
+                            *slot,
+                            true,
+                            true,
+                            *is_positional,
+                        )
+                    })?;
+                }
                 *ip += 1;
             }
             // Cost: O(1) for a single index/key.
             OpCode::PreDecrementIndex(name_idx, slot, is_positional) => {
-                self.with_package_lexical_seeded(code, *name_idx, |vm| {
-                    vm.exec_inc_dec_index_dispatch(
-                        code,
-                        *name_idx,
-                        *slot,
-                        false,
-                        true,
-                        *is_positional,
-                    )
-                })?;
+                // The plain declared-`%`-local step (`vm_var_incdec_lean`).
+                let lean = !*is_positional
+                    && slot.is_some_and(|slot| {
+                        self.try_lean_local_hash_incdec(code, slot, *name_idx, false, true)
+                    });
+                if !lean {
+                    self.with_package_lexical_seeded(code, *name_idx, |vm| {
+                        vm.exec_inc_dec_index_dispatch(
+                            code,
+                            *name_idx,
+                            *slot,
+                            false,
+                            true,
+                            *is_positional,
+                        )
+                    })?;
+                }
                 *ip += 1;
             }
 

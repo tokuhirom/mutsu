@@ -217,6 +217,7 @@ impl TrirCompiler<'_> {
                 type_name: crate::static_str::StaticStr(type_name),
                 check,
                 sigilless: pd.sigilless,
+                value_at_entry: false,
                 implicit_any: tc.is_none() && !pd.block_param,
             });
         }

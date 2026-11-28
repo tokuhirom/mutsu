@@ -382,6 +382,13 @@ pub(crate) struct ForLoopSpec {
     /// exit, exactly as `exec_given_op` does for `given`/`with`. Only set for an
     /// implicit-topic loop (a named parameter does not rebind `$_`).
     pub(crate) topic_local: Option<u32>,
+    /// `topic_local` is the loop's OWN topic slot (a fresh hidden local the
+    /// compiler gave a body that cannot observe its topic's container,
+    /// `for_topic_alias::topic_alias_unobservable`), and the body reads `$_`
+    /// only through it. The VM may then skip binding the env's `_` per item:
+    /// nothing in the body reads the topic by name, and the env keeps the
+    /// enclosing topic, which is what a `$_` after the loop reads anyway.
+    pub(crate) topic_slot_only: bool,
     /// Local slot of the hidden per-iteration batch (`__mutsu_for_chunk`) a
     /// multi-parameter loop (`-> $k, $v`) hands to its parameter binds. The
     /// binds are compiled into the body prefix and read the slot; without it

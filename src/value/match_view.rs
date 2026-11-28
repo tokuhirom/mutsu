@@ -254,19 +254,16 @@ impl Value {
     /// for a Match (`target.match_list()`, then the element), read from the same
     /// memoized list, so a repeated read hands out the same child value. `None`
     /// for any value that is not a lazy Match.
-    // Cost: O(1) once the node is materialized; the first read materializes
-    // one level, O(c), c = the node's captures.
+    // Cost: O(1) once the list is memoized; the first read builds it, O(p),
+    // p = the node's positional captures.
     pub(crate) fn lazy_match_positional_capture(&self, i: usize) -> Option<Value> {
         let node = self.0.as_match_node()?;
-        // `list` is structural, so `attr("list")` would force the node too; read
-        // it in place rather than cloning the list's handle out and back.
-        let attrs = node.force_attrs().as_map();
-        Some(
-            match attrs.get(crate::symbol::wk::match_list()).map(Value::view) {
-                Some(ValueView::Array(items, ..)) => items.get(i).cloned().unwrap_or(Value::NIL),
-                _ => Value::NIL,
-            },
-        )
+        // The memoized list, shared with the materialization, so this does
+        // not force the node.
+        Some(match node.positional_list().view() {
+            ValueView::Array(items, ..) => items.get(i).cloned().unwrap_or(Value::NIL),
+            _ => Value::NIL,
+        })
     }
 
     /// The positional-capture list as `.list` presents it to Raku code.

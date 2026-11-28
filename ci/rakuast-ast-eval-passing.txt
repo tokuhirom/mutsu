@@ -218,6 +218,7 @@ t/collections/hash/hash-exists-adverb.t
 t/collections/hash/hash-first-positional.t
 t/collections/hash/hash-function-flattens-plain-lists.t
 t/collections/hash/hash-gist-nested-comma.t
+t/collections/hash/hash-incdec-lean-local.t
 t/collections/hash/hash-init-contained-pair.t
 t/collections/hash/hash-interp-key.t
 t/collections/hash/hash-itemization-flag.t
@@ -1262,6 +1263,7 @@ t/collections/transform/rotor-zero-count.t
 t/collections/transform/sort-by-named-is-swallowed.t
 t/collections/transform/sort-comparator-returns-container.t
 t/collections/transform/sort-inline-comparator-container-elements.t
+t/collections/transform/sort-inline-comparator.t
 t/collections/transform/sort-key-extractor-batch.t
 t/collections/transform/sort-list-key.t
 t/collections/transform/sort-no-args.t
@@ -3462,6 +3464,7 @@ t/lang/quoting/interp-call-as-sub.t
 t/lang/quoting/interp-unicode-var-name.t
 t/lang/quoting/interpolate-code-call-postfix.t
 t/lang/quoting/interpolation-corner-bracket-nested.t
+t/lang/quoting/interpolation-plain-pieces-presized.t
 t/lang/quoting/interpolation-plain-pieces.t
 t/lang/quoting/interpolation-uninit-warning-names.t
 t/lang/quoting/interpolation-user-infix-tilde.t
@@ -3954,6 +3957,7 @@ t/modules/import-export/need-after-load-export-stash.t
 t/modules/import-export/need-after-unit-module-constant-from-own-class.t
 t/modules/import-export/need-bare-module-multi-not-imported.t
 t/modules/import-export/need-bare-module-plain-sub-not-imported.t
+t/modules/import-export/need-file-module-our-code-var-stays-private.t
 t/modules/import-export/need-hides-dependency-export-constant.t
 t/modules/import-export/need-in-block-keeps-module-imports.t
 t/modules/import-export/need-module-name-selectors.t
@@ -4809,6 +4813,7 @@ t/oo/attribute/at-sigil-attribute-list-assign.t
 t/oo/attribute/attr-access-resolution.t
 t/oo/attribute/attr-accessor-rw-method-overrides-readonly.t
 t/oo/attribute/attr-accessor-slot.t
+t/oo/attribute/attr-aggregate-assign-tied-or-plain.t
 t/oo/attribute/attr-aggregate-bind-callee-instance.t
 t/oo/attribute/attr-aggregate-slot-ops.t
 t/oo/attribute/attr-aggregate-store-site-cache.t
@@ -5290,6 +5295,7 @@ t/oo/construct/constructor-positional.t
 t/oo/construct/control-construct-value-position.t
 t/oo/construct/control-constructs-in-expression-position.t
 t/oo/construct/cpp-constructor-syntax.t
+t/oo/construct/ctor-definite-required-provided.t
 t/oo/construct/ctor-istype-shaped-attrs.t
 t/oo/construct/ctor-lane-build-tweak.t
 t/oo/construct/ctor-lane-early-form.t
@@ -6937,6 +6943,7 @@ t/rakuast/rakuast-ctor-unknown-named-arg.t
 t/rakuast/rakuast-ctor-unknown-named-hand-built.t
 t/rakuast/rakuast-cu-core-prefixed-type.t
 t/rakuast/rakuast-cu-imported-type-resolution.t
+t/rakuast/rakuast-cu-late-import-resolution.t
 t/rakuast/rakuast-cu-method-invocant-type.t
 t/rakuast/rakuast-cu-module-walker-type-resolution.t
 t/rakuast/rakuast-cu-multipart-setting-type.t
@@ -7178,6 +7185,7 @@ t/rakuast/rakuast-imaginary-literal.t
 t/rakuast/rakuast-imaginary-postfix-operator.t
 t/rakuast/rakuast-immediate-sub-call.t
 t/rakuast/rakuast-imported-bareword-call.t
+t/rakuast/rakuast-imported-operator-resolution.t
 t/rakuast/rakuast-imported-term-finalize.t
 t/rakuast/rakuast-imported-value-binding.t
 t/rakuast/rakuast-index-assign-finalize.t
@@ -7210,6 +7218,7 @@ t/rakuast/rakuast-labelled-repeat.t
 t/rakuast/rakuast-leading-colons-type-name.t
 t/rakuast/rakuast-leaf-accessors.t
 t/rakuast/rakuast-lexical-package.t
+t/rakuast/rakuast-lexical-three-way-operators.t
 t/rakuast/rakuast-list-infix-adverbs.t
 t/rakuast/rakuast-list-infix.t
 t/rakuast/rakuast-listinfix-bind.t
@@ -8169,6 +8178,7 @@ t/regex/regex-lookaround.t
 t/regex/regex-lr-bookkeeping-gate.t
 t/regex/regex-ltm-declarative-prefix.t
 t/regex/regex-ltm-dq-interpolation.t
+t/regex/regex-ltm-first-char-gate.t
 t/regex/regex-ltm-first-step-guard.t
 t/regex/regex-ltm-furthest-fate.t
 t/regex/regex-ltm-interpolation-provenance.t
@@ -8179,6 +8189,7 @@ t/regex/regex-ltm-nfa-entry-points.t
 t/regex/regex-ltm-nfa-proto.t
 t/regex/regex-ltm-nfa.t
 t/regex/regex-ltm-proto-dispatch.t
+t/regex/regex-ltm-proto-first-char-gate.t
 t/regex/regex-ltm-recursion-cut.t
 t/regex/regex-ltm-sibling-termination-leak.t
 t/regex/regex-ltm-uniprop-negated-named-fate.t
@@ -8262,6 +8273,7 @@ t/regex/regex-str-coercion-name.t
 t/regex/regex-str-coercion-warns.t
 t/regex/regex-subpattern-parse-memo.t
 t/regex/regex-subrule-absolute-position.t
+t/regex/regex-subrule-arg-list-simple.t
 t/regex/regex-subrule-block-argument.t
 t/regex/regex-subrule-parameter-typecheck.t
 t/regex/regex-subrule-parse-cache.t
@@ -8654,6 +8666,7 @@ t/routines/callable-can-list.t
 t/routines/callable-for-phaser-own-code-object.t
 t/routines/callable-set-subset-operators.t
 t/routines/callable-var-paren-assign-call.t
+t/routines/caller-lexical-lists-caller-routines.t
 t/routines/closure/anon-container-cell-inplace-reassign.t
 t/routines/closure/anon-declarator-name-and-gist.t
 t/routines/closure/anon-enum-value-map.t
@@ -9195,6 +9208,7 @@ t/routines/enter-phaser-expr-hoisted-in-routine.t
 t/routines/eval-block-routine-shadows-outer.t
 t/routines/eval-context-caller-routine-attr.t
 t/routines/eval-end-phaser-calls-unit-routine.t
+t/routines/eval-import-undeclared-routine-scope.t
 t/routines/eval-in-other-routine-lexicals.t
 t/routines/eval-in-routine-sees-unit-locals.t
 t/routines/eval-mainline-placeholder.t
@@ -9261,6 +9275,7 @@ t/routines/nested-sub-same-name-own-free-vars.t
 t/routines/nested-sub-shadows-class-body-my.t
 t/routines/nested-sub-shadows-imported-constant-term.t
 t/routines/nested-sub-shadows-outer-code-variable.t
+t/routines/operator-routine-value-ignores-caller-lexical.t
 t/routines/orelse-andthen-routine-form-callable.t
 t/routines/os-functions.t
 t/routines/output-routine-forms-agree.t
@@ -9544,6 +9559,7 @@ t/routines/signature/multiple-signatures.t
 t/routines/signature/named-arg-alias-external-key.t
 t/routines/signature/named-arg-capture-alias-root.t
 t/routines/signature/named-arg-consumed-check.t
+t/routines/signature/named-arg-container-write-through.t
 t/routines/signature/named-arg-rightmost-wins.t
 t/routines/signature/named-arg-source-names-after-light-call.t
 t/routines/signature/named-arg-statement-call.t
@@ -9600,6 +9616,7 @@ t/routines/signature/param-default-before-return-arrow.t
 t/routines/signature/param-default-bool-conforms-int.t
 t/routines/signature/param-default-keeps-code-lexicals.t
 t/routines/signature/param-default-nil-and-type-object.t
+t/routines/signature/param-default-resolves-in-routine-scope.t
 t/routines/signature/param-default-self-scoping.t
 t/routines/signature/param-default-whatever-and-empty-capture.t
 t/routines/signature/param-exprs-compile-once.t
@@ -11123,6 +11140,7 @@ t/vm/scope/eval-bind-outer-lexical.t
 t/vm/scope/eval-block-hook-import-my-stash.t
 t/vm/scope/eval-dot-form-caller-lexicals.t
 t/vm/scope/eval-identical-sub-own-scope.t
+t/vm/scope/eval-mainline-caller-lexical-stash.t
 t/vm/scope/eval-my-class-out-of-scope.t
 t/vm/scope/eval-my-shadows-caller-lexical.t
 t/vm/scope/eval-prerun-use-scope.t

@@ -53,6 +53,11 @@ pub(super) static FAMILIES: &[&[MethodRow]] = &[
 // `Buf` type names, O(n) in its length, and so is an instance's once a user
 // buffer class exists.
 pub(crate) fn owners_of(value: &Value) -> Option<&'static [&'static str]> {
+    // A Match (a `Capture`, not `Cool`) has no mutating rows; a lazy one is
+    // answered without the view, which would force its materialization.
+    if value.descalarize().is_lazy_match_value() {
+        return None;
+    }
     match value.descalarize().view() {
         // A method that replaces the value (`subst-mutate`) or writes back under
         // the binding (`substr-rw`) has nothing to write to without a name, so
@@ -135,6 +140,9 @@ fn cool_instance(class_name: &str) -> Option<&'static [&'static str]> {
 /// [`owners_of`] answers.
 // Cost: O(1), a tag probe and a short name compare.
 pub(crate) fn type_object_owners(value: &Value) -> Option<&'static [&'static str]> {
+    if value.descalarize().is_lazy_match_value() {
+        return None;
+    }
     let ValueView::Package(name) = value.descalarize().view() else {
         return None;
     };

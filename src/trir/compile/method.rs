@@ -22,6 +22,7 @@ use crate::trir::{TrKind, TrMethodCall, TrOp};
 /// Methods that read their receiver's value and nothing else.
 const VALUE_METHODS: &[&str] = &[
     "Numeric", "Bool", "Str", "Int", "Num", "raku", "gist", "base", "chars", "substr", "fmt",
+    "chr", "ord", "NFC", "NFD", "NFKC", "NFKD",
 ];
 
 impl TrirCompiler<'_> {
@@ -54,7 +55,10 @@ impl TrirCompiler<'_> {
             self.note_decline(|| format!("method .{name} on a boxed variable"));
             return None;
         }
-        let tk = self.compile_expr(target)?;
+        // The receiver of a value-only method is read for its value, so a
+        // sigilless parameter (`text.NFD`) is as safe here as it is as an
+        // `nqp::` operand: no container travels anywhere.
+        let tk = self.compile_nqp_operand(target)?;
         self.coerce(tk, TrKind::Obj)?;
         for a in args {
             let k = self.compile_expr(a)?;

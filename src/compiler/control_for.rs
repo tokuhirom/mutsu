@@ -451,9 +451,27 @@ impl Compiler {
         // Only an implicit-topic loop rebinds `$_`; see `ForLoopSpec::topic_local`.
         // A multi-parameter loop leaves `$_` alone (its batch travels through
         // a hidden variable), so it has no topic slot to mirror.
-        let topic_local = (param.is_none() && params.is_empty())
+        let threaded = matches!(mode, crate::ast::ForMode::Race | crate::ast::ForMode::Hyper);
+        let topic_loop = param.is_none() && params.is_empty();
+        let mut topic_local = topic_loop
             .then(|| self.local_map.get("_").copied())
             .flatten();
+        // A topic loop whose body cannot observe its topic's container
+        // (#14495's allow-list: no call into user code, no closure, no write,
+        // bind or capture of `$_`) reads `$_` from a slot of its own, and the
+        // VM need not bind the env's `_` per item (`ForLoopSpec::topic_slot_only`).
+        let topic_slot_only = topic_local.is_none()
+            && topic_loop
+            && !threaded
+            && !has_rw
+            && !has_copy
+            && !has_raw
+            && super::for_topic_alias::topic_alias_unobservable(&loop_body);
+        if topic_slot_only {
+            let slot = self.alloc_fresh_local(crate::symbol::wk::loop_topic().as_str());
+            self.local_map.insert("_".to_string(), slot);
+            topic_local = Some(slot);
+        }
         let kv_mode = has_rw && Self::for_iterable_is_kv(iterable);
         // Names of the loop's multi-params whose value is written back to the
         // source each iteration. Only a *genuinely rw* param writes back: a
@@ -531,7 +549,6 @@ impl Compiler {
         // prefix built by `build_for_bind_stmts`) through a local slot, not
         // the env (`ForLoopSpec::chunk_local`). A `race`/`hyper` loop runs the
         // body on other interpreters, which keep the by-name key.
-        let threaded = matches!(mode, crate::ast::ForMode::Race | crate::ast::ForMode::Hyper);
         let chunk_local =
             (!params.is_empty() && !threaded).then(|| self.alloc_local("__mutsu_for_chunk"));
         let loop_idx = self
@@ -540,6 +557,7 @@ impl Compiler {
                 param_idx,
                 param_local,
                 topic_local,
+                topic_slot_only,
                 chunk_local,
                 source_container_local,
                 body_end: 0,
@@ -791,6 +809,11 @@ impl Compiler {
             && let Some(slot) = self.local_map.remove(name)
         {
             self.retired_loop_param_slots.insert(name.clone(), slot);
+        }
+        // The loop's own topic slot ends with the body: a `$_` after the loop
+        // is the enclosing topic, read by name again.
+        if topic_slot_only {
+            self.local_map.remove("_");
         }
         // Restore the single named loop param after the post (LAST) phasers ran.
         // The ForLoop opcode deferred this restore (pushing its saved binding)
