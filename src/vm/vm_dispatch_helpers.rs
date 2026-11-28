@@ -776,7 +776,18 @@ impl Interpreter {
     /// truthy result here; it is not the regex matcher supplied directly to
     /// grep, so it must not be implicitly smartmatched against the caller's
     /// topic.
+    // Cost: O(1) for a plain scalar; otherwise as `eval_truthy`.
     pub(crate) fn eval_predicate_truthy(&mut self, val: &Value) -> bool {
+        // A plain `Bool`, `Int`, `Num` or `Str` -- what a grep predicate
+        // almost always returns -- has no Seq to pull, is no regex and has no
+        // user `Bool` to dispatch to: `eval_truthy` answers it with
+        // `Value::truthy` after its probes, so answer it first (#19323).
+        if matches!(
+            val.view(),
+            ValueView::Bool(_) | ValueView::Int(_) | ValueView::Num(_) | ValueView::Str(_)
+        ) {
+            return val.truthy();
+        }
         let _ = self.reify_map_grep_seq(val);
         if Self::is_regex_like_value(val) {
             if val.regex_captured_topic().is_some() {

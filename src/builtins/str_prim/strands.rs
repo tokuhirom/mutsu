@@ -123,6 +123,55 @@ impl Joiner {
         Self::default()
     }
 
+    /// The joined string of `pieces` when every one is a plain `Str` or a
+    /// plain `Int` (`"key-$i"`), else `None`. The pending buffer is sized
+    /// for the whole result up front, so a short interpolation allocates its
+    /// text once instead of growing it piece by piece.
+    ///
+    /// Cost: O(n), n = bytes of the result.
+    pub(crate) fn join_plain_pieces(pieces: &[Value]) -> Option<Value> {
+        // An i64 is at most 20 characters ("-9223372036854775808").
+        const MAX_INT_CHARS: usize = 20;
+        let mut cap = 0usize;
+        for v in pieces {
+            if let crate::value::ValueView::Str(arc) = v.view() {
+                cap += arc.byte_len();
+            } else if v.as_int().is_some() {
+                cap += MAX_INT_CHARS;
+            } else {
+                return None;
+            }
+        }
+        // A result under `STRAND_MIN_BYTES` (`cap` bounds it) is built flat
+        // whatever its pieces are (`finish` copies shared parts back into one
+        // buffer then), so write it straight into one buffer: the same text,
+        // NFC-checked the same way, without the joiner's bookkeeping.
+        if cap < STRAND_MIN_BYTES {
+            let mut out = String::with_capacity(cap);
+            for v in pieces {
+                if let Some(i) = v.as_int() {
+                    out.push_str(super::IntDecimal::of(i).as_str());
+                } else if let crate::value::ValueView::Str(arc) = v.view() {
+                    out.push_str(arc.as_str());
+                }
+            }
+            return Some(super::build::nfc_value(out));
+        }
+        let mut joiner = Joiner {
+            parts: Vec::new(),
+            pending: String::with_capacity(cap),
+            len: 0,
+        };
+        for v in pieces {
+            if let Some(i) = v.as_int() {
+                joiner.push_int(i);
+            } else {
+                joiner.push_value(v);
+            }
+        }
+        Some(joiner.finish())
+    }
+
     /// Append text that has no shareable payload.
     ///
     /// Cost: O(n), n = bytes of `s`.
@@ -137,11 +186,9 @@ impl Joiner {
     ///
     /// Cost: O(d), d = decimal digits of `i`.
     pub(crate) fn push_int(&mut self, i: i64) {
-        use std::fmt::Write as _;
-        let before = self.pending.len();
-        // Writing into a `String` cannot fail.
-        let _ = write!(self.pending, "{i}");
-        self.len += self.pending.len() - before;
+        let text = super::IntDecimal::of(i);
+        self.pending.push_str(text.as_str());
+        self.len += text.as_str().len();
     }
 
     /// Append a value's string form: a big `Str` is referenced, anything

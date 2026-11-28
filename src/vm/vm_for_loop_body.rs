@@ -9,6 +9,10 @@ use super::*;
 pub(super) enum LoopItemSink {
     /// The topic `$_` (and the frame's topic slot): a one-parameter loop.
     Topic,
+    /// Only the loop's own topic slot (`ForLoopSpec::topic_slot_only`): the
+    /// body reads `$_` through it alone, so the env's `_` keeps the
+    /// enclosing topic.
+    TopicSlot(usize),
     /// A multi-parameter loop's batch, by name in `env`.
     ChunkEnv,
     /// A multi-parameter loop's batch, in this local slot.
@@ -19,7 +23,10 @@ impl LoopItemSink {
     // Cost: O(1).
     pub(super) fn of(spec: &ForLoopSpec) -> Self {
         if spec.multi_param_names.is_empty() {
-            LoopItemSink::Topic
+            match spec.topic_local {
+                Some(slot) if spec.topic_slot_only => LoopItemSink::TopicSlot(slot as usize),
+                _ => LoopItemSink::Topic,
+            }
         } else if let Some(slot) = spec.chunk_local {
             LoopItemSink::ChunkLocal(slot as usize)
         } else {
@@ -111,7 +118,7 @@ impl Interpreter {
     ) {
         match chunk_mode {
             LoopItemSink::Topic => {}
-            LoopItemSink::ChunkLocal(slot) => {
+            LoopItemSink::TopicSlot(slot) | LoopItemSink::ChunkLocal(slot) => {
                 self.locals[slot] = val;
                 return;
             }
@@ -217,6 +224,38 @@ impl Interpreter {
             Some(end) => &items[..end],
             None => items,
         };
+        // A plain loop over plain `Int`s with its own topic slot runs as a
+        // loop kernel before anything is bound; a bail resumes here at the
+        // iteration it could not finish (`vm_for_loop_list_kernel`).
+        #[cfg(feature = "jit")]
+        let resume_index = if resume_index == 0 && live.is_none() && stream.is_none() {
+            match self.try_list_loop_kernel(
+                code,
+                spec,
+                items,
+                body_start,
+                loop_end,
+                compiled_fns,
+            )? {
+                Some(done) if done >= items.len() && iteration_end_at.is_none() => {
+                    // A named parameter's prior binding is restored by the
+                    // `RestoreForParam` after the loop, from the entry the
+                    // driver pushes on completion: push it here too. The
+                    // kernel wrote neither the slot nor the env.
+                    if let Some(idx) = spec.param_idx
+                        && let ValueView::Str(name) = code.constants[idx as usize].view()
+                    {
+                        let saved = self.save_for_param(name.as_str(), spec.param_local);
+                        self.topic_state.for_param_restore_stack.push(saved);
+                    }
+                    return Ok(true);
+                }
+                Some(done) => done,
+                None => 0,
+            }
+        } else {
+            resume_index
+        };
         // `true`  = the loop ran every item to completion;
         // `false` = it exited early via `last` or `return` (the live-array
         // continuation in `exec_for_loop_op` must NOT pick up newly-pushed tail
@@ -281,7 +320,14 @@ impl Interpreter {
         // element with the Pair (S32-array/pairs.t 14). The Pair's rw `.value`
         // alias handles propagation (and immutability for Mix), so suppress the
         // plain writeback here while keeping the source tag.
-        let writes_back_loop_var = writes_back_topic && !spec.loop_var_wraps_element;
+        //
+        // A body that cannot write, bind or capture `$_` (`topic_alias_unobservable`,
+        // #14495) never changes the topic, so its writeback would compare
+        // every element with itself; skip it, and the up-front copy of a
+        // `%h.values` source's key order it needs.
+        let writes_back_loop_var = writes_back_topic
+            && !spec.loop_var_wraps_element
+            && !(spec.topic_alias_unobservable && !spec.do_writeback);
         // ADR-0052 Slice 1: a construct that runs a body owns a stack base and
         // truncates to it at the end of EVERY iteration, not only when it is
         // collecting. A sink-position loop used to establish no base at all, so
@@ -1060,7 +1106,9 @@ impl Interpreter {
                 }
                 _ => item,
             };
-            if let Some(ref name) = param_name {
+            if let Some(ref name) = param_name
+                && !spec.param_slot_only
+            {
                 // Interned once per loop, not a `String` key per iteration:
                 // `Env::insert` only interns its key (#19201).
                 let sym = *param_sym.get_or_insert_with(|| Symbol::intern(name));
@@ -1115,6 +1163,7 @@ impl Interpreter {
             // variable.
             let bare_sigilless_source = spec.source_items_are_bare && spec.param_sigilless;
             if (!spec.is_rw || ((bare_buffer_item || bare_sigilless_source) && !param_is_copy))
+                && !spec.param_slot_only
                 && let Some(ref name) = param_name
                 && !name.starts_with('@')
                 && !name.starts_with('%')

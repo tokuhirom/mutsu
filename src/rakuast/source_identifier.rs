@@ -34,7 +34,12 @@ pub(super) fn named_routine_call(
     listop: bool,
 ) -> Result<RakuAstNode, RuntimeError> {
     let mut node = call_name(names, name, args, listop)?;
-    if matches!(expr, Expr::UserRoutineCall { .. }) {
+    // The parser emits ControlFlow/Last/Next/Redo for the core controls.
+    // A Call with one of these names therefore records a routine that
+    // shadowed the control through an import; keep that choice through AST.
+    if matches!(expr, Expr::UserRoutineCall { .. })
+        || (matches!(expr, Expr::Call { .. }) && matches!(name, "last" | "next" | "redo"))
+    {
         node.fields
             .push(super::declared_routines::user_call_field());
     }

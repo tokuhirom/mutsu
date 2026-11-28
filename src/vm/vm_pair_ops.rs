@@ -32,13 +32,23 @@ impl Interpreter {
     /// directly in an argument list, or a Capture literal's named-lane
     /// element `\(:$a)`) — preserving the in-band named marker those sites
     /// need to reach the callee's binder.
-    // Cost: O(k + l), k = string key bytes, l = by-name locals fallback. Rakudo: O(1) -- see #9252.
+    // Cost: O(k + l), k = key bytes for a strand or slice key (a flat one is shared), l = by-name locals fallback. Rakudo: O(1) -- see #9252.
+    ///
+    /// `lazy` (#19384): a `WrapVarRef`-tagged value stays in the Pair as it
+    /// is, for the `CallMethodMut` site to resolve (`vm_lazy_named_args`).
     pub(super) fn exec_make_named_arg_op(
         &mut self,
         code: &crate::opcode::CompiledCode,
         readonly: bool,
+        lazy: bool,
     ) {
-        let (left, right) = self.pop_pair_operands_capturing(code, true);
+        let (left, right) = if lazy && !readonly {
+            let right = self.stack.pop().unwrap_or(Value::NIL);
+            let left = self.stack.pop().unwrap_or(Value::NIL).deitemize_element();
+            (left, right)
+        } else {
+            self.pop_pair_operands_capturing(code, true)
+        };
         let right = if readonly {
             Value::container_ref(crate::gc::Gc::new(
                 crate::value::ContainerCell::new_readonly_binding(
@@ -53,10 +63,7 @@ impl Interpreter {
         // Use ValuePair for non-string keys, Pair (the named flavour) for
         // string keys — the shape every named-arg key actually has.
         match left.view() {
-            ValueView::Str(_) => {
-                let key = left.to_string_value();
-                self.stack.push(Value::pair(key, right));
-            }
+            ValueView::Str(_) => self.stack.push(Value::pair_str_key(&left, right)),
             _ => {
                 self.stack.push(Value::value_pair(left, right));
             }
@@ -103,13 +110,27 @@ impl Interpreter {
             // through to, and the write was faked by rebinding `$p`'s own env
             // entry: the Pair printed `k => 5` while `$x` stayed `Int`.
             right = if named {
-                let cell = self.capture_rw_arg_cell(code, source_name, inner, slot_hint);
-                self.register_container_cell_constraint_for_name(&cell, source_name);
-                cell
+                self.capture_named_arg_cell(code, source_name, inner, slot_hint)
             } else {
                 self.capture_var_cell_boxing_type_objects(code, source_name, inner, slot_hint)
             };
         }
         (left, right)
+    }
+
+    /// The shared cell a named argument `:$name` hands its callee, so an
+    /// `is rw` / raw binding, a `|c` capture or a `*%h` slurpy writes through
+    /// to the caller's variable.
+    // Cost: O(1) with a source slot; O(l) by-name fallback, l = frame locals.
+    pub(super) fn capture_named_arg_cell(
+        &mut self,
+        code: &crate::opcode::CompiledCode,
+        source_name: &str,
+        inner: Value,
+        slot_hint: Option<u32>,
+    ) -> Value {
+        let cell = self.capture_rw_arg_cell(code, source_name, inner, slot_hint);
+        self.register_container_cell_constraint_for_name(&cell, source_name);
+        cell
     }
 }

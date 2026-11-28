@@ -1,0 +1,1 @@
+AST EVAL now registers an inline module's exported routines before running a `CHECK` that imports it. The EVAL unit uses the same declaration-only prepass as a main unit, while ordinary package body statements still run in source order.

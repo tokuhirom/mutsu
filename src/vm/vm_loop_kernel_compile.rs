@@ -19,7 +19,7 @@
 
 use super::vm_jit_compile::with_engine;
 use super::vm_loop_kernel_emit::Em;
-use super::vm_loop_kernel_types::{LoopShape, LoopVar};
+use super::vm_loop_kernel_types::{ListKind, LoopShape, LoopVar};
 use super::vm_loop_kernel_typing::Typed;
 use super::*;
 use crate::opcode::kernel_slot::SlotKind;
@@ -48,11 +48,22 @@ pub(super) struct LoopCtx {
     pub(super) kctx: super::vm_kernel_compile::KernelCtx,
     /// Each call's sub-kernel entry, resolved at entry.
     pub(super) callees: [usize; MAX_CALLS],
+    /// The interpreter and the code the element helpers act on
+    /// (`vm_kernel_elem`); set by the entry for the length of the run.
+    pub(super) interp: *mut Interpreter,
+    pub(super) code: *const CompiledCode,
+    /// An `Int` list loop's items (`ListKind::Int`), each a plain `Int`,
+    /// indexed by the counter; null otherwise.
+    pub(super) list: *const i64,
+    /// A `Str` list loop's items (`ListKind::Str`), read in place by the hash
+    /// helpers at the counter; null otherwise.
+    pub(super) items: *const Value,
 }
 
 const CTX_POLL: i32 = 0;
 const CTX_INCLUSIVE: i32 = 4;
 const CTX_END: i32 = 8;
+const CTX_LIST: i32 = std::mem::offset_of!(LoopCtx, list) as i32;
 
 extern "C" fn loop_poll(ctx: *mut LoopCtx) {
     // SAFETY: `ctx` is the `LoopCtx` the entry point passed in, live on its
@@ -73,9 +84,10 @@ pub(super) fn compile(
     code: &CompiledCode,
     shape: &LoopShape,
     carried: &[(u32, SlotKind)],
+    elem_reads: &[super::vm_loop_kernel_types::ElemRead],
     typed: &Typed,
 ) -> Option<usize> {
-    with_engine(|module, n| build(module, n, code, shape, carried, typed))
+    with_engine(|module, n| build(module, n, code, shape, carried, elem_reads, typed))
 }
 
 fn build(
@@ -84,6 +96,7 @@ fn build(
     code: &CompiledCode,
     shape: &LoopShape,
     carried: &[(u32, SlotKind)],
+    elem_reads: &[super::vm_loop_kernel_types::ElemRead],
     typed: &Typed,
 ) -> Option<usize> {
     let frontend_config = module.target_config();
@@ -108,6 +121,62 @@ fn build(
             b.import_signature(sig)
         })
         .collect();
+    let elem_sig = |b: &mut FunctionBuilder, value: types::Type| {
+        let mut sig = cranelift_codegen::ir::Signature::new(module.isa().default_call_conv());
+        for t in [ptr, ptr, types::I32, types::I64, value] {
+            sig.params.push(AbiParam::new(t));
+        }
+        sig.returns.push(AbiParam::new(types::I32));
+        b.import_signature(sig)
+    };
+    let elem = super::vm_loop_kernel_emit_elem::ElemSigs {
+        read: elem_sig(&mut b, ptr),
+        store_int: elem_sig(&mut b, types::I64),
+        store_num: elem_sig(&mut b, types::F64),
+        read2: {
+            let mut sig = cranelift_codegen::ir::Signature::new(module.isa().default_call_conv());
+            for t in [ptr, ptr, types::I32, types::I64, types::I64, ptr] {
+                sig.params.push(AbiParam::new(t));
+            }
+            sig.returns.push(AbiParam::new(types::I32));
+            b.import_signature(sig)
+        },
+        store_prefixed_int: {
+            let mut sig = cranelift_codegen::ir::Signature::new(module.isa().default_call_conv());
+            for t in [ptr, ptr, types::I32, types::I32, types::I64, types::I64] {
+                sig.params.push(AbiParam::new(t));
+            }
+            sig.returns.push(AbiParam::new(types::I32));
+            b.import_signature(sig)
+        },
+        store_prefixed_num: {
+            let mut sig = cranelift_codegen::ir::Signature::new(module.isa().default_call_conv());
+            for t in [ptr, ptr, types::I32, types::I32, types::I64, types::F64] {
+                sig.params.push(AbiParam::new(t));
+            }
+            sig.returns.push(AbiParam::new(types::I32));
+            b.import_signature(sig)
+        },
+        incdec_item: {
+            let mut sig = cranelift_codegen::ir::Signature::new(module.isa().default_call_conv());
+            for t in [ptr, ptr, types::I32, ptr, types::I64, types::I32] {
+                sig.params.push(AbiParam::new(t));
+            }
+            sig.returns.push(AbiParam::new(types::I32));
+            b.import_signature(sig)
+        },
+        incdec_int: {
+            let mut sig = cranelift_codegen::ir::Signature::new(module.isa().default_call_conv());
+            for t in [ptr, ptr, types::I32, types::I64, types::I32] {
+                sig.params.push(AbiParam::new(t));
+            }
+            sig.returns.push(AbiParam::new(types::I32));
+            b.import_signature(sig)
+        },
+        items_offset: std::mem::offset_of!(LoopCtx, items) as i32,
+        interp_offset: std::mem::offset_of!(LoopCtx, interp) as i32,
+        code_offset: std::mem::offset_of!(LoopCtx, code) as i32,
+    };
     let mf = MemFlagsData::trusted();
 
     let entry = b.create_block();
@@ -162,6 +231,16 @@ fn build(
         vars,
         bail,
         var: shape.loop_var(),
+        str_var: match (*shape, shape.loop_var()) {
+            (
+                LoopShape::Range {
+                    list: ListKind::Str,
+                    ..
+                },
+                Some(LoopVar::Slot(s)),
+            ) => Some(s),
+            _ => None,
+        },
         counter,
         ctxp,
         poll_sig,
@@ -172,11 +251,13 @@ fn build(
         kctx_offset: std::mem::offset_of!(LoopCtx, kctx) as i32,
         call_sigs,
         next_call: 0,
+        elem_reads: elem_reads.to_vec(),
+        elem,
     };
     em.poll();
     let body_blk = em.b.create_block();
     match *shape {
-        LoopShape::Range { var, .. } => {
+        LoopShape::Range { var, list, .. } => {
             let i = em.b.use_var(counter);
             let end = em.b.ins().load(types::I64, mf, ctxp, CTX_END);
             let incl = em.b.ins().load(types::I32, mf, ctxp, CTX_INCLUSIVE);
@@ -185,9 +266,28 @@ fn build(
             let more = em.b.ins().select(incl, le, lt);
             em.b.ins().brif(more, body_blk, &[], exit, &[]);
             em.b.switch_to_block(body_blk);
-            if let LoopVar::Slot(s) = var {
-                let (v, _) = *em.vars.get(&s)?;
-                em.b.def_var(v, i);
+            match var {
+                // A `Str` list's variable is the counter itself, read as the
+                // item's index (`K::StrItem`): nothing to load.
+                LoopVar::Slot(_) if list == ListKind::Str => {}
+                // An `Int` list loop's variable is the item at the counter:
+                // the entry checked `0 <= counter < end = len` holds for every
+                // index the loop test admits.
+                LoopVar::Slot(s) if list == ListKind::Int => {
+                    let (v, _) = *em.vars.get(&s)?;
+                    let base = em.b.ins().load(ptr, mf, ctxp, CTX_LIST);
+                    let off = em.b.ins().ishl_imm_u(i, 3);
+                    let addr = em.b.ins().iadd(base, off);
+                    let item = em.b.ins().load(types::I64, mf, addr, 0);
+                    em.b.def_var(v, item);
+                }
+                LoopVar::Slot(s) => {
+                    let (v, _) = *em.vars.get(&s)?;
+                    em.b.def_var(v, i);
+                }
+                // A list loop always reads its topic through a slot.
+                LoopVar::Topic if list != ListKind::No => return None,
+                LoopVar::Topic => {}
             }
             let segs = shape.segments();
             em.segment(segs[0].0, segs[0].1, &typed.joins)?;
@@ -251,7 +351,7 @@ fn build(
     let id = module
         .declare_function(&name, Linkage::Local, &ctx.func.signature)
         .ok()?;
-    module.define_function(id, &mut ctx).ok()?;
+    super::vm_jit_verify::define_function_checked(module, id, &mut ctx, "loop kernel")?;
     module.clear_context(&mut ctx);
     module.finalize_definitions().ok()?;
     Some(module.get_finalized_function(id) as usize)

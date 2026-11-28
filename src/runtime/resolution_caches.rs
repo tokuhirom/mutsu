@@ -399,13 +399,34 @@ pub(crate) struct ResolutionCaches {
     /// registry generation change. See `vm_ctor_lane`.
     pub(crate) ctor_lane: rustc_hash::FxHashMap<Symbol, Arc<NativeCtorPlan>>,
     /// The class the *current* `CallMethodMut` dispatch may install into
-    /// [`Self::ctor_lane`]; set (or cleared) by that opcode's gate.
-    pub(crate) ctor_lane_candidate: Option<Symbol>,
+    /// [`Self::ctor_lane`] (method `new`) or [`Self::bless_lane`] (method
+    /// `bless`), with that method; set (or cleared) by that opcode's gate.
+    pub(crate) ctor_lane_candidate: Option<(Symbol, Symbol)>,
+    /// The `bless` twin of [`Self::ctor_lane`]: classes whose
+    /// `self.bless(named...)` `CallMethodMut` dispatch was observed to walk
+    /// the whole probe chain into the native `bless`, with the plan that
+    /// construction used. See `vm_bless_lane`.
+    pub(crate) bless_lane: rustc_hash::FxHashMap<Symbol, Arc<NativeCtorPlan>>,
+    /// Classes whose `.new(named...)` dispatch was observed to reach the
+    /// class's own `method new(*%_)`, with the replayable plan. See
+    /// `vm_user_new_lane`.
+    pub(crate) user_new_lane:
+        rustc_hash::FxHashMap<Symbol, Arc<crate::vm::vm_user_new_lane::UserNewPlan>>,
     /// ADR-0121 D3: `(layout id, method name) -> slot` for a `CallMethodMut`
     /// whose whole dispatch was the generated accessor's plain slot read.
     /// Written only from that outcome, and cleared with the other method caches
     /// on a registry generation change. See `vm_accessor_lane`.
     pub(crate) accessor_lane: rustc_hash::FxHashMap<(u32, Symbol), u32>,
+    /// #18267: per call site `(chunk address, ip)`, the accessor-lane or
+    /// method-call-plan answer it was last given, replayed in front of every
+    /// dispatch layer (`vm_method_site_ic`). Valid for the registry method
+    /// generation in [`Self::method_site_ic_generation`]; each entry also
+    /// carries the registry write generation its plan was decided under.
+    pub(crate) method_site_ic:
+        rustc_hash::FxHashMap<(usize, u32), crate::vm::vm_method_site_ic::MethodSiteIcEntry>,
+    pub(crate) method_site_ic_generation: u64,
+    /// The site the current method dispatch may record its answer for.
+    pub(crate) method_site_ic_site: Option<crate::vm::vm_method_site_ic::MethodSiteIcArm>,
     /// `(class, accessor) ->` [`Interpreter::rw_accessor_type_constraint`]'s
     /// answer (`None`: not a public `is rw` attribute; `Some(tc)`: its type
     /// constraint). Cleared with the other method caches on a method

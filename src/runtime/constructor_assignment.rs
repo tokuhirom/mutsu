@@ -2,66 +2,97 @@
 
 use super::*;
 
+/// The value a named argument gives its attribute, as
+/// [`Interpreter::constructor_provided_attrs`] computed it: which argument it
+/// came from, and whether that argument's value was `Nil` (so the stored value
+/// is the attribute's reset default and takes no type check).
+pub(super) struct ProvidedAttr {
+    pub(super) arg_idx: usize,
+    pub(super) value: Value,
+    pub(super) from_nil: bool,
+}
+
 impl Interpreter {
-    // Cost: O(a * n), a = class attributes, n = provided arguments, plus coercions.
+    /// The value each attribute gets from the named arguments, coerced as the
+    /// attribute's store coerces it: for every attribute, the last argument
+    /// naming it (`bless(*%attrinit)` keeps only that one), unless its `is
+    /// Type` coercion fails, which the store reports afterwards. Visited in
+    /// attribute order, as BUILDALL visits them.
+    // Cost: O(n log n + a), a = class attributes, n = provided arguments, plus coercions.
     pub(super) fn constructor_provided_attrs(
         &mut self,
         cn_resolved: &str,
         args: &[Value],
         plan: &NativeCtorPlan,
         arg_attr_idx: &[Option<u32>],
-    ) -> Vec<Option<Value>> {
-        plan
-            .class_attrs
+    ) -> Vec<Option<ProvidedAttr>> {
+        let mut provided: Vec<Option<ProvidedAttr>> =
+            std::iter::repeat_with(|| None).take(plan.class_attrs.len()).collect();
+        let mut order: Vec<(u32, usize)> = arg_attr_idx
             .iter()
             .enumerate()
-            .map(|(i, attr)| {
-                args.iter()
-                    .zip(arg_attr_idx.iter())
-                    .filter_map(|(arg, attr_idx)| {
-                        if *attr_idx != Some(i as u32) {
-                            return None;
-                        }
-                        let ValueView::Pair(key, value) = arg.view() else {
-                            return None;
-                        };
-                        if plan.attr_binds[i] {
-                            return Some(value.clone());
-                        }
-                        let value = value.deref_container();
-                        let coerced = if let Some(type_name) = plan.attr_is_types.get(key.as_str())
-                        {
-                            self.coerce_value_to_is_type(type_name, attr.sigil, value.clone())
-                                .ok()?
-                        } else {
-                            Self::coerce_provided_attr_value_by_sigil(value.clone(), attr.sigil)
-                        };
-                        // A coercion-typed attribute (`has Str() $.x`) coerces a
-                        // provided value through its target type, as `.new` does.
-                        let coerced = match plan.attr_constraints[i].as_ref() {
-                            Some(tc)
-                                if attr.sigil == '$'
-                                    && !coerced.is_nil()
-                                    && crate::runtime::types::is_coercion_constraint(tc) =>
-                            {
-                                self.coerce_value_for_constraint(tc, coerced)
-                            }
-                            _ => coerced,
-                        };
-                        // Raku: assigning `Nil` to a scalar container resets it
-                        // to the container's declared type default, exactly
-                        // like `has $.x = Nil` and plain `$x = Nil` do — not
-                        // the provided `Nil` itself.
-                        let coerced = if attr.sigil == '$' && coerced.is_nil() {
-                            self.attr_store_nil_default(cn_resolved, &attr.name, '$', coerced)
-                        } else {
-                            coerced
-                        };
-                        Some(coerced)
-                    })
-                    .last()
-            })
-            .collect()
+            .filter_map(|(arg_idx, attr_idx)| attr_idx.map(|i| (i, arg_idx)))
+            .collect();
+        order.sort_unstable();
+        // Only the last argument naming each attribute.
+        order.dedup_by(|later, earlier| {
+            later.0 == earlier.0 && {
+                earlier.1 = later.1;
+                true
+            }
+        });
+        for (i, arg_idx) in order {
+            let i = i as usize;
+            let attr = &plan.class_attrs[i];
+            let ValueView::Pair(key, value) = args[arg_idx].view() else {
+                continue;
+            };
+            if plan.attr_binds[i] {
+                provided[i] = Some(ProvidedAttr {
+                    arg_idx,
+                    value: value.clone(),
+                    from_nil: false,
+                });
+                continue;
+            }
+            let value = value.deref_container();
+            let coerced = if let Some(type_name) = plan.attr_is_types.get(key.as_str()) {
+                match self.coerce_value_to_is_type(type_name, attr.sigil, value.clone()) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                }
+            } else {
+                Self::coerce_provided_attr_value_by_sigil(value.clone(), attr.sigil)
+            };
+            // A coercion-typed attribute (`has Str() $.x`) coerces a
+            // provided value through its target type, as `.new` does.
+            let coerced = match plan.attr_constraints[i].as_ref() {
+                Some(tc)
+                    if attr.sigil == '$'
+                        && !coerced.is_nil()
+                        && crate::runtime::types::is_coercion_constraint(tc) =>
+                {
+                    self.coerce_value_for_constraint(tc, coerced)
+                }
+                _ => coerced,
+            };
+            // Raku: assigning `Nil` to a scalar container resets it
+            // to the container's declared type default, exactly
+            // like `has $.x = Nil` and plain `$x = Nil` do — not
+            // the provided `Nil` itself.
+            let from_nil = attr.sigil == '$' && coerced.is_nil();
+            let coerced = if from_nil {
+                self.attr_store_nil_default(cn_resolved, &attr.name, '$', coerced)
+            } else {
+                coerced
+            };
+            provided[i] = Some(ProvidedAttr {
+                arg_idx,
+                value: coerced,
+                from_nil,
+            });
+        }
+        provided
     }
 }
 

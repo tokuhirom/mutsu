@@ -41,6 +41,18 @@ fn engine_in(guard: &mut Option<Engine>) -> Option<&mut Engine> {
     if guard.is_none() {
         let mut flags = settings::builder();
         flags.set("opt_level", "speed").ok()?;
+        // ADR-19368: Cranelift's verifier is a development aid; it runs in
+        // debug builds and under `MUTSU_JIT_VERIFY=1`, not in release builds.
+        flags
+            .set(
+                "enable_verifier",
+                if super::vm_jit_verify::verifier_enabled() {
+                    "true"
+                } else {
+                    "false"
+                },
+            )
+            .ok()?;
         let isa = cranelift_native::builder()
             .ok()?
             .finish(settings::Flags::new(flags))
@@ -339,11 +351,17 @@ fn build(
 
     // `open` = the current block still needs a terminator.
     let mut open = true;
+    // The op just emitted together with the one before it (a fused
+    // element store and its sink): skip it.
+    let mut fused_next = false;
     for (i, op) in code.ops[start..end]
         .iter()
         .enumerate()
         .map(|(k, op)| (start + k, op))
     {
+        if std::mem::take(&mut fused_next) {
+            continue;
+        }
         if let Some(&blk) = block_at.get(&i) {
             if open {
                 b.ins().jump(blk, &[]);
@@ -861,6 +879,30 @@ fn build(
                         &[interp, codep, opidx, fnsp],
                     )?;
                     check_status(&mut b, status);
+                } else if super::vm_jit_element_step::sunk_element_store_at(code, i, end)
+                    && !block_at.contains_key(&(i + 1))
+                {
+                    // An element store statement and its sink, as one shim.
+                    let opidx = b.ins().iconst(types::I32, i as i64);
+                    let status = call_helper(
+                        &mut b,
+                        sigs.s_call,
+                        super::vm_jit_element_step::element_store_sunk as *const () as usize,
+                        &[interp, codep, opidx, fnsp],
+                    )?;
+                    check_status(&mut b, status);
+                    fused_next = true;
+                } else if matches!(op, OpCode::StringConcat(_)) {
+                    // A string interpolation: the op's body without the
+                    // interpreter dispatch.
+                    let opidx = b.ins().iconst(types::I32, i as i64);
+                    let status = call_helper(
+                        &mut b,
+                        sigs.s_call,
+                        super::vm_jit_concat_step::concat_step as *const () as usize,
+                        &[interp, codep, opidx, fnsp],
+                    )?;
+                    check_status(&mut b, status);
                 } else if super::vm_jit_element_step::is_element_step_op(op) {
                     // An element read or store: its fast lane without the
                     // interpreter dispatch (#19286), else the generic op.
@@ -911,7 +953,7 @@ fn build(
         .declare_function(&name, Linkage::Local, &ctx.func.signature)
         .ok()?;
     super::vm_jit_dump::before_define(dump, &name, code, start, end, &mut ctx);
-    module.define_function(id, &mut ctx).ok()?;
+    super::vm_jit_verify::define_function_checked(module, id, &mut ctx, "bytecode JIT")?;
     let code_len = super::vm_jit_dump::after_define(dump, &name, &ctx);
     module.clear_context(&mut ctx);
     module.finalize_definitions().ok()?;

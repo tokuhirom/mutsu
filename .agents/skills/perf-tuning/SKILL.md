@@ -361,7 +361,10 @@ the ratio.
   `git show origin/bench-data:bench-history.tsv` — appended on every main push, median of 7 runs
   plus a same-runner raku ratio that normalizes runner speed — citing the main commit hash the
   row belongs to. The `<bench>+jit` rows are the JIT-on series (the default since J5,
-  2026-07-13); the plain rows pin `MUTSU_JIT=off` as the interpreter baseline. Local A/B is fine
+  2026-07-13); the plain rows pin `MUTSU_JIT=off` as the interpreter baseline. **Ratios against rakudo and
+  rakupp are read on the JIT-on rows only** (`<bench>@section+jit`, else `<bench>+jit`;
+  maintainer decision, 2026-11-28): a JIT-off row is never a perf gap, and a `todo:perf` issue's
+  close condition and headline number are stated on the `+jit` row. Local A/B is fine
   for PR bodies and in-flight decisions, but it drifts with thermals and binary layout (±5% is
   common), so it is not the source of truth for a document.
 - If a published number turns out wrong, correct it in place and leave the mistake visible

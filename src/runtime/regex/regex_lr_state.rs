@@ -83,6 +83,8 @@ struct LrState {
     /// and answering it by array index keeps the gate cheaper than the one hash
     /// lookup it replaces.
     active: Vec<u32>,
+    /// The sum of [`LrState::active`]: whether any activation is live at all.
+    live: u32,
     /// The token generation [`LrState::skip`] was computed under. Rule bodies
     /// can be redefined (`TOKEN_DEFS_GEN`), which invalidates every verdict.
     generation: u64,
@@ -98,6 +100,7 @@ impl LrState {
         LrState {
             keys: HashMap::with_hasher(rustc_hash::FxBuildHasher),
             active: Vec::new(),
+            live: 0,
             generation: 0,
             skip: HashMap::with_hasher(rustc_hash::FxBuildHasher),
         }
@@ -110,12 +113,16 @@ impl LrState {
             self.active.resize(idx + 1, 0);
         }
         self.active[idx] += 1;
+        self.live += 1;
     }
 
     #[inline]
     fn unbump(&mut self, name: Symbol) {
-        if let Some(slot) = self.active.get_mut(name.id() as usize) {
-            *slot = slot.saturating_sub(1);
+        if let Some(slot) = self.active.get_mut(name.id() as usize)
+            && *slot > 0
+        {
+            *slot -= 1;
+            self.live -= 1;
         }
     }
 }
@@ -175,6 +182,13 @@ pub(super) fn lr_read_live_seed(name: Symbol, remaining: usize) -> Option<Vec<us
         entry.seed_read = true;
         Some(ends)
     })
+}
+
+/// Is any left-recursion activation live at all? While none is, no call can
+/// read a seed (`lr_read_live_seed`).
+// Cost: O(1).
+pub(super) fn lr_any_live() -> bool {
+    LR_STATE.with(|s| s.borrow().live > 0)
 }
 
 /// Is any call of the rule NAME `name` under evaluation right now? The compiled

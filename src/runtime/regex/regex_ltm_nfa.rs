@@ -125,6 +125,9 @@ pub(crate) struct LtmNfa {
     /// Per node, what a thread arriving there at a character the guard rejects
     /// cannot go on from (`regex_ltm_nfa_guard`): the run drops it unasked.
     pub(super) guards: Vec<Option<super::regex_prefilter_firstset::FirstSet>>,
+    /// Per root, the characters a match of it can begin with, `None` for a
+    /// root that has no such set (`regex_ltm_nfa_guard::root_gates`).
+    pub(super) root_gates: Option<Box<[Option<super::regex_prefilter_firstset::FirstSet>]>>,
 }
 
 impl LtmNfa {
@@ -132,12 +135,58 @@ impl LtmNfa {
     // Cost: O(s), s = nodes.
     pub(super) fn new(nodes: Vec<NfaNode>, start: u32, roots: Vec<NfaRoot>) -> Self {
         let guards = super::regex_ltm_nfa_guard::node_guards(&nodes);
+        let root_gates = super::regex_ltm_nfa_guard::root_gates(&nodes, &roots);
         LtmNfa {
             nodes,
             start,
             roots,
             guards,
+            root_gates,
         }
+    }
+
+    /// The one root that can begin a match at `pos`, when the root gates
+    /// say so without a run: every other root has a gate that rejects the
+    /// character there (or `pos` is the end, which every gate rejects), so
+    /// it fails at its first character, in the measurement and in the match
+    /// alike. `Some(None)` when every root is rejected so. `None` when the
+    /// gates do not decide it: several roots are not rejected (a root with no
+    /// gate is never rejected), or a left-recursion activation is live, whose
+    /// seed a run would read through a call instead of a character.
+    ///
+    /// Both rankings take the answer as theirs. A `|` (`ltm_rank_alternation`)
+    /// ranks that root first and the rest in their order, which is the order a
+    /// run ranks them in whenever that root measures any length; when it
+    /// measures none, no root but it can match at all, so trying it first
+    /// changes no outcome. A proto (`ltm_rank_proto`) tries only that root: a
+    /// rejected candidate is the "cannot match here" verdict its ranking
+    /// filters on, and a lone candidate needs no rank.
+    // Cost: O(r), r = roots.
+    pub(super) fn gated_ranking(&self, chars: &[char], pos: usize) -> Option<Option<usize>> {
+        let gates = self.root_gates.as_deref()?;
+        let mut viable = None;
+        for (idx, gate) in gates.iter().enumerate() {
+            let rejected = match gate {
+                Some(gate) => pos >= chars.len() || !gate.admits_at(chars, pos),
+                None => false,
+            };
+            if !rejected {
+                if viable.is_some() {
+                    return None;
+                }
+                viable = Some(idx);
+            }
+        }
+        if super::regex_lr_state::lr_any_live() {
+            return None;
+        }
+        Some(viable)
+    }
+
+    /// The number of roots (branches) of a several-root NFA.
+    // Cost: O(1).
+    pub(super) fn root_count(&self) -> usize {
+        self.roots.len()
     }
 }
 

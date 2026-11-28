@@ -416,6 +416,19 @@ impl Interpreter {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
+        // Plain `Str`/`Int`/`Num` operands, the common `~`: no BOOT box to
+        // hllize, no junction to thread, no `.Stringy`/`.Str` to dispatch
+        // (`coerce_stringy_operand` answers all three unchanged) and no Blob,
+        // so only a user `infix:<~>` or a user `^find_method` could answer
+        // differently. Each step below declines such operands one probe at a
+        // time (~800 Ir per `~`).
+        if Self::plain_concat_operand(&left)
+            && Self::plain_concat_operand(&right)
+            && !crate::runtime::find_method_intercept::any_user_find_method()
+            && !self.user_infix_override("infix:<~>")
+        {
+            return Ok(crate::builtins::str_prim::concat(left, &right));
+        }
         // A raw BOOT scalar box is its high-level value at an operator (#12881).
         let left = left.hllize_operand();
         let right = right.hllize_operand();
@@ -857,6 +870,13 @@ impl Interpreter {
             return Ok(crate::builtins::str_prim::concat(left, &right));
         }
         Ok(crate::builtins::str_prim::concat(left, &right))
+    }
+
+    /// A `Str`, `Int` or `Num`: an operand every preparation step of infix
+    /// `~` leaves unchanged.
+    // Cost: O(1) — a tag probe, plus one view for a non-`Str`.
+    fn plain_concat_operand(v: &Value) -> bool {
+        v.is_str_value() || matches!(v.view(), ValueView::Int(_) | ValueView::Num(_))
     }
 
     /// Whether `v` is a Blob or a holder that may wrap one: the only values

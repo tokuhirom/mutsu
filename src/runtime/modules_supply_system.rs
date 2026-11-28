@@ -22,6 +22,7 @@ mod system_eval_names;
 mod eval_scope_redecl;
 mod system_eval_redecl;
 mod system_eval_string;
+mod system_eval_source;
 mod eval_doc_pin;
 mod raku_bases;
 mod str_ast_actions;

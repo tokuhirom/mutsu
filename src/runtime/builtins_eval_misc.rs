@@ -423,16 +423,16 @@ impl Interpreter {
             }
             // The tree is the unit `$*CU` names while it compiles.
             let _unit = crate::unit_source_text::UnitSourceTextGuard::enter_tree(first_arg.clone());
-            // Pod blocks written into the tree are the unit's `$=pod`, which
-            // is the EVAL's own: the caller's is put back afterwards.
+            // The tree's Pod belongs to EVAL; the caller's is restored afterwards.
             let docs = crate::rakuast::eval_docs::collect(node);
-            // A parsed tree whose Pod is a shape the writer does not produce
-            // (a table, a comment, a margin) is the unit's `$=pod` through the
-            // source it was parsed from.
+            let finish = crate::rakuast::unit_finish::read(node);
+            let finish = matches!(finish.view(), ValueView::Str(_)).then_some(finish);
+            // A parsed tree's Pod may need its source (table, comment, margin):
+            // the writer cannot produce those shapes.
             let Some(pod) = crate::rakuast::origin_pod_source(node)
                 .or_else(|| crate::rakuast::pod_source(node))
             else {
-                let result = self.eval_lowered_unit_with_docs(stmts, docs);
+                let result = self.eval_lowered_unit_with_docs(stmts, docs, finish);
                 if result.is_ok() {
                     self.record_evaluated_package_types(node);
                 }
@@ -441,7 +441,7 @@ impl Interpreter {
             let previous_pod = self.env.get("=pod").cloned();
             self.env.remove("=pod");
             let result = match self.collect_pod_sources(&pod) {
-                Ok(()) => self.eval_lowered_unit_with_docs(stmts, docs),
+                Ok(()) => self.eval_lowered_unit_with_docs(stmts, docs, finish),
                 Err(e) => Err(e),
             };
             if result.is_ok() {
@@ -493,6 +493,8 @@ impl Interpreter {
             }
         }
         let code = Self::positional_string(args, 0);
+        // EVAL parses the source codepoints, not Str's escaped marker bytes.
+        let code = crate::grapheme_break::unescape_literal_marker(&code);
         if let Some(lang) = Self::named_value(args, "lang") {
             let lang = lang.to_string_value();
             if !lang.eq_ignore_ascii_case("raku") && !lang.eq_ignore_ascii_case("perl6") {
@@ -509,11 +511,8 @@ impl Interpreter {
                 return Err(err);
             }
         }
-        // `EVAL $code, context => $ctx` compiles the string as if it stood at
-        // `$ctx`'s frame, so a package the snippet declares is named after the
-        // caller and not after whichever module called EVAL. Without this a
-        // `throws-like 'class Foo { ... }', X::...` written against the real
-        // `Test` module reports `Test::Foo`.
+        // `context => $ctx` compiles in that frame's package; a Test.throws-like
+        // snippet declaring Foo must not create Test::Foo.
         let context_arg = Self::named_value(args, "context");
         let saved_package = context_arg
             .as_ref()

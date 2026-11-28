@@ -364,7 +364,12 @@ impl Interpreter {
             let immutable_topic = plan.immutable_topic;
             let topic_per_element = plan.topic_per_element;
             let topic_unobservable = plan.topic_unobservable && arity == 1;
-            let lean_readonly = topic_unobservable && data.params.is_empty();
+            let lean_readonly = topic_unobservable
+                && crate::runtime::resolution_map_grep::implicit_topic_block(&data);
+            let topic_slot = plan.topic_slot.filter(|_| topic_unobservable);
+            let topic_env_free = topic_slot.is_some()
+                && plan.topic_env_free
+                && crate::vm::vm_jit::USER_INFIX_DECLS.load(std::sync::atomic::Ordering::Relaxed) == 0;
 
             // CP-3 collapse: run the grep loop with fresh execution registers
             // (replaces the `mem::take(self)` + `VM::new` sub-VM). The closure
@@ -430,6 +435,7 @@ impl Interpreter {
                     'body_redo: loop {
                         vm.frame_authoritative = block_authoritative.clone();
                         vm.frame_owned = block_owned.clone();
+                        let mut seed_topic: Option<Value> = None;
                         {
                             let assumed_count = data.assumed_positional.len();
                             for (idx, val) in data.assumed_positional.iter().enumerate() {
@@ -438,14 +444,27 @@ impl Interpreter {
                                 }
                             }
                             if arity == 1 {
-                                if let Some(&p) = plan.param_syms.get(assumed_count) {
+                                // An env-free body reads its topic -- which
+                                // a `$_` parameter is -- from its slot.
+                                if let Some(&p) = plan.param_syms.get(assumed_count)
+                                    && !topic_env_free
+                                {
                                     vm.env_mut().insert_sym_noting(p, first.clone());
                                 }
                                 if topic_unobservable {
                                     // Nothing can write the topic back: the
                                     // element's plain value, no source key.
                                     let topic = unobservable_topic(&first);
-                                    bind_loop_topic(vm.env_mut(), &topic, false, &outer_topic);
+                                    if !topic_env_free {
+                                        bind_loop_topic(
+                                            vm.env_mut(),
+                                            &topic,
+                                            false,
+                                            &outer_topic,
+                                        );
+                                    }
+                                    // The body reads its topic slot, if it has one.
+                                    seed_topic = topic_slot.map(|_| topic);
                                 } else {
                                     bind_loop_topic(
                                         vm.env_mut(),
@@ -508,11 +527,13 @@ impl Interpreter {
                             );
                             guard
                         });
-                        match vm.run_loop_body(code, compiled_fns, declares_routines) {
+                        let seed = topic_slot.zip(seed_topic.clone());
+                        match vm.run_loop_body_seeded(code, compiled_fns, declares_routines, seed) {
                             Ok(()) => {
                                 let pred = vm
                                     .last_stack_value()
                                     .cloned()
+                                    .or_else(|| seed_topic.clone())
                                     .or_else(|| {
                                         vm.env().get_sym(crate::symbol::wk::topic()).cloned()
                                     })
@@ -537,7 +558,9 @@ impl Interpreter {
                                 } else {
                                     first.clone()
                                 };
-                                if arity == 1 {
+                                // An unobservable topic was never written:
+                                // the source item is unchanged.
+                                if arity == 1 && !topic_unobservable {
                                     list_items[i] = updated_item.clone();
                                 }
                                 if vm.eval_predicate_truthy(&pred) {
@@ -584,7 +607,9 @@ impl Interpreter {
                                 } else {
                                     first.clone()
                                 };
-                                if arity == 1 {
+                                // An unobservable topic was never written:
+                                // the source item is unchanged.
+                                if arity == 1 && !topic_unobservable {
                                     list_items[i] = updated_item.clone();
                                 }
                                 if vm.eval_predicate_truthy(&pred) {

@@ -3054,6 +3054,72 @@ impl Env {
         }
     }
 
+    /// Visit the visible entries of a closure's captured env without folding
+    /// its layers into one map: every entry of its own tier and of the
+    /// capture's own (non-shared) layers, and from each shared system-name
+    /// layer only the keys `pick` returns for it. Each name is visited once,
+    /// with the value [`Self::iter`] would show for it -- the highest layer
+    /// that answers wins, a tombstone or a layer's hidden set passes the name
+    /// on, and a layer resolving below the base tiers does not answer for a
+    /// name the base holds. `false` (nothing visited) when this env is not a
+    /// capture -- a chain, or no fallback; the caller walks [`Self::iter`].
+    ///
+    /// An inline map/grep plan walks a capture this way, so that a wide shared
+    /// layer -- every system name of a module's scope -- costs it the keys it
+    /// can keep, not a visit to each, and no merged copy (#19352).
+    // Cost: O(o + Σ p), o = entries of the own tier and own layers, p = keys
+    // `pick` returns per shared layer.
+    pub(crate) fn for_each_capture_entry_sparse(
+        &self,
+        pick: &dyn Fn(&Tier) -> Vec<Symbol>,
+        out: &mut dyn FnMut(Symbol, &Value),
+    ) -> bool {
+        let Some(fb) = &self.fallback else {
+            return false;
+        };
+        if self.parent.is_some() {
+            return false;
+        }
+        let base = match self.dyn_base.as_deref() {
+            Some(base) => Some(base),
+            None => global_base(),
+        };
+        let mut seen: rustc_hash::FxHashSet<Symbol> = rustc_hash::FxHashSet::default();
+        for (k, v) in self.inner.iter() {
+            seen.insert(*k);
+            out(*k, v);
+        }
+        if let Some(tomb) = &self.tombstones {
+            seen.extend(tomb.iter().copied());
+        }
+        for layer in fb.layers() {
+            let mut visit = |k: Symbol| {
+                if layer.hidden.as_ref().is_some_and(|h| h.contains(&k)) {
+                    return;
+                }
+                if !layer.above_base && base.is_some_and(|b| b.contains_key(&k)) {
+                    return;
+                }
+                let Some(v) = layer.tier.get(&k) else {
+                    return;
+                };
+                if seen.insert(k) {
+                    out(k, v);
+                }
+            };
+            if layer.shared {
+                for k in pick(&layer.tier) {
+                    visit(k);
+                }
+            } else {
+                for k in layer.tier.keys() {
+                    visit(*k);
+                }
+            }
+        }
+        true
+    }
+
     /// This env's own overlay map, never folded over a capture fallback —
     /// for the GC, whose edges are exactly the values this env owns (a shared
     /// capture layer is an external holder; see `SubData`'s `Trace`).

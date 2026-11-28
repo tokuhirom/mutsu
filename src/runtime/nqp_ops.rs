@@ -474,42 +474,8 @@ impl Interpreter {
                 // boundary, so a promoted element container answers about what
                 // it holds.
                 let v = args.first().cloned().unwrap_or(Value::NIL);
-                let type_name = match args.get(1).map(|t| t.view()) {
-                    Some(ValueView::Package(p)) => p.resolve(),
-                    Some(ValueView::Instance { class_name, .. }) => class_name.resolve(),
-                    // `Nil` used as a type argument (`nqp::istype($x, Nil)`) is a
-                    // bare `ValueView::Nil`, not a `Package("Nil")` type object
-                    // like other builtin types — CBOR::Simple's absent-value
-                    // encoding (`nqp::istype($_, Nil)` on an array element bound
-                    // to Nil via BIND-POS) hit exactly this gap, always False.
-                    Some(ValueView::Nil) => "Nil".to_string(),
-                    // A role's pun (`R.^pun`) — and `R.^pun.WHAT`, which the
-                    // real `Test.rakumod`'s `isa-ok` calls when its expected
-                    // type isn't a `Str:D` (`nqp::istype($var, $type.WHAT)`)
-                    // — is a `Mixin`-wrapped `Package`/`Instance` (see
-                    // `punned_role_type_object`), not a bare `Package`.
-                    // Unwrap it so a pun used as a type argument here behaves
-                    // like the class it puns to, exactly as the `isa`/`~~`
-                    // fixes for the same shape do.
-                    Some(ValueView::Mixin(inner, _)) => match inner.view() {
-                        ValueView::Package(p) => p.resolve(),
-                        ValueView::Instance { class_name, .. } => class_name.resolve(),
-                        _ => String::new(),
-                    },
-                    _ => String::new(),
-                };
-                // The same type check `~~` makes (smiley, enum and the `is Mu`
-                // MRO correction included), not the bare type walk. A BOOT
-                // value's `KnowHOW` has no type check at all: it is not even of
-                // its own `BOOT*` type (ADR-12666, #12670).
-                Ok(bool_int(
-                    !type_name.is_empty()
-                        && crate::runtime::boot_collection::boot_type_of(&v).is_none()
-                        && self.type_object_accepts_resolved(
-                            &v,
-                            crate::symbol::Symbol::intern(&type_name),
-                        ),
-                ))
+                let ty = args.get(1).cloned().unwrap_or(Value::NIL);
+                Ok(bool_int(self.nqp_istype_answer(&v, &ty)))
             }
 
             // -- boxing --
@@ -987,3 +953,4 @@ impl Interpreter {
         })
     }
 }
+

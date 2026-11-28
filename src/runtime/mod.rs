@@ -1296,10 +1296,26 @@ impl MethodClassFrame {
 /// `NativeCtorPlan::smiley_rules`).
 #[derive(Default)]
 pub(crate) struct SmileyRules {
-    /// `(attribute name, smiley)`, the most derived declaration first.
-    pub(crate) smileys: Vec<(String, String)>,
-    /// Attribute names declared `is required` anywhere in the MRO.
-    pub(crate) required: std::collections::HashSet<String>,
+    /// `(attribute name, smiley, declared is required anywhere in the MRO)`,
+    /// the most derived declaration first. The required flag is settled here,
+    /// once per class shape, rather than looked up by name per construction.
+    pub(crate) smileys: Vec<(String, String, bool)>,
+}
+
+/// The named arguments a constructor was called with, asked by name: a scan
+/// over the call's Pairs. A call passes a handful, so this beats collecting
+/// their keys into a hashed set of copies on every construction.
+#[derive(Clone, Copy)]
+pub(crate) struct ProvidedNamed<'a>(pub(crate) &'a [Value]);
+
+impl ProvidedNamed<'_> {
+    /// Whether a named argument `name` was passed.
+    // Cost: O(a), a = arguments.
+    pub(crate) fn contains(&self, name: &str) -> bool {
+        self.0
+            .iter()
+            .any(|arg| matches!(arg.view(), ValueView::Pair(key, _) if key.as_str() == name))
+    }
 }
 
 pub(crate) struct NativeCtorPlan {
@@ -1541,6 +1557,11 @@ pub(crate) enum ConstructionPhaseStep {
         /// re-intern it for every phase call.
         mro_sym: crate::symbol::Symbol,
         pinned: Option<MethodDef>,
+        /// The pinned candidate's whole effect is its attributive named
+        /// parameters (`submethod BUILD(:$!a, :@!b) { }`): an empty body,
+        /// so a call binds the attributes and runs no frame
+        /// (`ctor_phase_bind_only`).
+        bind_only: bool,
     },
 }
 

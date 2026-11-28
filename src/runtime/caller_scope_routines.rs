@@ -104,6 +104,10 @@ impl Interpreter {
     // Cost: O(R + n · (s + p)), R = routine-registry entries, n = candidate
     // names, s = import sets of the caller's unit, p = its packages.
     pub(crate) fn add_caller_scope_routines(&self, entries: &mut ValueMap, depth: usize) {
+        // EVAL's mainline has a synthetic caller env, but no calling routine.
+        if self.routine_stack.is_empty() {
+            return;
+        }
         let scope = self.caller_scope(depth);
         let packages: Vec<Symbol> = scope.packages().collect();
         let mut names: Vec<String> = Vec::new();

@@ -2,6 +2,7 @@ mod attribute_decl;
 mod class_body_free_vars;
 #[cfg(feature = "jit")]
 pub(crate) mod kernel_slot;
+mod lexsub_free_slots;
 #[cfg(test)]
 #[path = "opcode/nested_decl_names_tests.rs"]
 mod nested_decl_names_tests;
@@ -382,6 +383,19 @@ pub(crate) struct ForLoopSpec {
     /// exit, exactly as `exec_given_op` does for `given`/`with`. Only set for an
     /// implicit-topic loop (a named parameter does not rebind `$_`).
     pub(crate) topic_local: Option<u32>,
+    /// `topic_local` is the loop's OWN topic slot (a fresh hidden local the
+    /// compiler gave a body that cannot observe its topic's container,
+    /// `for_topic_alias::topic_alias_unobservable`), and the body reads `$_`
+    /// only through it. The VM may then skip binding the env's `_` per item:
+    /// nothing in the body reads the topic by name, and the env keeps the
+    /// enclosing topic, which is what a `$_` after the loop reads anyway.
+    pub(crate) topic_slot_only: bool,
+    /// The single named parameter (`-> $w`) is read only through its fresh
+    /// slot `param_local`: the body cannot observe how it is bound
+    /// (`for_topic_alias::param_alias_unobservable`), so the VM may skip its
+    /// per-item env binding and readonly mark. The loop still saves and
+    /// restores the name's prior binding (`RestoreForParam`).
+    pub(crate) param_slot_only: bool,
     /// Local slot of the hidden per-iteration batch (`__mutsu_for_chunk`) a
     /// multi-parameter loop (`-> $k, $v`) hands to its parameter binds. The
     /// binds are compiled into the body prefix and read the slot; without it
@@ -883,6 +897,22 @@ pub(crate) enum GatherMode {
     LazyList,
 }
 
+/// Which by-name read an [`OpCode::GetLexFree`] stands for: the opcode it
+/// replaced, and therefore the resolution its slow path runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+pub(crate) enum LexFreeKind {
+    /// `GetGlobal`: a scalar (or sigilless / `&`) name.
+    Scalar,
+    /// `GetArrayVar`: an `@` name.
+    Array,
+    /// `GetHashVar`: a `%` name.
+    Hash,
+    /// `GetGlobal` of the term key of a sigil-less constant an enclosing
+    /// scope declares (`my constant DAYS = ...` read from a module's subs):
+    /// immutable, so the slot keeps whatever the first by-name read answered.
+    Constant,
+}
+
 /// Bytecode operations for the VM.
 /// [`OpCode::PackageScope`]'s `lexicals_idx` for a body with no lexicals to
 /// re-bind.
@@ -1211,6 +1241,21 @@ pub(crate) enum OpCode {
     /// array), execution falls back to a `GetGlobal(name_idx)` env lookup. Env is
     /// retained as the capture source, so the fallback is always correct.
     GetUpvalue { index: u32, name_idx: u32 },
+    /// A named sub's read of a free variable its declaring scope aliases per
+    /// activation (ADR-0114), through a hidden local `slot` of the sub's own
+    /// frame (ADR-18244 stage B, #18274).
+    ///
+    /// The slot starts each call empty. The first read resolves the name
+    /// exactly as the by-name opcode `kind` names does, then stores the alias
+    /// cell the resolution provably answered from into the slot; later reads
+    /// of the call load the cell. A slot whose name did not resolve to such a
+    /// binding is marked so the call stops trying. `name_idx` is the name
+    /// constant, as for the by-name opcodes. See `vm_lexsub_free_slot.rs`.
+    GetLexFree {
+        slot: u32,
+        name_idx: u32,
+        kind: LexFreeKind,
+    },
     /// Load `self` from the captured environment for a `$.attr` accessor.
     /// Raises X::Syntax::NoSelf (the operand is the constant index of the
     /// accessor's display name, e.g. `$.a`) when `self` is unavailable.
@@ -2361,7 +2406,14 @@ pub(crate) enum OpCode {
     /// shape as `MakePair` (pop value, pop key, push a Pair) — only the
     /// resulting flavour differs. `readonly` records a plain readonly scalar
     /// parameter operand, whose binding remains readonly through transport.
-    MakeNamedArg { readonly: bool },
+    ///
+    /// `lazy` (#19384) is set only for a `:$var` argument of a `CallMethodMut`
+    /// site: the Pair keeps the `WrapVarRef`-tagged value as it is instead of
+    /// promoting the variable to a shared cell. The call op resolves it before
+    /// anything else reads the arguments (`vm_lazy_named_args`): the default
+    /// constructor takes the variable's value, every other callee gets the
+    /// shared cell exactly as an eager `MakeNamedArg` would have built it.
+    MakeNamedArg { readonly: bool, lazy: bool },
     /// Convert Pair(k,v) → ValuePair(Str(k),v) so it's treated as positional arg
     ContainerizePair,
 
@@ -8821,6 +8873,7 @@ impl CompiledCode {
         for op in &self.ops[start.min(end)..end] {
             let name_idx = match op {
                 OpCode::GetGlobal(idx)
+                | OpCode::GetLexFree { name_idx: idx, .. }
                 | OpCode::GetGlobalDeferred(idx)
                 | OpCode::SetGlobal(idx)
                 | OpCode::SetGlobalRaw { name_idx: idx, .. }
@@ -9455,6 +9508,15 @@ impl CompiledCode {
     // Cost: O(1) after the first call, which is O(f + c), f = free
     // variables, c = constants.
     pub(crate) fn mentions_name_memo(&self, key: Symbol) -> Option<bool> {
+        self.mentioned_names().map(|set| set.contains(&key))
+    }
+
+    /// Every name a lookup in this chunk's body can reach -- the set
+    /// [`Self::mentions_name_memo`] answers from -- or `None` when that cannot
+    /// be bounded. Memoized per chunk.
+    // Cost: O(1) after the first call, which is O(f + c), f = free
+    // variables, c = constants.
+    pub(crate) fn mentioned_names(&self) -> Option<&rustc_hash::FxHashSet<Symbol>> {
         self.mentioned_name_set
             .get_or_init(|| {
                 if self.needs_reflective_capture
@@ -9479,7 +9541,6 @@ impl CompiledCode {
                 Some(set)
             })
             .as_ref()
-            .map(|set| set.contains(&key))
     }
 
     /// Whether `name` is mentioned by this chunk: one of its free variables, or
@@ -9661,6 +9722,7 @@ impl CompiledCode {
         for op in &self.ops {
             let name_idx = match op {
                 OpCode::GetGlobal(idx)
+                | OpCode::GetLexFree { name_idx: idx, .. }
                 | OpCode::GetGlobalDeferred(idx)
                 | OpCode::SetGlobal(idx)
                 | OpCode::SetGlobalRaw { name_idx: idx, .. }
@@ -10467,6 +10529,7 @@ impl CompiledCode {
         for op in &self.ops {
             let name_idx = match op {
                 OpCode::GetGlobal(idx)
+                | OpCode::GetLexFree { name_idx: idx, .. }
                 | OpCode::GetGlobalDeferred(idx)
                 | OpCode::SetGlobal(idx)
                 | OpCode::SetGlobalRaw { name_idx: idx, .. }
@@ -11256,6 +11319,7 @@ impl CompiledCode {
         match op {
             OpCode::GetUpvalue { name_idx: idx, .. }
             | OpCode::GetGlobal(idx)
+            | OpCode::GetLexFree { name_idx: idx, .. }
             | OpCode::GetGlobalDeferred(idx)
             | OpCode::GetScalarContainer { name_idx: idx, .. }
             | OpCode::SetGlobal(idx)

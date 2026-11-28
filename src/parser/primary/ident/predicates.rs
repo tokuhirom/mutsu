@@ -61,6 +61,18 @@ pub(crate) fn starts_with_quote_construct(input: &str) -> bool {
     }
 }
 
+/// Whether `name`, a word that is also a statement prefix (`lazy`, `eager`,
+/// `hyper`, `race`, `sink`, `quietly`, ...), names an in-scope sigilless term
+/// (`my \lazy`, `constant quietly`) at this occurrence, so it is that term and
+/// not the prefix. rakudo takes the term when no whitespace follows the word
+/// (`lazy[1]`, `lazy.elems`, `race*2`, `quietly;`, end of input) and the
+/// prefix otherwise (`lazy + 1` is `lazy(+1)` there too) (#19364).
+// Cost: O(d), d = enclosing parse scopes (one term-table probe each).
+pub(crate) fn declared_term_shadows_prefix(name: &str, rest: &str) -> bool {
+    !rest.starts_with(char::is_whitespace)
+        && crate::parser::stmt::simple::is_user_declared_value_term(name)
+}
+
 /// Is `word` a nullary term keyword — a word that is a complete term on its
 /// own, so it can neither take listop arguments nor be called?
 ///

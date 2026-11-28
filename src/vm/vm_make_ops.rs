@@ -25,6 +25,12 @@ impl Interpreter {
     /// Cost: O(1), one [`Self::frame_match_topic`] read.
     pub(super) fn check_make_match_topic(&self, code: &CompiledCode) -> Result<(), RuntimeError> {
         let topic = self.frame_match_topic(code).unwrap_or(Value::NIL);
+        Self::require_make_match_topic(topic)
+    }
+
+    /// [`Self::check_make_match_topic`] on a `$/` the caller already read.
+    // Cost: O(1).
+    fn require_make_match_topic(topic: Value) -> Result<(), RuntimeError> {
         if topic.is_match_instance() {
             return Ok(());
         }
@@ -79,15 +85,27 @@ impl Interpreter {
         {
             return None;
         }
-        if let Err(err) = self.check_make_match_topic(code) {
-            return Some(Err(err));
+        Some(self.make_on_frame_match_topic(code, args))
+    }
+
+    /// What an unshadowed `make` call does: the `$/` precondition, the
+    /// builtin, and the `.made` write into the frame's `$/`, which is read
+    /// once for both (`frame_match_topic`). Shared by the funnel's lane
+    /// ([`Self::try_make_builtin_call`]) and a call site that remembered it
+    /// (`try_native_call_site`'s `ROUTE_MAKE`).
+    // Cost: O(1), one `frame_match_topic` read and one cell write.
+    pub(super) fn make_on_frame_match_topic(
+        &mut self,
+        code: &CompiledCode,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        let topic = self.frame_match_topic(code);
+        Self::require_make_match_topic(topic.clone().unwrap_or(Value::NIL))?;
+        let result = self.builtin_make(args)?;
+        if let Some(topic) = topic {
+            topic.set_match_ast_in_place(result.clone());
         }
-        let result = match self.builtin_make(args) {
-            Ok(value) => value,
-            Err(err) => return Some(Err(err)),
-        };
-        self.attach_made_to_match_topic(code, result.clone());
-        Some(Ok(result))
+        Ok(result)
     }
 
     /// Rakudo's `make` sets `$/.made`: store `value` as the `.made` of the

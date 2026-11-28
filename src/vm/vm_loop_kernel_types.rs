@@ -13,20 +13,44 @@
 //! kind must agree on every edge.
 
 use super::*;
-use crate::opcode::kernel_slot::SlotKind;
+use crate::opcode::kernel_slot::{ElemSlot, SlotKind};
 
 /// Which loop the region belongs to.
 #[derive(Debug, Clone, Copy)]
 pub(super) enum LoopShape {
     /// `for $lo..$hi` / `for ^$n`: the body ops `[body.0, body.1)`, run with
     /// the loop variable set to each integer.
-    Range { body: (usize, usize), var: LoopVar },
+    ///
+    /// With a `list` other than `ListKind::No`, the loop runs over a
+    /// materialized list instead (`for %h.values { ... }`,
+    /// `for $line.split(' ') -> $w { ... }`): the counter is the item's index,
+    /// from the start index to the list's length (exclusive), and the loop
+    /// variable is a slot holding the item at that index (see `ListKind`).
+    Range {
+        body: (usize, usize),
+        var: LoopVar,
+        list: ListKind,
+    },
     /// `while COND { BODY }`: the condition ops `[cond.0, cond.1)` leave one
     /// value, then the body ops `[cond.1, body_end)` run.
     While {
         cond: (usize, usize),
         body_end: usize,
     },
+}
+
+/// What a list loop iterates (`LoopShape::Range::list`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ListKind {
+    /// A counted loop over an `Int` range.
+    No,
+    /// Plain `Int`s, copied into the `LoopCtx::list` buffer: the loop
+    /// variable is a machine `Int`.
+    Int,
+    /// Plain `Str`s, read in place through `LoopCtx::items`: the loop variable
+    /// is the item's index (`K::StrItem`), which only a hash element's
+    /// increment consumes, through a helper that reads the item.
+    Str,
 }
 
 /// How a `for` body reads its loop variable.
@@ -63,6 +87,49 @@ pub(super) enum K {
     Int,
     Num,
     Bool,
+    /// An array or hash local about to be subscripted (`@a` before `[$i]`):
+    /// only an `Index` consumes it.
+    Arr(u32),
+    /// A grid's row index already applied (`@g[$i]` before `[$j]`), carrying
+    /// `$i`: only a second `Index` consumes it.
+    Row(u32),
+    /// A `Str` constant (`"key-"` in `"key-$i"`): only an interpolation of it
+    /// and one `Int` consumes it.
+    StrConst(u32),
+    /// The interpolation of the `Str` constant at this index and an `Int`
+    /// (`"key-$i"`), carrying the `Int`: only a hash store's key consumes it,
+    /// and the store's helper writes the key's text itself.
+    IntKey(u32),
+    /// A `Str` list loop's variable, carrying the item's index: only a hash
+    /// element's `++`/`--` consumes it, as the key.
+    StrItem,
+    /// The result of a hash element's `++`/`--`, which only a `SinkPop`
+    /// consumes: its value is never read.
+    Sunk,
+}
+
+/// What a read element slot holds, settled at kernel entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ElemShape {
+    /// `@a[$i]`: an array of plain `Int`/`Num` elements.
+    Array,
+    /// `@g[$i][$j]`: an array of plain arrays.
+    Grid,
+    /// `%h{$i}`: a hash keyed by the decimal strings of `Int`s.
+    Hash,
+}
+
+/// A read element slot: its local, shape and element kind.
+pub(super) type ElemRead = (u32, ElemShape, SlotKind);
+
+/// The variant-key code of a carried slot's kind.
+pub(super) fn carried_code(k: SlotKind) -> u8 {
+    k as u8
+}
+
+/// The variant-key code of a read element slot's shape and kind.
+pub(super) fn elem_code(shape: ElemShape, k: SlotKind) -> u8 {
+    2 + 2 * shape as u8 + k as u8
 }
 
 impl K {
@@ -72,6 +139,45 @@ impl K {
             SlotKind::Num => K::Num,
         }
     }
+
+    /// The slot kind a value of this kind stores as; `None` for a comparison
+    /// result or an array.
+    pub(super) fn slot_kind(self) -> Option<SlotKind> {
+        match self {
+            K::Int => Some(SlotKind::Int),
+            K::Num => Some(SlotKind::Num),
+            K::Bool
+            | K::Arr(_)
+            | K::Row(_)
+            | K::StrConst(_)
+            | K::IntKey(_)
+            | K::StrItem
+            | K::Sunk => None,
+        }
+    }
+
+    /// Whether this is an `Int` or a `Num`.
+    pub(super) fn numeric(self) -> bool {
+        self.slot_kind().is_some()
+    }
+}
+
+/// Whether this kind may not sit on the stack across a join: an aggregate
+/// about to be subscripted, or a string piece about to be joined or keyed.
+pub(super) fn k_is_pending(k: &K) -> bool {
+    matches!(
+        k,
+        K::Arr(_) | K::Row(_) | K::StrConst(_) | K::IntKey(_) | K::StrItem | K::Sunk
+    )
+}
+
+/// Whether constant `idx` is a `Str` (the prefix of a `"key-$i"` key).
+// Cost: O(1).
+pub(super) fn str_const(code: &CompiledCode, idx: u32) -> bool {
+    matches!(
+        code.constants.get(idx as usize).map(Value::view),
+        Some(ValueView::Str(_))
+    )
 }
 
 /// A numeric constant operand.
@@ -201,14 +307,41 @@ pub(super) fn num_method_call(code: &CompiledCode, op: &OpCode) -> Option<(u32, 
 /// The slots a region reads or writes that it does not declare and that are
 /// not its loop variable: the frame state the kernel carries in and out.
 /// `None` when the region contains an op no loop kernel admits, so the loop
-/// is never retried.
+/// is never retried. Also returns the array locals whose elements the region
+/// reads or stores (`kernel_elem_slot_ok`); a local both read and stored
+/// declines, so a replayed iteration never reads its own earlier store.
 // Cost: O(n), n = ops in the region.
-pub(super) fn carried_slots(code: &CompiledCode, shape: &LoopShape) -> Option<Vec<u32>> {
+pub(super) fn carried_slots(
+    code: &CompiledCode,
+    shape: &LoopShape,
+) -> Option<(Vec<u32>, Vec<ElemSlot>)> {
+    let mut elems: Vec<ElemSlot> = Vec::new();
+    let mut elem = |slot: u32, name_idx: u32, store: bool, hash: bool| -> Option<()> {
+        match elems.iter().find(|e| e.slot == slot) {
+            Some(e) if e.store != store || e.hash != hash => None,
+            Some(_) => Some(()),
+            None => {
+                elems.push(ElemSlot {
+                    slot,
+                    name_idx,
+                    store,
+                    hash,
+                });
+                Some(())
+            }
+        }
+    };
+    let array_slot = |s: u32| super::vm_kernel_elem::kernel_elem_slot_ok(code, s);
+    let hash_slot = |s: u32| super::vm_kernel_hash::kernel_hash_slot_ok(code, s);
     let mut declared = Vec::new();
     // Nested loops' parameters: readonly per-iteration bindings the kernel
     // owns, neither carried nor `my` declarations.
     let mut loop_vars = Vec::new();
     let mut used = Vec::new();
+    // Slots the region writes. A slot it only reads keeps its word through
+    // the run, so the exit writeback (which skips an unchanged word) never
+    // stores into it, and its constraint has nothing to check.
+    let mut written = Vec::new();
     for (start, end, _) in shape.segments() {
         for op in code.ops.get(start..end)? {
             if num_method_call(code, op).is_some() {
@@ -223,8 +356,44 @@ pub(super) fn carried_slots(code: &CompiledCode, shape: &LoopShape) -> Option<Ve
                 | OpCode::ContainerizePair
                 | OpCode::WrapVarRef { .. }
                 | OpCode::CallFunc { .. } => {}
-                OpCode::GetLocal(s) | OpCode::SetLocal(s) => used.push(*s),
-                OpCode::GetLocalMetaAssign { slot, .. } => used.push(*slot),
+                OpCode::GetLocal(s) if array_slot(*s) => elem(*s, 0, false, false)?,
+                OpCode::GetLocal(s) if hash_slot(*s) => elem(*s, 0, false, true)?,
+                OpCode::IndexAssignLocal {
+                    slot,
+                    name_idx,
+                    is_positional,
+                    index_first: true,
+                    concat_append: false,
+                    element_share: false,
+                } if (*is_positional && array_slot(*slot))
+                    || (!*is_positional && hash_slot(*slot)) =>
+                {
+                    elem(*slot, *name_idx, true, !*is_positional)?
+                }
+                OpCode::PreIncrementIndex(name_idx, Some(slot), false)
+                | OpCode::PreDecrementIndex(name_idx, Some(slot), false)
+                | OpCode::PostIncrementIndex(name_idx, Some(slot), false)
+                | OpCode::PostDecrementIndex(name_idx, Some(slot), false)
+                    if hash_slot(*slot) =>
+                {
+                    elem(*slot, *name_idx, true, true)?
+                }
+                OpCode::PreIncrement(_, Some(s))
+                | OpCode::PreDecrement(_, Some(s))
+                | OpCode::PostIncrement(_, Some(s))
+                | OpCode::PostDecrement(_, Some(s)) => {
+                    used.push(*s);
+                    written.push(*s);
+                }
+                OpCode::GetLocal(s) => used.push(*s),
+                OpCode::SetLocal(s) => {
+                    used.push(*s);
+                    written.push(*s);
+                }
+                OpCode::GetLocalMetaAssign { slot, .. } => {
+                    used.push(*slot);
+                    written.push(*slot);
+                }
                 OpCode::SetVarDynamic { .. } => declared.push(plain_decl(op)?),
                 OpCode::SetLocalDecl { .. }
                 | OpCode::LoadConst(_)
@@ -233,6 +402,15 @@ pub(super) fn carried_slots(code: &CompiledCode, shape: &LoopShape) -> Option<Ve
                 | OpCode::Mul
                 | OpCode::IntDiv
                 | OpCode::IntMod
+                | OpCode::Mod
+                | OpCode::BitAnd
+                | OpCode::BitOr
+                | OpCode::BitXor
+                | OpCode::BitShiftRight
+                | OpCode::Index { .. }
+                | OpCode::StringConcat(2)
+                | OpCode::SinkPop(..)
+                | OpCode::SinkPopAssign
                 | OpCode::NumLt
                 | OpCode::NumLe
                 | OpCode::NumGt
@@ -264,12 +442,14 @@ pub(super) fn carried_slots(code: &CompiledCode, shape: &LoopShape) -> Option<Ve
     out.sort_unstable();
     out.dedup();
     // A typed variable's store checks its constraint, which a kernel would
-    // skip: only untyped slots are carried or declared.
+    // skip: only untyped slots are written or declared. A carried slot the
+    // region only reads (an enclosing loop's parameter, whose constraint is
+    // `Unrecorded`) is never stored into, so any constraint it has holds.
     let untyped = |s: &u32| {
         code.declared_constraint(*s as usize) == crate::binding_desc::DeclaredConstraint::Untyped
     };
-    if !out.iter().all(untyped) || !declared.iter().all(untyped) {
+    if !out.iter().filter(|s| written.contains(s)).all(untyped) || !declared.iter().all(untyped) {
         return None;
     }
-    Some(out)
+    Some((out, elems))
 }

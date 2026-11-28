@@ -360,7 +360,7 @@ impl Interpreter {
     /// The plan for this resolved call, or `None` when its shape is outside
     /// what a replay may skip (see the module docs).
     // Cost: O(p * a), p = parameters, a = arguments.
-    fn method_call_plan_for(
+    pub(super) fn method_call_plan_for(
         &mut self,
         method_sym: Symbol,
         owner: Symbol,
@@ -448,7 +448,11 @@ impl Interpreter {
         // itself writes no name (`slot_frame_body_ok`).
         let slot_frame = lean
             && (gate.can_skip_merge || gate.merge_is_name_carry_only)
-            && super::vm_method_slot_frame::slot_frame_body_ok(def, cc, owner);
+            && super::vm_method_slot_frame::slot_frame_body_ok(def, cc, owner)
+            // A CStruct keeps its fields in native memory, which the slot
+            // frame's attribute-cell read does not reach.
+            && (!super::vm_method_slot_frame::slot_body_reads_attrs(cc)
+                || self.cstruct_class_name(owner.as_str()).is_none());
         // A mixin owner another thread may publish is asked anew per call
         // (`method_body_package` reads `published_mixins`, which no registry
         // write of this interpreter moves).

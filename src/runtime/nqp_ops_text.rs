@@ -83,7 +83,19 @@ impl Interpreter {
             // Cost: O(n + k), n = chars of $str (copied, normalized), k = old elems of $target.
             "strtocodes" => {
                 let target = args.get(2).cloned().unwrap_or(Value::NIL);
-                super::nqp_ops_string::refill_codes(op, &sarg(args, 0), iarg(args, 1), &target)
+                // A plain Str is decomposed where it lies: copying its text
+                // into a fresh `String` first was a third of the op for the
+                // short strings JSON::Fast's string scanner hands it.
+                let view = args.first().map(Value::view);
+                let owned;
+                let text: &str = match &view {
+                    Some(ValueView::Str(s)) => s.as_str(),
+                    _ => {
+                        owned = sarg(args, 0);
+                        &owned
+                    }
+                };
+                super::nqp_ops_string::refill_codes(op, text, iarg(args, 1), &target)
                     .map(|()| target)
             }
             // nqp::strfromcodes($codes) -> the string those codepoints spell.
@@ -201,14 +213,12 @@ impl Interpreter {
             // Cost: O(1) amortized (in-place push); push_s adds O(m), m = chars of the value
             // (copied). MoarVM: O(1) -- see #9134.
             "push_s" | "push_i" | "push_n" => {
-                let target = args.first().cloned().unwrap_or(Value::NIL);
-                let val = args.get(1).cloned().unwrap_or(Value::NIL);
-                let val = match op {
-                    "push_s" => Value::str(val.to_string_value()),
-                    "push_n" => Value::num(val.to_f64()),
-                    _ => Value::int(crate::runtime::to_int(&val)),
-                };
-                push_elem(op, &target, val)
+                let nil = Value::NIL;
+                nqp_push_typed(
+                    op,
+                    args.first().unwrap_or(&nil),
+                    args.get(1).unwrap_or(&nil),
+                )
             }
             // Cost: O(m), m = chars of the element (copied). MoarVM: O(1) -- see #9134.
             "atpos_s" => {
@@ -243,4 +253,21 @@ impl Interpreter {
             _ => return self.call_nqp_op_str(op, args),
         })
     }
+}
+
+/// `nqp::push_s` / `push_i` / `push_n`: coerce `val` to the op's native kind
+/// and append it. The one implementation behind the table arm and the VM's
+/// direct form (`Interpreter::exec_nqp_push_typed_op`).
+// Cost: O(1) amortized (in-place push); push_s of a non-Str adds O(m), m =
+// chars of its string form. MoarVM: O(1) -- see #9134.
+pub(crate) fn nqp_push_typed(op: &str, target: &Value, val: &Value) -> Result<Value, RuntimeError> {
+    let val = match op {
+        // A plain Str already is its own string form: share it rather than
+        // copy its text into a fresh one.
+        "push_s" if matches!(val.view(), crate::value::ValueView::Str(_)) => val.clone(),
+        "push_s" => Value::str(val.to_string_value()),
+        "push_n" => Value::num(val.to_f64()),
+        _ => Value::int(crate::runtime::to_int(val)),
+    };
+    push_elem(op, target, val)
 }

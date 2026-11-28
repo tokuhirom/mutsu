@@ -96,6 +96,10 @@ pub(crate) struct Tier {
     /// ([`flags::CAPTURE_VOLATILE`], whose value the memo does not hold) leaves
     /// it alone. See [`CaptureSys`].
     capture_sys: OnceLock<Arc<CaptureSys>>,
+    /// Memo of [`Self::plan_key_index`]: this tier's keys grouped the way an
+    /// inline map/grep plan selects them. A function of the key set, reset
+    /// with the other key-set memos.
+    plan_keys: OnceLock<Box<PlanKeyIndex>>,
     /// A frame root's static link (ADR-12529 phase 3,
     /// [`crate::env::static_link`]). Kept on the root's overlay rather than on
     /// `Env`, so the env -- moved and cloned on every call -- does not grow
@@ -131,6 +135,23 @@ pub(crate) struct Tier {
     unit_hidden: Option<Arc<rustc_hash::FxHashSet<Symbol>>>,
 }
 
+/// A tier's keys grouped for an inline map/grep plan's walk of a closure's
+/// captured env ([`Tier::plan_key_index`], #19352).
+///
+/// A plan installs the captured names its body can reach. A body that names
+/// only what it mentions reaches a "droppable" key -- one a reader can only
+/// get at by naming it or its subject (a type `Foo`, a package variable
+/// `@Pkg::X` through `@X`) -- only when it mentions one of those. So the plan
+/// needs, from a wide shared layer, just the keys it must always keep plus
+/// those its body's mentioned names select, not a visit to every key.
+#[derive(Clone, Default)]
+pub(crate) struct PlanKeyIndex {
+    /// Keys with no subject: kept whatever the body mentions.
+    pub(crate) always: Box<[Symbol]>,
+    /// Each droppable key under itself and under its subject.
+    pub(crate) by_subject: rustc_hash::FxHashMap<Symbol, Vec<Symbol>>,
+}
+
 /// What a closure capture takes from one wide env tier, built once per
 /// version of that tier's system names and shared by every capture of it
 /// (#9170).
@@ -159,6 +180,7 @@ impl Clone for Tier {
             capture_asked: AtomicBool::new(self.capture_asked.load(Ordering::Relaxed)),
             container_ref_keys: self.container_ref_keys.clone(),
             capture_sys: self.capture_sys.clone(),
+            plan_keys: self.plan_keys.clone(),
             static_link: self.static_link.clone(),
             program_scope_capture: self.program_scope_capture,
             program_scope_block_names: self.program_scope_block_names.clone(),
@@ -280,6 +302,7 @@ impl Tier {
             capture_asked: AtomicBool::new(false),
             container_ref_keys: OnceLock::new(),
             capture_sys: OnceLock::new(),
+            plan_keys: OnceLock::new(),
             static_link: None,
             program_scope_capture: false,
             program_scope_block_names: None,
@@ -435,6 +458,38 @@ impl Tier {
         })
     }
 
+    /// This tier's keys grouped by `subject_of` (see [`PlanKeyIndex`]):
+    /// `None` puts a key in `always`, `Some(subject)` indexes it under itself
+    /// and its subject. A superset, like `capture_candidates`: a removal does
+    /// not prune it, so a reader looks each key up. The one caller always
+    /// passes the same classifier, which is a pure function of the key.
+    // Cost: O(1) once built; the build is O(t), t = tier entries.
+    pub(crate) fn plan_key_index(
+        &self,
+        subject_of: fn(&Symbol) -> Option<Symbol>,
+    ) -> &PlanKeyIndex {
+        self.plan_keys.get_or_init(|| {
+            let mut always = Vec::new();
+            let mut by_subject: rustc_hash::FxHashMap<Symbol, Vec<Symbol>> =
+                rustc_hash::FxHashMap::default();
+            for &k in self.map.keys() {
+                match subject_of(&k) {
+                    None => always.push(k),
+                    Some(subject) => {
+                        by_subject.entry(k).or_default().push(k);
+                        if subject != k {
+                            by_subject.entry(subject).or_default().push(k);
+                        }
+                    }
+                }
+            }
+            Box::new(PlanKeyIndex {
+                always: always.into_boxed_slice(),
+                by_subject,
+            })
+        })
+    }
+
     /// This tier's dynamic-variable keys, a superset (a removed key may still
     /// be listed). Computed on first ask and held until the key set changes.
     // Cost: O(1) once built; O(t) the first time after a key was added, t = tier entries.
@@ -534,6 +589,7 @@ impl Tier {
         // key, which on the hot insert path is the rare case.
         self.capture_candidates.take();
         self.dynamic_keys.take();
+        self.plan_keys.take();
     }
 
     /// Drop every memo (the bulk-write escape hatches).

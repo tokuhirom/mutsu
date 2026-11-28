@@ -24,6 +24,20 @@ const MAX_CARRIED: usize = 24;
 /// The most declarations a loop kernel's body makes.
 const MAX_DECLS: usize = 24;
 
+/// The most arrays a loop kernel's body subscripts.
+const MAX_ELEMS: usize = 8;
+
+/// The counter range of a `for` kernel: the first counter value, the end and
+/// its inclusivity, and for a list loop the items the counter indexes.
+#[derive(Clone, Copy, Default)]
+pub(super) struct KernelRange<'a> {
+    pub(super) start: i64,
+    pub(super) end: i64,
+    pub(super) inclusive: bool,
+    pub(super) list: Option<&'a [i64]>,
+    pub(super) items: Option<&'a [Value]>,
+}
+
 /// What a loop kernel did.
 pub(super) enum LoopOutcome {
     /// Nothing ran; the driver continues as if it had not asked.
@@ -53,7 +67,8 @@ pub(crate) fn stats_line() -> String {
 
 impl Interpreter {
     /// Run the rest of the loop at `ip` (`shape`) natively; for a `for`,
-    /// `range` is the counter value to start at, the end and its inclusivity.
+    /// `range` is the counter value to start at, the end and its inclusivity
+    /// (and a list loop's items).
     /// `hot` says the driver already knows the loop is long.
     // Cost: O(c) entry and exit work plus the native run, c = carried slots;
     // O(n) once per site, n = ops in the region.
@@ -62,7 +77,7 @@ impl Interpreter {
         code: &CompiledCode,
         ip: usize,
         shape: LoopShape,
-        range: Option<(i64, i64, bool)>,
+        range: Option<KernelRange<'_>>,
         hot: bool,
         compiled_fns: &CompiledFns,
     ) -> Result<LoopOutcome, RuntimeError> {
@@ -76,19 +91,24 @@ impl Interpreter {
             return Ok(LoopOutcome::Declined);
         }
         // The site: its carried slots, decided once.
-        let carried_slots_list = {
+        let (carried_slots_list, elems) = {
             let Ok(mut sites) = code.jit.loop_kernels.sites.lock() else {
                 return Ok(LoopOutcome::Declined);
             };
             let k = match sites.iter().position(|s| s.ip == ip as u32) {
                 Some(k) => k,
                 None => {
+                    let region = carried_slots(code, &shape)
+                        .filter(|(c, e)| c.len() <= MAX_CARRIED && e.len() <= MAX_ELEMS);
+                    let (carried, elems) = match region {
+                        Some((c, e)) => (Some(c.into()), e.into()),
+                        None => (None, Vec::new().into()),
+                    };
                     sites.push(LoopSite {
                         ip: ip as u32,
                         entries: 0,
-                        carried: carried_slots(code, &shape)
-                            .filter(|c| c.len() <= MAX_CARRIED)
-                            .map(Into::into),
+                        carried,
+                        elems,
                         variants: Vec::new(),
                     });
                     sites.len() - 1
@@ -102,7 +122,7 @@ impl Interpreter {
             if !hot && site.entries < LOOP_ENTRY_THRESHOLD && site.variants.is_empty() {
                 return Ok(LoopOutcome::Declined);
             }
-            carried
+            (carried, site.elems.clone())
         };
         // The carried slots' current values, each a plain Int or Num. Fixed
         // arrays: a kernel entry allocates nothing.
@@ -121,7 +141,71 @@ impl Interpreter {
             };
         }
         let carried = &carried[..n];
-        let Some(info) = self.loop_kernel_variant(code, ip, &shape, carried) else {
+        // The arrays and hashes the body subscripts: each still served by its
+        // element lane; a read one with the shape and element kind its reads
+        // compile for; a stored one reachable through no other element name;
+        // and no store at all next to a grid read (a row has no identity of
+        // its own to compare).
+        use super::vm_loop_kernel_types::ElemShape;
+        let mut elem_reads = [(0u32, ElemShape::Array, SlotKind::Int); MAX_ELEMS];
+        let mut elem_stores = [(0u32, false); MAX_ELEMS];
+        let mut node_ids = [0usize; MAX_ELEMS];
+        let (mut nr, mut ns) = (0, 0);
+        for (i, e) in elems.iter().enumerate() {
+            use super::vm_kernel_elem::{
+                kernel_elem_entry_ok, kernel_elem_kind_hint, kernel_elem_node_id,
+            };
+            use super::vm_kernel_hash::{
+                kernel_elem2_kind_hint, kernel_hash_entry_ok, kernel_hash_kind_hint,
+                kernel_hash_node_id,
+            };
+            let (ok, id) = if e.hash {
+                (
+                    kernel_hash_entry_ok(self, code, e.slot, e.name_idx, e.store),
+                    kernel_hash_node_id(self, e.slot),
+                )
+            } else {
+                (
+                    kernel_elem_entry_ok(self, code, e.slot, e.name_idx, e.store),
+                    kernel_elem_node_id(self, e.slot),
+                )
+            };
+            let Some(id) = id.filter(|_| ok) else {
+                return Ok(LoopOutcome::Declined);
+            };
+            if e.store {
+                elem_stores[ns] = (e.slot, e.hash);
+                ns += 1;
+            } else {
+                let shaped = if e.hash {
+                    kernel_hash_kind_hint(self, e.slot).map(|k| (ElemShape::Hash, k))
+                } else {
+                    kernel_elem_kind_hint(self, e.slot)
+                        .map(|k| (ElemShape::Array, k))
+                        .or_else(|| {
+                            kernel_elem2_kind_hint(self, e.slot).map(|k| (ElemShape::Grid, k))
+                        })
+                };
+                let Some((shape, kind)) = shaped else {
+                    return Ok(LoopOutcome::Declined);
+                };
+                elem_reads[nr] = (e.slot, shape, kind);
+                nr += 1;
+            }
+            node_ids[i] = id;
+        }
+        for (i, e) in elems.iter().enumerate() {
+            if e.store && (0..elems.len()).any(|j| j != i && node_ids[j] == node_ids[i]) {
+                return Ok(LoopOutcome::Declined);
+            }
+        }
+        if ns > 0 && elem_reads[..nr].iter().any(|r| r.1 == ElemShape::Grid) {
+            return Ok(LoopOutcome::Declined);
+        }
+        let (elem_reads, elem_stores) = (&elem_reads[..nr], &elem_stores[..ns]);
+        let Some(info) =
+            self.loop_kernel_variant(code, ip, &shape, carried, elem_reads, elem_stores)
+        else {
             return Ok(LoopOutcome::Declined);
         };
         // A readonly check that fails raises on the generic path, at its op.
@@ -134,6 +218,12 @@ impl Interpreter {
             if r.is_err() {
                 return Ok(LoopOutcome::Declined);
             }
+        }
+        // A `"prefix$i"` key is built as the built-in interpolation builds
+        // it, which a user `^find_method` could intercept (the plain-piece
+        // fast path of `exec_string_concat_plain` asks the same).
+        if info.str_keys && crate::runtime::find_method_intercept::any_user_find_method() {
+            return Ok(LoopOutcome::Declined);
         }
         // Each `.Num` site must reach the built-in method: the method lane
         // answers it (no augment, wrap or user `find_method`), with a Num.
@@ -165,7 +255,13 @@ impl Interpreter {
             callees[k] = kernel.entry;
         }
         let mut buf = [0u64; 2 + MAX_CARRIED + MAX_DECLS];
-        let (start, end, inclusive) = range.unwrap_or((0, 0, false));
+        let KernelRange {
+            start,
+            end,
+            inclusive,
+            list,
+            items,
+        } = range.unwrap_or_default();
         buf[0] = start as u64;
         buf[2..2 + n].copy_from_slice(&words[..n]);
         let mut ctx = LoopCtx {
@@ -174,6 +270,10 @@ impl Interpreter {
             end,
             kctx: super::vm_kernel::fresh_kernel_ctx(),
             callees,
+            interp: self as *mut Interpreter,
+            code: code as *const CompiledCode,
+            list: list.map_or(std::ptr::null(), <[i64]>::as_ptr),
+            items: items.map_or(std::ptr::null(), <[Value]>::as_ptr),
         };
         LOOP_KERNEL_ENTRIES.fetch_add(1, Relaxed);
         // SAFETY: `info.entry` is a finalized loop kernel compiled for this
@@ -181,6 +281,9 @@ impl Interpreter {
         // whose signature is `extern "C" fn(*mut LoopCtx, *mut u64) -> u32`;
         // `buf` holds the `2 + carried + decls` words it reads and writes, and
         // both pointers outlive the call. The JIT module lives for the process.
+        // `ctx.interp` and `ctx.code` come from `self` and `code`, which are
+        // not used here until the call returns: the element helpers the
+        // kernel calls are the only users of either during the run.
         let status = unsafe {
             let f = std::mem::transmute::<usize, extern "C" fn(*mut LoopCtx, *mut u64) -> u32>(
                 info.entry,
@@ -234,25 +337,49 @@ impl Interpreter {
         ip: usize,
         shape: &LoopShape,
         carried: &[(u32, SlotKind)],
+        elem_reads: &[super::vm_loop_kernel_types::ElemRead],
+        elem_stores: &[(u32, bool)],
     ) -> Option<std::sync::Arc<LoopKernelInfo>> {
         let mut sites = code.jit.loop_kernels.sites.lock().ok()?;
         let site = sites.iter_mut().find(|s| s.ip == ip as u32)?;
+        use super::vm_loop_kernel_types::{carried_code, elem_code};
+        // A list loop and a counted loop at the same `ForLoop` (one iterable
+        // a Range, another time a list) compile to different code.
+        let list_marker = match shape {
+            LoopShape::Range {
+                list: super::vm_loop_kernel_types::ListKind::Int,
+                ..
+            } => Some(u8::MAX),
+            LoopShape::Range {
+                list: super::vm_loop_kernel_types::ListKind::Str,
+                ..
+            } => Some(u8::MAX - 1),
+            _ => None,
+        };
+        let key = || {
+            list_marker
+                .into_iter()
+                .chain(carried.iter().map(|c| carried_code(c.1)))
+                .chain(elem_reads.iter().map(|r| elem_code(r.1, r.2)))
+        };
         if let Some((_, v)) = site
             .variants
             .iter()
-            .find(|(k, _)| k.iter().copied().eq(carried.iter().map(|c| c.1)))
+            .find(|(k, _)| k.iter().copied().eq(key()))
         {
             return v.clone();
         }
-        let kinds: Box<[SlotKind]> = carried.iter().map(|c| c.1).collect();
+        let kinds: Box<[u8]> = key().collect();
         // A few kind signatures per site at most; past that, stop compiling.
         if site.variants.len() >= 4 {
             return None;
         }
-        let compiled = type_region(code, shape, carried)
+        let compiled = type_region(code, shape, carried, elem_reads, elem_stores)
             .filter(|typed| typed.decls.len() <= MAX_DECLS)
             .and_then(|typed| {
-                let entry = super::vm_loop_kernel_compile::compile(code, shape, carried, &typed)?;
+                let entry = super::vm_loop_kernel_compile::compile(
+                    code, shape, carried, elem_reads, &typed,
+                )?;
                 Some(std::sync::Arc::new(LoopKernelInfo {
                     entry,
                     carried: carried.to_vec().into_boxed_slice(),
@@ -264,6 +391,7 @@ impl Interpreter {
                     readonly_checks: typed.readonly_checks.clone().into_boxed_slice(),
                     num_sites: typed.num_sites.clone().into_boxed_slice(),
                     calls: typed.calls.clone().into_boxed_slice(),
+                    str_keys: typed.str_keys,
                 }))
             });
         if compiled.is_some() {

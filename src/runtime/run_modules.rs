@@ -1328,13 +1328,14 @@ impl Interpreter {
                 .filter(|key| !crate::qualified::is_qualified_str(key.as_str()))
                 .filter_map(|key| self.env.get_sym(*key).map(|value| (*key, value.clone())))
                 .collect();
-            // The importer's `$=pod` may live in an outer env tier, which
-            // `keys()` does not list; an EVAL'd unit reads it from `env`, so
-            // the load must hand it back (not the module's document).
-            if let Some(pod) = self.env.get("=pod") {
-                saved_plain_env
-                    .entry(crate::symbol::Symbol::intern("=pod"))
-                    .or_insert_with(|| pod.clone());
+            // The importer's document and finish section may live in an outer
+            // env tier that `keys()` omits; restore both after loading.
+            for name in ["=pod", "=finish"] {
+                if let Some(value) = self.env.get(name) {
+                    saved_plain_env
+                        .entry(crate::symbol::Symbol::intern(name))
+                        .or_insert_with(|| value.clone());
+                }
             }
             for (key, value) in std::mem::take(&mut parse_loaded_env) {
                 self.env.insert_sym(key, value);
@@ -1375,10 +1376,9 @@ impl Interpreter {
             // see `hide_export_routines` for why this pair cannot share
             // `hidden_toplevel`'s restore point.
             let hidden_export = self.hide_export_routines();
-            // `saved_plain_env` above snapshots the importer's `=pod` value.
+            // `saved_plain_env` snapshots the importer's document and finish data.
             // Populate the module's own document only after that snapshot, so
-            // the ordinary restoration below returns the caller's document
-            // after the module body (and nested module loads) finish.
+            // restoration below returns the caller's values after module load.
             // The document-comment tables are interpreter state too, but unlike
             // `=pod` they are not part of the module env. Save them so loading
             // a dependency cannot replace the importing program's `.WHY`

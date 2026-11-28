@@ -1,0 +1,1 @@
+An EVAL unit now installs its `END` phasers before running its body, including phasers in blocks that never execute. Their source order is preserved across nested EVAL calls, while a reached phaser still captures its final lexical scope.

@@ -13,6 +13,16 @@ instead.
 Everything here is off unless an environment variable asks for it. With the
 variables unset the only cost is one `OnceLock` read per compiled chunk.
 
+## `MUTSU_JIT_VERIFY` — Cranelift's IR verifier
+
+Cranelift's IR verifier (`enable_verifier`) runs in debug builds and is off in
+release builds (ADR-19368). `MUTSU_JIT_VERIFY=1` turns it on in any build, and
+`MUTSU_JIT_VERIFY=0` turns it off. When it runs and rejects a function that
+mutsu generated (the bytecode JIT, a sub kernel or a loop kernel), the run
+panics with Cranelift's report and the function's IR, because invalid IR is a
+mutsu codegen bug. Use it on a release binary to check a suspected
+miscompile; the nightly `jit-stress` jobs run with it on.
+
 ## `MUTSU_JIT_DUMP` — the emitted code
 
 | value | what you get |

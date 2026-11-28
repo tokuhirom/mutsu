@@ -49,7 +49,7 @@ src/runtime/begin_prologue/package_body.rs     3  # splits a package body's stat
 src/runtime/begin_prologue/package_phasers.rs  2  # moves INIT/CHECK out of a type/package declaration: a transform (no mutable visitor), over its top-level members and its nested type declarations only
 src/runtime/run.rs                             2  # 2 statement-tail spine recursions (tail_stmt_sinks_fresh_rvalue / stmt_tail_is_fresh_rvalue follow the last statement only, located by ast::last_value_stmt): stay hand-rolled
 src/runtime/types/mod.rs                       1  # predicate_requires_defined recognizes one shape (`.defined` or a one-statement block of it): a spine, stays hand-rolled
-src/trir/compile/expr.rs                       3  # TRIR code generation (compile_expr / compile_expr_sink / compile_unary)
+src/trir/compile/expr.rs                       2  # TRIR code generation (compile_expr / compile_expr_sink; compile_unary moved to unary.rs, which matches on TokenKind only)
 src/whatever_curry/build.rs                    3  # build_closure is closure construction; count_whatever/contains_hyperwhatever are priming-scope operand walks (only curry operand positions count -- the positive list is the semantics): stay hand-rolled
 src/whatever_curry/mutation.rs                 1  # refs_placeholder, an operand spine (is this operand the placeholder?), moved from expr_closure.rs
 src/whatever_curry/replace.rs                  1  # the priming-scope spine (VisitMut): each operator hands on only its currying operands and every other node stops, by ADR-0033 design

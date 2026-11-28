@@ -1103,14 +1103,14 @@ impl Interpreter {
             self.lexical_package_for_frame(frame.def_file)
                 .or(frame.lexical_package)
         });
-        // EVAL is its own compilation unit with its own `$=pod` (kept under
-        // `env["=pod"]` while it runs); the calling module's document must
-        // not shadow it.
+        // EVAL's own code reads its `$=pod` from the env. A routine called
+        // from another unit keeps reading the document of its lexical owner.
         if name == "=pod"
             && self
                 .env()
                 .get("__mutsu_in_eval")
                 .is_some_and(|v| v.truthy())
+            && self.routine_stack().len() <= self.module.eval_unit_routine_depth
         {
             return None;
         }

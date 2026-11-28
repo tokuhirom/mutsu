@@ -154,6 +154,9 @@ mod vm_decimal_key;
 mod vm_eval_unit_capture;
 mod vm_frame_lexical;
 mod vm_frame_type_aliases;
+mod vm_get_aggregate_var;
+mod vm_get_global;
+mod vm_get_global_chain;
 mod vm_lex_import_builtin_op;
 mod vm_lex_import_call;
 mod vm_lex_import_light_call;
@@ -161,6 +164,7 @@ mod vm_lexical_role;
 mod vm_lexsub_aliases;
 mod vm_lexsub_capture;
 mod vm_lexsub_free_cache;
+mod vm_lexsub_free_slot;
 mod vm_light_aggregate_params;
 mod vm_maybe_call_miss_lane;
 mod vm_module_own_type;
@@ -196,6 +200,7 @@ mod vm_bareword_site;
 mod vm_call_method_site_lane;
 mod vm_call_nqp_list;
 mod vm_cursor_match_lane;
+mod vm_grammar_parse_site;
 mod vm_iterator_site_lane;
 mod vm_method_site_lane;
 mod vm_method_site_static;
@@ -204,6 +209,7 @@ mod vm_shapeless_site_lane;
 pub(crate) use vm_attr_type_constraint::AttrTypeConstraintCache;
 mod vm_accessor_lane;
 mod vm_accessor_read_plan;
+mod vm_bless_lane;
 mod vm_block_alias_sync;
 pub(crate) mod vm_block_env;
 mod vm_call_method_compiled_mut;
@@ -233,6 +239,7 @@ mod vm_ctor_early_lane;
 mod vm_ctor_lane;
 mod vm_eqv_instances;
 mod vm_instance_method_front;
+mod vm_lazy_named_args;
 mod vm_multi_light_call;
 mod vm_operator_values;
 mod vm_pseudo_method_lane;
@@ -241,6 +248,7 @@ mod vm_str_eq_local_const;
 mod vm_string_concat_user;
 mod vm_take_method_lane;
 mod vm_trailing_sub_decl;
+pub(crate) mod vm_user_new_lane;
 pub(crate) use vm_operator_values::StrCmp;
 mod vm_compile_diagnostics;
 mod vm_concat_assign;
@@ -263,6 +271,7 @@ pub(crate) mod vm_compunit_lexicals;
 mod vm_container_store;
 mod vm_core_infix;
 mod vm_data_ops;
+mod vm_data_push_lean;
 mod vm_data_push_ops;
 mod vm_dispatch_helpers;
 pub(crate) mod vm_do_block;
@@ -280,6 +289,8 @@ mod vm_for_loop_dispatch;
 mod vm_for_loop_intrange;
 mod vm_for_loop_items;
 mod vm_for_loop_lazy;
+#[cfg(feature = "jit")]
+mod vm_for_loop_list_kernel;
 mod vm_for_loop_map_grep;
 mod vm_gather_seq;
 mod vm_given_when_ops;
@@ -315,6 +326,8 @@ pub(crate) mod vm_jit;
 #[cfg(feature = "jit")]
 mod vm_jit_compile;
 #[cfg(feature = "jit")]
+mod vm_jit_concat_step;
+#[cfg(feature = "jit")]
 mod vm_jit_dump;
 #[cfg(feature = "jit")]
 mod vm_jit_element_step;
@@ -334,6 +347,8 @@ mod vm_jit_tier_b_flow;
 mod vm_jit_tier_b_metaop;
 #[cfg(feature = "jit")]
 mod vm_jit_tier_b_stack;
+#[cfg(feature = "jit")]
+mod vm_jit_verify;
 pub(crate) mod vm_kernel;
 #[cfg(feature = "jit")]
 mod vm_kernel_admit;
@@ -341,6 +356,8 @@ mod vm_kernel_admit;
 mod vm_kernel_compile;
 #[cfg(feature = "jit")]
 mod vm_kernel_elem;
+#[cfg(feature = "jit")]
+mod vm_kernel_hash;
 mod vm_lazy_front_mutate;
 mod vm_lazy_index_prefix;
 mod vm_lazy_slip;
@@ -356,6 +373,8 @@ mod vm_loop_kernel_compile;
 #[cfg(feature = "jit")]
 mod vm_loop_kernel_emit;
 #[cfg(feature = "jit")]
+mod vm_loop_kernel_emit_elem;
+#[cfg(feature = "jit")]
 mod vm_loop_kernel_types;
 #[cfg(feature = "jit")]
 mod vm_loop_kernel_typing;
@@ -370,6 +389,8 @@ mod vm_map_grep_pull;
 mod vm_native_seq;
 mod vm_optional_miss;
 mod vm_topic_read_gate;
+mod vm_var_delete_lean;
+mod vm_var_incdec_lean;
 pub(crate) use vm_map_grep_pull::callback_positionals;
 pub(crate) mod vm_begin_replay;
 pub(crate) mod vm_indirect_symbol_bind;
@@ -389,6 +410,7 @@ pub(crate) mod vm_method_lean_frame;
 mod vm_method_named_slurpy;
 mod vm_method_return_spec;
 mod vm_method_role_bindings;
+pub(crate) mod vm_method_site_ic;
 pub(crate) mod vm_method_slot_frame;
 mod vm_method_straight;
 pub(crate) mod vm_misc_assign;

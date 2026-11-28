@@ -330,6 +330,17 @@ impl Compiler {
             if (topic_loop || has_rw && !has_copy) && Self::is_accessor_shaped_source(iterable) {
                 self.mark_trailing_method_call_as_accessor_ref();
             }
+            // `for %h.values { ... }` whose body cannot observe whether `$_`
+            // is the element's container (#14495's analysis) needs no element
+            // containers: read the values instead of promoting every element
+            // of the source to a shared cell first.
+            if topic_loop
+                && !has_rw
+                && Self::for_iterable_is_values_alias(iterable)
+                && super::for_topic_alias::topic_alias_unobservable(body)
+            {
+                self.demote_trailing_values_call_to_read();
+            }
         }
         self.suppress_list_var_alias = saved_suppress;
         if let Some(source_name) = Self::for_iterable_source_name(iterable) {
@@ -371,8 +382,37 @@ impl Compiler {
                     && !super::body_scans::loop_param_slot_hazard(&loop_body)
             })
             .cloned();
+        // A plain `-> $w` parameter whose body cannot observe how it is bound
+        // (the topic's allow-list, and no write to `$w`) is read only through
+        // its fresh slot: the VM need not bind it in the env or mark it
+        // readonly per item (`ForLoopSpec::param_slot_only`).
+        let threaded = matches!(mode, crate::ast::ForMode::Race | crate::ast::ForMode::Hyper);
+        let param_slot_only = fresh_single_param.as_deref().is_some_and(|p| {
+            p.chars()
+                .next()
+                .is_some_and(|c| c.is_alphabetic() || c == '_')
+                && !threaded
+                && !has_rw
+                && !has_copy
+                && !has_raw
+                && param_def
+                    .as_ref()
+                    .is_none_or(|d| d.type_constraint.is_none() && !d.sigilless)
+                && super::for_topic_alias::param_alias_unobservable(&loop_body, p)
+        });
         if let Some(p) = &fresh_single_param {
-            self.alloc_local(p);
+            if param_slot_only {
+                // A slot of its own hidden name, as the topic's own slot is
+                // (`topic_slot_only`): no env/slot coherence rule pairs it
+                // with the env's `p`, which keeps whatever an enclosing scope
+                // bound there.
+                let hidden = format!("__mutsu_for_param_{}", self.tmp_counter);
+                self.tmp_counter += 1;
+                let slot = self.alloc_fresh_local(&hidden);
+                self.local_map.insert(p.clone(), slot);
+            } else {
+                self.alloc_local(p);
+            }
         }
         let param_local = param
             .as_ref()
@@ -440,9 +480,26 @@ impl Compiler {
         // Only an implicit-topic loop rebinds `$_`; see `ForLoopSpec::topic_local`.
         // A multi-parameter loop leaves `$_` alone (its batch travels through
         // a hidden variable), so it has no topic slot to mirror.
-        let topic_local = (param.is_none() && params.is_empty())
+        let topic_loop = param.is_none() && params.is_empty();
+        let mut topic_local = topic_loop
             .then(|| self.local_map.get("_").copied())
             .flatten();
+        // A topic loop whose body cannot observe its topic's container
+        // (#14495's allow-list: no call into user code, no closure, no write,
+        // bind or capture of `$_`) reads `$_` from a slot of its own, and the
+        // VM need not bind the env's `_` per item (`ForLoopSpec::topic_slot_only`).
+        let topic_slot_only = topic_local.is_none()
+            && topic_loop
+            && !threaded
+            && !has_rw
+            && !has_copy
+            && !has_raw
+            && super::for_topic_alias::topic_alias_unobservable(&loop_body);
+        if topic_slot_only {
+            let slot = self.alloc_fresh_local(crate::symbol::wk::loop_topic().as_str());
+            self.local_map.insert("_".to_string(), slot);
+            topic_local = Some(slot);
+        }
         let kv_mode = has_rw && Self::for_iterable_is_kv(iterable);
         // Names of the loop's multi-params whose value is written back to the
         // source each iteration. Only a *genuinely rw* param writes back: a
@@ -520,7 +577,6 @@ impl Compiler {
         // prefix built by `build_for_bind_stmts`) through a local slot, not
         // the env (`ForLoopSpec::chunk_local`). A `race`/`hyper` loop runs the
         // body on other interpreters, which keep the by-name key.
-        let threaded = matches!(mode, crate::ast::ForMode::Race | crate::ast::ForMode::Hyper);
         let chunk_local =
             (!params.is_empty() && !threaded).then(|| self.alloc_local("__mutsu_for_chunk"));
         let loop_idx = self
@@ -529,6 +585,8 @@ impl Compiler {
                 param_idx,
                 param_local,
                 topic_local,
+                topic_slot_only,
+                param_slot_only,
                 chunk_local,
                 source_container_local,
                 body_end: 0,
@@ -778,8 +836,16 @@ impl Compiler {
         }
         if let Some(name) = &fresh_single_param
             && let Some(slot) = self.local_map.remove(name)
+            // A hidden-name slot is not reused for a later declaration of the
+            // name: that one pairs with the env's binding.
+            && !param_slot_only
         {
             self.retired_loop_param_slots.insert(name.clone(), slot);
+        }
+        // The loop's own topic slot ends with the body: a `$_` after the loop
+        // is the enclosing topic, read by name again.
+        if topic_slot_only {
+            self.local_map.remove("_");
         }
         // Restore the single named loop param after the post (LAST) phasers ran.
         // The ForLoop opcode deferred this restore (pushing its saved binding)

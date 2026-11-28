@@ -40,22 +40,15 @@ impl Interpreter {
             plan.has_subset_attr || class_attrs.iter().any(|a| a.where_constraint.is_some());
         let has_smiley = plan.has_smiley;
         if has_where || has_smiley {
-            let provided_attr_names: Option<std::collections::HashSet<String>> =
-                (!has_build).then(|| {
-                    args.iter()
-                        .filter_map(|v| match v.view() {
-                            ValueView::Pair(k, _) => Some(k.clone()),
-                            _ => None,
-                        })
-                        .collect()
-                });
+            let provided_attr_names =
+                (!has_build).then_some(crate::runtime::ProvidedNamed(args));
             if let Err(e) = self.enforce_pre_build_attr_constraints(
                 cn_resolved,
                 class_attrs,
                 &attrs,
                 deferred,
                 has_where,
-                has_smiley.then_some(provided_attr_names.as_ref()),
+                has_smiley.then_some(provided_attr_names),
             ) {
                 return Some(Err(e));
             }
@@ -236,7 +229,7 @@ impl Interpreter {
         attrs: &AttrMap,
         deferred: &[DeferredAttrDefault],
         check_where: bool,
-        smiley: Option<Option<&std::collections::HashSet<String>>>,
+        smiley: Option<Option<crate::runtime::ProvidedNamed<'_>>>,
     ) -> Result<(), RuntimeError> {
         let pruned_info: Vec<ClassAttributeDef>;
         let pruned_attrs: AttrMap;

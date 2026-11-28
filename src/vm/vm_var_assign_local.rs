@@ -877,6 +877,19 @@ impl Interpreter {
         {
             return Ok(None);
         }
+        // An `@`/`%` attribute (`@!r = ...` in a `TWEAK`) whose slot and
+        // attribute cell (the store of record) both hold a plain Array/Hash is
+        // neither tied nor mixed: the probes below (two by-name env walks)
+        // could find nothing. Same fast-out as `maybe_tied_store_reassign_named`.
+        if !checked_sigilless
+            && Self::is_array_hash_attr_twigil(name)
+            && Self::is_plain_aggregate(&self.locals[idx])
+            && self
+                .read_self_attr_cell(name)
+                .is_some_and(|v| Self::is_plain_aggregate(&v))
+        {
+            return Ok(None);
+        }
         let name = name.to_string();
         // A read-only sigilless name bound to a mutable Array/Hash, which
         // `CheckReadOnly` let through: the preceding `SigillessAggregateStore`

@@ -1080,6 +1080,7 @@ mod adverb_interp;
 mod amp_scope;
 mod attr_aggregate_slot;
 mod deferred_slip;
+mod lazy_named_arg;
 mod mu_bind_decl;
 mod unit_hidden_names;
 use unit_hidden_names::routine_may_name;
@@ -2176,6 +2177,11 @@ pub(crate) struct Compiler {
     /// A syntactic named argument or a positional data Pair retains its RHS
     /// container; the callee decides between value binding and aliasing.
     suppress_pair_capture: bool,
+    /// The address of the `$var` value expression of the `:$var` argument a
+    /// `CallMethodMut` site is compiling right now, or 0. That one fat-arrow
+    /// emits a lazy `MakeNamedArg` (#19384, `vm_lazy_named_args`); an address
+    /// rather than a flag, so a Pair nested inside the argument never takes it.
+    lazy_named_arg_value: usize,
     /// Set while compiling the value of a `key => my $ = expr` Pair: the
     /// anonymous scalar's container becomes the Pair's value as a writable
     /// cell (`WrapTypedContainer` of `Mu`) instead of a `WrapScalar` item, so
@@ -2450,6 +2456,7 @@ impl Compiler {
             is_mainline: false,
             lexical_scope_known: false,
             suppress_pair_capture: false,
+            lazy_named_arg_value: 0,
             anon_scalar_as_cell: false,
             suppress_list_var_alias: false,
             sunk_list_assign_result: false,
@@ -3192,6 +3199,19 @@ impl Compiler {
     /// DoBlock, whose stray-placeholder check would otherwise die on `$^p`
     /// even though the closure's own signature bound it. Stored caret-form
     /// (`^p`), sigil stripped, matching `collect_unattached_placeholders`.
+    /// Give the chunk a local slot for the topic `$_`, so the body reads it
+    /// with `GetLocal` instead of by name. Only for an inline map/grep body
+    /// that cannot observe its topic's container (#19323): the loop then
+    /// seeds the slot with each element instead of binding `_` in the env.
+    // Cost: O(1).
+    pub(crate) fn seed_topic_local(&mut self) {
+        // The slot has its own hidden name, so no by-name slot resolver or
+        // env/slot coherence check pairs it with the env's `_`; `$_` reads
+        // resolve to it through `local_map`.
+        let slot = self.alloc_fresh_local(crate::symbol::wk::loop_topic().as_str());
+        self.local_map.insert("_".to_string(), slot);
+    }
+
     pub(crate) fn seed_prebound_placeholders(&mut self, params: &[String]) {
         for p in params {
             let bare = p.trim_start_matches(['$', '@', '%', '&']);

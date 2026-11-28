@@ -98,6 +98,11 @@ impl Interpreter {
     /// class that inherits a QuantHash base, carries the backing attribute, and
     /// does not define `method` itself.
     fn baggy_storage_target(&mut self, target: &Value, method: &str) -> Option<Value> {
+        // A lazy Match has no QuantHash storage, and viewing it would force
+        // its materialization.
+        if target.is_lazy_match_value() {
+            return None;
+        }
         let ValueView::Instance {
             class_name,
             attributes,

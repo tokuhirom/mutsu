@@ -426,6 +426,11 @@ impl Value {
     /// RECURSIVE: nested `$($(...))` are fully stripped. Non-Scalar values are
     /// returned as-is. See the decont family note above; this is the Scalar axis only.
     pub fn descalarize(&self) -> &Value {
+        // A lazy Match is no Scalar, and viewing it would force its
+        // materialization (`MatchNode::force_attrs`).
+        if self.is_lazy_match_value() {
+            return self;
+        }
         match self.view() {
             ValueView::Scalar(inner) => inner.descalarize(),
             _ => self,

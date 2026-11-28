@@ -37,10 +37,6 @@
 //! store. Those lanes are the generic path's answer for these shapes, so a
 //! kernel access equals the generic one whenever it does not decline.
 
-// TODO(#19292): campaign A wires these into loop-kernel typing and emission
-// (`ElemRead` / `ElemStore`); until then only the unit tests below call them.
-#![allow(dead_code)]
-
 use super::vm_var_assign_element_lean::LeanStoreNode;
 use super::*;
 use crate::value::ArrayData;
@@ -75,31 +71,7 @@ pub(super) fn kernel_elem_entry_ok(
     if !kernel_elem_slot_ok(code, slot) || idx >= interp.locals.len() {
         return false;
     }
-    // The aggregate `GetLocal` fast path's dynamic half: no `$CALLER::`
-    // alias, sigilless attribute alias or atomic variable that could answer
-    // this name instead of the slot.
-    let unspoiled = crate::vm::vm_jit::local_read_unspoiled();
-    if !unspoiled
-        && (!crate::vm::vm_jit::local_read_unspoiled_by_any_name()
-            || code
-                .locals
-                .get(idx)
-                .is_none_or(|name| Interpreter::atomic_name_possible(name)))
-    {
-        return false;
-    }
-    // The process latches both fast lanes check: a thread clone reads the
-    // shared snapshot, an atomic lane answers `@` reads, a second mutator
-    // thread needs the container stripes, shared vars sync by name, and a
-    // user `postcircumfix:<[ ]>` outranks the core subscript.
-    if interp.is_thread_clone()
-        || crate::runtime::shared_store::atomic_lane_entries_exist()
-        || crate::value::container_lock::multi_mutator_threads_live()
-        || interp.threads.shared_vars_active
-        || interp.dispatch.skip_postcircumfix_overload
-        || interp.rw_return_context
-        || interp.user_subscript_routine_may_answer(true)
-    {
+    if !local_read_unspoiled_for(code, idx) || !process_latches_clear(interp, true) {
         return false;
     }
     let Some((LeanStoreNode::Array(items), cell)) = interp.lean_store_slot_node(idx) else {
@@ -113,12 +85,88 @@ pub(super) fn kernel_elem_entry_ok(
         && interp.lean_store_alias_agrees(code.const_sym(name_idx), node, cell.as_ref())
 }
 
-/// The array node the slot holds, in its own word or inside its binding cell,
-/// when the node is one the lane serves: an ordinary `Array` with no native
+/// The aggregate `GetLocal` fast path's dynamic half for slot `idx`: no
+/// `$CALLER::` alias, sigilless attribute alias or atomic variable that could
+/// answer this name instead of the slot.
+// Cost: O(1) (two latch loads; a name probe once an atomic exists).
+pub(super) fn local_read_unspoiled_for(code: &CompiledCode, idx: usize) -> bool {
+    crate::vm::vm_jit::local_read_unspoiled()
+        || (crate::vm::vm_jit::local_read_unspoiled_by_any_name()
+            && code
+                .locals
+                .get(idx)
+                .is_some_and(|name| !Interpreter::atomic_name_possible(name)))
+}
+
+/// The process latches every kernel container lane checks at entry: a
+/// thread clone reads the shared snapshot, an atomic lane answers `@`/`%`
+/// reads, a second mutator thread needs the container stripes, shared vars
+/// sync by name, and a user `postcircumfix:<[ ]>` (`positional`) or
+/// `postcircumfix:<{ }>` outranks the core subscript.
+// Cost: O(1) (latch loads).
+pub(super) fn process_latches_clear(interp: &Interpreter, positional: bool) -> bool {
+    !(interp.is_thread_clone()
+        || crate::runtime::shared_store::atomic_lane_entries_exist()
+        || crate::value::container_lock::multi_mutator_threads_live()
+        || interp.threads.shared_vars_active
+        || interp.dispatch.skip_postcircumfix_overload
+        || interp.rw_return_context
+        || interp.user_subscript_routine_may_answer(positional))
+}
+
+/// Whether the lane serves an array node: an ordinary `Array` with no native
 /// backing, element type, `is default` or shape.
+// Cost: O(1).
+#[inline(always)]
+pub(super) fn array_node_served(items: &ArrayData) -> bool {
+    !(items.has_native_backing()
+        || items.has_type_meta()
+        || items.default.is_some()
+        || items.shape.is_some())
+}
+
+/// Run `f` on the array node the slot holds, in its own word or inside its
+/// binding cell, when the lane serves it ([`array_node_served`]). The node is
+/// borrowed, not cloned: a cell's lock is held for the duration of `f`, and
+/// `f` must neither run code nor touch the interpreter.
+// Cost: O(1) plus `f` (one uncontended cell lock for a cell).
+#[inline(always)]
+pub(super) fn with_plain_array_node<R>(
+    interp: &Interpreter,
+    slot: u32,
+    f: impl FnOnce(&ArrayData) -> Option<R>,
+) -> Option<R> {
+    let word = interp.locals.get(slot as usize)?;
+    match word.view() {
+        ValueView::Array(items, ArrayKind::Array | ArrayKind::ItemArray) => {
+            array_node_served(&items).then_some(())?;
+            f(&items)
+        }
+        ValueView::ContainerRef(cell) => {
+            if word.container_ref_is_itemized() {
+                return None;
+            }
+            let inner = cell.lock().ok()?;
+            match inner.view() {
+                ValueView::Array(items, ArrayKind::Array | ArrayKind::ItemArray) => {
+                    array_node_served(&items).then_some(())?;
+                    f(&items)
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// The array node the slot holds, in its own word or inside its binding cell,
+/// when the node is one the lane serves ([`array_node_served`]).
 // Cost: O(1) (one refcount bump; one uncontended cell lock for a cell).
 #[inline(always)]
-fn plain_array_node(interp: &Interpreter, slot: u32) -> Option<crate::gc::Gc<ArrayData>> {
+pub(super) fn plain_array_node(
+    interp: &Interpreter,
+    slot: u32,
+) -> Option<crate::gc::Gc<ArrayData>> {
     let word = interp.locals.get(slot as usize)?;
     let items = match word.view() {
         ValueView::Array(items, ArrayKind::Array | ArrayKind::ItemArray) => items.clone(),
@@ -133,24 +181,46 @@ fn plain_array_node(interp: &Interpreter, slot: u32) -> Option<crate::gc::Gc<Arr
         }
         _ => return None,
     };
-    if items.has_native_backing()
-        || items.has_type_meta()
-        || items.default.is_some()
-        || items.shape.is_some()
-    {
-        return None;
-    }
-    Some(items)
+    array_node_served(&items).then_some(items)
 }
 
-/// The element at `index` of the slot's array, when it is present (not a hole,
-/// in range, non-negative index).
+/// The identity of the array node the slot holds, when the lane serves it:
+/// the kernel entry compares a stored array against every other element
+/// array, so a store never reaches an array the region also reads through
+/// another name.
+// Cost: O(1).
+pub(super) fn kernel_elem_node_id(interp: &Interpreter, slot: u32) -> Option<usize> {
+    plain_array_node(interp, slot).map(|items| crate::gc::Gc::as_ptr(&items) as usize)
+}
+
+/// The kind of the first element of the slot's array, which a kernel
+/// compiles its reads of that array for (a read of another kind declines).
+// Cost: O(1).
+pub(super) fn kernel_elem_kind_hint(
+    interp: &Interpreter,
+    slot: u32,
+) -> Option<crate::opcode::kernel_slot::SlotKind> {
+    use crate::opcode::kernel_slot::SlotKind;
+    with_plain_array_node(interp, slot, |items| match items.first()?.view() {
+        ValueView::Int(_) => Some(SlotKind::Int),
+        ValueView::Num(_) => Some(SlotKind::Num),
+        _ => None,
+    })
+}
+
+/// Read the element at `index` of the slot's array in place, when it is
+/// present (not a hole, in range, non-negative index), as `read` answers it.
+/// The element is never cloned.
 // Cost: O(1).
 #[inline(always)]
-fn read_element(interp: &Interpreter, slot: u32, index: i64) -> Option<Value> {
+fn read_element_with<R>(
+    interp: &Interpreter,
+    slot: u32,
+    index: i64,
+    read: impl FnOnce(&Value) -> Option<R>,
+) -> Option<R> {
     let i = usize::try_from(index).ok()?;
-    let items = plain_array_node(interp, slot)?;
-    items.get(i).cloned()
+    with_plain_array_node(interp, slot, |items| read(items.get(i)?))
 }
 
 /// `@a[$i]` for an element that is a plain `Int`.
@@ -169,8 +239,8 @@ pub(super) unsafe extern "C" fn kernel_elem_read_int(
 ) -> u32 {
     // SAFETY: see the function's safety contract.
     let vm = unsafe { &*interp };
-    match read_element(vm, slot, index).as_ref().map(Value::view) {
-        Some(ValueView::Int(n)) => {
+    match read_element_with(vm, slot, index, Value::as_int) {
+        Some(n) => {
             // SAFETY: `out` is writable (contract).
             unsafe { *out = n };
             KERNEL_ELEM_OK
@@ -193,8 +263,8 @@ pub(super) unsafe extern "C" fn kernel_elem_read_num(
 ) -> u32 {
     // SAFETY: see the function's safety contract.
     let vm = unsafe { &*interp };
-    match read_element(vm, slot, index).as_ref().map(Value::view) {
-        Some(ValueView::Num(f)) => {
+    match read_element_with(vm, slot, index, Value::as_num) {
+        Some(f) => {
             // SAFETY: `out` is writable (contract).
             unsafe { *out = f };
             KERNEL_ELEM_OK

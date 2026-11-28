@@ -455,11 +455,10 @@ impl Interpreter {
         if defs.is_empty() { None } else { Some(defs) }
     }
 
-    pub(crate) fn has_proto_token(&self, name: &str) -> bool {
-        // Every probe below is into `proto_tokens`.
-        if self.routines().proto_tokens.is_empty() {
-            return false;
-        }
+    /// [`Self::has_proto_token`] without its memo (`proto_token_memo.rs`).
+    // Cost: O(m), m = the current package's MRO length (a qualified name:
+    // its package's), one `proto_tokens` probe per ancestor.
+    pub(super) fn has_proto_token_uncached(&self, name: &str) -> bool {
         if crate::qualified::is_qualified_str(name) {
             if self.routines().proto_tokens.contains(name) {
                 return true;

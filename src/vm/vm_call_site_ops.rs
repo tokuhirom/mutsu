@@ -137,6 +137,11 @@ impl Interpreter {
         code: &CompiledCode,
         ip: usize,
     ) -> Result<(), RuntimeError> {
+        // A site whose last call the accessor lane answered replays it in
+        // front of every layer below (`vm_method_site_ic`).
+        if let Some(result) = self.try_method_site_ic(code, ip) {
+            return result;
+        }
         // A built-in method with a row in the method table, on an inline
         // receiver of a shape the table covers (`vm_call_method_site_lane`).
         if let Some(answer) = self.try_call_method_site_lane(code, ip) {
@@ -233,6 +238,16 @@ impl Interpreter {
         code: &CompiledCode,
         ip: usize,
     ) -> Result<(), RuntimeError> {
+        // Lazy `:$var` arguments are resolved before anything reads the
+        // arguments (`vm_lazy_named_args`, #19384).
+        if let Some(result) = self.resolve_lazy_named_args(code, ip) {
+            return result;
+        }
+        // A site whose last call a plan or the accessor lane answered
+        // replays it in front of every layer below (`vm_method_site_ic`).
+        if let Some(result) = self.try_method_site_ic(code, ip) {
+            return result;
+        }
         // `.VAR` of a readonly sigilless term bound to a value is that value
         // (`my \s = 5; s.VAR.^name` is `Int`); the term keeps no env marker
         // for the by-name `.VAR` path to find (ADR-17376).

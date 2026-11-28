@@ -1067,9 +1067,17 @@ pub(crate) mod wk {
         /// source elements to its parameter binds through, so `$_` stays the
         /// enclosing topic (`for @a -> $x, $y { $_ }`).
         for_chunk => "__mutsu_for_chunk";
+        /// The hidden local an inline map/grep body reads its topic `$_`
+        /// through when the loop seeds it per element (#19323,
+        /// `Compiler::seed_topic_local`). Not `_`: the env's `_` keeps the
+        /// caller's topic, and the slot does not mirror it.
+        loop_topic => "__mutsu_loop_topic";
         /// The method name `new`, which the constructor lane gates every
         /// `CallMethodMut` on (see `vm_ctor_lane`).
         new_method => "new";
+        /// The method name `bless`, which the bless lane gates on (see
+        /// `vm_bless_lane`).
+        bless_method => "bless";
         /// The attribute keys of a materialized `Match`
         /// (`MatchNode::materialize_map`). A grammar parse with actions
         /// materializes every node the action walk visits, and each key was

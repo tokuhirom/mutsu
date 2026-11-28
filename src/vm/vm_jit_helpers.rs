@@ -35,7 +35,7 @@ use super::*;
 /// a caught payload is parked for `vm_jit::try_enter*` to resume and
 /// `JIT_STATUS_PANIC` is returned in place of the body's status.
 #[inline]
-fn panic_boundary(f: impl FnOnce() -> u32) -> u32 {
+pub(super) fn panic_boundary(f: impl FnOnce() -> u32) -> u32 {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
         Ok(status) => status,
         Err(payload) => {

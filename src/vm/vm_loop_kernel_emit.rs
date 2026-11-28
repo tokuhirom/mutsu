@@ -24,6 +24,12 @@ pub(super) fn clty(k: K) -> types::Type {
         K::Num => types::F64,
         K::Int => types::I64,
         K::Bool => types::I8,
+        // A placeholder word: only an `Index` consumes it, by its slot.
+        K::Arr(_) => types::I64,
+        // The row index a grid's first subscript applied.
+        K::Row(_) => types::I64,
+        // A placeholder word, and a `"prefix$i"` key's Int.
+        K::StrConst(_) | K::IntKey(_) | K::StrItem | K::Sunk => types::I64,
     }
 }
 
@@ -33,6 +39,9 @@ pub(super) struct Em<'f, 'c> {
     pub(super) vars: BTreeMap<u32, (Variable, SlotKind)>,
     pub(super) bail: Block,
     pub(super) var: Option<LoopVar>,
+    /// A `Str` list loop's variable slot, whose reads are the counter as the
+    /// item's index (`K::StrItem`).
+    pub(super) str_var: Option<u32>,
     /// The outermost loop's counter (the topic of an implicit-topic `for`).
     pub(super) counter: Variable,
     pub(super) ctxp: ClValue,
@@ -47,6 +56,10 @@ pub(super) struct Em<'f, 'c> {
     pub(super) call_sigs: Vec<SigRef>,
     /// Calls emitted so far: the next call's slot in the callee table.
     pub(super) next_call: usize,
+    /// The element kind of each array the region reads.
+    pub(super) elem_reads: Vec<super::vm_loop_kernel_types::ElemRead>,
+    /// Element helper signatures and context offsets.
+    pub(super) elem: super::vm_loop_kernel_emit_elem::ElemSigs,
 }
 
 impl Em<'_, '_> {
@@ -170,7 +183,12 @@ impl Em<'_, '_> {
     ) -> Option<Vec<(ClValue, K)>> {
         // Join blocks, with one block parameter per stack entry.
         let mut blocks: BTreeMap<usize, (Block, Vec<K>)> = BTreeMap::new();
-        for (&(_, t), kinds) in joins.range((start, start + 1)..(start, end)) {
+        // An empty segment (`while $i++ < $m { }`) has no join inside it.
+        let inner = (start < end)
+            .then(|| joins.range((start, start + 1)..(start, end)))
+            .into_iter()
+            .flatten();
+        for (&(_, t), kinds) in inner {
             let blk = self.b.create_block();
             for k in kinds {
                 self.b.append_block_param(blk, clty(*k));
@@ -233,13 +251,101 @@ impl Em<'_, '_> {
                 continue;
             }
             match op {
+                // A `Str` list's variable: the item's index (`K::StrItem`).
+                OpCode::GetLocal(s) if self.str_var == Some(*s) => {
+                    stack.push((self.b.use_var(self.counter), K::StrItem));
+                }
+                OpCode::GetLocal(s) if self.elem_reads.iter().any(|e| e.0 == *s) => {
+                    let v = self.b.ins().iconst(types::I64, i64::from(*s));
+                    stack.push((v, K::Arr(*s)));
+                }
                 OpCode::GetLocal(s) | OpCode::GetLocalMetaAssign { slot: s, .. } => {
                     let (v, k) = *self.vars.get(s)?;
                     stack.push((self.b.use_var(v), K::of(k)));
                 }
+                OpCode::Index { .. } => {
+                    let (index, _) = stack.pop()?;
+                    let (row, k) = stack.pop()?;
+                    let (slot, second) = match k {
+                        K::Arr(s) => (s, false),
+                        K::Row(s) => (s, true),
+                        _ => return None,
+                    };
+                    let &(_, shape, kind) = self.elem_reads.iter().find(|e| e.0 == slot)?;
+                    use super::vm_loop_kernel_types::ElemShape;
+                    let v = match (shape, second) {
+                        (ElemShape::Array, _) => self.elem_read(slot, index, kind),
+                        (ElemShape::Hash, _) => self.hash_read(slot, index, kind),
+                        (ElemShape::Grid, false) => {
+                            stack.push((index, K::Row(slot)));
+                            i += 1;
+                            continue;
+                        }
+                        (ElemShape::Grid, true) => self.elem2_read(slot, row, index, kind),
+                    };
+                    stack.push((v, K::of(kind)));
+                }
+                OpCode::IndexAssignLocal {
+                    slot,
+                    is_positional,
+                    ..
+                } => {
+                    let (v, k) = stack.pop()?;
+                    let (index, key_kind) = stack.pop()?;
+                    if *is_positional {
+                        self.elem_store(*slot, index, v, k);
+                    } else if let K::IntKey(prefix) = key_kind {
+                        self.hash_store_prefixed(*slot, prefix, index, v, k);
+                    } else {
+                        self.hash_store(*slot, index, v, k);
+                    }
+                    stack.push((v, k));
+                }
+                OpCode::SinkPopAssign => {
+                    stack.pop()?;
+                }
+                OpCode::SinkPop(..) => {
+                    stack.pop()?;
+                }
+                OpCode::PreIncrementIndex(_, Some(slot), false)
+                | OpCode::PreDecrementIndex(_, Some(slot), false)
+                | OpCode::PostIncrementIndex(_, Some(slot), false)
+                | OpCode::PostDecrementIndex(_, Some(slot), false) => {
+                    let (key, key_kind) = stack.pop()?;
+                    self.hash_incdec(op, *slot, key, key_kind);
+                    let none = self.b.ins().iconst(types::I64, 0);
+                    stack.push((none, K::Sunk));
+                }
+                OpCode::PreIncrement(_, Some(s))
+                | OpCode::PreDecrement(_, Some(s))
+                | OpCode::PostIncrement(_, Some(s))
+                | OpCode::PostDecrement(_, Some(s)) => {
+                    let v = self.incdec(op, *s)?;
+                    stack.push((v, K::Int));
+                }
+                OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor | OpCode::BitShiftRight => {
+                    let (y, _) = stack.pop()?;
+                    let (x, _) = stack.pop()?;
+                    let r = self.bitop(op, x, y);
+                    stack.push((r, K::Int));
+                }
                 OpCode::GetGlobal(_) => {
                     debug_assert_eq!(self.var, Some(LoopVar::Topic));
                     stack.push((self.b.use_var(self.counter), K::Int));
+                }
+                // A `"prefix$i"` key's pieces: the constant has no machine
+                // value (its index travels in the kind), the key carries the Int.
+                OpCode::LoadConst(c) if super::vm_loop_kernel_types::str_const(self.code, *c) => {
+                    let none = self.b.ins().iconst(types::I64, 0);
+                    stack.push((none, K::StrConst(*c)));
+                }
+                OpCode::StringConcat(2) => {
+                    let (y, _) = stack.pop()?;
+                    let (_, x) = stack.pop()?;
+                    let K::StrConst(c) = x else {
+                        return None;
+                    };
+                    stack.push((y, K::IntKey(c)));
                 }
                 OpCode::LoadConst(c) => {
                     let (k, iv, fv) = num_const(self.code, *c)?;
@@ -273,7 +379,7 @@ impl Em<'_, '_> {
                         stack.push((r, K::Num));
                     }
                 }
-                OpCode::IntDiv | OpCode::IntMod => {
+                OpCode::IntDiv | OpCode::IntMod | OpCode::Mod => {
                     // Floored, as `Integer::div_floor`/`mod_floor` and Tier B's
                     // `emit_int_divmod`; a zero divisor and `MIN div -1` bail.
                     let (y, _) = stack.pop()?;

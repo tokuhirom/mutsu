@@ -568,8 +568,7 @@ impl Compiler {
                     // with the calling context (App::Moneymoor's `valid-date`,
                     // ~0.5 ms per read inside `compute`).
                     let key = crate::runtime::term_names::term_key(name);
-                    let name_idx = self.code.add_constant(Value::str(key));
-                    self.code.emit(OpCode::GetGlobal(name_idx));
+                    self.emit_outer_term_constant_read(key);
                 } else if let Some(&slot) = self.local_map.get(name.as_str()) {
                     if self.constant_vars_in_scope.contains(name.as_str())
                         || name == "self"
@@ -784,6 +783,7 @@ impl Compiler {
                             c.emit_wrap_var_ref(name);
                             c.code.emit(OpCode::MakeNamedArg {
                                 readonly: c.is_readonly_param_operand(right),
+                                lazy: false,
                             });
                             continue;
                         }

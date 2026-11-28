@@ -345,15 +345,15 @@ impl Interpreter {
         });
         crate::parser::clear_parser_lib_paths();
         match parse_result {
-            Ok((mut stmts, _)) => {
+            Ok((mut stmts, finish)) => {
+                if let Some(content) = finish {
+                    self.env.insert("=finish".to_string(), Value::str(content));
+                }
                 if let Some(hidden) = &session_hidden {
                     super::repl_session_scope::declare_session_types_apart(&mut stmts, hidden);
                 }
-                // EVAL is its own compilation unit, so its `$=pod` must be
-                // collected from the evaluated source before the mainline
-                // runs.  This also adds declarator blocks from `#|` comments;
-                // without it a module such as Pod::EOD sees only its ordinary
-                // Pod blocks and loses the declaration it is meant to move.
+                // Build the EVAL unit's Pod, including #| declaration docs,
+                // before mainline execution (Pod::EOD needs those declarations).
                 let docs = crate::parser::decl_doc::take_unit_docs();
                 self.establish_pod_variables_from_stmts(src, &stmts, docs)?;
                 // A placeholder parameter used directly in the mainline is
@@ -615,12 +615,12 @@ impl Interpreter {
             stmts.insert(prologue_len, Stmt::BeginPrologueEnd);
         }
         Self::insert_run_check_code(&mut stmts, prologue_len);
-        // An `our` in a branch that never runs still has its package symbol.
+        self.preregister_eval_end_phasers(&stmts);
         self.preinstall_unit_our_symbols(&stmts);
         // An `our` routine is installed in its package when the unit is
         // compiled, wherever it is declared -- inside an uncalled routine
         // of the snippet too (#13137), as for the mainline (#13091).
-        self.preregister_inline_package_subs(&stmts, true)?;
+        self.preregister_inline_package_subs(&stmts)?;
         // A `my` declared inside EVAL is lexically scoped to that EVAL and
         // must NOT leak into the caller's pad (raku: `EVAL 'my $y'; $y` is
         // X::Undeclared). Snapshot the set of *plain user lexical* keys

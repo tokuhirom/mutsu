@@ -21,7 +21,9 @@
 //!   facts are checked when the route is remembered.
 //! - **What the name is.** Compiler-internal names (`__mutsu_*`), `nqp::` ops,
 //!   `make`, the redispatchers and the core type coercers each have an arm of
-//!   their own ahead of the ladder; such a site is never remembered.
+//!   their own ahead of the ladder; such a site is never remembered as a
+//!   native route. `make`'s arm remembers a route of its own (`ROUTE_MAKE`)
+//!   when it answered, under the same generation and run-time re-checks.
 //! - **What is bound at run time.** A lexical `&name` (a local slot, or an
 //!   `env` binding from an outer scope, an import or an EXPORT hook), a wrap
 //!   of any routine, an EXPORT-hook override of the name, a `my method` of the
@@ -92,10 +94,24 @@ impl Interpreter {
         }) {
             return None;
         }
+        // `make`'s lane takes one positional; any other shape is the
+        // funnel's to bind (and reject).
+        if route == ROUTE_MAKE && !matches!(&args[..], [arg] if !arg.is_string_pair_value()) {
+            return None;
+        }
         self.stack.truncate(start);
         let (mut args, callsite_line) = self.sanitize_call_args_owned(args);
         loan_env!(self, set_pending_callsite_line(callsite_line));
         self.set_pending_call_arg_sources(None);
+        if route == ROUTE_MAKE {
+            // What the funnel's `make` lane does, without the funnel
+            // (`try_make_builtin_call`): nothing it checks can have changed
+            // but what was re-checked above.
+            return Some(
+                self.make_on_frame_match_topic(code, &args)
+                    .map(|value| self.stack.push(value)),
+            );
+        }
         // A builtin with no arm of its own in `try_native_function` (see
         // `ROUTE_PLAIN`), called with defined plain scalars: every arm there
         // declines for such arguments, so the routine itself answers.
@@ -212,6 +228,10 @@ impl Interpreter {
     }
 }
 
+/// A site's remembered route: the unshadowed `make` builtin
+/// (`make_on_frame_match_topic`), which the funnel answers in a lane of its
+/// own ahead of the native arm (`try_make_builtin_call`).
+pub(super) const ROUTE_MAKE: u32 = 3;
 /// A site's remembered route: the native arm, through `try_native_function`.
 const ROUTE_NATIVE: u32 = 1;
 /// The native arm of a name with no arm of its own in `try_native_function`,

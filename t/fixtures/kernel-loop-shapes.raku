@@ -134,5 +134,106 @@ my $cb = 1;
 for ^400 { $cb = dbl($cb) }
 say "call-overflow=", $cb;
 
+# Element reads and stores (campaign B's helpers), `+&`/`+|`/`+^`, `%`,
+# `++`/`--`, and C-style loops.
+my @ra = ^64;
+my $rs = 0;
+loop (my $ri = 0; $ri < 5000; $ri++) { $rs = $rs + @ra[$ri +& 15] }
+say "elem-read-cloop=", $rs;
+my @rn = (^32).map(* + 0.5e0);
+my $rns = 0e0;
+for ^3000 -> $i { $rns = $rns + @rn[$i % 32] }
+say "elem-read-num=", $rns;
+my @rmix = ^200;
+@rmix[150] = "x";
+my $rms = 0;
+for ^200 -> $i { $rms = $rms + (@rmix[$i] ~~ Int ?? @rmix[$i] !! 1) }
+say "elem-read-mixed=", $rms;
+my @rk = ^100;
+@rk[60] = 2.5e0;
+my $rks = 0;
+for ^100 -> $i { $rks = $rks + @rk[$i] }
+say "elem-read-kind-change=", $rks;
+my @sb;
+for ^300 -> $i { @sb[$i] = $i * 2 }
+say "elem-store-append=", @sb.elems, " ", @sb.sum;
+my @sc = 0 xx 50;
+loop (my $si = 0; $si < 500; $si++) { @sc[$si % 50] = $si }
+say "elem-store-cloop=", @sc.sum;
+my @sn;
+for ^100 -> $i { @sn[$i] = $i * 0.25e0 }
+say "elem-store-num=", @sn.sum;
+my @sg;
+for ^10 -> $i { @sg[$i * 2] = $i }
+say "elem-store-gap=", @sg.elems, " ", @sg.grep(*.defined).sum;
+my Int @st;
+for ^50 -> $i { @st[$i] = $i }
+say "elem-store-typed=", @st.sum;
+my @rw = ^40;
+for ^40 -> $i { @rw[$i] = @rw[$i] + 1 }
+say "elem-read-write-same=", @rw.sum;
+my @al = ^30;
+my @al2 := @al;
+for ^30 -> $i { @al2[$i] = @al[29 - $i] }
+say "elem-alias=", @al.join(",");
+my @rb;
+my $rbig = 1;
+for ^300 -> $i { @rb[$i] = $i; $rbig = $rbig * 3 }
+say "elem-store-then-bail=", @rb.sum, " ", $rbig.chars;
+my $bm = 0;
+for ^2000 -> $i { $bm = $bm + ($i - 1000) % 7 + ($i +& 12) + ($i +| 3) + ($i +^ 5) + ($i - 1000) % -6 }
+say "bitops-mod=", $bm;
+my $pc = 0;
+my $pd = 1000;
+for ^3000 -> $i { $pc++; --$pd; $pc = $pc + $pd-- - ++$pd }
+say "incdec=", $pc, " ", $pd;
+my $ec = 0;
+while $ec++ < 3000 { }
+say "empty-body=", $ec;
+my $px = 9223372036854775000;
+for ^2000 { $px++ }
+say "incdec-overflow=", $px;
+
+# Hash reads and stores keyed by Int, grid reads, `+>` (campaign B's
+# `vm_kernel_hash` helpers).
+my %kh;
+%kh{$_} = $_ * 3 for ^16;
+my $khs = 0;
+loop (my $hj = 0; $hj < 5000; $hj++) { $khs = $khs + %kh{$hj +& 15} }
+say "hash-read=", $khs;
+my %kn;
+%kn{$_} = $_ + 0.5e0 for ^8;
+my $kns = 0e0;
+for ^2000 -> $i { $kns = $kns + %kn{$i % 8} }
+say "hash-read-num=", $kns;
+my %km;
+%km{$_} = $_ for ^10;
+my $kms = 0;
+for ^300 -> $i { $kms = $kms + (%km{$i % 12} // 100) }
+say "hash-read-missing=", $kms;
+my %ks;
+for ^400 -> $i { %ks{$i % 50} = $i }
+say "hash-store=", %ks.elems, " ", %ks.values.sum;
+my %krw;
+%krw{$_} = $_ for ^20;
+for ^20 -> $i { %krw{$i} = %krw{$i} + 1 }
+say "hash-read-write-same=", %krw.values.sum;
+my @kg;
+@kg[$_] = [($_ * 8) ..^ ($_ * 8 + 8)] for ^8;
+my $kgs = 0;
+loop (my $gk = 0; $gk < 3500; $gk++) { $kgs = $kgs + @kg[$gk +& 7][($gk +> 3) +& 7] }
+say "grid-read=", $kgs;
+my @kgr = [1, 2], [3], [4, 5];
+my $kgrs = 0;
+for ^300 -> $i { $kgrs = $kgrs + (@kgr[$i % 3][1] // 7) }
+say "grid-ragged=", $kgrs;
+my @kgw;
+my $kgws = 0;
+for ^200 -> $i { $kgws = $kgws + @kg[$i % 8][$i % 8]; @kgw[$i] = $i }
+say "grid-with-store=", $kgws, " ", @kgw.sum;
+my $sh = 0;
+for ^500 -> $i { $sh = $sh + (($i - 250) +> 2) + ($i +> ($i % 70)) }
+say "shift-right=", $sh;
+
 # From several threads.
 say "threads=", await((^4).map(-> $o { start { my $z = 0; for ^10000 -> $i { $z = $z + $i * $o }; $z } })).join(",");

@@ -59,11 +59,31 @@ pub(crate) struct LoopKernelInfo {
     /// Sub calls `(CallFunc ip, arity)`, each resolved to a sub kernel at
     /// entry; the index is the call's slot in the callee table.
     pub(crate) calls: Box<[(u32, u8)]>,
+    /// The region stores under a `"prefix$i"` key, whose text the store
+    /// helper builds as the built-in interpolation would.
+    pub(crate) str_keys: bool,
 }
 
-/// A loop site's variant: the carried kinds it was compiled for, and the
-/// kernel (`None` when that variant declined).
-pub(crate) type LoopVariant = (Box<[SlotKind]>, Option<std::sync::Arc<LoopKernelInfo>>);
+/// An array local a loop kernel's body reads (`@a[$i]`) or stores into
+/// (`@a[$i] = v`) through the kernel element helpers (`vm_kernel_elem`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ElemSlot {
+    /// The array's local slot.
+    pub(crate) slot: u32,
+    /// The store's `IndexAssignLocal` name operand (0 for a read-only slot).
+    pub(crate) name_idx: u32,
+    /// Whether the body stores into it; otherwise it only reads it. A slot is
+    /// never both: a replayed iteration must not read its own earlier store.
+    pub(crate) store: bool,
+    /// Whether it is a `%` hash subscripted by an `Int` key (`%h{$i}`)
+    /// rather than an `@` array.
+    pub(crate) hash: bool,
+}
+
+/// A loop site's variant: a code for the kind of each carried slot, followed
+/// by a code for the shape and element kind of each read array or hash, and
+/// the kernel (`None` when that variant declined).
+pub(crate) type LoopVariant = (Box<[u8]>, Option<std::sync::Arc<LoopKernelInfo>>);
 
 /// One loop op's kernel state.
 #[derive(Debug)]
@@ -75,6 +95,8 @@ pub(crate) struct LoopSite {
     /// The carried slots of the region, or `None` when the region can never
     /// be a kernel.
     pub(crate) carried: Option<std::sync::Arc<[u32]>>,
+    /// The array locals the region reads or stores elements of.
+    pub(crate) elems: std::sync::Arc<[ElemSlot]>,
     /// Compiled (or declined) variants, keyed by the carried slots' kinds.
     pub(crate) variants: Vec<LoopVariant>,
 }

@@ -3,7 +3,8 @@
 //! `RakuAST::Deparse::Highlight` prints after the code), or the `Mu` type
 //! object when the source has none.
 //!
-//! Kept in the hidden field [`FIELD`], which no walk, render or lowering reads.
+//! Kept in the hidden field [`FIELD`]. Walks and rendering skip it; EVAL reads
+//! it when establishing the unit's `$=finish`.
 
 use super::{RakuAstField, RakuAstFieldValue, RakuAstNode};
 use crate::value::Value;
