@@ -1,6 +1,6 @@
 //! Loop kernels: emitting one segment's ops (ADR-19288 D5).
 //!
-//! [`Em::segment`] lowers the ops of `[start, end)` against the kinds the typing
+//! `Em::segment` lowers the ops of `[start, end)` against the kinds the typing
 //! pass settled (`vm_loop_kernel_typing`): `Int` values are `i64`, `Num` values
 //! `f64`, comparison results `i8`. A counted `for` or a `while` nested in the
 //! segment becomes a native loop in place. Any condition the kernel cannot

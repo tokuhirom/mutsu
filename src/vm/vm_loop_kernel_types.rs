@@ -1,10 +1,10 @@
 //! Loop kernels: the region shape and its typing pass (ADR-19288 D5).
 //!
 //! A loop kernel's region is a counted `for` over an int `Range` (its body), or
-//! a `while` (its condition, then its body). [`type_region`] walks the region
-//! once with the kinds its carried slots hold at entry and decides, by a closed
-//! op list, whether every value is a machine `Int` or `Num` (or a comparison
-//! result). An op not matched declines the loop, so a new opcode can only make
+//! a `while` (its condition, then its body). The typing pass
+//! (`vm_loop_kernel_typing`) walks the region once with the kinds its carried
+//! slots hold at entry and decides, by a closed op list, whether every value is
+//! a machine `Int` or `Num` (or a comparison result). An op not matched declines the loop, so a new opcode can only make
 //! loop kernels rarer.
 //!
 //! The region may branch forward only, inside one segment (a jump to a
