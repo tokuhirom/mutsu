@@ -439,7 +439,7 @@ impl Interpreter {
     }
 
     /// Which of the routine named `name`'s first 64 positional parameters are
-    /// `is rw`, as a bitmask — the arguments a generic call must hand over as
+    /// `is rw` or sigilless, as a bitmask — the arguments a generic call must hand over as
     /// containers so the callee's write reaches this frame's slot.
     ///
     /// `0` for everything this cannot resolve to a routine: a builtin or an
@@ -465,7 +465,10 @@ impl Interpreter {
         mask
     }
 
-    /// The `is rw` bits of `def`'s first 64 positional parameters.
+    /// The bits of `def`'s first 64 positional parameters that bind the
+    /// argument's container: `is rw`, and a sigilless (`\x`) parameter, which
+    /// is implicitly raw and aliases a variable handed to it (as the untyped
+    /// call's `WrapVarRef` lets it).
     // Cost: O(p), p = the routine's parameters.
     fn rw_positional_mask(def: &crate::ast::FunctionDef) -> u64 {
         let mut mask = 0u64;
@@ -477,7 +480,7 @@ impl Interpreter {
             if positional >= 64 {
                 break;
             }
-            if pd.traits.iter().any(|t| t == "rw") {
+            if pd.traits.iter().any(|t| t == "rw") || (pd.sigilless && !pd.slurpy && !pd.onearg) {
                 mask |= 1 << positional;
             }
             positional += 1;
