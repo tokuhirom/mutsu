@@ -200,13 +200,13 @@ impl TierB {
     }
 
     /// Sign-extend the 48-bit Int payload to i64.
-    fn sx48(&self, b: &mut FunctionBuilder, word: CVal) -> CVal {
+    pub(super) fn sx48(&self, b: &mut FunctionBuilder, word: CVal) -> CVal {
         let hi = b.ins().ishl_imm_u(word, 16);
         b.ins().sshr_imm_u(hi, 16)
     }
 
     /// Pack an in-range i64 back into a small-Int word.
-    fn pack_int(&self, b: &mut FunctionBuilder, v: CVal) -> CVal {
+    pub(super) fn pack_int(&self, b: &mut FunctionBuilder, v: CVal) -> CVal {
         let payload = b.ins().band_imm_u(v, w::PAYLOAD48_MASK as i64);
         b.ins()
             .bor_imm_u(payload, (w::INT_PAGE << w::PAGE_SHIFT) as i64)
@@ -230,7 +230,7 @@ impl TierB {
 
     /// Load the process-wide user-infix-declaration counter (zero ⟺ no user
     /// `infix:<op>` override can exist anywhere — see `USER_INFIX_DECLS`).
-    fn no_user_infix(&self, b: &mut FunctionBuilder) -> CVal {
+    pub(super) fn no_user_infix(&self, b: &mut FunctionBuilder) -> CVal {
         let addr = std::ptr::addr_of!(super::vm_jit::USER_INFIX_DECLS) as usize;
         let addr = b.ins().iconst(self.ptr_ty, addr as i64);
         let ctr = b.ins().load(types::I32, Self::mf(), addr, 0);
@@ -239,7 +239,7 @@ impl TierB {
 
     /// Call a fallible `(interp) -> status` shim and return-from-function on a
     /// nonzero status. Leaves the builder in a fresh continuation block.
-    fn call_status(&self, b: &mut FunctionBuilder, f: usize) {
+    pub(super) fn call_status(&self, b: &mut FunctionBuilder, f: usize) {
         let callee = b.ins().iconst(self.ptr_ty, f as i64);
         let call = b.ins().call_indirect(self.s1, callee, &[self.interp]);
         let status = b.inst_results(call)[0];

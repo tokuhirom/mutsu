@@ -342,6 +342,8 @@ mod vm_jit_support;
 #[cfg(feature = "jit")]
 mod vm_jit_tier_b;
 #[cfg(feature = "jit")]
+mod vm_jit_tier_b_bitop;
+#[cfg(feature = "jit")]
 mod vm_jit_tier_b_flow;
 #[cfg(feature = "jit")]
 mod vm_jit_tier_b_metaop;
