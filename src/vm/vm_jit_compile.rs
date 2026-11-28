@@ -58,7 +58,7 @@ fn engine_in(guard: &mut Option<Engine>) -> Option<&mut Engine> {
 /// for a compiler other than this file's (the native kernels, ADR-19288).
 /// `None` when the engine cannot be created on this host.
 pub(super) fn with_engine<R>(f: impl FnOnce(&mut JITModule, u64) -> Option<R>) -> Option<R> {
-    let mut guard = ENGINE.lock().unwrap();
+    let mut guard = ENGINE.lock().ok()?;
     let engine = engine_in(&mut guard)?;
     engine.fn_counter += 1;
     let n = engine.fn_counter;
