@@ -58,8 +58,12 @@ impl IntDecimal {
     /// Cost: O(1).
     #[inline]
     pub(crate) fn as_str(&self) -> &str {
-        // Only ASCII digits and '-' are ever written.
-        std::str::from_utf8(&self.buf[self.start..]).unwrap_or("")
+        let text = &self.buf[self.start..];
+        debug_assert!(text.iter().all(|b| b.is_ascii_digit() || *b == b'-'));
+        // SAFETY: `of` writes only ASCII digits and '-' into `buf[start..]`,
+        // and ASCII is valid UTF-8. (`from_utf8` here cost more than writing
+        // the digits: its validator is built for long inputs.)
+        unsafe { std::str::from_utf8_unchecked(text) }
     }
 }
 
