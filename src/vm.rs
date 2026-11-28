@@ -355,6 +355,7 @@ mod vm_loop_kernel;
 mod vm_loop_kernel_compile;
 #[cfg(feature = "jit")]
 mod vm_loop_kernel_emit;
+#[cfg(feature = "jit")]
 mod vm_loop_kernel_emit_elem;
 #[cfg(feature = "jit")]
 mod vm_loop_kernel_types;
