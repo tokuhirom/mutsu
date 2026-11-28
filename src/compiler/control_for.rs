@@ -382,9 +382,6 @@ impl Compiler {
                     && !super::body_scans::loop_param_slot_hazard(&loop_body)
             })
             .cloned();
-        if let Some(p) = &fresh_single_param {
-            self.alloc_local(p);
-        }
         // A plain `-> $w` parameter whose body cannot observe how it is bound
         // (the topic's allow-list, and no write to `$w`) is read only through
         // its fresh slot: the VM need not bind it in the env or mark it
@@ -401,6 +398,20 @@ impl Compiler {
                     .is_none_or(|d| d.type_constraint.is_none() && !d.sigilless)
                 && super::for_topic_alias::param_alias_unobservable(&loop_body, p)
         });
+        if let Some(p) = &fresh_single_param {
+            if param_slot_only {
+                // A slot of its own hidden name, as the topic's own slot is
+                // (`topic_slot_only`): no env/slot coherence rule pairs it
+                // with the env's `p`, which keeps whatever an enclosing scope
+                // bound there.
+                let hidden = format!("__mutsu_for_param_{}", self.tmp_counter);
+                self.tmp_counter += 1;
+                let slot = self.alloc_fresh_local(&hidden);
+                self.local_map.insert(p.clone(), slot);
+            } else {
+                self.alloc_local(p);
+            }
+        }
         let param_local = param
             .as_ref()
             .and_then(|p| self.local_map.get(p.as_str()).copied());
@@ -823,6 +834,9 @@ impl Compiler {
         }
         if let Some(name) = &fresh_single_param
             && let Some(slot) = self.local_map.remove(name)
+            // A hidden-name slot is not reused for a later declaration of the
+            // name: that one pairs with the env's binding.
+            && !param_slot_only
         {
             self.retired_loop_param_slots.insert(name.clone(), slot);
         }
