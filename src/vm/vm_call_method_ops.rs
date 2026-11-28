@@ -273,15 +273,14 @@ impl Interpreter {
         let cool_coercion = positionals > 0
             && NIL_COOL_COERCIONS.contains(&method)
             && !(method == "round" && positionals == 1);
-        let declared = cool_coercion
-            || (0..=7).any(|arity| {
-                crate::builtins::method_table::owner_row(
-                    crate::symbol::Symbol::intern("Nil"),
-                    crate::symbol::Symbol::intern(method),
-                    arity,
-                )
-                .is_some()
-            });
+        let declared = cool_coercion || {
+            // Interned once, not once per probed arity.
+            let nil = crate::symbol::Symbol::intern("Nil");
+            let method_sym = crate::symbol::Symbol::intern(method);
+            (0..=7).any(|arity| {
+                crate::builtins::method_table::owner_row(nil, method_sym, arity).is_some()
+            })
+        };
         if !declared {
             return None;
         }
