@@ -274,7 +274,7 @@ fn build(
     let id = module
         .declare_function(&name, Linkage::Local, &ctx.func.signature)
         .ok()?;
-    module.define_function(id, &mut ctx).ok()?;
+    super::vm_jit_verify::define_function_checked(module, id, &mut ctx, "loop kernel")?;
     module.clear_context(&mut ctx);
     module.finalize_definitions().ok()?;
     Some(module.get_finalized_function(id) as usize)
