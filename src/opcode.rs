@@ -7078,6 +7078,8 @@ const LOCAL_READ_PLAIN_AGGREGATE: u8 = 2;
 /// A plain aggregate that is also a plain user `@` lexical this chunk declares,
 /// not `our` or `state`: the static half of the lean element store (#19285).
 const LOCAL_READ_PLAIN_USER_ARRAY: u8 = 3;
+/// The `%` twin of [`LOCAL_READ_PLAIN_USER_ARRAY`].
+const LOCAL_READ_PLAIN_USER_HASH: u8 = 4;
 
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledCode {
@@ -9154,7 +9156,7 @@ impl CompiledCode {
     pub(crate) fn local_read_plain_aggregate(&self, idx: usize) -> bool {
         matches!(
             self.local_read_class(idx),
-            LOCAL_READ_PLAIN_AGGREGATE | LOCAL_READ_PLAIN_USER_ARRAY
+            LOCAL_READ_PLAIN_AGGREGATE | LOCAL_READ_PLAIN_USER_ARRAY | LOCAL_READ_PLAIN_USER_HASH
         )
     }
 
@@ -9165,6 +9167,12 @@ impl CompiledCode {
     // Cost: O(1) (memoized per chunk with `local_read_plain`).
     pub(crate) fn lean_element_store_slot(&self, idx: usize) -> bool {
         self.local_read_class(idx) == LOCAL_READ_PLAIN_USER_ARRAY
+    }
+
+    /// The `%` twin of [`Self::lean_element_store_slot`].
+    // Cost: O(1) (memoized per chunk with `local_read_plain`).
+    pub(crate) fn lean_hash_store_slot(&self, idx: usize) -> bool {
+        self.local_read_class(idx) == LOCAL_READ_PLAIN_USER_HASH
     }
 
     /// The memoized read class of slot `idx`: not plain, a plain scalar, or a
@@ -9180,13 +9188,17 @@ impl CompiledCode {
                     }
                     match self.locals[i].as_bytes().first() {
                         Some(b'!') | Some(b'.') => LOCAL_READ_NOT_PLAIN,
-                        Some(b'@')
+                        Some(sigil @ (b'@' | b'%'))
                             if self.declares_slot(i)
                                 && crate::env::is_plain_user_lexical(&self.locals[i])
                                 && !self.our_locals.iter().any(|(s, _)| *s == i)
                                 && !self.state_locals.iter().any(|(s, _)| *s == i) =>
                         {
-                            LOCAL_READ_PLAIN_USER_ARRAY
+                            if *sigil == b'@' {
+                                LOCAL_READ_PLAIN_USER_ARRAY
+                            } else {
+                                LOCAL_READ_PLAIN_USER_HASH
+                            }
                         }
                         Some(b'@') | Some(b'%') => LOCAL_READ_PLAIN_AGGREGATE,
                         _ => LOCAL_READ_PLAIN_SCALAR,

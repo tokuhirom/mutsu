@@ -6395,7 +6395,7 @@ impl Interpreter {
             }
             // Cost: as `IndexAssignExprNamed`'s; the store reads the slot
             // instead of resolving the name when the code declares it. O(1)
-            // amortized for a plain element of a plain `@` local (#19285).
+            // amortized for a plain element of a plain `@`/`%` local (#19285).
             OpCode::IndexAssignLocal {
                 slot,
                 name_idx,
@@ -6404,10 +6404,15 @@ impl Interpreter {
                 concat_append,
                 element_share,
             } => {
-                if *is_positional
-                    && !*concat_append
+                if !*concat_append
                     && !*element_share
-                    && self.try_lean_local_array_store(code, *slot, *name_idx, *index_first)
+                    && self.try_lean_local_element_store(
+                        code,
+                        *slot,
+                        *name_idx,
+                        *is_positional,
+                        *index_first,
+                    )
                 {
                     *ip += 1;
                     return Ok(());

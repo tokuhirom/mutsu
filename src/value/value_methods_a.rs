@@ -1533,15 +1533,37 @@ impl Value {
     /// but a later write is a real Hash element store and must create the
     /// per-value container. Routing all writes through this chokepoint also
     /// keeps promoted aliases from being replaced by nested containers.
+    // Cost: O(1) expected (one probe; an insert moves `key` in).
     pub fn hash_insert_through(map: &mut ValueMap, key: String, val: Value) {
         match map.get_mut(&key) {
-            Some(slot) if slot.is_container_ref() => Value::assign_element_slot(slot, val),
-            Some(slot) => {
-                *slot = val.itemize_for_hash_element();
-            }
+            Some(slot) => Value::hash_store_into_entry(slot, val),
             None => {
                 map.insert(key, val.itemize_for_hash_element());
             }
+        }
+    }
+
+    /// [`Self::hash_insert_through`] for a borrowed key: an overwrite of a
+    /// present entry builds no `String`; only an insert copies the key (#19289).
+    // Cost: O(1) expected, plus O(k) to copy a new key, k = key bytes.
+    pub fn hash_insert_through_str(map: &mut ValueMap, key: &str, val: Value) {
+        match map.get_mut(key) {
+            Some(slot) => Value::hash_store_into_entry(slot, val),
+            None => {
+                map.insert(key.to_owned(), val.itemize_for_hash_element());
+            }
+        }
+    }
+
+    /// The write into a present hash entry, shared by the two insert forms:
+    /// through a `ContainerRef` cell (keeping a `:=` binding), else a
+    /// replacement of the entry as a Hash element container.
+    // Cost: O(1).
+    fn hash_store_into_entry(slot: &mut Value, val: Value) {
+        if slot.is_container_ref() {
+            Value::assign_element_slot(slot, val);
+        } else {
+            *slot = val.itemize_for_hash_element();
         }
     }
 
