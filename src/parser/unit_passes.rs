@@ -73,6 +73,13 @@ impl UnitPasses {
         self.whenever.found()
     }
 
+    /// The unit ended: settle what the scope walk could only decide at its
+    /// end (heredoc bodies still waiting, scopes still open).
+    // Cost: as `UnitScan::finish`.
+    pub(super) fn finish_scopes(&mut self) {
+        self.redecl.finish();
+    }
+
     /// The first scope diagnostic of `outer_redecl`.
     // Cost: O(1).
     pub(super) fn scope_diagnostic(&self) -> Option<&ScopeDiagnostic> {
