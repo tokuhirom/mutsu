@@ -128,10 +128,12 @@ impl CharClassAtom {
                 negated,
             } => {
                 let letter = if *negated { 'X' } else { 'x' };
-                characters
+                let codepoints = characters
                     .chars()
-                    .map(|ch| format!("\\{letter}[{:X}]", ch as u32))
-                    .collect()
+                    .map(|ch| format!("{:X}", ch as u32))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format!("\\{letter}[{codepoints}]")
             }
         }
     }
