@@ -60,14 +60,11 @@ pub(super) fn slot_frame_body_ok(
         return false;
     }
     let plan = def.frame_plan(owner, cc);
-    // A parameter or the invocant: both are readonly bindings nothing may
-    // rebind, so a call on one never needs the by-name rebinding machinery.
-    let is_param_slot = |slot: u32| {
-        matches!(
-            plan.locals.get(slot as usize),
-            Some(LocalInit::Param(_) | LocalInit::Invocant)
-        )
-    };
+    // A call on the invocant (`self.m()`) is not admitted: the `CallMethod`
+    // the slot body would turn it into has no method-call plan lane, so it
+    // costs more than the lean frame saves (#18267).
+    let is_param_slot =
+        |slot: u32| matches!(plan.locals.get(slot as usize), Some(LocalInit::Param(_)));
     let ops_ok = cc.ops.iter().all(|op| match op {
         OpCode::LoadConst(_)
         | OpCode::LoadNil
@@ -117,8 +114,7 @@ pub(super) fn slot_frame_body_ok(
             arg_sources_idx: None,
             ..
         } => true,
-        // The same call on one of this method's parameters (`$s.chars`) or
-        // on the invocant (`self.describe()`).
+        // The same call on one of this method's parameters (`$s.chars`).
         // `CallMethodMut` treats its receiver as a variable it may rebind,
         // which it does by name; a lean parameter is a readonly binding that
         // nothing may rebind, so the slot frame's copy of the body
