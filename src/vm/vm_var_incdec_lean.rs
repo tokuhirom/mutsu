@@ -137,7 +137,6 @@ impl Interpreter {
             }
         };
         // ---- commit ----
-        drop(top_view);
         self.stack.pop();
         self.stack
             .push(Value::int(if return_new { new } else { old }));
