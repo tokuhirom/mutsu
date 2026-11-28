@@ -197,6 +197,7 @@ impl Interpreter {
                         end: end_val,
                         inclusive,
                         list: None,
+                        items: None,
                     }),
                     trips >= 16 || !first,
                     compiled_fns,
@@ -442,7 +443,7 @@ impl Interpreter {
         Some(move |start, end| LoopShape::Range {
             body: (start, end),
             var,
-            list: false,
+            list: super::vm_loop_kernel_types::ListKind::No,
         })
     }
 }

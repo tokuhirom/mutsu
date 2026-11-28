@@ -45,6 +45,9 @@ pub(super) struct Typed {
 struct Walk<'c> {
     code: &'c CompiledCode,
     topic: bool,
+    /// A `Str` list loop's variable slot (`ListKind::Str`): its reads are the
+    /// item's index (`K::StrItem`).
+    str_var: Option<u32>,
     t: Typed,
     /// Loop variables: readable, never written.
     loop_vars: Vec<u32>,
@@ -147,6 +150,7 @@ impl Walk<'_> {
                 continue;
             }
             match op {
+                OpCode::GetLocal(s) if self.str_var == Some(*s) => stack.push(K::StrItem),
                 OpCode::GetLocal(s) if self.elem_reads.iter().any(|e| e.0 == *s) => {
                     stack.push(K::Arr(*s));
                 }
@@ -193,6 +197,26 @@ impl Walk<'_> {
                         self.t.str_keys = true;
                     }
                     stack.push(v);
+                }
+                // `%h{$k}++` and kin on a stored hash, keyed by a `Str` list
+                // item or an Int: the old or new value is never read, only
+                // sunk (`K::Sunk`).
+                OpCode::PreIncrementIndex(_, Some(slot), false)
+                | OpCode::PreDecrementIndex(_, Some(slot), false)
+                | OpCode::PostIncrementIndex(_, Some(slot), false)
+                | OpCode::PostDecrementIndex(_, Some(slot), false)
+                    if self.elem_stores.contains(&(*slot, true)) =>
+                {
+                    match stack.pop()? {
+                        K::StrItem | K::Int => stack.push(K::Sunk),
+                        _ => return None,
+                    }
+                }
+                OpCode::SinkPop(..) => {
+                    let k = stack.pop()?;
+                    if k != K::Sunk && !k.numeric() {
+                        return None;
+                    }
                 }
                 // `"prefix$i"`: a `Str` constant and an `Int`, only as a hash
                 // key (see `K::IntKey`).
@@ -383,6 +407,16 @@ pub(super) fn type_region(
     let mut w = Walk {
         code,
         topic: shape.loop_var() == Some(LoopVar::Topic),
+        str_var: match (*shape, shape.loop_var()) {
+            (
+                LoopShape::Range {
+                    list: super::vm_loop_kernel_types::ListKind::Str,
+                    ..
+                },
+                Some(LoopVar::Slot(s)),
+            ) => Some(s),
+            _ => None,
+        },
         t: Typed {
             slot_kind: carried.iter().copied().collect(),
             decls: Vec::new(),
@@ -400,7 +434,10 @@ pub(super) fn type_region(
         elem_stores,
     };
     if let Some(LoopVar::Slot(s)) = shape.loop_var() {
-        w.t.slot_kind.insert(s, SlotKind::Int);
+        // A `Str` list's variable holds no machine value (`K::StrItem`).
+        if w.str_var.is_none() {
+            w.t.slot_kind.insert(s, SlotKind::Int);
+        }
         w.loop_vars.push(s);
     }
     for (start, end, leaves) in shape.segments() {

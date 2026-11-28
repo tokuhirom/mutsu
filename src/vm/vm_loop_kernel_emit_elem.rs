@@ -14,8 +14,8 @@ use super::vm_kernel_elem::{
 };
 use super::vm_kernel_hash::{
     kernel_elem2_read_int, kernel_elem2_read_num, kernel_hash_read_int, kernel_hash_read_num,
-    kernel_hash_store_int, kernel_hash_store_num, kernel_hash_store_prefixed_int,
-    kernel_hash_store_prefixed_num,
+    kernel_hash_incdec_int, kernel_hash_incdec_item, kernel_hash_store_int, kernel_hash_store_num,
+    kernel_hash_store_prefixed_int, kernel_hash_store_prefixed_num,
 };
 use super::vm_loop_kernel_emit::Em;
 use super::vm_loop_kernel_types::K;
@@ -42,6 +42,12 @@ pub(super) struct ElemSigs {
     pub(super) store_prefixed_int: SigRef,
     /// `(interp, code, slot, prefix, key, value: f64) -> status`.
     pub(super) store_prefixed_num: SigRef,
+    /// `(interp, code, slot, items, index, flags) -> status`.
+    pub(super) incdec_item: SigRef,
+    /// `(interp, code, slot, key, flags) -> status`.
+    pub(super) incdec_int: SigRef,
+    /// Offset of the `Str` list's items pointer in the loop context.
+    pub(super) items_offset: i32,
     /// Offsets of the interpreter and code pointers in the loop context.
     pub(super) interp_offset: i32,
     pub(super) code_offset: i32,
@@ -184,6 +190,44 @@ impl Em<'_, '_> {
             self.b
                 .ins()
                 .call_indirect(sig, f, &[interp, code, slot_v, prefix_v, key, value]);
+        let status = self.b.inst_results(call)[0];
+        self.guard_status(status);
+    }
+
+    /// `%h{key}++` / `--` (pre or post: the value is sunk) on the stored hash
+    /// in `slot`, keyed by a `Str` list item (`K::StrItem`, `key` its index)
+    /// or an Int.
+    pub(super) fn hash_incdec(&mut self, op: &OpCode, slot: u32, key: ClValue, key_kind: K) {
+        let increment = matches!(
+            op,
+            OpCode::PreIncrementIndex(..) | OpCode::PostIncrementIndex(..)
+        );
+        let (interp, code) = self.elem_ptrs();
+        let slot_v = self.b.ins().iconst(types::I32, slot as i64);
+        let flags = self.b.ins().iconst(types::I32, increment as i64);
+        let call = if key_kind == K::StrItem {
+            let items =
+                self.b
+                    .ins()
+                    .load(self.ptr, MemFlagsData::trusted(), self.ctxp, self.elem.items_offset);
+            let f = self
+                .b
+                .ins()
+                .iconst(self.ptr, kernel_hash_incdec_item as *const () as usize as i64);
+            self.b.ins().call_indirect(
+                self.elem.incdec_item,
+                f,
+                &[interp, code, slot_v, items, key, flags],
+            )
+        } else {
+            let f = self
+                .b
+                .ins()
+                .iconst(self.ptr, kernel_hash_incdec_int as *const () as usize as i64);
+            self.b
+                .ins()
+                .call_indirect(self.elem.incdec_int, f, &[interp, code, slot_v, key, flags])
+        };
         let status = self.b.inst_results(call)[0];
         self.guard_status(status);
     }

@@ -29,7 +29,7 @@ pub(super) fn clty(k: K) -> types::Type {
         // The row index a grid's first subscript applied.
         K::Row(_) => types::I64,
         // A placeholder word, and a `"prefix$i"` key's Int.
-        K::StrConst(_) | K::IntKey(_) => types::I64,
+        K::StrConst(_) | K::IntKey(_) | K::StrItem | K::Sunk => types::I64,
     }
 }
 
@@ -39,6 +39,9 @@ pub(super) struct Em<'f, 'c> {
     pub(super) vars: BTreeMap<u32, (Variable, SlotKind)>,
     pub(super) bail: Block,
     pub(super) var: Option<LoopVar>,
+    /// A `Str` list loop's variable slot, whose reads are the counter as the
+    /// item's index (`K::StrItem`).
+    pub(super) str_var: Option<u32>,
     /// The outermost loop's counter (the topic of an implicit-topic `for`).
     pub(super) counter: Variable,
     pub(super) ctxp: ClValue,
@@ -248,6 +251,10 @@ impl Em<'_, '_> {
                 continue;
             }
             match op {
+                // A `Str` list's variable: the item's index (`K::StrItem`).
+                OpCode::GetLocal(s) if self.str_var == Some(*s) => {
+                    stack.push((self.b.use_var(self.counter), K::StrItem));
+                }
                 OpCode::GetLocal(s) if self.elem_reads.iter().any(|e| e.0 == *s) => {
                     let v = self.b.ins().iconst(types::I64, i64::from(*s));
                     stack.push((v, K::Arr(*s)));
@@ -296,6 +303,18 @@ impl Em<'_, '_> {
                 }
                 OpCode::SinkPopAssign => {
                     stack.pop()?;
+                }
+                OpCode::SinkPop(..) => {
+                    stack.pop()?;
+                }
+                OpCode::PreIncrementIndex(_, Some(slot), false)
+                | OpCode::PreDecrementIndex(_, Some(slot), false)
+                | OpCode::PostIncrementIndex(_, Some(slot), false)
+                | OpCode::PostDecrementIndex(_, Some(slot), false) => {
+                    let (key, key_kind) = stack.pop()?;
+                    self.hash_incdec(op, *slot, key, key_kind);
+                    let none = self.b.ins().iconst(types::I64, 0);
+                    stack.push((none, K::Sunk));
                 }
                 OpCode::PreIncrement(_, Some(s))
                 | OpCode::PreDecrement(_, Some(s))

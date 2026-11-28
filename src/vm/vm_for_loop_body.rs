@@ -238,6 +238,16 @@ impl Interpreter {
                 compiled_fns,
             )? {
                 Some(done) if done >= items.len() && iteration_end_at.is_none() => {
+                    // A named parameter's prior binding is restored by the
+                    // `RestoreForParam` after the loop, from the entry the
+                    // driver pushes on completion: push it here too. The
+                    // kernel wrote neither the slot nor the env.
+                    if let Some(idx) = spec.param_idx
+                        && let ValueView::Str(name) = code.constants[idx as usize].view()
+                    {
+                        let saved = self.save_for_param(name.as_str(), spec.param_local);
+                        self.topic_state.for_param_restore_stack.push(saved);
+                    }
                     return Ok(true);
                 }
                 Some(done) => done,

@@ -35,6 +35,7 @@ pub(super) struct KernelRange<'a> {
     pub(super) end: i64,
     pub(super) inclusive: bool,
     pub(super) list: Option<&'a [i64]>,
+    pub(super) items: Option<&'a [Value]>,
 }
 
 /// What a loop kernel did.
@@ -259,6 +260,7 @@ impl Interpreter {
             end,
             inclusive,
             list,
+            items,
         } = range.unwrap_or_default();
         buf[0] = start as u64;
         buf[2..2 + n].copy_from_slice(&words[..n]);
@@ -271,6 +273,7 @@ impl Interpreter {
             interp: self as *mut Interpreter,
             code: code as *const CompiledCode,
             list: list.map_or(std::ptr::null(), <[i64]>::as_ptr),
+            items: items.map_or(std::ptr::null(), <[Value]>::as_ptr),
         };
         LOOP_KERNEL_ENTRIES.fetch_add(1, Relaxed);
         // SAFETY: `info.entry` is a finalized loop kernel compiled for this
@@ -342,7 +345,17 @@ impl Interpreter {
         use super::vm_loop_kernel_types::{carried_code, elem_code};
         // A list loop and a counted loop at the same `ForLoop` (one iterable
         // a Range, another time a list) compile to different code.
-        let list_marker = matches!(shape, LoopShape::Range { list: true, .. }).then_some(u8::MAX);
+        let list_marker = match shape {
+            LoopShape::Range {
+                list: super::vm_loop_kernel_types::ListKind::Int,
+                ..
+            } => Some(u8::MAX),
+            LoopShape::Range {
+                list: super::vm_loop_kernel_types::ListKind::Str,
+                ..
+            } => Some(u8::MAX - 1),
+            _ => None,
+        };
         let key = || {
             list_marker
                 .into_iter()
