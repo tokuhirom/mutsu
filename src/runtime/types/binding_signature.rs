@@ -135,6 +135,17 @@ struct FunctionBindingOptions<'a> {
     is_block: bool,
 }
 
+
+/// Whether a call argument is a `Pair` once a `VarRef` wrapper is stripped. A
+/// tag probe gates the `view()`: the binder asks this of every argument, and
+/// viewing a lazy Match argument (a subst replacement block's `$/`) would
+/// materialize it.
+// Cost: O(1).
+fn is_pair_arg(arg: &Value) -> bool {
+    let unwrapped = unwrap_varref_value(arg.clone());
+    unwrapped.is_any_pair_value() && matches!(unwrapped.view(), ValueView::Pair(..))
+}
+
 impl Interpreter {
     /// Evaluate a named parameter's `where` constraint against its currently
     /// bound value (already stored in `env` under its binding key). The constraint is
@@ -1243,10 +1254,7 @@ impl Interpreter {
             let positional_count = filtered_args
                 .iter()
                 .filter(|a| {
-                    !matches!(
-                        unwrap_varref_value((*a).clone()).view(),
-                        ValueView::Pair(..)
-                    )
+                    !is_pair_arg(a)
                 })
                 .count();
             let required_positional_count = param_defs
@@ -1266,18 +1274,12 @@ impl Interpreter {
             if positional_count == 1 && required_positional_count >= 2 {
                 // Check if the single positional arg is a Seq or non-itemized Array/List
                 let single_pos = filtered_args.iter().find(|a| {
-                    !matches!(
-                        unwrap_varref_value((*a).clone()).view(),
-                        ValueView::Pair(..)
-                    )
+                    !is_pair_arg(a)
                 });
                 let named_args: Vec<Value> = filtered_args
                     .iter()
                     .filter(|a| {
-                        matches!(
-                            unwrap_varref_value((*a).clone()).view(),
-                            ValueView::Pair(..)
-                        )
+                        is_pair_arg(a)
                     })
                     .cloned()
                     .collect();
@@ -1392,7 +1394,9 @@ impl Interpreter {
                     && !legacy_has_named_placeholder(params));
             let positional_args: Vec<Value> = plain_args
                 .iter()
-                .filter(|a| match a.view() {
+                // Tag probes first here and below: `view()` would
+                // materialize a lazy Match argument (a subst block's `$/`).
+                .filter(|a| !a.is_any_pair_value() || match a.view() {
                     ValueView::Pair(..) => false,
                     ValueView::ValuePair(key, _) if matches!(key.view(), ValueView::Str(..)) => {
                         promote_valuepair_positional
@@ -1404,6 +1408,9 @@ impl Interpreter {
             let named_args: Vec<(String, Value)> = plain_args
                 .iter()
                 .filter_map(|a| {
+                    if !a.is_any_pair_value() {
+                        return None;
+                    }
                     if let ValueView::Pair(key, val) = a.view() {
                         Some((key.clone(), val.clone()))
                     } else if let ValueView::ValuePair(key, val) = a.view() {
@@ -1474,7 +1481,7 @@ impl Interpreter {
             // callback, #8825) must still bind to it.
             let arity_positional_count = plain_args
                 .iter()
-                .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
+                .filter(|a| !(a.is_any_pair_value() && matches!(a.view(), ValueView::Pair(..))))
                 .count();
             let has_placeholder = |p: &String| {
                 p.starts_with('^')
@@ -1757,10 +1764,7 @@ impl Interpreter {
                 let remaining_positional: Vec<_> = args[positional_idx..]
                     .iter()
                     .filter(|a| {
-                        !matches!(
-                            unwrap_varref_value((*a).clone()).view(),
-                            ValueView::Pair(..)
-                        )
+                        !is_pair_arg(a)
                     })
                     .cloned()
                     .collect();
@@ -4410,10 +4414,7 @@ impl Interpreter {
                     let positional_arg_count = args
                         .iter()
                         .filter(|a| {
-                            !matches!(
-                                unwrap_varref_value((*a).clone()).view(),
-                                ValueView::Pair(..)
-                            )
+                            !is_pair_arg(a)
                         })
                         .count();
                     // A method's count includes its invocant (#14565).
@@ -4643,7 +4644,7 @@ fn surplus_positional_error(
         .count();
     let positional_arg_count = plain_args
         .iter()
-        .filter(|a| !matches!(unwrap_varref_value((*a).clone()).view(), ValueView::Pair(..)))
+        .filter(|a| !is_pair_arg(a))
         .count();
     (positional_arg_count > positional_param_count).then(|| {
         // A method's count includes its invocant (#14565).
