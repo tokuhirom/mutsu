@@ -218,6 +218,7 @@ t/collections/hash/hash-exists-adverb.t
 t/collections/hash/hash-first-positional.t
 t/collections/hash/hash-function-flattens-plain-lists.t
 t/collections/hash/hash-gist-nested-comma.t
+t/collections/hash/hash-incdec-lean-local.t
 t/collections/hash/hash-init-contained-pair.t
 t/collections/hash/hash-interp-key.t
 t/collections/hash/hash-itemization-flag.t
@@ -6942,6 +6943,7 @@ t/rakuast/rakuast-ctor-unknown-named-arg.t
 t/rakuast/rakuast-ctor-unknown-named-hand-built.t
 t/rakuast/rakuast-cu-core-prefixed-type.t
 t/rakuast/rakuast-cu-imported-type-resolution.t
+t/rakuast/rakuast-cu-late-import-resolution.t
 t/rakuast/rakuast-cu-method-invocant-type.t
 t/rakuast/rakuast-cu-module-walker-type-resolution.t
 t/rakuast/rakuast-cu-multipart-setting-type.t
@@ -7183,6 +7185,7 @@ t/rakuast/rakuast-imaginary-literal.t
 t/rakuast/rakuast-imaginary-postfix-operator.t
 t/rakuast/rakuast-immediate-sub-call.t
 t/rakuast/rakuast-imported-bareword-call.t
+t/rakuast/rakuast-imported-operator-resolution.t
 t/rakuast/rakuast-imported-term-finalize.t
 t/rakuast/rakuast-imported-value-binding.t
 t/rakuast/rakuast-index-assign-finalize.t
