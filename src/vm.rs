@@ -334,6 +334,8 @@ mod vm_jit_tier_b_flow;
 mod vm_jit_tier_b_metaop;
 #[cfg(feature = "jit")]
 mod vm_jit_tier_b_stack;
+#[cfg(feature = "jit")]
+mod vm_jit_verify;
 pub(crate) mod vm_kernel;
 #[cfg(feature = "jit")]
 mod vm_kernel_admit;

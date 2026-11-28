@@ -41,6 +41,18 @@ fn engine_in(guard: &mut Option<Engine>) -> Option<&mut Engine> {
     if guard.is_none() {
         let mut flags = settings::builder();
         flags.set("opt_level", "speed").ok()?;
+        // ADR-19368: Cranelift's verifier is a development aid; it runs in
+        // debug builds and under `MUTSU_JIT_VERIFY=1`, not in release builds.
+        flags
+            .set(
+                "enable_verifier",
+                if super::vm_jit_verify::verifier_enabled() {
+                    "true"
+                } else {
+                    "false"
+                },
+            )
+            .ok()?;
         let isa = cranelift_native::builder()
             .ok()?
             .finish(settings::Flags::new(flags))
@@ -911,7 +923,7 @@ fn build(
         .declare_function(&name, Linkage::Local, &ctx.func.signature)
         .ok()?;
     super::vm_jit_dump::before_define(dump, &name, code, start, end, &mut ctx);
-    module.define_function(id, &mut ctx).ok()?;
+    super::vm_jit_verify::define_function_checked(module, id, &mut ctx, "bytecode JIT")?;
     let code_len = super::vm_jit_dump::after_define(dump, &name, &ctx);
     module.clear_context(&mut ctx);
     module.finalize_definitions().ok()?;

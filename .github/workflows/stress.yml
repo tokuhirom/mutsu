@@ -6,7 +6,7 @@ name: Stress
 #
 #   gc-stress:  MUTSU_GC=on, MUTSU_GC_EVERY_CANDIDATE=1024, MUTSU_GC_VERIFY=1
 #               (+ `cargo test` with the collector on)
-#   jit-stress: MUTSU_JIT=on, MUTSU_JIT_THRESHOLD=2
+#   jit-stress: MUTSU_JIT=on, MUTSU_JIT_THRESHOLD=2, MUTSU_JIT_VERIFY=1
 #   precomp-verify: MUTSU_PRECOMP_VERIFY=1 over a fresh shared cache
 #               (ADR-11756 §2.5; t/ and roast on the release binary)
 #
@@ -423,6 +423,9 @@ jobs:
     env:
       MUTSU_JIT: "on"
       MUTSU_JIT_THRESHOLD: "2"
+      # ADR-19368 D4: verify every function this run compiles; the release
+      # binary does not run Cranelift's IR verifier on its own.
+      MUTSU_JIT_VERIFY: "1"
       # Absolute, so every mutsu in the process tree reports to the one place
       # the crash-report step collects.
       MUTSU_CRASH_DIR: ${{ github.workspace }}/tmp/crash
@@ -542,6 +545,9 @@ jobs:
     env:
       MUTSU_JIT: "on"
       MUTSU_JIT_THRESHOLD: "2"
+      # ADR-19368 D4: verify every function this run compiles; the release
+      # binary does not run Cranelift's IR verifier on its own.
+      MUTSU_JIT_VERIFY: "1"
       # Absolute, so every mutsu in the process tree reports to the one place
       # the crash-report step collects.
       MUTSU_CRASH_DIR: ${{ github.workspace }}/tmp/crash

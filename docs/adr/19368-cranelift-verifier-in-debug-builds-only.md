@@ -1,7 +1,6 @@
 # ADR-19368: Run Cranelift's IR verifier in debug builds and stress runs, not in release builds, and make a verifier failure loud
 
-- **Status**: Proposed (maintainer direction 2026-11-28: off in release and benchmark builds;
-  proposed 2026-11-28)
+- **Status**: Accepted (maintainer decision 2026-11-28; proposed 2026-11-28)
 - **Issue**: [#19368](https://github.com/tokuhirom/mutsu/issues/19368); campaign A carrier
   [#19288](https://github.com/tokuhirom/mutsu/issues/19288)
 - **Related**:

@@ -298,7 +298,7 @@ fn build(
     b.seal_all_blocks();
     b.finalize(frontend_config);
 
-    module.define_function(id, &mut ctx).ok()?;
+    super::vm_jit_verify::define_function_checked(module, id, &mut ctx, "sub kernel")?;
     module.clear_context(&mut ctx);
     module.finalize_definitions().ok()?;
     Some(module.get_finalized_function(id) as usize)
