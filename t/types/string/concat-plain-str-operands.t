@@ -4,9 +4,12 @@ use Test;
 # yield what the full path yields: NFC across the join, a shared left
 # operand left untouched, and a user `infix:<~>` in scope winning.
 
-plan 9;
+plan 12;
 
 is 'abc' ~ 'def', 'abcdef', 'two plain strings';
+is 'n=' ~ 42, 'n=42', 'a string and an Int';
+is 1.5e0 ~ '!', '1.5!', 'a Num and a string';
+is 10 ~ 20, '1020', 'two Ints';
 is ('e' ~ "\x[301]").chars, 1, 'a combining mark composes across the join';
 is ('e' ~ "\x[301]").NFC.list, (0xE9,), 'and the result is NFC';
 
