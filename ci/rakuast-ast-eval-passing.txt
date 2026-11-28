@@ -3422,6 +3422,7 @@ t/lang/quoting/double-angle-quote-word-list.t
 t/lang/quoting/double-angle-quote-word-lt.t
 t/lang/quoting/embedded-qqw-qw-escape.t
 t/lang/quoting/escaped-our-sub-incdec.t
+t/lang/quoting/finish-inside-heredoc.t
 t/lang/quoting/format-quote-adverb.t
 t/lang/quoting/forward-sub-quotewords.t
 t/lang/quoting/heredoc-imported-call-value.t
@@ -7025,6 +7026,7 @@ t/rakuast/rakuast-eval-default-param.t
 t/rakuast/rakuast-eval-die.t
 t/rakuast/rakuast-eval-do.t
 t/rakuast/rakuast-eval-dynamic-class-name.t
+t/rakuast/rakuast-eval-finish-content.t
 t/rakuast/rakuast-eval-for-elsif.t
 t/rakuast/rakuast-eval-gather.t
 t/rakuast/rakuast-eval-given.t

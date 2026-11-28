@@ -423,16 +423,16 @@ impl Interpreter {
             }
             // The tree is the unit `$*CU` names while it compiles.
             let _unit = crate::unit_source_text::UnitSourceTextGuard::enter_tree(first_arg.clone());
-            // Pod blocks written into the tree are the unit's `$=pod`, which
-            // is the EVAL's own: the caller's is put back afterwards.
+            // The tree's Pod belongs to EVAL; the caller's is restored afterwards.
             let docs = crate::rakuast::eval_docs::collect(node);
-            // A parsed tree whose Pod is a shape the writer does not produce
-            // (a table, a comment, a margin) is the unit's `$=pod` through the
-            // source it was parsed from.
+            let finish = crate::rakuast::unit_finish::read(node);
+            let finish = matches!(finish.view(), ValueView::Str(_)).then_some(finish);
+            // A parsed tree's Pod may need its source (table, comment, margin):
+            // the writer cannot produce those shapes.
             let Some(pod) = crate::rakuast::origin_pod_source(node)
                 .or_else(|| crate::rakuast::pod_source(node))
             else {
-                let result = self.eval_lowered_unit_with_docs(stmts, docs);
+                let result = self.eval_lowered_unit_with_docs(stmts, docs, finish);
                 if result.is_ok() {
                     self.record_evaluated_package_types(node);
                 }
@@ -441,7 +441,7 @@ impl Interpreter {
             let previous_pod = self.env.get("=pod").cloned();
             self.env.remove("=pod");
             let result = match self.collect_pod_sources(&pod) {
-                Ok(()) => self.eval_lowered_unit_with_docs(stmts, docs),
+                Ok(()) => self.eval_lowered_unit_with_docs(stmts, docs, finish),
                 Err(e) => Err(e),
             };
             if result.is_ok() {
