@@ -40,6 +40,11 @@ pub(crate) fn retype(receiver: &Value, method: &str, answer: Value) -> Value {
     // An itemized native array (`my $c = @native; $c.head(2)`) is the same
     // array behind a `$`: Rakudo answers its own type there too (#18389).
     let receiver = receiver.deref_container();
+    // A lazy Match is no array, and viewing it would force its
+    // materialization.
+    if receiver.is_lazy_match_value() {
+        return answer;
+    }
     let ValueView::Array(data, ArrayKind::Array | ArrayKind::ItemArray) = receiver.view() else {
         return answer;
     };
