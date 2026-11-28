@@ -20,11 +20,13 @@
 //! read fast path does, never into a fresh `String` for a read.
 
 use super::vm_decimal_key::DecimalKey;
-use super::vm_kernel_elem::{KERNEL_ELEM_DECLINE, KERNEL_ELEM_OK, plain_array_node};
+use super::vm_kernel_elem::{
+    KERNEL_ELEM_DECLINE, KERNEL_ELEM_OK, array_node_served, with_plain_array_node,
+};
 use super::vm_var_assign_element_lean::LeanStoreNode;
 use super::*;
 use crate::opcode::kernel_slot::SlotKind;
-use crate::value::{ArrayData, HashData};
+use crate::value::HashData;
 
 /// Whether local slot `slot` of `code` can be a kernel hash slot: a plain user
 /// `%` lexical the chunk declares, not `our`/`state`, no attribute key.
@@ -261,33 +263,33 @@ pub(super) unsafe extern "C" fn kernel_hash_store_num(
 /// both steps, minus the shapes a kernel cannot hold (a bound cell, a hole).
 // Cost: O(1).
 #[inline(always)]
-fn read_element2(interp: &Interpreter, slot: u32, i: i64, j: i64) -> Option<Value> {
+fn read_element2_with<R>(
+    interp: &Interpreter,
+    slot: u32,
+    i: i64,
+    j: i64,
+    read: impl FnOnce(&Value) -> Option<R>,
+) -> Option<R> {
     let i = usize::try_from(i).ok()?;
     let j = usize::try_from(j).ok()?;
-    let outer = plain_array_node(interp, slot)?;
-    let row: crate::gc::Gc<ArrayData> = match outer.get(i)?.view() {
-        ValueView::Array(row, ArrayKind::Array | ArrayKind::ItemArray) => row.clone(),
-        _ => return None,
-    };
-    if row.has_native_backing()
-        || row.has_type_meta()
-        || row.default.is_some()
-        || row.shape.is_some()
-    {
-        return None;
-    }
-    row.get(j).cloned()
+    with_plain_array_node(interp, slot, |outer| match outer.get(i)?.view() {
+        ValueView::Array(row, ArrayKind::Array | ArrayKind::ItemArray) => {
+            array_node_served(&row).then_some(())?;
+            read(row.get(j)?)
+        }
+        _ => None,
+    })
 }
 
 /// The kind of `@grid[0][0]`, which a kernel compiles its two-level reads of
 /// the slot for.
 // Cost: O(1).
 pub(super) fn kernel_elem2_kind_hint(interp: &Interpreter, slot: u32) -> Option<SlotKind> {
-    match read_element2(interp, slot, 0, 0)?.view() {
+    read_element2_with(interp, slot, 0, 0, |v| match v.view() {
         ValueView::Int(_) => Some(SlotKind::Int),
         ValueView::Num(_) => Some(SlotKind::Num),
         _ => None,
-    }
+    })
 }
 
 /// `@grid[$i][$j]` for an element that is a plain `Int`.
@@ -306,8 +308,8 @@ pub(super) unsafe extern "C" fn kernel_elem2_read_int(
 ) -> u32 {
     // SAFETY: see the function's safety contract.
     let vm = unsafe { &*interp };
-    match read_element2(vm, slot, i, j).as_ref().map(Value::view) {
-        Some(ValueView::Int(n)) => {
+    match read_element2_with(vm, slot, i, j, Value::as_int) {
+        Some(n) => {
             // SAFETY: `out` is writable (contract).
             unsafe { *out = n };
             KERNEL_ELEM_OK
@@ -331,8 +333,8 @@ pub(super) unsafe extern "C" fn kernel_elem2_read_num(
 ) -> u32 {
     // SAFETY: see the function's safety contract.
     let vm = unsafe { &*interp };
-    match read_element2(vm, slot, i, j).as_ref().map(Value::view) {
-        Some(ValueView::Num(f)) => {
+    match read_element2_with(vm, slot, i, j, Value::as_num) {
+        Some(f) => {
             // SAFETY: `out` is writable (contract).
             unsafe { *out = f };
             KERNEL_ELEM_OK

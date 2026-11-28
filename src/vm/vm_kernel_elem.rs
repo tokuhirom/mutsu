@@ -114,9 +114,53 @@ pub(super) fn process_latches_clear(interp: &Interpreter, positional: bool) -> b
         || interp.user_subscript_routine_may_answer(positional))
 }
 
-/// The array node the slot holds, in its own word or inside its binding cell,
-/// when the node is one the lane serves: an ordinary `Array` with no native
+/// Whether the lane serves an array node: an ordinary `Array` with no native
 /// backing, element type, `is default` or shape.
+// Cost: O(1).
+#[inline(always)]
+pub(super) fn array_node_served(items: &ArrayData) -> bool {
+    !(items.has_native_backing()
+        || items.has_type_meta()
+        || items.default.is_some()
+        || items.shape.is_some())
+}
+
+/// Run `f` on the array node the slot holds, in its own word or inside its
+/// binding cell, when the lane serves it ([`array_node_served`]). The node is
+/// borrowed, not cloned: a cell's lock is held for the duration of `f`, and
+/// `f` must neither run code nor touch the interpreter.
+// Cost: O(1) plus `f` (one uncontended cell lock for a cell).
+#[inline(always)]
+pub(super) fn with_plain_array_node<R>(
+    interp: &Interpreter,
+    slot: u32,
+    f: impl FnOnce(&ArrayData) -> Option<R>,
+) -> Option<R> {
+    let word = interp.locals.get(slot as usize)?;
+    match word.view() {
+        ValueView::Array(items, ArrayKind::Array | ArrayKind::ItemArray) => {
+            array_node_served(&items).then_some(())?;
+            f(&items)
+        }
+        ValueView::ContainerRef(cell) => {
+            if word.container_ref_is_itemized() {
+                return None;
+            }
+            let inner = cell.lock().ok()?;
+            match inner.view() {
+                ValueView::Array(items, ArrayKind::Array | ArrayKind::ItemArray) => {
+                    array_node_served(&items).then_some(())?;
+                    f(&items)
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
+/// The array node the slot holds, in its own word or inside its binding cell,
+/// when the node is one the lane serves ([`array_node_served`]).
 // Cost: O(1) (one refcount bump; one uncontended cell lock for a cell).
 #[inline(always)]
 pub(super) fn plain_array_node(
@@ -137,14 +181,7 @@ pub(super) fn plain_array_node(
         }
         _ => return None,
     };
-    if items.has_native_backing()
-        || items.has_type_meta()
-        || items.default.is_some()
-        || items.shape.is_some()
-    {
-        return None;
-    }
-    Some(items)
+    array_node_served(&items).then_some(items)
 }
 
 /// The identity of the array node the slot holds, when the lane serves it:
@@ -164,21 +201,26 @@ pub(super) fn kernel_elem_kind_hint(
     slot: u32,
 ) -> Option<crate::opcode::kernel_slot::SlotKind> {
     use crate::opcode::kernel_slot::SlotKind;
-    match read_element(interp, slot, 0)?.view() {
+    with_plain_array_node(interp, slot, |items| match items.get(0)?.view() {
         ValueView::Int(_) => Some(SlotKind::Int),
         ValueView::Num(_) => Some(SlotKind::Num),
         _ => None,
-    }
+    })
 }
 
-/// The element at `index` of the slot's array, when it is present (not a hole,
-/// in range, non-negative index).
+/// Read the element at `index` of the slot's array in place, when it is
+/// present (not a hole, in range, non-negative index), as `read` answers it.
+/// The element is never cloned.
 // Cost: O(1).
 #[inline(always)]
-fn read_element(interp: &Interpreter, slot: u32, index: i64) -> Option<Value> {
+fn read_element_with<R>(
+    interp: &Interpreter,
+    slot: u32,
+    index: i64,
+    read: impl FnOnce(&Value) -> Option<R>,
+) -> Option<R> {
     let i = usize::try_from(index).ok()?;
-    let items = plain_array_node(interp, slot)?;
-    items.get(i).cloned()
+    with_plain_array_node(interp, slot, |items| read(items.get(i)?))
 }
 
 /// `@a[$i]` for an element that is a plain `Int`.
@@ -197,8 +239,8 @@ pub(super) unsafe extern "C" fn kernel_elem_read_int(
 ) -> u32 {
     // SAFETY: see the function's safety contract.
     let vm = unsafe { &*interp };
-    match read_element(vm, slot, index).as_ref().map(Value::view) {
-        Some(ValueView::Int(n)) => {
+    match read_element_with(vm, slot, index, Value::as_int) {
+        Some(n) => {
             // SAFETY: `out` is writable (contract).
             unsafe { *out = n };
             KERNEL_ELEM_OK
@@ -221,8 +263,8 @@ pub(super) unsafe extern "C" fn kernel_elem_read_num(
 ) -> u32 {
     // SAFETY: see the function's safety contract.
     let vm = unsafe { &*interp };
-    match read_element(vm, slot, index).as_ref().map(Value::view) {
-        Some(ValueView::Num(f)) => {
+    match read_element_with(vm, slot, index, Value::as_num) {
+        Some(f) => {
             // SAFETY: `out` is writable (contract).
             unsafe { *out = f };
             KERNEL_ELEM_OK
