@@ -367,7 +367,7 @@ impl Interpreter {
         self.pending_rw_writeback_sources.clear();
         self.discard_pending_call_arg_sources();
         self.pending_call_arg_source_slots.clear();
-        self.static_call_args = false;
+        self.static_call_args = crate::runtime::StaticCallSite::default();
 
         let saved_line = self.cur_source_line;
         let saved_stack_depth = self.stack.len();

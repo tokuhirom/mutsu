@@ -22,7 +22,9 @@ impl Interpreter {
         param_defs: &[crate::ast::ParamDef],
         args: &[Value],
     ) -> RuntimeError {
-        let static_site = self.static_call_args && !self.static_args_may_bind(param_defs, args);
+        let site = std::mem::take(&mut self.static_call_args);
+        let static_site = site.is_static && !self.static_args_may_bind(param_defs, args, &site);
+        self.static_call_args = site;
         let mut err = Self::enhance_binding_error(err, func_name, param_defs, args, static_site);
         // A run-time binding failure happens inside the callee: Rakudo's
         // backtrace starts `in sub f at <file> line <declaration line>`. The
@@ -114,7 +116,11 @@ impl Interpreter {
         &mut self,
         param_defs: &[crate::ast::ParamDef],
         args: &[Value],
+        site: &StaticCallSite,
     ) -> bool {
+        // A typed variable argument carries its DECLARED type, the static type
+        // rakudo's optimizer judged (`my Cool $s = "a"; f($s)`, #19071).
+        let declared = site.var_type_names();
         let positional_args = args
             .iter()
             .filter(|arg| !matches!(arg.view(), ValueView::Pair(..)));
@@ -122,9 +128,14 @@ impl Interpreter {
             .iter()
             .filter(|pd| !pd.named && !pd.is_invocant)
             .take_while(|pd| !pd.slurpy && !pd.double_slurpy);
-        for (pd, arg) in positional_params.zip(positional_args) {
-            let ValueView::Package(arg_type) = arg.unwrap_varref().deref_container().view() else {
-                continue;
+        for (i, (pd, arg)) in positional_params.zip(positional_args).enumerate() {
+            let declared_type = declared.get(i).and_then(Option::as_deref);
+            let arg_type = match arg.unwrap_varref().deref_container().view() {
+                ValueView::Package(arg_type) => arg_type,
+                _ => match declared_type {
+                    Some(t) => crate::symbol::Symbol::intern(t),
+                    None => continue,
+                },
             };
             let param_type = match pd.type_constraint.as_deref() {
                 Some(t) => t,

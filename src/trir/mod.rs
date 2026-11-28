@@ -266,6 +266,9 @@ pub(crate) struct TrCallSite {
     /// variable declared with a type): published by the by-name fallback so a
     /// binding failure reports the same exception the untyped call would.
     pub(crate) static_arg_types: bool,
+    /// Each argument's declared type when some argument is a typed variable
+    /// (`StaticCallSite::var_types`); empty otherwise.
+    pub(crate) static_var_types: Vec<Option<String>>,
 }
 
 /// A routine compiled to TRIR.

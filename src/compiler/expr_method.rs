@@ -48,7 +48,7 @@ impl Compiler {
                 arity: if index_slot.is_some() { 3 } else { 2 },
                 arg_sources_idx: None,
                 literal_native_args: 0,
-                static_arg_types: false,
+                static_arg_types: crate::opcode::StaticArgTypes::NONE,
             });
             return;
         }
@@ -83,7 +83,7 @@ impl Compiler {
                 arity: 3,
                 arg_sources_idx: None,
                 literal_native_args: 0,
-                static_arg_types: false,
+                static_arg_types: crate::opcode::StaticArgTypes::NONE,
             });
         }
     }
