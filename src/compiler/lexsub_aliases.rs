@@ -140,11 +140,52 @@ impl Compiler {
             return;
         }
         let vars: Vec<Symbol> = aliases.iter().map(|a| a.var).collect();
+        self.rewrite_free_slot_reads(keys, &vars);
+    }
+
+    /// [`Self::assign_lexsub_free_slots`] for a sub declared at the unit's
+    /// mainline or in a bare block of `GLOBAL`, which reads its free variables
+    /// through ADR-0024's captured cells: each plain lexical this scope
+    /// declares (`decl_slots`, baked from `local_map`) that the bodies read.
+    /// The VM takes the cell from the running sub's capture bucket.
+    // Cost: as `assign_lexsub_free_slots`.
+    pub(super) fn assign_mainline_free_slots(
+        &mut self,
+        keys: &[Symbol],
+        decl_slots: &[(Symbol, u32)],
+    ) {
+        if self.binds_lexsub_free_vars()
+            || !crate::qualified::is_global_package(Symbol::intern(&self.current_package))
+        {
+            return;
+        }
+        let vars: Vec<Symbol> = decl_slots
+            .iter()
+            .map(|(sym, _)| *sym)
+            .filter(|sym| {
+                sym.with_str(|name| {
+                    crate::env::is_plain_user_lexical(name)
+                        && !self.constant_vars.contains(name)
+                        && !self.sigilless_locals.contains(name)
+                        && !self.enclosing_sigilless.contains(name)
+                })
+            })
+            .collect();
+        self.rewrite_free_slot_reads(keys, &vars);
+    }
+
+    /// Apply [`CompiledCode::lexsub_free_slot_plan`](crate::opcode::CompiledCode::lexsub_free_slot_plan)
+    /// for `vars` to each body compiled under `keys`.
+    // Cost: O(k * (o + v * c)).
+    fn rewrite_free_slot_reads(&mut self, keys: &[Symbol], vars: &[Symbol]) {
+        if vars.is_empty() {
+            return;
+        }
         for key in keys {
             let Some(cf) = self.compiled_functions.get(key) else {
                 continue;
             };
-            let Some(plan) = cf.code.lexsub_free_slot_plan(&vars) else {
+            let Some(plan) = cf.code.lexsub_free_slot_plan(vars) else {
                 continue;
             };
             let mut cf = (**cf).clone();
