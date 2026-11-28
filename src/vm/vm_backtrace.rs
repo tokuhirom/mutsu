@@ -168,6 +168,30 @@ pub(crate) fn setting_frame(subname: &str, file: Value, line: Value) -> Value {
     Value::make_instance(crate::symbol::Symbol::intern("Backtrace::Frame"), attrs)
 }
 
+/// A frame's routine name as rakudo reports it: a private method (`!p`) is
+/// `p` in a backtrace, its `.subname` and its rendered line.
+// Cost: O(|name|).
+fn routine_display_name(frame: &RoutineFrame) -> std::borrow::Cow<'static, str> {
+    let name = frame.name.resolve();
+    if (frame.is_method || frame.is_submethod)
+        && let Some(public) = name.strip_prefix('!')
+    {
+        return std::borrow::Cow::Owned(public.to_string());
+    }
+    std::borrow::Cow::Owned(name.to_string())
+}
+
+/// Where rakudo 2026.11's CORE setting declares the routine behind a synthetic
+/// leading frame: `Exception.throw` and the `die` sub.
+// Cost: O(1).
+fn setting_leading_location(name: &str) -> Option<(&'static str, i64)> {
+    match name {
+        "throw" => Some(("SETTING::src/core.c/Exception.rakumod", 65)),
+        "die" => Some(("SETTING::src/core.c/control.rakumod", 253)),
+        _ => None,
+    }
+}
+
 /// The `file` attribute of the frame most recently pushed onto `frames`.
 fn frame_file_value(frames: &[Value]) -> Value {
     if let Some(last) = frames.last()
@@ -244,7 +268,12 @@ impl BacktraceCapture {
                 } else {
                     "sub"
                 };
-                lines.push(format!("  in {} {}{}", kind, frame.name, location));
+                lines.push(format!(
+                    "  in {} {}{}",
+                    kind,
+                    routine_display_name(frame),
+                    location
+                ));
             }
         }
         // Add the <unit> frame at the bottom
@@ -325,19 +354,27 @@ impl BacktraceCapture {
                 "is-method".to_string(),
                 Value::truth(matches!(*name, "throw" | "rethrow")),
             );
-            frame_attrs.insert(
-                "file".to_string(),
-                current_file
-                    .clone()
-                    .map(Value::str)
-                    .unwrap_or(Value::str(String::new())),
-            );
-            frame_attrs.insert(
-                "line".to_string(),
-                current_line
-                    .map(|l| Value::int(l as i64))
-                    .unwrap_or(Value::int(0)),
-            );
+            // rakudo's `throw` and `die` are CORE-setting routines: their
+            // frames sit at the setting's own source position, which is what
+            // a consumer that skips `SETTING::` frames keys on (#19244).
+            if let Some((file, line)) = setting_leading_location(name) {
+                frame_attrs.insert("file".to_string(), Value::str(file.to_string()));
+                frame_attrs.insert("line".to_string(), Value::int(line));
+            } else {
+                frame_attrs.insert(
+                    "file".to_string(),
+                    current_file
+                        .clone()
+                        .map(Value::str)
+                        .unwrap_or(Value::str(String::new())),
+                );
+                frame_attrs.insert(
+                    "line".to_string(),
+                    current_line
+                        .map(|l| Value::int(l as i64))
+                        .unwrap_or(Value::int(0)),
+                );
+            }
             frames.push(Value::make_instance(
                 Symbol::intern("Backtrace::Frame"),
                 frame_attrs,
@@ -367,7 +404,7 @@ impl BacktraceCapture {
             {
                 "<unit>".to_string()
             } else {
-                frame.name.resolve()
+                routine_display_name(frame).to_string()
             };
 
             let location = Self::format_location(file.as_deref(), line);

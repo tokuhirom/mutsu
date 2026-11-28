@@ -242,6 +242,12 @@ impl Interpreter {
         keep_deferred_entry: bool,
     ) -> Result<(), RuntimeError> {
         let idx = idx as usize;
+        // A slot frame reads a scalar attribute from the receiver's cell; no
+        // name-keyed step of the arm below may run in it (ADR-18393 D1).
+        if code.slot_frame_body && super::vm_method_slot_frame::slot_attr_read(code, idx) {
+            self.slot_frame_attr_read(code, idx);
+            return Ok(());
+        }
         if self.rw_return_context
             && code
                 .locals
