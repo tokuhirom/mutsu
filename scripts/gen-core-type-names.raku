@@ -9,17 +9,30 @@
 #
 # and record the rakudo version in the file's header line.
 
-sub walk(Str $prefix, $stash, %seen) {
-    for $stash.keys -> $k {
+# A package's WHO is a Stash, or for some packages built in NQP a raw NQP hash
+# (`RakuAST::IMPL.WHO` is a BOOTHash on 2026.11, and its classes still resolve
+# as barewords). Bound to a Raku parameter the raw hash arrives as a Hash.
+sub is-stash(Mu $who) { $who ~~ Stash || $who ~~ PseudoStash }
+
+sub who-keys(Mu $who) { $who ~~ Associative ?? $who.keys !! () }
+
+sub walk(Str $prefix, Mu $stash, %seen) {
+    for who-keys($stash) -> $k {
         next if $k ~~ /^ <[&$@%!]> /;
         next if $k.starts-with('EXPORT') || $k eq 'GLOBAL' || $k.contains('<');
         my $name = $prefix ?? "$prefix\::$k" !! $k;
         next if %seen{$name}++;
+        my $raw = !is-stash($stash);
         my $v := $stash{$k};
         next if $v.DEFINITE;
+        # Under a raw NQP hash, only a Raku type counts: the NQP bootstrap
+        # classes there (`ContainerDescriptor::Untyped`, an NQPClassHOW) and
+        # the metamodel's own slots (`Metamodel::CoercionHOW::root`, whose
+        # `.^name` dies) are not types the setting declares.
+        next if $raw && !(try $v.HOW.^name.starts-with('Perl6::Metamodel::') && $v.^name eq $name);
         take $name;
         my $who := $v.WHO;
-        walk($name, $who, %seen) if $who ~~ Stash && $who.keys;
+        walk($name, $who, %seen) if who-keys($who);
     }
 }
 

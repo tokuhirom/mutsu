@@ -338,6 +338,43 @@ impl Interpreter {
             self.stack.push(val);
             return Ok(());
         }
+        // #19286: the same fast path for a plain `@`/`%` local. Its name
+        // decides every guard of the chain below as it does a scalar's, except
+        // two sigil-keyed probes that are runtime facts and are asked here
+        // instead: an atomic-lane entry somewhere in the process, and this
+        // interpreter being a thread clone (whose `@`/`%` reads prefer the
+        // shared snapshot). With both false, the lane block is skipped, the
+        // attribute and CStruct reads need an attribute key the slot does not
+        // have, and `adopt_overlay_container` declines a slot holding an
+        // `Array`/`Hash` node or a cell -- so the chain reduces to the tail's
+        // clone-and-push, which is what this does.
+        if (unspoiled || crate::vm::vm_jit::local_read_unspoiled_by_any_name())
+            && code.local_read_plain_aggregate(idx)
+            && !crate::runtime::shared_store::atomic_lane_entries_exist()
+            && !self.is_thread_clone()
+            && let Some(val) = self.locals.get(idx)
+            && (val.is_container_ref()
+                || matches!(val.view(), ValueView::Array(..) | ValueView::Hash(_)))
+            && (unspoiled
+                || code
+                    .locals
+                    .get(idx)
+                    .is_none_or(|name| !Self::atomic_name_possible(name)))
+        {
+            debug_assert!(
+                self.local_cell_adoption_target(code, idx).is_none(),
+                "aggregate GetLocal fast path taken while the env overlay holds a \
+                 container slot {idx} ({:?}) does not",
+                code.locals.get(idx)
+            );
+            let val = val.clone();
+            if val.is_container_ref() {
+                self.push_container_ref_read(val, keep_deferred_entry);
+                return Ok(());
+            }
+            self.stack.push(val);
+            return Ok(());
+        }
         // Check if this variable has a binding alias (e.g. from $CALLER::foo := $other_var)
         // Borrow the name from the compiled code (it is independent of `self`),
         // avoiding a String clone on every GetLocal.

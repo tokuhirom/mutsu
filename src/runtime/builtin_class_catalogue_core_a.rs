@@ -262,6 +262,7 @@ pub(super) fn build(index: usize) -> ClassDef {
                     "absolute",
                     "relative",
                     "resolve",
+                    "resolve-inside",
                     "volume",
                     "is-absolute",
                     "is-relative",

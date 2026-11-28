@@ -45,7 +45,14 @@ impl Interpreter {
     /// keeping the longest per start, which was O(n^2) for `/a+/` even when
     /// only one match was wanted, and forced a frugal `.*?` to its greedy
     /// length (#9143).
-    // Cost: O(n + r) plus per-match engine work, n = chars of `text`, r = matches.
+    //
+    // A static pattern is looked up once for the whole walk
+    // (`regex_walk_pattern`, as `split` does): no user code runs between the
+    // searches here (replacements are evaluated after the scan), so nothing can
+    // change what the per-match lookup would return. A dynamic pattern keeps the
+    // per-match lookup.
+    // Cost: O(n + r + p) plus per-match engine work, n = chars of `text`,
+    // r = matches, p = the pattern's length (one lookup).
     pub(super) fn subst_scan_matches(
         &mut self,
         pattern: &str,
@@ -55,11 +62,20 @@ impl Interpreter {
         limit: Option<usize>,
     ) -> Option<Vec<RegexCaptures>> {
         let target = crate::runtime::MatchTarget::new(text);
+        let parsed = self.regex_walk_pattern(pattern);
         let mut out: Vec<RegexCaptures> = Vec::new();
         let mut pos = from;
         while limit.is_none_or(|l| out.len() < l) {
-            let Some(caps) = self.regex_match_with_captures_from_target(pattern, &target, pos)
-            else {
+            let found = match &parsed {
+                Some(parsed) => self
+                    .regex_match_parsed_from_target(parsed, &target, pos)
+                    .map(|mut caps| {
+                        caps.set_target(Some(target.clone()));
+                        caps
+                    }),
+                None => self.regex_match_with_captures_from_target(pattern, &target, pos),
+            };
+            let Some(caps) = found else {
                 break;
             };
             if out.is_empty()

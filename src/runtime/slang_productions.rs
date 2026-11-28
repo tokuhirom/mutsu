@@ -95,6 +95,8 @@ mod tests {
         assert!(is_production_handler("statement-control:sym<use>", &none));
         assert!(is_production_handler("statement_control:sym<use>", &none));
         assert!(is_production_handler("blockoid", &none));
+        // Added on rakudo 2026.11.
+        assert!(is_production_handler("enter-package-body", &none));
         assert!(is_production_handler("statement_control:sym<frobnicate>", &none));
         assert!(!is_production_handler("add_phaser", &none));
         assert!(!is_production_handler("frobnicate:sym<x>", &none));

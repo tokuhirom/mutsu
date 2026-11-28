@@ -7071,6 +7071,14 @@ pub(crate) struct OuterCapture {
     pub(crate) rebinds: bool,
 }
 
+/// [`CompiledCode::local_read_plain`]'s memo values (#19286).
+const LOCAL_READ_NOT_PLAIN: u8 = 0;
+const LOCAL_READ_PLAIN_SCALAR: u8 = 1;
+const LOCAL_READ_PLAIN_AGGREGATE: u8 = 2;
+/// A plain aggregate that is also a plain user `@` lexical this chunk declares,
+/// not `our` or `state`: the static half of the lean element store (#19285).
+const LOCAL_READ_PLAIN_USER_ARRAY: u8 = 3;
+
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledCode {
     pub(crate) ops: Vec<OpCode>,
@@ -8310,7 +8318,7 @@ pub(crate) struct CompiledCode {
     /// local slot (see [`CompiledCode::local_read_plain`]). The static half of
     /// both the interpreter's `GetLocal` fast path (#8332) and the JIT's Tier B
     /// inline read (ADR-0004 J4d).
-    pub(crate) local_read_plain: std::sync::OnceLock<Box<[bool]>>,
+    pub(crate) local_read_plain: std::sync::OnceLock<Box<[u8]>>,
     /// Lazily-built "a `++`/`--` may step this slot as a bare native `int`"
     /// bit per local slot (see [`CompiledCode::native_int_step_slot`],
     /// ADR-18357).
@@ -9132,18 +9140,61 @@ impl CompiledCode {
     /// runs on the single most frequent opcode in the VM, and the byte tests
     /// plus the attribute-key probe are a pure function of the chunk.
     pub(crate) fn local_read_plain(&self, idx: usize) -> bool {
+        self.local_read_class(idx) == LOCAL_READ_PLAIN_SCALAR
+    }
+
+    /// Whether local slot `idx` is an `@` / `%` container whose read the NAME
+    /// decides the same way [`Self::local_read_plain`] decides a scalar's,
+    /// except for the two sigil-keyed probes: the atomic-lane and the
+    /// thread-clone shared-snapshot reads. Those are runtime facts (an atomic
+    /// lane entry exists in the process; this interpreter is a thread clone),
+    /// so the caller checks them per read; everything else -- no attribute
+    /// key, no `!`/`.` twigil -- is settled here (#19286).
+    // Cost: O(1) (memoized per chunk with `local_read_plain`).
+    pub(crate) fn local_read_plain_aggregate(&self, idx: usize) -> bool {
+        matches!(
+            self.local_read_class(idx),
+            LOCAL_READ_PLAIN_AGGREGATE | LOCAL_READ_PLAIN_USER_ARRAY
+        )
+    }
+
+    /// Whether slot `idx` is a [`Self::local_read_plain_aggregate`] slot that is
+    /// also a plain user `@` lexical (`env::is_plain_user_lexical`) this chunk
+    /// declares, and not an `our` or `state` variable: the chunk-settled half
+    /// of the lean element store's conditions (#19285).
+    // Cost: O(1) (memoized per chunk with `local_read_plain`).
+    pub(crate) fn lean_element_store_slot(&self, idx: usize) -> bool {
+        self.local_read_class(idx) == LOCAL_READ_PLAIN_USER_ARRAY
+    }
+
+    /// The memoized read class of slot `idx`: not plain, a plain scalar, or a
+    /// plain aggregate (see the two predicates above).
+    // Cost: O(1) after the first call per chunk; O(L * (o + s)) once, L =
+    // locals, o / s = the chunk's `our` / `state` locals (a handful).
+    fn local_read_class(&self, idx: usize) -> u8 {
         let slots = self.local_read_plain.get_or_init(|| {
             (0..self.locals.len())
                 .map(|i| {
-                    self.local_attr_key(i).is_none()
-                        && !matches!(
-                            self.locals[i].as_bytes().first(),
-                            Some(b'!') | Some(b'@') | Some(b'%') | Some(b'.')
-                        )
+                    if self.local_attr_key(i).is_some() {
+                        return LOCAL_READ_NOT_PLAIN;
+                    }
+                    match self.locals[i].as_bytes().first() {
+                        Some(b'!') | Some(b'.') => LOCAL_READ_NOT_PLAIN,
+                        Some(b'@')
+                            if self.declares_slot(i)
+                                && crate::env::is_plain_user_lexical(&self.locals[i])
+                                && !self.our_locals.iter().any(|(s, _)| *s == i)
+                                && !self.state_locals.iter().any(|(s, _)| *s == i) =>
+                        {
+                            LOCAL_READ_PLAIN_USER_ARRAY
+                        }
+                        Some(b'@') | Some(b'%') => LOCAL_READ_PLAIN_AGGREGATE,
+                        _ => LOCAL_READ_PLAIN_SCALAR,
+                    }
                 })
                 .collect()
         });
-        slots.get(idx).copied().unwrap_or(false)
+        slots.get(idx).copied().unwrap_or(LOCAL_READ_NOT_PLAIN)
     }
 
     /// Record `slot` (when present) as rebound after its declaration — see
