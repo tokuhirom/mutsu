@@ -73,7 +73,10 @@ impl Em<'_, '_> {
     /// The back-edge safepoint countdown.
     pub(super) fn poll(&mut self) {
         let mf = MemFlagsData::trusted();
-        let left = self.b.ins().load(types::I32, mf, self.ctxp, self.poll_offset);
+        let left = self
+            .b
+            .ins()
+            .load(types::I32, mf, self.ctxp, self.poll_offset);
         let left = self.b.ins().iadd_imm_s(left, -1);
         self.b.ins().store(mf, left, self.ctxp, self.poll_offset);
         let poll_blk = self.b.create_block();
@@ -174,12 +177,15 @@ impl Em<'_, '_> {
             self.b.append_block_param(end_blk, clty(*k));
         }
         let target = |t: usize, blocks: &BTreeMap<usize, (Block, Vec<K>)>| {
-            if t == end { Some(end_blk) } else { blocks.get(&t).map(|b| b.0) }
+            if t == end {
+                Some(end_blk)
+            } else {
+                blocks.get(&t).map(|b| b.0)
+            }
         };
-        let args =
-            |stack: &[(ClValue, K)]| -> Vec<cranelift_codegen::ir::BlockArg> {
-                stack.iter().map(|(v, _)| (*v).into()).collect()
-            };
+        let args = |stack: &[(ClValue, K)]| -> Vec<cranelift_codegen::ir::BlockArg> {
+            stack.iter().map(|(v, _)| (*v).into()).collect()
+        };
         let mut stack: Vec<(ClValue, K)> = Vec::new();
         let mut open = true;
         let mut i = start;
@@ -206,8 +212,7 @@ impl Em<'_, '_> {
                 i += 1;
                 continue;
             }
-            if let Some((inclusive, var, body_start, body_end, resume)) =
-                nested_range(self.code, i)
+            if let Some((inclusive, var, body_start, body_end, resume)) = nested_range(self.code, i)
             {
                 let (hi, _) = stack.pop()?;
                 let (lo, _) = stack.pop()?;

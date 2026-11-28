@@ -111,7 +111,12 @@ impl Walk<'_> {
                 if stack.pop()? != K::Int || stack.pop()? != K::Int || pending.is_some() {
                     return None;
                 }
-                if self.t.slot_kind.insert(var, SlotKind::Int).is_some_and(|k| k != SlotKind::Int) {
+                if self
+                    .t
+                    .slot_kind
+                    .insert(var, SlotKind::Int)
+                    .is_some_and(|k| k != SlotKind::Int)
+                {
                     return None;
                 }
                 self.loop_vars.push(var);
@@ -233,7 +238,12 @@ impl Walk<'_> {
                         K::Num => SlotKind::Num,
                         K::Bool => return None,
                     };
-                    if self.t.slot_kind.insert(*slot, v).is_some_and(|old| old != v) {
+                    if self
+                        .t
+                        .slot_kind
+                        .insert(*slot, v)
+                        .is_some_and(|old| old != v)
+                    {
                         return None;
                     }
                     self.live.push(*slot);

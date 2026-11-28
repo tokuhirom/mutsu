@@ -131,7 +131,10 @@ pub(super) fn plain_range_spec(spec: &crate::opcode::ForLoopSpec) -> bool {
 /// then a `ForLoop` over it with a named parameter. Returns its
 /// inclusivity, its parameter's slot, its body `[start, end)` and the index
 /// after it (past its `RestoreForParam`).
-pub(super) fn nested_range(code: &CompiledCode, i: usize) -> Option<(bool, u32, usize, usize, usize)> {
+pub(super) fn nested_range(
+    code: &CompiledCode,
+    i: usize,
+) -> Option<(bool, u32, usize, usize, usize)> {
     let inclusive = match code.ops.get(i)? {
         OpCode::MakeRange => true,
         OpCode::MakeRangeExcl => false,
