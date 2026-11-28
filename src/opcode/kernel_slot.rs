@@ -28,3 +28,53 @@ pub(crate) struct KernelSlot {
     /// Set after too many consecutive bails: never entered again.
     pub(crate) disabled: AtomicBool,
 }
+
+/// The machine kind of a loop kernel slot.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SlotKind {
+    /// A plain `Int` held as an `i64`.
+    Int,
+    /// A `Num` held as an `f64`.
+    Num,
+}
+
+/// A compiled loop kernel (ADR-19288 D5), specialized to the kinds its carried
+/// slots held at entry.
+#[derive(Debug)]
+pub(crate) struct LoopKernelInfo {
+    /// The native entry point: `extern "C" fn(*mut LoopCtx, *mut u64) -> u32`.
+    pub(crate) entry: usize,
+    /// The enclosing frame's slots the loop reads and writes, in buffer order
+    /// after the counter words.
+    pub(crate) carried: Box<[(u32, SlotKind)]>,
+    /// The body's `my` declarations `(SetVarDynamic ip, slot, kind)`, replayed
+    /// with their final values when the kernel finishes the loop.
+    pub(crate) decls: Box<[(u32, u32, SlotKind)]>,
+    /// `CheckReadOnly` / `CheckReadOnlyModify` name operands of the region,
+    /// checked once at entry (`true` = the modify form).
+    pub(crate) readonly_checks: Box<[(bool, u32)]>,
+}
+
+/// A loop site's variant: the carried kinds it was compiled for, and the
+/// kernel (`None` when that variant declined).
+pub(crate) type LoopVariant = (Box<[SlotKind]>, Option<std::sync::Arc<LoopKernelInfo>>);
+
+/// One loop op's kernel state.
+#[derive(Debug)]
+pub(crate) struct LoopSite {
+    /// The `ForLoop` / `WhileLoop` op's index.
+    pub(crate) ip: u32,
+    /// Entries seen (the hotness counter).
+    pub(crate) entries: u32,
+    /// The carried slots of the region, or `None` when the region can never
+    /// be a kernel.
+    pub(crate) carried: Option<std::sync::Arc<[u32]>>,
+    /// Compiled (or declined) variants, keyed by the carried slots' kinds.
+    pub(crate) variants: Vec<LoopVariant>,
+}
+
+/// Every loop site of one `CompiledCode`.
+#[derive(Debug, Default)]
+pub(crate) struct LoopKernelTable {
+    pub(crate) sites: std::sync::Mutex<Vec<LoopSite>>,
+}

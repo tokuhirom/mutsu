@@ -343,6 +343,12 @@ mod vm_let_save_elem;
 mod vm_local_cell_adoption;
 mod vm_loop_cstyle_repeat;
 mod vm_loop_exit_guard;
+#[cfg(feature = "jit")]
+mod vm_loop_kernel;
+#[cfg(feature = "jit")]
+mod vm_loop_kernel_compile;
+#[cfg(feature = "jit")]
+mod vm_loop_kernel_types;
 mod vm_loop_writeback;
 mod vm_loop_writeback_quant;
 mod vm_loop_writeback_shaped;

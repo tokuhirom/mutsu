@@ -52,7 +52,7 @@ pub(crate) fn stats_line() -> String {
 /// `off`/`0`, and the profiler is not sampling (a kernel frame has no line).
 #[cfg(feature = "jit")]
 #[inline]
-fn kernels_enabled() -> bool {
+pub(super) fn kernels_enabled() -> bool {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     super::vm_jit::jit_enabled()
         && *ENABLED.get_or_init(|| {
