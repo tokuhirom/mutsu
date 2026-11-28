@@ -422,10 +422,12 @@ impl Interpreter {
         };
         // A `List`/`ItemList` is immutable as a container (its element slots
         // cannot be replaced), and `Shaped`/`Lazy` have their own store rules.
+        // A jagged array (its `shape` set, #19282) makes a row on a store.
         if !matches!(
             kind,
             crate::value::ArrayKind::Array | crate::value::ArrayKind::ItemArray
-        ) {
+        ) || items.shape.is_some()
+        {
             return None;
         }
         // A typed array (`my Int @a`) needs a constraint check, and a native one

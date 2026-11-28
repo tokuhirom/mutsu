@@ -225,7 +225,8 @@ impl Interpreter {
         // keeps `items` as a seed that only the sync chokepoint may read.
         match &root {
             Root::Array(items) => {
-                if items.has_type_meta() || items.has_native_backing() {
+                // A jagged array (#19282) checks and makes rows on a store.
+                if items.has_type_meta() || items.has_native_backing() || items.shape.is_some() {
                     return None;
                 }
             }
@@ -281,6 +282,7 @@ impl Interpreter {
                         crate::value::ArrayKind::Array | crate::value::ArrayKind::ItemArray
                     ) || items.has_type_meta()
                         || items.has_native_backing()
+                        || items.shape.is_some()
                     {
                         return None;
                     }

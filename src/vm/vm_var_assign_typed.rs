@@ -281,6 +281,17 @@ impl Interpreter {
             {
                 return Err(native_array_lazy_init_error(&constraint));
             }
+            // A jagged array's rows are structure, not elements (#19282).
+            if let Some(shape) = crate::value::shaped_array::jagged_array_shape(&value) {
+                return self.coerce_typed_jagged_rows(
+                    var_name,
+                    &constraint,
+                    &value,
+                    &shape,
+                    &coercion_target,
+                    explicit_initializer,
+                );
+            }
             let coerced_items = self.coerce_typed_array_elements(
                 var_name,
                 &constraint,
@@ -394,6 +405,59 @@ impl Interpreter {
         }
 
         Ok(value)
+    }
+
+    /// Coerce/check the elements of a typed jagged array (`my Int @a[2;*]`,
+    /// #19282): each row is checked as an array of the element type and keeps
+    /// that type for later writes; the rows themselves are not elements.
+    // Cost: O(E), E = elements of the rows.
+    fn coerce_typed_jagged_rows(
+        &mut self,
+        var_name: &str,
+        constraint: &str,
+        value: &Value,
+        shape: &[Option<usize>],
+        coercion_target: &dyn Fn(&str) -> Option<String>,
+        explicit_initializer: bool,
+    ) -> Result<Value, RuntimeError> {
+        let ValueView::Array(rows, kind) = value.view() else {
+            return Ok(value.clone());
+        };
+        let mut coerced_rows = Vec::with_capacity(rows.len());
+        for row in rows.iter() {
+            let row = row.deref_container();
+            let coerced = if let Some(row_shape) =
+                crate::value::shaped_array::jagged_array_shape(&row)
+            {
+                self.coerce_typed_jagged_rows(
+                    var_name,
+                    constraint,
+                    &row,
+                    &row_shape,
+                    coercion_target,
+                    explicit_initializer,
+                )?
+            } else if let ValueView::Array(items, row_kind) = row.view() {
+                let items = self.coerce_typed_array_elements(
+                    var_name,
+                    constraint,
+                    &items,
+                    row_kind,
+                    coercion_target,
+                    explicit_initializer,
+                )?;
+                let mut data = (*Value::array_data_coerced_whole(&items_data(&row), items, true)).clone();
+                data.value_type = Some(constraint.to_string());
+                Value::array_with_kind(crate::gc::Gc::new(data), row_kind)
+            } else {
+                row
+            };
+            coerced_rows.push(coerced);
+        }
+        let mut data = crate::value::ArrayData::new(coerced_rows);
+        data.shape = Some(crate::value::shaped_array::encode_jagged_shape(shape).into());
+        data.value_type = Some(constraint.to_string());
+        Ok(Value::array_with_kind(crate::gc::Gc::new(data), kind))
     }
 
     /// Coerce/check elements of a typed array, recursing into shaped sub-arrays.
@@ -1339,4 +1403,13 @@ fn native_array_lazy_init_error(constraint: &str) -> RuntimeError {
         .into_iter()
         .collect(),
     )
+}
+
+/// The `ArrayData` of an array value (an empty one for anything else).
+// Cost: O(n), n = elements (the clone).
+fn items_data(value: &Value) -> crate::value::ArrayData {
+    match value.view() {
+        ValueView::Array(items, _) => (**items).clone(),
+        _ => crate::value::ArrayData::new(Vec::new()),
+    }
 }

@@ -2170,7 +2170,8 @@ impl Interpreter {
                 || matches!(
                     assigned.view(),
                     ValueView::Array(_, crate::value::ArrayKind::Shaped)
-                );
+                )
+                || crate::value::shaped_array::jagged_array_shape(&assigned).is_some();
             // Read the LHS's current value THROUGH a shared `ContainerRef` cell:
             // a `$scalar = @arr` share (`MarkArrayShareSource`) or an rw/`\(...)`
             // argument capture (`WrapVarRef`) replaces this slot with the cell,
@@ -2178,7 +2179,18 @@ impl Interpreter {
             // silently turned the next whole assignment into an unshaped,
             // truncated array (`my @a[4]; peek(@a); @a = "x","y"` gave 2 elems).
             let lhs_shape = self.locals[idx].with_deref(crate::runtime::utils::shaped_array_shape);
-            if let Some(shape) = &lhs_shape
+            // A jagged array (`my @a[2;*]`, #19282) keeps its shape too: the
+            // assigned rows are taken as its declaration takes them.
+            let lhs_jagged = if lhs_shape.is_none() && !is_bind && !is_shaped_decl {
+                self.locals[idx].with_deref(crate::value::shaped_array::jagged_array_shape)
+            } else {
+                None
+            };
+            if let Some(shape) = lhs_jagged
+                && !crate::value::shaped_array::jagged_array_shape(&assigned).is_some()
+            {
+                assigned = self.refill_jagged_array(&self.locals[idx].deref_container(), &shape, assigned)?;
+            } else if let Some(shape) = &lhs_shape
                 && shape.len() == 1
                 && !assigned_has_own_shape
             {

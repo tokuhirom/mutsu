@@ -1310,6 +1310,7 @@ impl Interpreter {
                 // For shaped arrays, use bounds-checked assignment
                 Self::assign_array_multidim(container, &resolved_dims, assign_value)
             } else {
+                slf.prepare_jagged_write(container, &resolved_dims, Some(&assign_value))?;
                 slf.multi_dim_assign(
                     container,
                     &dims,
