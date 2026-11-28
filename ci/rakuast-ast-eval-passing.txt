@@ -4165,6 +4165,7 @@ t/modules/in-file-package-our-var.t
 t/modules/indirect-lookup-finds-program-package-from-module.t
 t/modules/indirect-rakudo-internals-json.t
 t/modules/init-check-in-package-body.t
+t/modules/inline-module-check-import.t
 t/modules/inline-module-constant-import-with-user-operator.t
 t/modules/lazy-map-module-file-lexical.t
 t/modules/leading-colon-package-symbolic-scalar.t

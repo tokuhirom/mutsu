@@ -770,7 +770,7 @@ impl Interpreter {
         self.check_eval_param_type_constraints(&body_main)?;
         self.check_type_capture_inheritance(&body_main)?;
         self.preregister_top_level_subs(&body_main)?;
-        self.preregister_inline_package_subs(&body_main, false)?;
+        self.preregister_inline_package_subs(&body_main)?;
         self.preregister_routine_enums(
             &crate::runtime::routine_scoped_enums::RoutineEnumCollector::collect(&body_main),
         );
