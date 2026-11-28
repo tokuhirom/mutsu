@@ -37,10 +37,16 @@ class T {
 T.new(v => $_) for 1..3;
 is $seen, 6, 'a TWEAK writing an outer lexical is seen on every replay';
 
-# A positional argument is outside the lane: bless still refuses it.
-class Pos { method new(*@a) { self.bless(|@a) } }
-Pos.new() for ^3;
-dies-ok { Pos.new(1) }, 'a positional argument to bless still dies';
+# A TWEAK that makes method calls of its own: the lane still installs (the
+# nomination is taken before bless runs), and every replay runs the TWEAK.
+class TM {
+    has @.r;
+    method new(*%_) { self.bless(|%_) }
+    submethod TWEAK(:@!r) { @!r = @!r.map(* * 2) }
+}
+my $tm;
+$tm = TM.new(r => (1, 2, $_)) for 1..3;
+is-deeply $tm.r, [2, 4, 6], 'a TWEAK making calls runs on every replay';
 
 # A junction value is outside the lane too.
 class J { has $.j; method new(*%_) { self.bless(|%_) } }

@@ -15,7 +15,7 @@
 //! As for the ctor lane: every probe *returns* when it claims a call, so a
 //! dispatch that reaches the native `bless` has been declined by every probe
 //! in between. Reaching it is the proof, and the memo is written exactly there
-//! ([`Interpreter::note_bless_lane_reached`]), for the class the dispatch's
+//! ([`Interpreter::take_bless_lane_nomination`], [`Interpreter::install_bless_lane`]), for the class the dispatch's
 //! own gate nominated (`ctor_lane_candidate` with method `bless`, cleared by
 //! every `CallMethodMut` and site gate).
 //!
@@ -85,18 +85,28 @@ impl Interpreter {
         })
     }
 
-    /// Record that the whole chain was inert for `self.bless(...)` on
-    /// `class_sym`, if it is the class the current dispatch's gate nominated
-    /// and the receiver is its type object.
-    // Cost: O(1) when the candidate does not match; otherwise one plan fetch,
-    // once per class and generation.
-    pub(crate) fn note_bless_lane_reached(&mut self, target: &Value, class_sym: Symbol) {
+    /// Take this dispatch's bless-lane nomination for `class_sym`: whether the
+    /// gate nominated exactly this class for `self.bless(...)` on its type
+    /// object. Asked where the chain reaches the native `bless`, before it
+    /// runs: a BUILD/TWEAK body makes calls of its own, whose gates clear the
+    /// candidate, and they are not part of the chain the memo proves.
+    // Cost: O(1).
+    pub(crate) fn take_bless_lane_nomination(&mut self, target: &Value, class_sym: Symbol) -> bool {
         if self.caches.ctor_lane_candidate != Some((class_sym, crate::symbol::wk::bless_method()))
             || !matches!(target.view(), ValueView::Package(_))
         {
-            return;
+            return false;
         }
         self.caches.ctor_lane_candidate = None;
+        true
+    }
+
+    /// Record that the whole chain was inert for `self.bless(...)` on
+    /// `class_sym`, for a dispatch that held the nomination
+    /// ([`Self::take_bless_lane_nomination`]) and whose `bless` succeeded.
+    // Cost: one plan fetch and the eligibility checks, once per class and
+    // generation.
+    pub(crate) fn install_bless_lane(&mut self, class_sym: Symbol) {
         let plan = self.native_ctor_plan(class_sym);
         if plan.has_custom_bless || !self.plain_method_lane_class_eligible(class_sym) {
             return;

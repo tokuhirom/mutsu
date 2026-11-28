@@ -185,6 +185,9 @@ impl Interpreter {
             }
         }
         // Native default construction (see `try_compiled_method_or_interpret`).
+        // The ctor lane's nomination is read before the construction runs:
+        // its BUILD/TWEAK calls clear the candidate (`vm_ctor_lane`).
+        let ctor_nominated = new_on_package.is_some_and(|c| self.ctor_lane_nominated(c));
         if let Some(class_name) = new_on_package
             && let Some(result) = loan_env!(self, try_native_default_construct(class_name, &args))
         {
@@ -194,8 +197,8 @@ impl Interpreter {
             // and the call site must reconcile the caller slot (Slice F twin of the
             // non-mut path; `reconcile_locals_from_env_at_site`).
             self.dispatch.method_dispatch_pure = !self.mro_has_build_or_tweak(class_name);
-            if result.is_ok() {
-                self.note_ctor_lane_reached(class_name);
+            if ctor_nominated && result.is_ok() {
+                self.install_ctor_lane(class_name);
             }
             return result;
         }
@@ -284,6 +287,13 @@ impl Interpreter {
         // user `bless` override. bless builds a *new* instance and never
         // mutates the receiver, so there is no writeback; the dispatch is
         // env-pure exactly when the plan has no BUILD/TWEAK phase.
+        // The bless lane's nomination is taken before `bless` runs: its
+        // BUILD/TWEAK calls clear the candidate (`vm_bless_lane`).
+        let bless_nominated = method == "bless"
+            && match target.view() {
+                ValueView::Package(name) => self.take_bless_lane_nomination(&target, name),
+                _ => false,
+            };
         if method == "bless"
             && let Some(result) = loan_env!(self, try_native_bless(&target, &args))
         {
@@ -294,8 +304,8 @@ impl Interpreter {
             };
             let plan = self.native_ctor_plan(class_sym);
             self.dispatch.method_dispatch_pure = !(plan.has_build || plan.has_tweak);
-            if result.is_ok() {
-                self.note_bless_lane_reached(&target, class_sym);
+            if bless_nominated && result.is_ok() {
+                self.install_bless_lane(class_sym);
             }
             return result;
         }
