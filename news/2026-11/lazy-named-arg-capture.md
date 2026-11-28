@@ -27,6 +27,11 @@ attributes), callgrind on the profiling build:
 | before | 39.4k | 40 |
 | after | 32.3k | 28 |
 
-and 3.9 µs to 2.7 µs per call on the same build. What remains of a lazy
-argument's cost in `MakeNamedArg` is mostly copying the key into the Pair's
-own `String`.
+and 3.9 µs to 2.7 µs per call on the same build.
+
+What remained of a lazy argument's cost in `MakeNamedArg` was mostly copying
+the key: a named Pair stored its key as its own `String`, so every named
+argument paid a `malloc`, a copy and a `free` for a constant. A Pair built
+from a flat `Str` key now shares that string (`PairKey::Shared`). That brings
+the reproducer to 30.9k Ir and 24 allocations per call, and a `:$var`
+argument to about 295 Ir in `MakeNamedArg`.
