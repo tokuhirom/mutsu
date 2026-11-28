@@ -345,15 +345,15 @@ impl Interpreter {
         });
         crate::parser::clear_parser_lib_paths();
         match parse_result {
-            Ok((mut stmts, _)) => {
+            Ok((mut stmts, finish)) => {
+                if let Some(content) = finish {
+                    self.env.insert("=finish".to_string(), Value::str(content));
+                }
                 if let Some(hidden) = &session_hidden {
                     super::repl_session_scope::declare_session_types_apart(&mut stmts, hidden);
                 }
-                // EVAL is its own compilation unit, so its `$=pod` must be
-                // collected from the evaluated source before the mainline
-                // runs.  This also adds declarator blocks from `#|` comments;
-                // without it a module such as Pod::EOD sees only its ordinary
-                // Pod blocks and loses the declaration it is meant to move.
+                // Build the EVAL unit's Pod, including #| declaration docs,
+                // before mainline execution (Pod::EOD needs those declarations).
                 let docs = crate::parser::decl_doc::take_unit_docs();
                 self.establish_pod_variables_from_stmts(src, &stmts, docs)?;
                 // A placeholder parameter used directly in the mainline is

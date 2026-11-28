@@ -131,7 +131,7 @@ fn lower_stmt_list(names: &NameScope, node: &RakuAstNode) -> Result<Vec<Stmt>, R
             let mut stmts = Vec::with_capacity(node.fields.len());
             for f in &node.fields {
                 // The list's own origin (ADR-10723 Stage 2) is no statement.
-                if super::origin::is_origin(f) {
+                if super::origin::is_origin(f) || super::unit_finish::is_hidden(node, f) {
                     continue;
                 }
                 let child = child_node(&f.value)?;

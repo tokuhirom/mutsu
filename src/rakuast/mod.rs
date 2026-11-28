@@ -2127,10 +2127,10 @@ fn parse_unit_ast(
     let _origins = expr_origins::strip(&mut stmts);
     let mut node = view::statement_list(names, &stmts)?;
     origin::set_span(&mut node, origin::unit_list_span(&stmts, source));
-    // The text from `=finish` on is `$=finish` (the unit's `finish-content`),
-    // not a Pod block of the statement list.
+    // The `=finish` text is `$=finish`, not a Pod block of this list.
     let (code, _) = crate::parser::split_finish_section(source);
     pod_blocks::insert(names, &mut node, code, &stmts);
+    unit_finish::record(&mut node.fields, source);
     named_docs::attach(&mut node, unit_docs);
     sink_propagation::annotate(&mut node)?;
     Ok(Value::rakuast(Box::new(node)))
