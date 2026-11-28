@@ -27,6 +27,16 @@ const MAX_DECLS: usize = 24;
 /// The most arrays a loop kernel's body subscripts.
 const MAX_ELEMS: usize = 8;
 
+/// The counter range of a `for` kernel: the first counter value, the end and
+/// its inclusivity, and for a list loop the items the counter indexes.
+#[derive(Clone, Copy, Default)]
+pub(super) struct KernelRange<'a> {
+    pub(super) start: i64,
+    pub(super) end: i64,
+    pub(super) inclusive: bool,
+    pub(super) list: Option<&'a [i64]>,
+}
+
 /// What a loop kernel did.
 pub(super) enum LoopOutcome {
     /// Nothing ran; the driver continues as if it had not asked.
@@ -56,7 +66,8 @@ pub(crate) fn stats_line() -> String {
 
 impl Interpreter {
     /// Run the rest of the loop at `ip` (`shape`) natively; for a `for`,
-    /// `range` is the counter value to start at, the end and its inclusivity.
+    /// `range` is the counter value to start at, the end and its inclusivity
+    /// (and a list loop's items).
     /// `hot` says the driver already knows the loop is long.
     // Cost: O(c) entry and exit work plus the native run, c = carried slots;
     // O(n) once per site, n = ops in the region.
@@ -65,7 +76,7 @@ impl Interpreter {
         code: &CompiledCode,
         ip: usize,
         shape: LoopShape,
-        range: Option<(i64, i64, bool)>,
+        range: Option<KernelRange<'_>>,
         hot: bool,
         compiled_fns: &CompiledFns,
     ) -> Result<LoopOutcome, RuntimeError> {
@@ -237,7 +248,12 @@ impl Interpreter {
             callees[k] = kernel.entry;
         }
         let mut buf = [0u64; 2 + MAX_CARRIED + MAX_DECLS];
-        let (start, end, inclusive) = range.unwrap_or((0, 0, false));
+        let KernelRange {
+            start,
+            end,
+            inclusive,
+            list,
+        } = range.unwrap_or_default();
         buf[0] = start as u64;
         buf[2..2 + n].copy_from_slice(&words[..n]);
         let mut ctx = LoopCtx {
@@ -248,6 +264,7 @@ impl Interpreter {
             callees,
             interp: self as *mut Interpreter,
             code: code as *const CompiledCode,
+            list: list.map_or(std::ptr::null(), <[i64]>::as_ptr),
         };
         LOOP_KERNEL_ENTRIES.fetch_add(1, Relaxed);
         // SAFETY: `info.entry` is a finalized loop kernel compiled for this
@@ -317,10 +334,13 @@ impl Interpreter {
         let mut sites = code.jit.loop_kernels.sites.lock().ok()?;
         let site = sites.iter_mut().find(|s| s.ip == ip as u32)?;
         use super::vm_loop_kernel_types::{carried_code, elem_code};
+        // A list loop and a counted loop at the same `ForLoop` (one iterable
+        // a Range, another time a list) compile to different code.
+        let list_marker = matches!(shape, LoopShape::Range { list: true, .. }).then_some(u8::MAX);
         let key = || {
-            carried
-                .iter()
-                .map(|c| carried_code(c.1))
+            list_marker
+                .into_iter()
+                .chain(carried.iter().map(|c| carried_code(c.1)))
                 .chain(elem_reads.iter().map(|r| elem_code(r.1, r.2)))
         };
         if let Some((_, v)) = site

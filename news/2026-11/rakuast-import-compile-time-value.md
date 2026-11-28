@@ -1,0 +1,1 @@
+During CHECK in an AST EVAL unit, `RakuAST::Declaration::Import.compile-time-value` now reads the visible lexical import set before resolving a routine by name. An imported infix or postfix therefore reports its module's candidates even when CORE has an operator of the same name.

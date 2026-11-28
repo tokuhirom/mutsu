@@ -4003,7 +4003,17 @@ impl Interpreter {
             // Cost: O(c), c = the chunk's container-ref capture names (a linear
             // `Vec::contains`), O(1) when it has none.
             OpCode::WrapVarRef { name_idx, slot } => {
-                self.exec_wrap_var_ref_op_fetching(code, *name_idx, *slot)?;
+                // The value of a named argument `:$x`: the next op turns the
+                // VarRef into the variable's cell, so no binder reads the
+                // declared type it would otherwise carry (#19399).
+                let named_arg = matches!(
+                    code.ops.get(*ip + 1),
+                    Some(OpCode::MakeNamedArg {
+                        readonly: false,
+                        ..
+                    })
+                );
+                self.exec_wrap_var_ref_op_fetching(code, *name_idx, *slot, named_arg)?;
                 *ip += 1;
             }
             // Cost: O(1) with the compiler's slot hint; O(L) by-name locals fallback.
@@ -5350,19 +5360,20 @@ impl Interpreter {
                             if matches!(inner.view(), ValueView::Instance { class_name, .. }
                                 if self.has_user_method(class_name.as_str(), "STORE")))
                         && self.mixin_composes_method(&val, "sink");
-                    let sink_class = if !user_sink || mixin_sink {
+                    // A lazy Match answers its class without the view, which
+                    // would force its materialization.
+                    let instance_class = if !user_sink || mixin_sink {
                         None
+                    } else if val.is_lazy_match_value() {
+                        Some(val.match_dispatch_class().to_string())
                     } else if let ValueView::Instance { class_name, .. } = val.view() {
-                        let cn = class_name.resolve();
-                        if self.has_user_method(&cn, "sink") && !self.has_user_method(&cn, "STORE")
-                        {
-                            Some(cn)
-                        } else {
-                            None
-                        }
+                        Some(class_name.resolve())
                     } else {
                         None
                     };
+                    let sink_class = instance_class.filter(|cn| {
+                        self.has_user_method(cn, "sink") && !self.has_user_method(cn, "STORE")
+                    });
                     if mixin_sink {
                         // Same captured-outer writeback as the class arm below:
                         // the doc idiom `($b + 1) does role { method sink { $b++
@@ -5406,6 +5417,12 @@ impl Interpreter {
                             Some(val.clone()),
                         );
                         self.apply_pending_caller_var_writeback(code);
+                        *ip += 1;
+                        return Ok(());
+                    }
+                    // A lazy Match is none of the kinds below, and viewing it
+                    // would force its materialization: sinking it does nothing.
+                    if val.is_lazy_match_value() {
                         *ip += 1;
                         return Ok(());
                     }
@@ -6011,11 +6028,17 @@ impl Interpreter {
             // Cost: O(1) amortized for a single index/key; O(k) for a slice (see
             // exec_delete_index_named_op).
             OpCode::DeleteIndexNamed(name_idx, slot, kind) => {
-                let pre = self.attr_elem_env_snapshot(code, *name_idx);
-                self.with_package_lexical_seeded(code, *name_idx, |vm| {
-                    vm.exec_delete_index_named_op(code, *name_idx, *slot, *kind)
-                })?;
-                self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
+                // The plain declared-`%`-local delete (`vm_var_delete_lean`).
+                let lean = slot.is_some_and(|slot| {
+                    self.try_lean_local_hash_delete(code, slot, *name_idx, *kind)
+                });
+                if !lean {
+                    let pre = self.attr_elem_env_snapshot(code, *name_idx);
+                    self.with_package_lexical_seeded(code, *name_idx, |vm| {
+                        vm.exec_delete_index_named_op(code, *name_idx, *slot, *kind)
+                    })?;
+                    self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
+                }
                 *ip += 1;
             }
             // Cost: O(1) amortized for a single index/key; O(k) for a slice, k = indices.
@@ -6089,11 +6112,7 @@ impl Interpreter {
             // under 256 bytes) when the result is built as strands (ADR-0120);
             // O(n), n = total chars, for a result under `STRAND_MIN_BYTES`.
             OpCode::StringConcat(n) => {
-                self.sync_source_line(code, *ip);
-                // #11217: a render truncated by a stack overflow raises.
-                crate::value::render_guard::check_render(
-                    self.exec_string_concat_op(*n, code.interp_part_names_at(*ip)),
-                )?;
+                self.exec_string_concat_at(code, *ip, *n)?;
                 *ip += 1;
             }
 

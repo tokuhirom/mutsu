@@ -983,6 +983,17 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        // `.parse` / `.subparse` on a grammar (`vm_grammar_parse_site`).
+        if let Some(result) = self.try_grammar_parse_site(
+            code,
+            name.raw,
+            arity,
+            modifier_idx,
+            quoted,
+            arg_sources_idx,
+        ) {
+            return result;
+        }
         // A recorded argument-less `.?name` miss (#17987). Only while no
         // accessor-ref marker is pending: this dispatch would consume it.
         if !self.accessor_ref_pending
@@ -2041,12 +2052,15 @@ impl Interpreter {
                     .flatten();
                 // Array-subclass instance delegation: when the Instance's class
                 // inherits from Array, delegate non-mutating Array methods to the
-                // backing __mutsu_array_storage attribute.
-                if let ValueView::Instance {
-                    class_name,
-                    attributes,
-                    ..
-                } = target.view()
+                // backing __mutsu_array_storage attribute. A lazy Match has no
+                // such storage, and viewing it would force its materialization
+                // (`MatchNode::force_attrs`) on every method call on `$/`.
+                if !target.is_lazy_match_value()
+                    && let ValueView::Instance {
+                        class_name,
+                        attributes,
+                        ..
+                    } = target.view()
                 {
                     let cn = class_name.as_str();
                     if !self.has_user_method(cn, method)
@@ -2254,7 +2268,8 @@ impl Interpreter {
                 // If we have a pending Proxy subclass attribute reference and this
                 // is a mutating array method, delegate to the shared storage mutator
                 // so the mutation is visible through the Proxy subclass.
-                if matches!(target.view(), ValueView::Array(..))
+                if !target.is_lazy_match_value()
+                    && matches!(target.view(), ValueView::Array(..))
                     && self
                         .types
                         .pending_proxy_subclass_attr
@@ -2378,6 +2393,7 @@ impl Interpreter {
                         }
                     } else if matches!(method, "values" | "kv" | "pairs")
                         && args.is_empty()
+                        && !target.is_lazy_match_value()
                         && matches!(target.view(), ValueView::Array(..))
                         && !self.native_lever_a_user_override_sym(&target, method_sym)
                         && let Some(produced) =

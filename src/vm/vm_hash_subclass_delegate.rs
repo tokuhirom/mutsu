@@ -369,6 +369,11 @@ impl Interpreter {
         method_sym: crate::symbol::Symbol,
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
+        // A lazy Match has no hash storage, and viewing it would force its
+        // materialization.
+        if target.is_lazy_match_value() {
+            return None;
+        }
         let method = method_sym.as_str();
         let pun_inner = Self::hash_pun_inner(target);
         let target = pun_inner.as_ref().unwrap_or(target);

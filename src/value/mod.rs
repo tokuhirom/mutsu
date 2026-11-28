@@ -613,7 +613,6 @@ pub(crate) mod cell_snapshot;
 pub(crate) mod compare;
 pub(crate) mod container_lock;
 pub(crate) mod container_read;
-pub(crate) mod decimal_text;
 mod dispatch_shape;
 pub(crate) mod mixin_identity;
 pub(crate) use dispatch_shape::iterator_kind::native_iterator_is_lazy;

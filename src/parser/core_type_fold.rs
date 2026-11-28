@@ -32,41 +32,70 @@ use crate::ast::{CallArg, Expr};
 use crate::symbol::Symbol;
 use crate::value::Value;
 
-/// The CORE types folded. Each resolves to its own type object in a fresh
+/// The CORE types folded, in byte order (binary-searched). Each resolves to its own type object in a fresh
 /// interpreter, as in rakudo (`::(N).^name eq N`, checked against both).
 const FOLDABLE: &[&str] = &[
     "Any",
     "Array",
+    "Associative",
+    "Bag",
     "Blob",
+    "Block",
+    "Bool",
     "Buf",
+    "Callable",
     "Capture",
+    "Code",
+    "Complex",
+    "ComplexStr",
     "Cool",
+    "Date",
+    "DateTime",
+    "Dateish",
+    "Duration",
+    "Enumeration",
     "Exception",
     "Failure",
+    "FatRat",
     "Hash",
+    "Instant",
     "Int",
+    "IntStr",
+    "Iterable",
     "IterationBuffer",
     "List",
     "Map",
     "Match",
+    "Mix",
     "Mu",
     "NFC",
     "NFD",
     "NFKC",
     "NFKD",
     "Num",
+    "NumStr",
+    "Numeric",
     "Pair",
+    "Positional",
     "Range",
     "Rat",
+    "RatStr",
+    "Rational",
+    "Real",
     "Scalar",
     "Seq",
+    "Set",
     "Slip",
     "Str",
+    "Stringy",
+    "Sub",
     "Uni",
+    "Version",
 ];
 
+// Cost: O(log n), n = FOLDABLE.len() (kept sorted; a unit test pins it).
 fn foldable(name: &str) -> Option<&'static str> {
-    FOLDABLE.iter().copied().find(|n| *n == name)
+    FOLDABLE.binary_search(&name).ok().map(|i| FOLDABLE[i])
 }
 
 /// What the unit being parsed binds, and whether it may fold at all.
@@ -158,4 +187,23 @@ pub(crate) fn fold_nqp_call_args(name: Symbol, args: &mut [CallArg]) {
 // Cost: O(1).
 pub(in crate::parser) fn suspend_unit_state(unit: &mut crate::parser::unit_state::SuspendedUnit) {
     unit.take(&UNIT, UnitFold::default());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{FOLDABLE, foldable};
+
+    #[test]
+    fn foldable_list_is_sorted_and_unique() {
+        assert!(FOLDABLE.windows(2).all(|w| w[0] < w[1]));
+    }
+
+    #[test]
+    fn foldable_finds_every_listed_name_and_nothing_else() {
+        for n in FOLDABLE {
+            assert_eq!(foldable(n), Some(*n));
+        }
+        assert_eq!(foldable("NotACoreType"), None);
+        assert_eq!(foldable(""), None);
+    }
 }

@@ -196,6 +196,7 @@ mod vm_bareword_site;
 mod vm_call_method_site_lane;
 mod vm_call_nqp_list;
 mod vm_cursor_match_lane;
+mod vm_grammar_parse_site;
 mod vm_iterator_site_lane;
 mod vm_method_site_lane;
 mod vm_method_site_static;
@@ -282,6 +283,8 @@ mod vm_for_loop_dispatch;
 mod vm_for_loop_intrange;
 mod vm_for_loop_items;
 mod vm_for_loop_lazy;
+#[cfg(feature = "jit")]
+mod vm_for_loop_list_kernel;
 mod vm_for_loop_map_grep;
 mod vm_gather_seq;
 mod vm_given_when_ops;
@@ -316,6 +319,8 @@ mod vm_infix_shape;
 pub(crate) mod vm_jit;
 #[cfg(feature = "jit")]
 mod vm_jit_compile;
+#[cfg(feature = "jit")]
+mod vm_jit_concat_step;
 #[cfg(feature = "jit")]
 mod vm_jit_dump;
 #[cfg(feature = "jit")]
@@ -378,6 +383,7 @@ mod vm_map_grep_pull;
 mod vm_native_seq;
 mod vm_optional_miss;
 mod vm_topic_read_gate;
+mod vm_var_delete_lean;
 mod vm_var_incdec_lean;
 pub(crate) use vm_map_grep_pull::callback_positionals;
 pub(crate) mod vm_begin_replay;

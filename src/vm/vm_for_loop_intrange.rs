@@ -192,7 +192,12 @@ impl Interpreter {
                     code,
                     body_start - 1,
                     shape,
-                    Some((i, end_val, inclusive)),
+                    Some(super::vm_loop_kernel::KernelRange {
+                        start: i,
+                        end: end_val,
+                        inclusive,
+                        list: None,
+                    }),
                     trips >= 16 || !first,
                     compiled_fns,
                 ) {
@@ -437,6 +442,7 @@ impl Interpreter {
         Some(move |start, end| LoopShape::Range {
             body: (start, end),
             var,
+            list: false,
         })
     }
 }

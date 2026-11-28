@@ -156,24 +156,71 @@ impl Interpreter {
         let Some(ops) = self.lean_store_preamble(code, slot, name_idx, false, index_first) else {
             return false;
         };
-        // The key's holder is a clone of the stack word (a refcount bump), so
-        // the borrowed key outlives the pops of the commit.
-        let key_holder = self.stack[ops.index_at].clone();
-        let int_key;
-        let str_key;
-        let key: &str = match key_holder.view() {
-            ValueView::Str(key) => {
-                str_key = key;
-                str_key.as_str()
+        // The checks read the key's text where it sits on the stack; the
+        // commit then moves the key word out.
+        let (target, int_key) = {
+            let view = self.stack[ops.index_at].view();
+            match &view {
+                ValueView::Str(key) => (
+                    self.lean_hash_store_target(code, slot, name_idx, key.as_str()),
+                    None,
+                ),
+                ValueView::Int(n) => {
+                    let key = super::vm_decimal_key::DecimalKey::of(*n);
+                    (
+                        self.lean_hash_store_target(code, slot, name_idx, key.as_str()),
+                        Some(key),
+                    )
+                }
+                _ => return false,
             }
-            ValueView::Int(n) => {
-                int_key = super::vm_decimal_key::DecimalKey::of(n);
-                int_key.as_str()
-            }
-            _ => return false,
         };
-        let Some((LeanStoreNode::Hash(hash), slot_cell)) = self.lean_store_slot_node(slot) else {
+        let Some((hash, present)) = target else {
             return false;
+        };
+        // ---- commit ----
+        let (val, key_value) = self.lean_store_take_value_and_index(&ops);
+        let result = match int_key {
+            Some(key) => Self::lean_hash_commit(&hash, present, key.as_str(), None, val),
+            None if present => match key_value.view() {
+                ValueView::Str(key) => Self::lean_hash_commit(&hash, true, key.as_str(), None, val),
+                // The key was a `Str` above; any other word is stored by its
+                // text, which replaces the same plain entry.
+                _ => Self::lean_hash_commit(
+                    &hash,
+                    false,
+                    "",
+                    Some(key_value.into_owned_string()),
+                    val,
+                ),
+            },
+            // A new `Str` key: its buffer moves into the map when the key word
+            // was its only holder (`"key-$i"` just built by the
+            // interpolation), instead of being copied and then freed.
+            None => {
+                Self::lean_hash_commit(&hash, false, "", Some(key_value.into_owned_string()), val)
+            }
+        };
+        self.stack.push(result);
+        true
+    }
+
+    /// The container checks of the hash lane, run with the key's text: the
+    /// slot holds an ordinary `Hash` node with no type meta, typed keys,
+    /// default, bare or cell storage, the entry at `key` is absent or a plain
+    /// value, and no sigilless alias redirects the store. `Some((node,
+    /// present))` = accepted; `None` = decline.
+    // Cost: O(1) expected (one hash probe), plus O(k) to hash the key.
+    #[inline(always)]
+    fn lean_hash_store_target(
+        &self,
+        code: &CompiledCode,
+        slot: usize,
+        name_idx: u32,
+        key: &str,
+    ) -> Option<(crate::gc::Gc<crate::value::HashData>, bool)> {
+        let Some((LeanStoreNode::Hash(hash), slot_cell)) = self.lean_store_slot_node(slot) else {
+            return None;
         };
         if hash.has_type_meta()
             || hash.has_typed_keys()
@@ -182,39 +229,59 @@ impl Interpreter {
             || hash.storage_cells
             || hash.pseudo_stash_6e
         {
-            return false;
+            return None;
         }
         // An entry the store writes THROUGH or replaces by a rule of its own
         // (a `:=`-bound cell, an `=`-shared cell, a deferred bind token) is the
         // general store's.
-        if let Some(entry) = hash.map.get(key)
-            && (entry.is_container_ref()
-                || entry.is_hash_entry_ref_value()
-                || entry.is_proxy_value())
-        {
-            return false;
-        }
+        let present = match hash.map.get(key) {
+            Some(entry) => {
+                if entry.is_container_ref()
+                    || entry.is_hash_entry_ref_value()
+                    || entry.is_proxy_value()
+                {
+                    return None;
+                }
+                true
+            }
+            None => false,
+        };
         let node = crate::gc::Gc::as_ptr(&hash) as usize;
         if !self.lean_store_alias_agrees(code.const_sym(name_idx), node, slot_cell.as_ref()) {
-            return false;
+            return None;
         }
-        // ---- commit ----
-        let val = self.lean_store_take_value(&ops);
+        Some((hash, present))
+    }
+
+    /// Write `val` at `key` of the accepted hash node and return the store's
+    /// result (what the caller pushes). A present entry is replaced in place (`key` names it); an
+    /// absent one is inserted under `owned` when the caller has the key as an
+    /// owned `String` already, else under a copy of `key`.
+    // Cost: O(1) expected, plus O(k) to copy a borrowed new key.
+    #[inline(always)]
+    fn lean_hash_commit(
+        hash: &crate::gc::Gc<crate::value::HashData>,
+        present: bool,
+        key: &str,
+        owned: Option<String>,
+        val: Value,
+    ) -> Value {
         // SAFETY: audited aliased in-place container write (see
         // `value::aliased_mut`), the one the general hash store makes for a
         // shared node (`use_inplace`). No borrow into this node is live across
         // the write: `hash` is a `Gc` handle, the `ValueView` and any cell
-        // guard it came from are dropped above, and no second mutator thread
-        // exists (`multi_mutator_threads_live` was false), so this thread is
-        // the only writer of the node.
-        let data: &mut crate::value::HashData = unsafe { crate::value::gc_contents_mut(&hash) };
-        Value::hash_insert_through_str(
-            &mut data.map,
-            key,
-            Self::itemize_value_for_element_store(val.clone()),
-        );
-        self.stack.push(Self::itemize_value(val));
-        true
+        // guard it came from are dropped by the caller, and no second mutator
+        // thread exists (`multi_mutator_threads_live` was false), so this
+        // thread is the only writer of the node.
+        let data: &mut crate::value::HashData = unsafe { crate::value::gc_contents_mut(hash) };
+        let stored = Self::itemize_value_for_element_store(val.clone());
+        match owned {
+            Some(owned) if !present => {
+                data.map.insert(owned, stored.itemize_for_hash_element());
+            }
+            _ => Value::hash_insert_through_str(&mut data.map, key, stored),
+        }
+        Self::itemize_value(val)
     }
 
     /// The conditions both lanes share, settled before the container is
@@ -281,7 +348,10 @@ impl Interpreter {
         // A `:=` pair recorded on this variable's name: the frame may hold a
         // second slot for it the lane does not check (see
         // `bind_pair_names_container`).
-        if self.bind_pair_names_container(code, var_sym.as_str()) {
+        // (The name is only spelled out when a pair is recorded at all.)
+        if !self.local_bind_pairs.is_empty()
+            && self.bind_pair_names_container(code, var_sym.as_str())
+        {
             return false;
         }
         if self.is_readonly_sym(var_sym)
@@ -335,6 +405,16 @@ impl Interpreter {
         let val = self.stack.swap_remove(ops.value_at);
         self.stack.pop();
         val
+    }
+
+    /// Pop the index and the value of an accepted store; both are returned,
+    /// the value first.
+    // Cost: O(1).
+    #[inline(always)]
+    fn lean_store_take_value_and_index(&mut self, ops: &LeanStoreOperands) -> (Value, Value) {
+        let val = self.stack.swap_remove(ops.value_at);
+        let index = self.stack.pop().unwrap_or(Value::NIL);
+        (val, index)
     }
 
     /// Whether a sigilless alias record on the name (ADR-14632 §2.1,

@@ -12,6 +12,7 @@
 //! line of an offset by binary search (ADR-10723 §4; `rakuast::unit_source`).
 
 use super::super::{Handler, MethodRow, Named, RowFlags};
+pub(super) use super::rakuast_external_value::external_value;
 use super::rakuast_fileline::{fileline, original_file};
 use super::rakuast_origin_text::origin_str;
 use crate::rakuast::{RakuAstFieldValue, RakuAstNode};
@@ -238,52 +239,6 @@ fn origin_position(target: &Value, args: &[Value]) -> Option<Result<Value, Runti
         return None;
     };
     attributes.as_map().get("from").cloned().map(Ok)
-}
-
-/// `compile-time-value` of a core declaration stub: the core routine named by
-/// its `lexical-name` (`&say`), or the type object of a core type.
-// Cost: O(1) plus the interpreter's lookup of the name.
-pub(super) fn external_value(
-    interp: &mut Interpreter,
-    target: &Value,
-    _args: &[Value],
-    _named: Named<'_>,
-) -> Option<Result<Value, RuntimeError>> {
-    // An `Import` a module built itself (`Declaration::Import.new(:lexical-name,
-    // :compile-time-value)`, CompUnit::Util) holds its value.
-    if let Some(value) =
-        super::rakuast_compile_state::built_import_field(target, "compile-time-value")
-    {
-        return Some(Ok(value));
-    }
-    let ValueView::Instance { attributes, .. } = target.view() else {
-        return None;
-    };
-    let name = attributes
-        .as_map()
-        .get("lexical-name")
-        .map(|n| n.to_string_value())?;
-    if let Some(routine) = name.strip_prefix('&') {
-        let found = interp.resolve_code_var(routine);
-        if !matches!(found.view(), ValueView::Sub(_))
-            // The analysis runs in a module's scope, the import in its caller's.
-            && let Some(imported) =
-                interp.unit_import_routine(crate::runtime::main_unit(), routine)
-        {
-            return Some(Ok(imported));
-        }
-        return Some(Ok(found));
-    }
-    // A core type is its type object; anything else is a constant of the setting
-    // (`True`, `Inf`), read by evaluating its name.
-    if crate::core_type_names::contains(&name) {
-        return Some(Ok(Value::package(Symbol::intern(&name))));
-    }
-    // A term bound in the asking scope, a `sub EXPORT`'s import included.
-    if let Some(term) = interp.compile_time_term(&name) {
-        return Some(Ok(term));
-    }
-    Some(interp.eval_code_string(&name))
 }
 
 /// `compile-time-value` of a `RakuAST::Method` declared in a package of the

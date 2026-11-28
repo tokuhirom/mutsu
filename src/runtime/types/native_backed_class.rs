@@ -105,6 +105,9 @@ impl Interpreter {
         if method.starts_with('!')
             || crate::symbol::Symbol::lookup(method).is_some_and(crate::qualified::is_qualified)
             || Self::is_type_identity_method(method)
+            // A lazy Match has no backing scalar, and viewing it would force
+            // its materialization.
+            || target.is_lazy_match_value()
         {
             return None;
         }
