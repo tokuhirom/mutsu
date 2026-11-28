@@ -28,6 +28,8 @@ pub(super) fn clty(k: K) -> types::Type {
         K::Arr(_) => types::I64,
         // The row index a grid's first subscript applied.
         K::Row(_) => types::I64,
+        // A placeholder word, and a `"prefix$i"` key's Int.
+        K::StrConst(_) | K::IntKey(_) => types::I64,
     }
 }
 
