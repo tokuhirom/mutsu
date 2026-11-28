@@ -34,18 +34,31 @@ grammar JsonLike {
     token utf16_codepoint { <.xdigit>**4 }
 }
 
-my $doc = q:to/END/.chomp;
-{"name":"bench","version":"1.0.3","enabled":true,"retries":null,
- "message":"line one\nline two\ttabbed A done",
- "limits":{"cpu":4,"mem":2048,"burst":-1.5e2},
- "tags":["a","b","c"],
- "matrix":[[1,2],[3,4]]}
-END
+sub workload() {
+    my $doc = q:to/END/.chomp;
+    {"name":"bench","version":"1.0.3","enabled":true,"retries":null,
+     "message":"line one\nline two\ttabbed A done",
+     "limits":{"cpu":4,"mem":2048,"burst":-1.5e2},
+     "tags":["a","b","c"],
+     "matrix":[[1,2],[3,4]]}
+    END
 
-my $ok = 0;
-for ^3 {
-    my $m = JsonLike.parse($doc);
-    die "parse failed" unless $m;
-    $ok++ if $m<value><object><pairlist><pair>[0]<value><string><str>[0].Str eq 'bench';
+    my $ok = 0;
+    for ^3 {
+        my $m = JsonLike.parse($doc);
+        die "parse failed" unless $m;
+        $ok++ if $m<value><object><pairlist><pair>[0]<value><string><str>[0].Str eq 'bench';
+    }
+    "grammar-parse: $ok/3 ok";
 }
-say "grammar-parse: $ok/3 ok";
+
+# Warm timed section (convention: benchmarks/bench-regex-match.raku, docs/benchmarks.md):
+# the workload runs twice untimed and a third time timed, and that third run is printed
+# as `bench-section-seconds:`, so scripts/bench-ci.sh records a `@section` series free of
+# interpreter startup. Under scripts/bench-det.sh (BENCH_DET=1) it runs once.
+my $warm = %*ENV<BENCH_DET> ?? 0 !! 2;
+workload() for ^$warm;
+my $t0 = now;
+my $result = workload();
+say "bench-section-seconds: {now - $t0}";
+say $result;

@@ -10,14 +10,27 @@
 # class of bug rather than only the flat `k$_: v$_` micro-case in the ticket.
 use YAMLish;
 
-my $ROWS = 3;
-my $row = '      16G         05C        ';
-my $section = ("  - '" ~ $row ~ "'\n") x $ROWS;
+sub workload() {
+    my $ROWS = 3;
+    my $row = '      16G         05C        ';
+    my $section = ("  - '" ~ $row ~ "'\n") x $ROWS;
 
-my $text = "---\n"
-    ~ (1..2).map({ "section$_:\n" ~ $section }).join
-    ~ "...\n";
+    my $text = "---\n"
+        ~ (1..2).map({ "section$_:\n" ~ $section }).join
+        ~ "...\n";
 
-my $doc = load-yaml($text);
-die "parse failed" unless $doc<section1>.elems == $ROWS;
-say "yaml-parse: {$doc.elems} sections, {$doc<section1>.elems} rows each";
+    my $doc = load-yaml($text);
+    die "parse failed" unless $doc<section1>.elems == $ROWS;
+    "yaml-parse: {$doc.elems} sections, {$doc<section1>.elems} rows each";
+}
+
+# Warm timed section (convention: benchmarks/bench-regex-match.raku, docs/benchmarks.md):
+# the workload runs twice untimed and a third time timed, and that third run is printed
+# as `bench-section-seconds:`, so scripts/bench-ci.sh records a `@section` series free of
+# interpreter startup. Under scripts/bench-det.sh (BENCH_DET=1) it runs once.
+my $warm = %*ENV<BENCH_DET> ?? 0 !! 2;
+workload() for ^$warm;
+my $t0 = now;
+my $result = workload();
+say "bench-section-seconds: {now - $t0}";
+say $result;

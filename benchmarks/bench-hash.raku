@@ -1,26 +1,39 @@
 # Hash operations - insert, lookup, delete
-my $checksum = 0;
+sub workload() {
+    my $checksum = 0;
 
-# Insert
-my %h;
-for 1..10000 -> $i {
-    %h{"key-$i"} = $i;
+    # Insert
+    my %h;
+    for 1..10000 -> $i {
+        %h{"key-$i"} = $i;
+    }
+    $checksum += %h.elems;
+
+    # Lookup
+    for 1..10000 -> $i {
+        $checksum += %h{"key-$i"};
+    }
+
+    # Keys and values
+    $checksum += %h.keys.elems;
+    $checksum += %h.values.elems;
+
+    # Delete
+    for 1..5000 -> $i {
+        %h{"key-$i"}:delete;
+    }
+    $checksum += %h.elems;
+
+    "checksum = $checksum";
 }
-$checksum += %h.elems;
 
-# Lookup
-for 1..10000 -> $i {
-    $checksum += %h{"key-$i"};
-}
-
-# Keys and values
-$checksum += %h.keys.elems;
-$checksum += %h.values.elems;
-
-# Delete
-for 1..5000 -> $i {
-    %h{"key-$i"}:delete;
-}
-$checksum += %h.elems;
-
-say "checksum = $checksum";
+# Warm timed section (convention: benchmarks/bench-regex-match.raku, docs/benchmarks.md):
+# the workload runs twice untimed and a third time timed, and that third run is printed
+# as `bench-section-seconds:`, so scripts/bench-ci.sh records a `@section` series free of
+# interpreter startup. Under scripts/bench-det.sh (BENCH_DET=1) it runs once.
+my $warm = %*ENV<BENCH_DET> ?? 0 !! 2;
+workload() for ^$warm;
+my $t0 = now;
+my $result = workload();
+say "bench-section-seconds: {now - $t0}";
+say $result;

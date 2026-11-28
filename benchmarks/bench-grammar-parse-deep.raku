@@ -35,11 +35,24 @@ grammar JsonLike {
     token utf16_codepoint { <.xdigit>**4 }
 }
 
-my $PAIRS = 5;
-my $ARR   = 4;
-my $inner = '[' ~ (1..$ARR).map({ "[$_,$_]" }).join(',') ~ ']';
-my $doc   = '{' ~ (1..$PAIRS).map({ "\"k$_\":$inner" }).join(',') ~ '}';
+sub workload() {
+    my $PAIRS = 5;
+    my $ARR   = 4;
+    my $inner = '[' ~ (1..$ARR).map({ "[$_,$_]" }).join(',') ~ ']';
+    my $doc   = '{' ~ (1..$PAIRS).map({ "\"k$_\":$inner" }).join(',') ~ '}';
 
-my $m = JsonLike.parse($doc);
-die "parse failed" unless $m;
-say "grammar-parse-deep: ok (doc {$doc.chars} chars, matched {$m.chars})";
+    my $m = JsonLike.parse($doc);
+    die "parse failed" unless $m;
+    "grammar-parse-deep: ok (doc {$doc.chars} chars, matched {$m.chars})";
+}
+
+# Warm timed section (convention: benchmarks/bench-regex-match.raku, docs/benchmarks.md):
+# the workload runs twice untimed and a third time timed, and that third run is printed
+# as `bench-section-seconds:`, so scripts/bench-ci.sh records a `@section` series free of
+# interpreter startup. Under scripts/bench-det.sh (BENCH_DET=1) it runs once.
+my $warm = %*ENV<BENCH_DET> ?? 0 !! 2;
+workload() for ^$warm;
+my $t0 = now;
+my $result = workload();
+say "bench-section-seconds: {now - $t0}";
+say $result;

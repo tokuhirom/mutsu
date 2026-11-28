@@ -44,42 +44,49 @@
 #   mutsu would have loaded anyway. The mutsu series stays comparable across
 #   this change; only the raku column goes from NA to a real measurement.
 #
-# Read that ratio for what it is: WHOLE-SCRIPT time, including rakudo's startup
-# floor, which is ~0.15s on the bench runner and larger than the JSON work it
-# does here. That is true of every row in this suite -- the raku column across
-# the whole history sits in 0.14-0.30s -- and is the documented design, since
-# the ratio exists to normalize runner speed rather than to isolate one
-# operation. So this row's ratio will read near 1, and it is NOT the ~63x/~126x
-# of #8289, which was measured on the encode/decode calls alone with startup
-# excluded. What it does do is move when dispatch cost moves, which is the
-# point; for the isolated per-operation figure, time the calls directly --
-# which is what bench-json-fast-spdx does, as its `@section` rows (#8673).
+# The whole-script row's ratio includes rakudo's startup floor (~0.15s on the bench
+# runner, larger than the JSON work here), so it reads near 1; the `@section` row,
+# which times only the encode/decode calls after two warm-up runs, is the headline
+# (docs/benchmarks.md) and is the number comparable to the ~63x/~126x of #8289.
 # ----------------------------------------------------------------------------
 use lib $?FILE.IO.parent(2).add('modules/JSON-Fast/lib').Str;
 use JSON::Fast;
 
-my %doc =
-    name => 'Some::Distribution', version => '0.4.2', auth => 'zef:someone',
-    license => 'Artistic-2.0', authors => ['A. Author', 'B. Author'],
-    depends => (^25).map({ "Dep::Number$_" }).Array,
-    provides => (^40).map({ "Mod::N$_" => "lib/Mod/N$_.rakumod" }).Hash,
-    tags => <json parser fast>.Array,
-    support => { source => 'https://example.invalid/repo.git' };
+sub workload() {
+    my %doc =
+        name => 'Some::Distribution', version => '0.4.2', auth => 'zef:someone',
+        license => 'Artistic-2.0', authors => ['A. Author', 'B. Author'],
+        depends => (^25).map({ "Dep::Number$_" }).Array,
+        provides => (^40).map({ "Mod::N$_" => "lib/Mod/N$_.rakumod" }).Hash,
+        tags => <json parser fast>.Array,
+        support => { source => 'https://example.invalid/repo.git' };
 
-my $text = to-json(%doc);
-for ^6 { to-json(%doc) }
+    my $text = to-json(%doc);
+    for ^6 { to-json(%doc) }
 
-my $round-trip = from-json($text);
-die 'META6 round-trip lost keys' unless $round-trip.elems == %doc.elems;
-for ^3 { from-json($text) }
+    my $round-trip = from-json($text);
+    die 'META6 round-trip lost keys' unless $round-trip.elems == %doc.elems;
+    for ^3 { from-json($text) }
 
-# The complexity guard. 8,000 characters cost 0.305s per encode while the
-# scan was quadratic and 0.047s once it was linear, so a regression here is
-# loud rather than marginal.
-my %long = blob => ('x' x 8000);
-my $long-text = to-json(%long);
-die 'long-string round-trip lost the payload'
-    unless from-json($long-text)<blob>.chars == 8000;
-for ^2 { to-json(%long) }
+    # The complexity guard. 8,000 characters cost 0.305s per encode while the
+    # scan was quadratic and 0.047s once it was linear, so a regression here is
+    # loud rather than marginal.
+    my %long = blob => ('x' x 8000);
+    my $long-text = to-json(%long);
+    die 'long-string round-trip lost the payload'
+        unless from-json($long-text)<blob>.chars == 8000;
+    for ^2 { to-json(%long) }
 
-say "json-fast: {$text.chars} byte doc, {$long-text.chars} byte long-string doc";
+    "json-fast: {$text.chars} byte doc, {$long-text.chars} byte long-string doc";
+}
+
+# Warm timed section (convention: benchmarks/bench-regex-match.raku, docs/benchmarks.md):
+# the workload runs twice untimed and a third time timed, and that third run is printed
+# as `bench-section-seconds:`, so scripts/bench-ci.sh records a `@section` series free of
+# interpreter startup. Under scripts/bench-det.sh (BENCH_DET=1) it runs once.
+my $warm = %*ENV<BENCH_DET> ?? 0 !! 2;
+workload() for ^$warm;
+my $t0 = now;
+my $result = workload();
+say "bench-section-seconds: {now - $t0}";
+say $result;

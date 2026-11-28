@@ -164,7 +164,10 @@ def parse_det_rows(text):
 # Per-benchmark caveats, shown on the benchmark's card (and marked in the table)
 # only while the named metric is selected: {benchmark: {metric: html}}. The key
 # is the benchmark's base name -- `+jit` stripped, `@section` kept -- the same
-# name its card is titled with. Use it for a number that is measured correctly
+# name its card is titled with (a `foo@section` series is folded into the `foo`
+# card by `merge_sections`, so it has no key of its own). A note describes the
+# card's headline series: `string-concat`'s startup caveat is gone because its
+# headline is now the in-process section, which does not contain startup. Use it for a number that is measured correctly
 # but does not mean what the chart next to it suggests.
 #
 # Both rakupp notes were established on rakupp v5.0.1 (docs/rakupp-gap-survey.md)
@@ -202,9 +205,7 @@ _NOTE_NON_PIE = {"tag": "mostly startup; rakupp is non-PIE", "engine": False,
 BENCH_NOTES = {
     "bench-json-fast": {"ratiopp": _NOTE_NATIVE_JSON},
     "bench-json-fast-spdx": {"ratiopp": _NOTE_NATIVE_JSON},
-    "bench-json-fast-spdx@section": {"ratiopp": _NOTE_NATIVE_JSON},
     "bench-startup": {"ratiopp": _NOTE_NON_PIE},
-    "string-concat": {"ratiopp": _NOTE_NON_PIE},
 }
 
 # How many of a series' newest points the robust figures read. The bench CI
@@ -371,6 +372,58 @@ def losers(benches):
             "other": [n for _, n in sorted(other)]}
 
 
+SECTION = "@section"
+
+
+def merge_sections(benches):
+    """Fold every `foo@section` series into the `foo` entry as its headline.
+
+    Whole-script rows charge each interpreter its startup (~4-8 ms for mutsu,
+    ~120-170 ms for rakudo), so a light benchmark's whole-script ratio sits near
+    1 however slow the operation is. The `@section` series times only the
+    workload, in process, after warm-up (docs/benchmarks.md), so it is the
+    headline: the card's chart, big number, ratios, red/win colouring and the
+    table's main columns all read it. The whole-script series stays as a
+    secondary one (`whole`, `wholeStanding`). A benchmark with no section
+    series (`bench-startup`, which measures startup on purpose, and every
+    benchmark before its first section row is recorded) keeps its whole-script
+    series as the headline.
+
+    Most benchmarks' section series starts at one commit, so the entry carries
+    `sectionFrom` (the commit index of its first section point) and the page
+    marks it: before it there is no section point, not a drop.
+
+    The deterministic instruction/allocation slots exist only for whole-script
+    rows, so they are carried over onto the headline points by commit."""
+    entries = {}
+    for name, lanes in benches.items():
+        if not name.endswith(SECTION):
+            entries[name] = {"headline": "whole", "base": lanes["base"], "jit": lanes["jit"]}
+    for name, lanes in benches.items():
+        if not name.endswith(SECTION):
+            continue
+        base_name = name[: -len(SECTION)]
+        whole = entries.get(base_name) or {"headline": "whole", "base": {}, "jit": {}}
+        merged = {"headline": "section", "sectionFrom": None,
+                  "whole": {"base": whole["base"], "jit": whole["jit"]}}
+        for lane in ("base", "jit"):
+            sec = lanes[lane]
+            if sec and (merged["sectionFrom"] is None or min(sec) < merged["sectionFrom"]):
+                merged["sectionFrom"] = min(sec)
+            pts = {}
+            for i in set(sec) | set(whole[lane]):
+                w = whole[lane].get(i)
+                sp = sec.get(i)
+                instr, allocs = (w[3], w[4]) if w else (None, None)
+                if sp:
+                    pts[i] = [i, sp[1], sp[2], instr, allocs, sp[5]]
+                else:
+                    pts[i] = [i, None, None, instr, allocs, None]
+            merged[lane] = pts
+        entries[base_name] = merged
+    return entries
+
+
 def build_model(rows, det_rows=(), tracking=None):
     # Chronological commit order: each distinct commit keyed by first-seen date.
     # Both series are appended by the same job on the same commit, so they share
@@ -427,17 +480,31 @@ def build_model(rows, det_rows=(), tracking=None):
 
     changes = ref_changes(rows, idx)
     out = []
-    for name in sorted(benches):
-        base = [benches[name]["base"][k] for k in sorted(benches[name]["base"])]
-        jit = [benches[name]["jit"][k] for k in sorted(benches[name]["jit"])]
-        entry = {"name": name, "base": base, "jit": jit}
+    entries = merge_sections(benches)
+    for name in sorted(entries):
+        e = entries[name]
+        entry = {"name": name,
+                 "base": [e["base"][k] for k in sorted(e["base"])],
+                 "jit": [e["jit"][k] for k in sorted(e["jit"])],
+                 "headline": e["headline"]}
+        if e["headline"] == "section":
+            entry["sectionFrom"] = e["sectionFrom"]
+            whole = {"base": [e["whole"]["base"][k] for k in sorted(e["whole"]["base"])],
+                     "jit": [e["whole"]["jit"][k] for k in sorted(e["whole"]["jit"])]}
+            entry["whole"] = whole
+            wst = standing(whole, len(order), changes)
+            if wst:
+                entry["wholeStanding"] = wst
         if name in BENCH_NOTES:
             entry["notes"] = BENCH_NOTES[name]
         st = standing(entry, len(order), changes)
         if st:
             entry["standing"] = st
-        if tracking and name in tracking:
-            entry["tracking"] = tracking[name]
+        if tracking:
+            sec_key = name + SECTION
+            key = sec_key if e["headline"] == "section" and sec_key in tracking else name
+            if key in tracking:
+                entry["tracking"] = tracking[key]
         out.append(entry)
     return {
         "commits": commit_meta,
@@ -573,6 +640,13 @@ tbody tr:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
 .refchange { stroke: var(--jit); stroke-width: 1; stroke-dasharray: 2 2; opacity: .85; }
 .swatch.refmark { width: 0; height: 12px; border-left: 1px dashed var(--jit); border-radius: 0; }
 .legend .hidden { display: none; }
+/* The whole-script series behind a section headline, and the commit where the
+   section series starts (it is a new series, not a step in the old one). */
+.serie.whole { stroke-dasharray: 3 2; opacity: .45; stroke-width: 1.2; }
+.sectionfrom { stroke: var(--good); stroke-width: 1; stroke-dasharray: 1 3; opacity: .9; }
+.swatch.secmark { width: 0; height: 12px; border-left: 1px dotted var(--good); border-radius: 0; }
+.swatch.whole { background: repeating-linear-gradient(90deg, var(--ink) 0 3px, transparent 3px 5px); opacity: .5; }
+.headline-tag { font-size: 10px; color: var(--muted); font-weight: 400; margin-left: 8px; }
 .since { font-size: 10px; color: var(--muted); font-weight: 400; }
 </style>
 __CHROME_NAV__
@@ -611,6 +685,8 @@ __CHROME_NAV__
     <div class="legend">
       <span><i class="swatch" style="background:var(--base)"></i>interpreter</span>
       <span><i class="swatch" style="background:var(--jit)"></i>+jit</span>
+      <span id="legendWhole" class="hidden"><i class="swatch whole"></i>whole script (ratio charts)</span>
+      <span id="legendSec" class="hidden"><i class="swatch secmark"></i>section series starts</span>
       <span id="legendRef" class="hidden"><i class="swatch refmark"></i>reference version changed</span>
     </div>
   </div>
@@ -735,8 +811,16 @@ function chart(b) {
   const sx = (i) => PADL + (i - x0) / span * (W - PADL - PADR);
   const lanes = [['base', b.base], ['jit', b.jit]]
     .map(([k, pts]) => [k, pts.filter(p => p[0] >= x0 && defined(p))]);
+  // The whole-script series of a card whose headline is the in-process section,
+  // drawn dashed behind it on the ratio metrics only: seconds and ratios of the
+  // two are different quantities, but two ratios against the same reference
+  // share one axis, and the gap between them is the startup the section drops.
+  const wholeLanes = (b.whole && isRatio())
+    ? [['base', b.whole.base], ['jit', b.whole.jit]]
+        .map(([k, pts]) => [k, pts.filter(p => p[0] >= x0 && defined(p))])
+    : [];
   let lo = Infinity, hi = -Infinity;
-  for (const [, pts] of lanes) for (const p of pts) {
+  for (const [, pts] of lanes.concat(wholeLanes)) for (const p of pts) {
     const v = yval(p); if (v < lo) lo = v; if (v > hi) hi = v;
   }
   if (isRatio()) { lo = Math.min(lo, 1); hi = Math.max(hi, 1); }
@@ -762,6 +846,17 @@ function chart(b) {
   }
   svg += `<text class="axis" x="${PADL}" y="${PADT - 2}">${fmt(hi)}${unit()}</text>`;
   svg += `<text class="axis" x="${PADL}" y="${H - 4}">${fmt(lo)}${unit()}</text>`;
+  for (const [k, pts] of wholeLanes) {
+    if (!pts.length) continue;
+    const d = pts.map((p, i) => `${i ? 'L' : 'M'}${sx(p[0]).toFixed(1)} ${sy(yval(p)).toFixed(1)}`).join(' ');
+    svg += `<path class="serie whole ${k}" d="${d}"/>`;
+  }
+  // Where the section series starts: before this line the card has no section
+  // point, which is a series that did not exist yet, not a drop.
+  if (b.sectionFrom != null && b.sectionFrom > x0) {
+    const x = sx(b.sectionFrom - 0.5).toFixed(1);
+    svg += `<line class="sectionfrom" x1="${x}" x2="${x}" y1="${PADT - 4}" y2="${H - PADB}"/>`;
+  }
   for (const [k, pts] of lanes) {
     if (!pts.length) continue;
     const d = pts.map((p, i) => `${i ? 'L' : 'M'}${sx(p[0]).toFixed(1)} ${sy(yval(p)).toFixed(1)}`).join(' ');
@@ -813,6 +908,26 @@ function card(b) {
     });
     standing.append(links);
   }
+  // The whole-script ratios, secondary: they include both interpreters' startup.
+  const wst = b.wholeStanding;
+  if (wst) {
+    const parts = [];
+    for (const [k, ref] of REFS) {
+      if (!wst[k]) continue;
+      parts.push(el('span', { title: ratioTitle(wst[k]) }, `${ref} `,
+        el('b', { class: 'mono' }, wst[k].med.toFixed(2) + '×')));
+    }
+    if (parts.length) {
+      standing.append(el('span', { class: 'wholeline',
+        title: 'whole script, including interpreter startup (secondary series)' },
+        'whole script: ', ...parts.flatMap((p, i) => i ? [' · ', p] : [p])));
+    }
+  }
+  if (b.sectionFrom != null && commits[b.sectionFrom]) {
+    standing.append(el('span', { class: 'since',
+      title: 'the in-process section series is a new series from this commit; earlier commits have only the whole-script series' },
+      `section series since ${commits[b.sectionFrom].sha} (${commits[b.sectionFrom].date.slice(0, 10)})`));
+  }
   const note = cardNoteFor(b);
   let noteEl = null;
   if (note) {
@@ -830,7 +945,12 @@ function card(b) {
     line.append(t);
   }
   return el('div', { class: 'bench-card', 'data-name': b.name },
-    el('div', { class: 'head' }, el('h2', {}, b.name)), readout,
+    el('div', { class: 'head' }, el('h2', {}, b.name,
+      el('span', { class: 'headline-tag',
+        title: b.headline === 'section'
+          ? 'headline = in-process warm section (startup excluded)'
+          : 'headline = whole script (this benchmark has no section series)' },
+        b.headline === 'section' ? 'section' : b.name === 'bench-startup' ? 'startup' : 'whole script'))), readout,
     standing.childNodes.length ? standing : null, noteEl, svg, el('div', { class: 'tip' }));
 }
 
@@ -839,6 +959,10 @@ function renderCharts() {
   grid.replaceChildren(...benches.map(card));
   benches.forEach((b, i) => wireHover(grid.children[i], b));
   document.getElementById('legendRef').classList.toggle('hidden', !refChanges().length);
+  document.getElementById('legendWhole').classList.toggle('hidden',
+    !(isRatio() && benches.some(b => b.whole)));
+  document.getElementById('legendSec').classList.toggle('hidden',
+    !benches.some(b => b.sectionFrom != null && b.sectionFrom > windowStart()));
 }
 
 function wireHover(card, b) {
@@ -882,7 +1006,8 @@ function renderTable() {
     const st = b.standing || {};
     return { b, name: b.name, base: vb.length ? median(vb) : null,
              jit: vj.length ? median(vj) : null, note: cardNoteFor(b),
-             rk: st.ratio ? st.ratio.med : null, pp: st.ratiopp ? st.ratiopp.med : null };
+             rk: st.ratio ? st.ratio.med : null, pp: st.ratiopp ? st.ratiopp.med : null,
+             wrk: b.wholeStanding && b.wholeStanding.ratio ? b.wholeStanding.ratio.med : null };
   });
   rows.sort((a, x) => {
     const av = a[sortKey], xv = x[sortKey];
@@ -890,7 +1015,7 @@ function renderTable() {
     return (av > xv ? 1 : av < xv ? -1 : 0) * sortDir;
   });
   const th = (k, label) => `<th data-k="${k}">${label}${sortKey===k?(sortDir>0?' ↑':' ↓'):''}</th>`;
-  let h = `<table><thead><tr>${th('name','benchmark')}${th('base','interp '+unit())}${th('jit','+jit '+unit())}${th('rk','vs rakudo')}${th('pp','vs rakupp')}</tr></thead><tbody></tbody></table>`;
+  let h = `<table><thead><tr>${th('name','benchmark')}${th('base','interp '+unit())}${th('jit','+jit '+unit())}${th('rk','vs rakudo')}${th('pp','vs rakupp')}${th('wrk','whole script vs rakudo')}</tr></thead><tbody></tbody></table>`;
   wrap.innerHTML = h;
   const body = wrap.querySelector('tbody');
   for (const r of rows) {
@@ -901,7 +1026,9 @@ function renderTable() {
       el('td', {}, r.name, mark),
       el('td', { class: 'mono' }, r.base == null ? '—' : fmt(r.base)),
       el('td', { class: 'mono' }, r.jit == null ? '—' : fmt(r.jit)),
-      ratioCell(r.b, 'ratio'), ratioCell(r.b, 'ratiopp')));
+      ratioCell(r.b, 'ratio'), ratioCell(r.b, 'ratiopp'),
+      el('td', { class: 'mono', title: 'secondary: the whole-script ratio, including interpreter startup' },
+        r.wrk == null ? '—' : r.wrk.toFixed(2) + '×')));
   }
   wrap.querySelectorAll('th').forEach(t => t.onclick = () => {
     const k = t.dataset.k; if (k === sortKey) sortDir *= -1; else { sortKey = k; sortDir = k === 'name' ? 1 : -1; }
@@ -914,7 +1041,8 @@ function render() {
   document.getElementById('grid').classList.toggle('hidden', view !== 'charts');
   document.getElementById('tableWrap').classList.toggle('hidden', view !== 'table');
   if (view === 'charts') renderCharts(); else renderTable();
-  if (view !== 'charts') document.getElementById('legendRef').classList.add('hidden');
+  if (view !== 'charts') for (const id of ['legendRef', 'legendWhole', 'legendSec'])
+    document.getElementById(id).classList.add('hidden');
 }
 
 /* ---- URL state ----------------------------------------------------------
@@ -940,7 +1068,7 @@ const VALID = {
   view: (v) => v === 'charts' || v === 'table',
   y: (v) => v === 'fit' || v === 'zero',
   // Keep in step with the table's `th(...)` keys; asserted like the metrics.
-  sort: (v) => v === 'name' || v === 'base' || v === 'jit' || v === 'rk' || v === 'pp',
+  sort: (v) => v === 'name' || v === 'base' || v === 'jit' || v === 'rk' || v === 'pp' || v === 'wrk',
   dir: (v) => v === 'asc' || v === 'desc',
 };
 
@@ -1063,6 +1191,13 @@ document.getElementById('meta').textContent =
   if (!isNaN(at)) updated.title = at.toLocaleString();
 }
 document.getElementById('foot').innerHTML =
+  `A card's <b>headline</b> is the benchmark's in-process, warm <b>section</b> time ` +
+  `(<span class="mono">bench-section-seconds:</span>, rakudo's own in-process time as the ` +
+  `ratio's denominator), which excludes interpreter startup; the <b>whole script</b> ` +
+  `series (startup included, so a light benchmark reads near 1&times; however slow its ` +
+  `operation is) is the secondary line, dashed on the ratio charts and in the last table ` +
+  `column. <b>bench-startup</b> is the startup metric itself. A section series is new ` +
+  `from the commit its dotted green line marks, so nothing before it is a drop. ` +
   `Each chart has an independent y-axis (small multiples), fitted to the data by default; ` +
   `<b>Y axis: from 0</b> anchors every axis at zero instead. Values are the median of 7 runs; ` +
   `<b>ratio vs rakudo</b> is mutsu ÷ Rakudo on the same runner (below 1× = faster than Rakudo). ` +
@@ -1180,7 +1315,8 @@ def report_markdown(model):
     current = [ch[-1][1] for ch in (model["refs"].get(k) for k, _ in RATIO_SLOTS) if ch]
     refs = f" Measured against {' and '.join(current)}." if current else ""
     lines = [f"Median of the last {model['recent']} commits (none from before the "
-             f"reference's latest version change), +jit series.{refs}", "",
+             f"reference's latest version change), +jit series, in-process section "
+             f"time wherever a benchmark has one.{refs}", "",
              "| # | benchmark | vs rakudo | vs rakupp | tracked by |",
              "|---:|---|---:|---:|---|"]
     names = model["losers"]["ranked"] + model["losers"]["other"]

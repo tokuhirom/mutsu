@@ -12,44 +12,57 @@
 # benchmarks here, and the worker count is fixed rather than derived from the
 # runner: read the trend across commits, not a single row.
 
-my $checksum = 0;
+sub workload() {
+    my $checksum = 0;
 
-# Read-hot: four workers reading one shared cell. Every read of @alias and
-# $sref goes through that cell, so this section is dominated by the read-side
-# guard once a worker has been spawned.
-my @data = ^256;
-my @alias := @data;
-my $seed = 7;
-my $sref := $seed;
+    # Read-hot: four workers reading one shared cell. Every read of @alias and
+    # $sref goes through that cell, so this section is dominated by the read-side
+    # guard once a worker has been spawned.
+    my @data = ^256;
+    my @alias := @data;
+    my $seed = 7;
+    my $sref := $seed;
 
-my @readers;
-for ^4 {
-    @readers.push: start {
-        my $s = 0;
-        for ^150000 -> $i {
-            $s += @alias[$i +& 255] + $sref;
+    my @readers;
+    for ^4 {
+        @readers.push: start {
+            my $s = 0;
+            for ^150000 -> $i {
+                $s += @alias[$i +& 255] + $sref;
+            }
+            $s
         }
-        $s
     }
-}
-$checksum += [+] await @readers;
+    $checksum += [+] await @readers;
 
-# Write side: disjoint slots of one aliased container. Each worker owns 16
-# indices and writes them repeatedly, so the surviving values - and hence the
-# checksum - do not depend on how the workers interleave.
-my @backing = 0 xx 64;
-my @slots := @backing;
+    # Write side: disjoint slots of one aliased container. Each worker owns 16
+    # indices and writes them repeatedly, so the surviving values - and hence the
+    # checksum - do not depend on how the workers interleave.
+    my @backing = 0 xx 64;
+    my @slots := @backing;
 
-my @writers;
-for ^4 -> $t {
-    @writers.push: start {
-        for ^20000 -> $i {
-            @slots[$t * 16 + ($i +& 15)] = $t * 1000 + $i;
+    my @writers;
+    for ^4 -> $t {
+        @writers.push: start {
+            for ^20000 -> $i {
+                @slots[$t * 16 + ($i +& 15)] = $t * 1000 + $i;
+            }
+            1
         }
-        1
     }
-}
-await @writers;
-$checksum += [+] @slots;
+    await @writers;
+    $checksum += [+] @slots;
 
-say "checksum = $checksum";
+    "checksum = $checksum";
+}
+
+# Warm timed section (convention: benchmarks/bench-regex-match.raku, docs/benchmarks.md):
+# the workload runs twice untimed and a third time timed, and that third run is printed
+# as `bench-section-seconds:`, so scripts/bench-ci.sh records a `@section` series free of
+# interpreter startup. Under scripts/bench-det.sh (BENCH_DET=1) it runs once.
+my $warm = %*ENV<BENCH_DET> ?? 0 !! 2;
+workload() for ^$warm;
+my $t0 = now;
+my $result = workload();
+say "bench-section-seconds: {now - $t0}";
+say $result;
