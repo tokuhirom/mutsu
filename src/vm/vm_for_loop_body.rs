@@ -224,6 +224,28 @@ impl Interpreter {
             Some(end) => &items[..end],
             None => items,
         };
+        // A plain loop over plain `Int`s with its own topic slot runs as a
+        // loop kernel before anything is bound; a bail resumes here at the
+        // iteration it could not finish (`vm_for_loop_list_kernel`).
+        #[cfg(feature = "jit")]
+        let resume_index = if resume_index == 0 && live.is_none() && stream.is_none() {
+            match self.try_list_loop_kernel(
+                code,
+                spec,
+                items,
+                body_start,
+                loop_end,
+                compiled_fns,
+            )? {
+                Some(done) if done >= items.len() && iteration_end_at.is_none() => {
+                    return Ok(true);
+                }
+                Some(done) => done,
+                None => 0,
+            }
+        } else {
+            resume_index
+        };
         // `true`  = the loop ran every item to completion;
         // `false` = it exited early via `last` or `return` (the live-array
         // continuation in `exec_for_loop_op` must NOT pick up newly-pushed tail
