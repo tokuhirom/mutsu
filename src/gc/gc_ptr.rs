@@ -152,6 +152,18 @@ pub(crate) trait Trace: Send + Sync {
     fn currently_acyclic(&self) -> bool {
         false
     }
+
+    /// [`currently_acyclic`](Trace::currently_acyclic) as the collector asks
+    /// it of a drained candidate, before trial deletion: a candidate with no
+    /// outgoing edge cannot be on a cycle and is dropped from the scan (the
+    /// same soundness argument; a later edge is decided again at the node's
+    /// next survivor-drop). A node whose check is too costly to run on every
+    /// drop of a reused handle answers it only here and leaves
+    /// `currently_acyclic` at its conservative default. Defaults to
+    /// `currently_acyclic`.
+    fn acyclic_at_collect(&self) -> bool {
+        self.currently_acyclic()
+    }
 }
 
 /// Bacon-Rajan node header stored alongside the value inside a [`GcBox`].
@@ -1047,6 +1059,10 @@ impl GcBox<dyn Trace> {
     }
     pub(crate) fn gc_set_color(&self, c: Color) {
         self.header.color.store(c as u8, Ordering::Relaxed);
+    }
+    /// See [`Trace::acyclic_at_collect`].
+    pub(crate) fn gc_acyclic_at_collect(&self) -> bool {
+        self.val().acyclic_at_collect()
     }
     pub(crate) fn gc_strong(&self) -> usize {
         self.header.strong.load(Ordering::Relaxed)

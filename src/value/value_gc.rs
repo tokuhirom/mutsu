@@ -458,11 +458,13 @@ impl Trace for InstanceAttrs {
     /// An object whose attributes are all strings, numbers and other
     /// edgeless values cannot be on a cycle. A loop that builds such objects
     /// (`Dog.new(name => "Rex", legs => 4)`) survivor-drops each one at least
-    /// once (the constructor's and the call site's copies), and buffering
-    /// every one armed a cycle collect every few thousand constructions that
-    /// reclaimed nothing (#19293).
+    /// once, and each collect then trial-deleted thousands of them for
+    /// nothing (#19293). Asked at collect time only: a reused instance is
+    /// survivor-dropped on every method call, where the already-buffered
+    /// one-load fast path must stay (asking at every drop made those calls
+    /// ~2k instructions dearer).
     // Cost: O(a), a = attributes.
-    fn currently_acyclic(&self) -> bool {
+    fn acyclic_at_collect(&self) -> bool {
         self.currently_edgeless()
     }
 }

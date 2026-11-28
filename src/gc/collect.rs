@@ -380,6 +380,21 @@ pub(crate) fn collect_cycles_at(reason: &str) -> CollectStats {
     // helper are gone — dead garbage no longer accumulates in the buffer).
     let (dead, suspects): (Vec<ErasedGc>, Vec<ErasedGc>) =
         drained.into_iter().partition(|n| n.gc_strong() == 0);
+    // A suspect with no outgoing edge right now cannot be on a cycle
+    // (`Trace::acyclic_at_collect`): leave it out of the scan. Its `buffered`
+    // flag is already clear, so its next survivor-drop offers it again.
+    let suspects: Vec<ErasedGc> = suspects
+        .into_iter()
+        .filter(|n| {
+            if n.gc_acyclic_at_collect() {
+                // No longer a buffered root: drop the `Purple` mark too.
+                n.gc_set_color(Color::Black);
+                false
+            } else {
+                true
+            }
+        })
+        .collect();
     let dead_count = dead.len();
     if log_mode() == LogMode::Trace {
         for node in &dead {
@@ -883,6 +898,67 @@ mod tests {
         drop(a);
         drop(b);
     }
+    /// A node that tells the collector it is acyclic while it has no child.
+    struct EdgeAwareNode {
+        children: Mutex<Vec<Gc<EdgeAwareNode>>>,
+    }
+
+    static EDGE_AWARE_DROPS: AtomicU64 = AtomicU64::new(0);
+
+    impl Trace for EdgeAwareNode {
+        fn trace(&self, visit: &mut dyn FnMut(&ErasedGc)) {
+            for c in self.children.lock().unwrap().iter() {
+                visit(&c.erased());
+            }
+        }
+        fn drop_gc_edges(&mut self) {
+            self.children.get_mut().unwrap().clear();
+        }
+        fn acyclic_at_collect(&self) -> bool {
+            self.children.lock().unwrap().is_empty()
+        }
+    }
+
+    impl Drop for EdgeAwareNode {
+        fn drop(&mut self) {
+            EDGE_AWARE_DROPS.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+
+    /// `Trace::acyclic_at_collect`: an edgeless candidate is left out of the
+    /// scan and unbuffered, and once it later closes a cycle and is offered
+    /// again, the cycle is still reclaimed.
+    #[test]
+    fn edgeless_candidate_is_skipped_then_its_later_cycle_reclaimed() {
+        let _g = lock();
+        drain_candidates();
+        let new = || {
+            Gc::new(EdgeAwareNode {
+                children: Mutex::new(Vec::new()),
+            })
+        };
+        let before = EDGE_AWARE_DROPS.load(Ordering::Relaxed);
+        let a = new();
+        let b = new();
+        a.buffer_as_candidate();
+        b.buffer_as_candidate();
+        let _ = collect_cycles();
+        assert_eq!(EDGE_AWARE_DROPS.load(Ordering::Relaxed) - before, 0);
+        // Left out of the scan and unbuffered: a re-offer is a fresh push.
+        a.children.lock().unwrap().push(b.clone());
+        b.children.lock().unwrap().push(a.clone());
+        a.buffer_as_candidate();
+        b.buffer_as_candidate();
+        drop(a);
+        drop(b);
+        let _ = collect_cycles();
+        assert_eq!(
+            EDGE_AWARE_DROPS.load(Ordering::Relaxed) - before,
+            2,
+            "the cycle closed after the edgeless scan is reclaimed"
+        );
+    }
+
     /// A leaf the wrapper test below keeps alive through an external handle.
     struct WrapLeaf;
     impl Trace for WrapLeaf {
