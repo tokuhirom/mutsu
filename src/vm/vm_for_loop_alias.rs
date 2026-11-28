@@ -284,9 +284,7 @@ impl Interpreter {
         // A leaf read of the live node; see `for_element_alias`.
         let structure = crate::value::container_lock::ContainerStructGuard::acquire_for(None, &arr);
         let (len, first) = match arr.view() {
-            ValueView::Array(data, kind)
-                if Self::array_kind_is_aliasable(&data, kind) =>
-            {
+            ValueView::Array(data, kind) if Self::array_kind_is_aliasable(&data, kind) => {
                 (data.len(), data.items().first().cloned())
             }
             _ => return None,
