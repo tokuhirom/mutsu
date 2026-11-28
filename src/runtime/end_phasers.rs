@@ -339,9 +339,10 @@ impl Interpreter {
         let captured_env = self.env.clone();
         let package = self.current_package();
         let order = match self.control.module_end_reservation.as_mut() {
-            // A module whose `use` reserved its install position (#18183).
-            Some((seq, k)) if order_base == super::end_order::MODULE => {
+            // A `use` reserved this module's install position, including in EVAL.
+            Some((seq, k)) => {
                 let order = super::end_order::reserved_slot(*seq, *k);
+                let order = order_base + order;
                 *k += 1;
                 order
             }

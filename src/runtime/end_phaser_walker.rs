@@ -293,6 +293,12 @@ impl EndWalker<'_> {
 impl<'ast> Visit<'ast> for EndWalker<'_> {
     fn visit_stmt(&mut self, stmt: &'ast Stmt) {
         match stmt {
+            Stmt::Use { module, tags, .. }
+                if self.end_order == Some(super::super::end_order::RUNTIME)
+                    && !tags.iter().any(|tag| tag == "from") =>
+            {
+                self.interp.reserve_module_end_slot_name(module);
+            }
             Stmt::Phaser {
                 kind: PhaserKind::End,
                 body,
