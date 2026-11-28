@@ -6,7 +6,7 @@ use Test;
 # used to run its END after Test's instead of before it (#18183). Green's END,
 # which waits for its worker's tests, then ran after Test's plan check.
 
-plan 3;
+plan 4;
 
 # The lines a program prints from its ENDs and Test's plan check, in order.
 sub end-lines(Str $code) {
@@ -38,3 +38,10 @@ is end-lines(q:to/CODE/), 'main END|EndOrderLate END|# You planned 2 tests, but 
     END { say "main END" }
     CODE
     "the main unit's END runs first";
+
+is end-lines(q:to/CODE/), 'tree END|# You planned 2 tests, but ran 1',
+    use experimental :rakuast;
+    use MONKEY-SEE-NO-EVAL;
+    EVAL(q[use Test; plan 2; ok 1; END { say "tree END" }].AST);
+    CODE
+    "an AST EVAL unit's END precedes a module it used earlier";

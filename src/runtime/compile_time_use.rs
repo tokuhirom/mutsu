@@ -255,7 +255,13 @@ impl Interpreter {
         {
             return;
         }
-        let (bare, _) = Self::split_dist_selectors(request.module);
+        self.reserve_module_end_slot_name(request.module);
+    }
+
+    /// Give a module use its compile-time END position before its body loads.
+    // Cost: O(|module|).
+    pub(crate) fn reserve_module_end_slot_name(&mut self, module: &str) {
+        let (bare, _) = Self::split_dist_selectors(module);
         if self.module.world.loaded_modules.read().contains(bare)
             || self.control.reserved_module_end_slots.contains_key(bare)
         {
