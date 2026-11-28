@@ -66,6 +66,7 @@ pub(crate) mod regex_prefilter_scan;
 mod regex_prefilter_subrule;
 mod regex_qq_interp;
 pub(crate) mod regex_qq_token_scope;
+mod regex_arg_list_simple;
 mod regex_resolve;
 mod regex_silent_action;
 mod regex_span_finish;
