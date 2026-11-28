@@ -6,7 +6,7 @@
 # Values are rakudo's.
 use Test;
 
-plan 16;
+plan 19;
 
 grammar P {
     token TOP { <item>+ % ',' }
@@ -101,3 +101,16 @@ grammar B {
     regex s:sym<a> { 'a'+ }
 }
 is B.parse('129')<s>.Str, '12', 'a regex caller backtracks into the lone candidate';
+
+# `:i` candidates (the YAML schema shape): case-folded first characters.
+grammar S {
+    regex TOP { [ <element> || <plain> ] }
+    proto token element {*}
+    token element:sym<yes>  { [ :i y | yes | true | on ] <|w> }
+    token element:sym<null> { [ :i 'null' | '~' ] }
+    token element:sym<int>  { <[+-]>? \d+ <|w> }
+    token plain { .+ }
+}
+is S.parse('YES')<element>.Str, 'YES', 'an upper-case input picks the :i candidate';
+is S.parse('Null')<element>.Str, 'Null', 'a mixed-case input picks the :i candidate';
+is S.parse('value 1')<plain>.Str, 'value 1', 'no candidate starts: the plain fallback';
