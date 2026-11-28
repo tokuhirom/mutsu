@@ -293,7 +293,10 @@ impl Interpreter {
     fn lean_store_slot_node(
         &self,
         slot: usize,
-    ) -> Option<(LeanStoreNode, Option<crate::gc::Gc<crate::value::ContainerCell>>)> {
+    ) -> Option<(
+        LeanStoreNode,
+        Option<crate::gc::Gc<crate::value::ContainerCell>>,
+    )> {
         let word = &self.locals[slot];
         match word.view() {
             ValueView::ContainerRef(cell) => {
