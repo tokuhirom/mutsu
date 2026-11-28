@@ -9,6 +9,7 @@ mod minmax_extrema;
 mod socket_inet_proc;
 mod socket_thread;
 pub(crate) mod sort;
+mod sort_merge;
 mod squish_env;
 mod tail_rotate;
 mod thread_ops;
