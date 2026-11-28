@@ -1,0 +1,1 @@
+AST EVAL now keeps a package block's `MY::` import view separate from the synthetic EVAL unit's imports. Imported routines from the package and from nested blocks appear in their respective lexical pads.
