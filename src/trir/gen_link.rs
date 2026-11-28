@@ -233,8 +233,9 @@ impl Interpreter {
                 continue;
             }
             // A variable handed to a sigilless parameter binds its
-            // container; only a computed value is a plain slot.
-            if p.sigilless && !matches!(arg, TrArg::Value(_)) {
+            // container; only a computed value is a plain slot, unless the
+            // body reads the parameter before any effect.
+            if p.sigilless && !p.value_at_entry && !matches!(arg, TrArg::Value(_)) {
                 self.trir.pop_frame(callee_frame);
                 return Ok(GenOutcome::NotLinked);
             }
