@@ -919,8 +919,10 @@ impl Interpreter {
     }
 
     /// The associative twin of [`Interpreter::index_fast_path_element`]:
-    /// `%h{$k}` for a plain `Str` key that is PRESENT in a hash with no
-    /// object-hash key type.
+    /// `%h{$k}` for a plain `Str` or `Int` key that is PRESENT in a hash with
+    /// no object-hash key type. A plain hash keys an `Int` by its decimal
+    /// `Str`, so an `Int` key is looked up by that text, formatted on the
+    /// stack instead of into a fresh `String` (#19289).
     ///
     /// A present entry answers itself whatever metadata the hash carries, so
     /// the element type, the `is default(...)` and `hash_autovivify` are all
@@ -930,9 +932,21 @@ impl Interpreter {
     /// a `:=`-bound entry cell or deferred bind token (which resolve to
     /// something other than themselves); each of those bails.
     #[inline]
+    // Cost: O(1) expected (one hash probe; an `Int` key is formatted in O(d),
+    // d <= 20 digits).
     fn hash_fast_path_element(target: &Value, index: &Value) -> Option<Value> {
-        let ValueView::Str(key) = index.view() else {
-            return None;
+        let int_key;
+        let str_key;
+        let key: &str = match index.view() {
+            ValueView::Str(key) => {
+                str_key = key;
+                str_key.as_str()
+            }
+            ValueView::Int(n) => {
+                int_key = super::vm_decimal_key::DecimalKey::of(n);
+                int_key.as_str()
+            }
+            _ => return None,
         };
         let ValueView::Hash(items) = target.view() else {
             return None;
@@ -950,7 +964,7 @@ impl Interpreter {
         if items.key_type.is_some() || items.has_typed_keys() {
             return None;
         }
-        let entry = items.get(key.as_str())?;
+        let entry = items.get(key)?;
         match entry.view() {
             ValueView::ContainerRef(_) | ValueView::HashEntryRef { .. } | ValueView::Nil => None,
             _ => Some(entry.clone()),
