@@ -1571,13 +1571,7 @@ impl Interpreter {
                 let class_attrs_info = self.collect_class_attributes(class_key);
                 // Check required attributes BEFORE evaluating defaults
                 // (required attributes are checked before defaults run)
-                let provided_attr_names: std::collections::HashSet<String> = args
-                    .iter()
-                    .filter_map(|v| match v.view() {
-                        ValueView::Pair(k, _) => Some(k.clone()),
-                        _ => None,
-                    })
-                    .collect();
+                let provided_attr_names = crate::runtime::ProvidedNamed(&args);
                 for attr in &class_attrs_info {
                     if let Some(reason) = &attr.is_required {
                         let has_build = self.class_has_method(class_key, "BUILD");
@@ -2011,7 +2005,7 @@ impl Interpreter {
                     true,
                     // With a BUILD submethod the pre-BUILD attrs are not final;
                     // the provided-and-undefined `:D` check must wait.
-                    Some((!any_build).then_some(&provided_attr_names)),
+                    Some((!any_build).then_some(provided_attr_names)),
                 )?;
                 // Restore env after default evaluation, but preserve side effects
                 // on variables that already existed in the caller environment.
