@@ -104,7 +104,62 @@ impl Interpreter {
         args: &[Value],
     ) -> Option<Result<Value, RuntimeError>> {
         let invocant = args.first()?;
-        let qualified = self.bound_method_object_name(method_obj, invocant)?;
+        let Some(qualified) = self.bound_method_object_name(method_obj, invocant) else {
+            return self.call_core_owner_row(method_obj, args);
+        };
         Some(self.call_method_with_values(invocant.clone(), qualified.as_str(), args[1..].to_vec()))
+    }
+
+    /// A native `Method` object whose owner is a core type (`Grammar`'s
+    /// `subparse`), invoked on a user class's type object or instance: run the
+    /// owner's own method-table row. A by-name call would find the most
+    /// derived candidate, so the subclass override ran instead (#19298).
+    /// `None` when the owner has no row for the call.
+    // Cost: O(o) to find the row, o = owners, plus the handler's own cost.
+    fn call_core_owner_row(
+        &mut self,
+        method_obj: &Value,
+        args: &[Value],
+    ) -> Option<Result<Value, RuntimeError>> {
+        let ValueView::Instance {
+            class_name,
+            attributes,
+            ..
+        } = method_obj.view()
+        else {
+            return None;
+        };
+        if !crate::sym_in!(class_name, "Method" | "Submethod") {
+            return None;
+        }
+        let ValueView::Routine {
+            package,
+            name,
+            is_regex: false,
+            ..
+        } = attributes
+            .as_map()
+            .get("__mutsu_method_callable")
+            .map(Value::view)?
+        else {
+            return None;
+        };
+        if self.has_class(package.as_str()) {
+            return None;
+        }
+        let user_receiver = match args.first()?.view() {
+            ValueView::Instance { class_name, .. } => self.has_class(class_name.as_str()),
+            ValueView::Package(name) => self.has_class(name.as_str()),
+            _ => false,
+        };
+        if !user_receiver {
+            return None;
+        }
+        crate::builtins::method_table::invoke_owner_raw(
+            self,
+            &[package.as_str()],
+            name.as_str(),
+            args,
+        )
     }
 }
