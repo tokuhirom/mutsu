@@ -64,10 +64,29 @@ pub(crate) fn is_scope_declaration(s: &Stmt) -> bool {
 // Cost: O(n), n = size of the header.
 pub(crate) fn walk_control_header<'ast, V: Visit<'ast> + ?Sized>(v: &mut V, stmt: &'ast Stmt) {
     match stmt.peel_parsed() {
-        Stmt::If { cond, .. }
-        | Stmt::While { cond, .. }
-        | Stmt::Given { topic: cond, .. }
-        | Stmt::When { cond, .. } => v.visit_expr(cond),
+        Stmt::If {
+            cond, else_branch, ..
+        } => {
+            v.visit_expr(cond);
+            // `elsif` and `orwith` lower to one nested If in the preceding
+            // clause's else branch. Their conditions run in the same enclosing
+            // scope, so placeholders there belong to the outer block too.
+            // An ordinary `else { if ... }` has a block body rather than this
+            // single-statement chain.
+            let mut remainder = else_branch.as_slice();
+            while let [
+                Stmt::If {
+                    cond, else_branch, ..
+                },
+            ] = remainder
+            {
+                v.visit_expr(cond);
+                remainder = else_branch;
+            }
+        }
+        Stmt::While { cond, .. } | Stmt::Given { topic: cond, .. } | Stmt::When { cond, .. } => {
+            v.visit_expr(cond)
+        }
         Stmt::For { iterable, .. } => v.visit_expr(iterable),
         Stmt::Whenever { supply, .. } => v.visit_expr(supply),
         // A conditional kept in its RakuAST shape (ADR-10723 Stage 2): every
