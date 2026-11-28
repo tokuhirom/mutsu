@@ -339,6 +339,14 @@ impl Interpreter {
             Some(s) => s.chars(),
             None => target.chars(),
         };
+        // The common shape (unanchored, unstripped) walks the whole subject in
+        // one engine entry.
+        if !parsed.anchor_start && stripped.is_none() {
+            let starts = regex_scan_positions(self, &parsed, chars, 0, pkg);
+            if let Some(spans) = self.rx_scan_all_spans(&parsed, chars, starts, pkg, limit) {
+                return spans;
+            }
+        }
         let mut results = Vec::new();
         let mut pos = 0;
         while pos <= chars.len() && results.len() < limit {
