@@ -1388,6 +1388,43 @@ impl Compiler {
         ) || matches!(arg, Expr::Var(name) if crate::value::attr_twigil_base(name).is_some())
     }
 
+    /// Turn the trailing `X.values` call, a by-name `CallMethodMut` that hands
+    /// out the receiver's element containers (ADR-0045), into the by-value
+    /// `CallMethod` that yields the element values. Only for a `for` loop
+    /// whose body cannot observe the difference (`topic_alias_unobservable`):
+    /// a container it never writes, binds or compares by identity is the
+    /// value it holds. No-op when the tail is any other shape.
+    // Cost: O(1).
+    pub(super) fn demote_trailing_values_call_to_read(&mut self) {
+        let Some(OpCode::CallMethodMut {
+            name_idx,
+            arity: 0,
+            modifier_idx: None,
+            quoted,
+            arg_sources_idx: None,
+            ..
+        }) = self.code.ops.last()
+        else {
+            return;
+        };
+        let is_values = self
+            .code
+            .constants
+            .get(*name_idx as usize)
+            .is_some_and(|c| matches!(c.view(), crate::value::ValueView::Str(s) if s.as_str() == "values"));
+        if !is_values {
+            return;
+        }
+        let (name_idx, quoted) = (*name_idx, *quoted);
+        *self.code.ops.last_mut().expect("checked above") = OpCode::CallMethod {
+            name_idx,
+            arity: 0,
+            modifier_idx: None,
+            quoted,
+            arg_sources_idx: None,
+        };
+    }
+
     pub(super) fn insert_accessor_ref_marker(&mut self, marker: OpCode) {
         let mut i = self.code.ops.len();
         while i > 0 {

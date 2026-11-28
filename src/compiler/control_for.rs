@@ -330,6 +330,17 @@ impl Compiler {
             if (topic_loop || has_rw && !has_copy) && Self::is_accessor_shaped_source(iterable) {
                 self.mark_trailing_method_call_as_accessor_ref();
             }
+            // `for %h.values { ... }` whose body cannot observe whether `$_`
+            // is the element's container (#14495's analysis) needs no element
+            // containers: read the values instead of promoting every element
+            // of the source to a shared cell first.
+            if topic_loop
+                && !has_rw
+                && Self::for_iterable_is_values_alias(iterable)
+                && super::for_topic_alias::topic_alias_unobservable(body)
+            {
+                self.demote_trailing_values_call_to_read();
+            }
         }
         self.suppress_list_var_alias = saved_suppress;
         if let Some(source_name) = Self::for_iterable_source_name(iterable) {
