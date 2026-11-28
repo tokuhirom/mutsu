@@ -65,3 +65,43 @@ impl Value {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pair_str_key_shares_a_flat_key_and_reads_like_an_owned_one() {
+        let key = Value::str("name".to_string());
+        let shared = Value::pair_str_key(&key, Value::int(1));
+        let owned = Value::pair("name".to_string(), Value::int(1));
+        let (crate::value::ValueView::Pair(k1, v1), crate::value::ValueView::Pair(k2, v2)) =
+            (shared.view(), owned.view())
+        else {
+            panic!("both are named Pairs");
+        };
+        assert_eq!(k1, k2);
+        assert_eq!(v1.to_string_value(), v2.to_string_value());
+        assert!(shared.is_string_pair_value());
+    }
+
+    #[test]
+    fn swap_pair_value_replaces_in_place_and_copies_when_shared() {
+        let mut pair = Value::pair_str_key(&Value::str("k".to_string()), Value::int(1));
+        let held = pair.clone();
+        let old = pair.swap_pair_value(Value::int(2));
+        assert_eq!(old.map(|v| v.to_string_value()), Some("1".to_string()));
+        let crate::value::ValueView::Pair(_, held_value) = held.view() else {
+            panic!("a Pair");
+        };
+        assert_eq!(
+            held_value.to_string_value(),
+            "1",
+            "the other holder is untouched"
+        );
+        let crate::value::ValueView::Pair(key, value) = pair.view() else {
+            panic!("a Pair");
+        };
+        assert_eq!((key.as_str(), value.to_string_value().as_str()), ("k", "2"));
+    }
+}
