@@ -87,7 +87,9 @@ fn array(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>>
     // A row view's `.Array` is a shaped array of the view's shape holding its
     // values (`Array::ShapedView.Array`, #19282).
     if crate::value::shaped_array::is_row_view(target) {
-        return Some(Ok(crate::value::shaped_array::copy_shaped_rows(target, false)));
+        return Some(Ok(crate::value::shaped_array::copy_shaped_rows(
+            target, false,
+        )));
     }
     if let Some(list) = capture_positionals(target) {
         return listify(&list, true);
