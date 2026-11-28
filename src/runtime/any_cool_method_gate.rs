@@ -329,7 +329,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod tests {
+mod memo_tests {
     use super::{cool_only_name, is_cool_only_method};
 
     /// The memoized answer is the catalog's answer, on a first ask and on a
