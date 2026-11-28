@@ -378,6 +378,7 @@ mod vm_map_grep_pull;
 mod vm_native_seq;
 mod vm_optional_miss;
 mod vm_topic_read_gate;
+mod vm_var_delete_lean;
 mod vm_var_incdec_lean;
 pub(crate) use vm_map_grep_pull::callback_positionals;
 pub(crate) mod vm_begin_replay;
