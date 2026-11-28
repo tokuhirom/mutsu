@@ -54,6 +54,15 @@ impl Interpreter {
         if let Some(value) = self.try_user_infix("infix:<%%>", &left, &right)? {
             return Ok(value);
         }
+        // Two plain `Int`s with a non-zero divisor: `coerce_numeric` and
+        // `arith_mod` would land on this same floored modulus
+        // (`int_mod_i64`, ADR-0118) after building and dispatching on
+        // coerced copies of both operands (#19323).
+        if let (ValueView::Int(a), ValueView::Int(b)) = (left.view(), right.view())
+            && b != 0
+        {
+            return Ok(Value::truth(crate::builtins::arith::int_mod_i64(a, b) == 0));
+        }
         let (l, r) = runtime::coerce_numeric(left.clone(), right);
         if !r.truthy() {
             return Ok(RuntimeError::divide_by_zero_failure(
