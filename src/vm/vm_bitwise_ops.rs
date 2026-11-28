@@ -33,8 +33,32 @@ impl Interpreter {
         Ok(Some((left, right)))
     }
 
+    /// `+&` / `+|` / `+^` on two plain small `Int`s with no user `infix` of
+    /// that name in scope: none of `pop_int_bitop_operands`' steps (user
+    /// dispatch, Failure, numeric bridge) applies, so the operands are read
+    /// where they sit and the shared primitive answers. `false` = not that
+    /// shape, stack untouched.
+    // Cost: O(1).
+    #[inline(always)]
+    fn try_small_int_bitop(&mut self, name: &str, op: crate::builtins::BitOp) -> bool {
+        let n = self.stack.len();
+        if n < 2 || self.stack[n - 1].as_int().is_none() || self.stack[n - 2].as_int().is_none() {
+            return false;
+        }
+        if self.user_infix_override(name) {
+            return false;
+        }
+        let result = crate::builtins::int_bitop(&self.stack[n - 2], &self.stack[n - 1], op);
+        self.stack.truncate(n - 2);
+        self.stack.push(result);
+        true
+    }
+
     // Cost: O(b + c), b = operand bits, c = operator dispatch and any user call.
     pub(super) fn exec_bit_and_op(&mut self) -> Result<(), RuntimeError> {
+        if self.try_small_int_bitop("infix:<+&>", crate::builtins::BitOp::And) {
+            return Ok(());
+        }
         let Some((left, right)) = self.pop_int_bitop_operands("infix:<+&>")? else {
             return Ok(());
         };
@@ -45,6 +69,9 @@ impl Interpreter {
 
     // Cost: O(b + c), b = operand bits, c = operator dispatch and any user call.
     pub(super) fn exec_bit_or_op(&mut self) -> Result<(), RuntimeError> {
+        if self.try_small_int_bitop("infix:<+|>", crate::builtins::BitOp::Or) {
+            return Ok(());
+        }
         let Some((left, right)) = self.pop_int_bitop_operands("infix:<+|>")? else {
             return Ok(());
         };
@@ -55,6 +82,9 @@ impl Interpreter {
 
     // Cost: O(b + c), b = operand bits, c = operator dispatch and any user call.
     pub(super) fn exec_bit_xor_op(&mut self) -> Result<(), RuntimeError> {
+        if self.try_small_int_bitop("infix:<+^>", crate::builtins::BitOp::Xor) {
+            return Ok(());
+        }
         let Some((left, right)) = self.pop_int_bitop_operands("infix:<+^>")? else {
             return Ok(());
         };

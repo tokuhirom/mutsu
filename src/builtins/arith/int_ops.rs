@@ -140,6 +140,14 @@ pub(crate) fn bool_bitop(left: &Value, right: &Value, op: BitOp) -> Value {
 /// Cost: O(1) for i64 operands; O(n) in the operand digits for BigInts (or
 /// the characters of a Str operand).
 pub(crate) fn int_bitop(left: &Value, right: &Value, op: BitOp) -> Value {
+    // Two plain small `Int`s: no Str operand to fail, no coercion.
+    if let (Some(a), Some(b)) = (left.as_int(), right.as_int()) {
+        return Value::int(match op {
+            BitOp::And => a & b,
+            BitOp::Or => a | b,
+            BitOp::Xor => a ^ b,
+        });
+    }
     if let Some(failure) = str_operand_failure(left, right) {
         return failure;
     }
