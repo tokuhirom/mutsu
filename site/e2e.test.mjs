@@ -121,6 +121,14 @@ for (let i = 0; i < 24; i++) {
     const [r, rj] = i < 20 ? ['1.30', '1.20'] : ['0.80', '0.70'];
     benchRows.push(`2026-07-${day}T00:00:00Z\t${sha}\t${name}\t${t}\t${t}\t0.3000\t${r}\t7\tci\t${rk}${pp}`);
     benchRows.push(`2026-07-${day}T00:00:00Z\t${sha}\t${name}+jit\t${t}\t${t}\t0.3000\t${rj}\t7\tci\t${rk}${pp}`);
+     // bench-fib also has a section series (its in-process time, startup excluded)
+    // that starts at commit 8: its card headlines it, the whole-script series
+    // above stays as the secondary one, and no separate @section card appears.
+    if (name === 'bench-fib' && i >= 8) {
+      for (const lane of ['', '+jit']) {
+        benchRows.push(`2026-07-${day}T00:00:00Z\t${sha}\t${name}@section${lane}\t0.0500\t0.0500\t0.0400\t1.25\t7\tci\t${rk}${pp}`);
+      }
+    }
   }
 }
 writeFileSync(BENCH_TSV, benchRows.join('\n') + '\n');
@@ -237,6 +245,13 @@ try {
          'and the language switch');
   assert(await page.locator('.bench-card svg').count() === 3,
          'the charts still render (one per benchmark)');
+  // A benchmark's `@section` series is its card's headline, not a card of its own.
+  const secCard = page.locator('.bench-card[data-name="bench-fib"]');
+  assert(await page.locator('.bench-card[data-name="bench-fib@section"]').count() === 0
+         && (await secCard.locator('.headline-tag').textContent()) === 'section'
+         && (await secCard.locator('.standing .wholeline').count()) === 1
+         && (await secCard.locator('.sectionfrom').count()) === 1,
+         'a section series is the headline of its benchmark\'s card, with the whole-script ratios secondary and its start marked');
   // The vs rakupp ratio is on every card whatever the metric, so the card whose
   // ratio rakupp wins by parsing JSON natively carries that note throughout.
   assert(await page.locator('.bench-note').count() === 1

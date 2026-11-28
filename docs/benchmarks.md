@@ -26,6 +26,10 @@ JSON::Fast natively) is in [rakupp-gap-survey.md](rakupp-gap-survey.md).
 ### Adding a benchmark
 
 - Keep it **deterministic** and **self-checking** (print a checksum).
+- Give it a **warm timed section** (next heading): the workload is a `sub workload()` that returns
+  its checksum line; two untimed runs, then the timed third, printing `bench-section-seconds:`.
+  Only `bench-startup` is exempt, because it measures startup on purpose. The checksum line must
+  be identical under mutsu and `raku`.
 - Keep it in the **0.1-0.4 s range** on a release build: the deterministic series resolves ~0.1%,
   while the wall-clock series needs the file to be well clear of the ~8 ms startup without paying
   90x for it under callgrind. A file that deliberately breaks the range says why in its header
@@ -34,24 +38,51 @@ JSON::Fast natively) is in [rakupp-gap-survey.md](rakupp-gap-survey.md).
 
 ### Section and warm series
 
-The deterministic instruction/allocation series warms each benchmark once in both JIT modes
-before callgrind, inside `scripts/bench-det.sh` itself. It therefore measures the same populated
-precompilation-cache state on push-triggered CI runs that skip the wall-clock benchmark job.
+**The `@section` ratio is the headline.** A whole-script row charges every interpreter its startup
+and module loading — raku's ~120-170 ms against mutsu's ~4-8 ms — so a light benchmark's
+whole-script ratio sits near 1 however slow the operation is. Every benchmark therefore prints
+`bench-section-seconds: <s>`, its own in-process timing of the workload, and the bench CI records
+`<name>@section` / `<name>@section+jit` series from it, with raku's (and rakupp's) in-process time as
+the ratio's denominator. The whole-script `<name>` / `<name>+jit` rows are still recorded, as a
+**secondary** series. `bench-startup` is the one benchmark with no section: it *is* the startup
+metric.
 
-When the operation a benchmark exists for is small next to either interpreter's startup and module
-loading, the whole-script ratio reads near 1 no matter how slow the operation is. Such a benchmark
-prints `bench-section-seconds: <s>` (its own in-process timing) and the bench CI records an extra
-`<name>@section` / `<name>@section+jit` series from it, with raku's in-process time as the ratio's
-denominator.
+Every section is **warm**: the workload runs as `workload()` twice untimed and a third time timed,
+following [`bench-regex-match.raku`](../benchmarks/bench-regex-match.raku)
+([#9916](https://github.com/tokuhirom/mutsu/issues/9916), ADR-0099 §6):
 
-The regex and grammar files ([#9916](https://github.com/tokuhirom/mutsu/issues/9916)) report a
-**warm** section: they run the workload twice untimed and time the third run. Read the `@section`
-rows when comparing against rakudo — a whole-script row charges rakudo its JIT warm-up, which
-ADR-0099 §2.1 measured as most of a 4.2x headline.
+```raku
+my $warm = %*ENV<BENCH_DET> ?? 0 !! 2;
+workload() for ^$warm;
+my $t0 = now;
+my $result = workload();
+say "bench-section-seconds: {now - $t0}";
+say $result;
+```
+
+Read the `@section` rows when comparing against rakudo — a whole-script row charges rakudo its JIT
+warm-up as well, which ADR-0099 §2.1 measured as most of a 4.2x headline. Under
+`scripts/bench-det.sh` (`BENCH_DET=1`) the workload runs once, so the deterministic series keeps a
+single execution per file; those series are whole-script (startup included) — see
+[the deterministic series](#the-deterministic-series).
+
+The section series of the benchmarks that gained a section late (every file but the 13 regex,
+grammar and module ones) **start at one commit**
+(`news/2026-11/benchmarks-headline-the-section-ratio.md`): the trend page marks that commit with a
+dotted line, because before it there is no section point rather than a drop.
 
 Regex ratios depend on subject size: on ~100-character subjects mutsu measures 0.2-0.4x rakudo,
 and the same operations measure 1.0x and worse on multi-hundred-kilobyte ones. A regex ratio
 without its subject size says nothing.
+
+### The deterministic series
+
+`scripts/bench-det.sh` runs each file once under callgrind. Its instruction and allocation counts
+include mutsu's own startup, which is a constant floor under every file.
+
+The deterministic instruction/allocation series warms each benchmark once in both JIT modes
+before callgrind, inside `scripts/bench-det.sh` itself. It therefore measures the same populated
+precompilation-cache state on push-triggered CI runs that skip the wall-clock benchmark job.
 
 ## Reading the numbers
 
@@ -61,7 +92,8 @@ without its subject size says nothing.
 - Local `perf stat -r5` under `taskset` is fine for in-flight A/B decisions, but drifts with
   thermals and binary layout (±5%); check for stray `mutsu` processes before measuring. Prefer the
   deterministic counts (instructions, allocations) as evidence.
-- Always use a `--release` build. raku times include ~120-170 ms startup, mutsu's ~4-8 ms.
+- Always use a `--release` build. Whole-script raku times include ~120-170 ms startup, mutsu's
+  ~4-8 ms; quote the `@section` figure (startup excluded) unless startup is the point.
 - **The raku ratio does NOT normalize the CI runner's host class, and several benchmarks cannot
   resolve a small change at all.** The bench CI runs on a *bimodal* runner pool. Splitting
   main-push rows by `bench-startup` `mutsu_median_s` (`< 6 ms` = fast host) put mean `bench-ctor`
@@ -79,6 +111,12 @@ without its subject size says nothing.
 (`pages.yml`). It answers "where does mutsu lose, and by how much", not "what moved since the
 previous commit", because a one-commit move on this runner pool is mostly noise:
 
+- A card's headline is the benchmark's **`@section`** series (in-process, warm, startup excluded);
+  the `foo@section` series is folded into the `foo` card rather than being a card of its own. The
+  whole-script series is secondary: a "whole script: rakudo X · rakupp Y" line on the card, a dashed
+  line on the ratio charts, and the table's last column. `bench-startup` (no section) and any
+  benchmark whose section series has no point yet keep the whole-script series as headline. The
+  dotted green line marks the commit where a card's section series starts.
 - Each card, and the table, shows **vs rakudo** and **vs rakupp**: the **median of the last 10
   commits** of mutsu ÷ the reference on the `+jit` series (the default build), not the latest
   point. A ratio above 1.0x is red; it is lighter (*marginal*) when a quarter or more of those

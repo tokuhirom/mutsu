@@ -34,11 +34,11 @@
 #   whole-script row is still recorded as usual, and an extra `<name>@section`
 #   row (and `<name>@section+jit`) records the median of those in-process
 #   times, with raku's and rakupp's own in-process medians in their columns.
-#   Use it when the operation is small next to either interpreter's startup
-#   and module loading, where the whole-script ratio is dominated by startup
-#   and reads near 1 regardless of how slow the operation is (#8673:
-#   benchmarks/bench-json-fast-spdx.raku). The section row's min column is the
-#   in-process minimum.
+#   Every benchmark but bench-startup prints one, and the `@section` ratio is
+#   the headline (docs/benchmarks.md): the whole-script ratio is dominated by
+#   startup and module loading and reads near 1 regardless of how slow the
+#   operation is (#8673: benchmarks/bench-json-fast-spdx.raku). The section
+#   row's min column is the in-process minimum.
 set -euo pipefail
 
 MUTSU=${MUTSU_BIN:-target/release/mutsu}

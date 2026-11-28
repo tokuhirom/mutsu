@@ -1,6 +1,6 @@
 # The single-threaded twin of bench-threads.raku (issue #8086).
 #
-# Same TOTAL work as bench-threads.raku -- 600000 celled reads and 80000 celled
+# Same TOTAL work as bench-threads.raku -- 200000 celled reads and 80000 celled
 # element stores, through the same `:=`-bound containers -- run on the mainline
 # with no `start` anywhere. Read the two rows together:
 #
@@ -17,37 +17,50 @@
 # would no longer be measuring the same storage path as bench-threads. See that
 # file's header and #7613.
 
-my $checksum = 0;
+sub workload() {
+    my $checksum = 0;
 
-# Read-hot: the same 4 x 150000 reads bench-threads spreads over four workers,
-# here on one thread. Every read of @alias and $sref goes through the cell.
-# Kept as four 150000 loops rather than one 600000 loop so the checksum is
-# IDENTICAL to bench-threads' -- 150000 is not a multiple of 256, so a single
-# flat loop would sum a different set of elements and the two files could drift
-# apart without anyone noticing.
-my @data = ^256;
-my @alias := @data;
-my $seed = 7;
-my $sref := $seed;
+    # Read-hot: the same 4 x 50000 reads bench-threads spreads over four workers,
+    # here on one thread. Every read of @alias and $sref goes through the cell.
+    # Kept as four 50000 loops rather than one 200000 loop so the checksum is
+    # IDENTICAL to bench-threads' -- 50000 is not a multiple of 256, so a single
+    # flat loop would sum a different set of elements and the two files could drift
+    # apart without anyone noticing.
+    my @data = ^256;
+    my @alias := @data;
+    my $seed = 7;
+    my $sref := $seed;
 
-for ^4 {
-    my $s = 0;
-    for ^150000 -> $i {
-        $s += @alias[$i +& 255] + $sref;
+    for ^4 {
+        my $s = 0;
+        for ^50000 -> $i {
+            $s += @alias[$i +& 255] + $sref;
+        }
+        $checksum += $s;
     }
-    $checksum += $s;
+
+    # Write side: the same 4 x 7000 element stores, over the same 64 slots and the
+    # same disjoint 16-index blocks, so the surviving values match bench-threads.
+    my @backing = 0 xx 64;
+    my @slots := @backing;
+
+    for ^4 -> $t {
+        for ^7000 -> $i {
+            @slots[$t * 16 + ($i +& 15)] = $t * 1000 + $i;
+        }
+    }
+    $checksum += [+] @slots;
+
+    "checksum = $checksum";
 }
 
-# Write side: the same 4 x 20000 element stores, over the same 64 slots and the
-# same disjoint 16-index blocks, so the surviving values match bench-threads.
-my @backing = 0 xx 64;
-my @slots := @backing;
-
-for ^4 -> $t {
-    for ^20000 -> $i {
-        @slots[$t * 16 + ($i +& 15)] = $t * 1000 + $i;
-    }
-}
-$checksum += [+] @slots;
-
-say "checksum = $checksum";
+# Warm timed section (convention: benchmarks/bench-regex-match.raku, docs/benchmarks.md):
+# the workload runs twice untimed and a third time timed, and that third run is printed
+# as `bench-section-seconds:`, so scripts/bench-ci.sh records a `@section` series free of
+# interpreter startup. Under scripts/bench-det.sh (BENCH_DET=1) it runs once.
+my $warm = %*ENV<BENCH_DET> ?? 0 !! 2;
+workload() for ^$warm;
+my $t0 = now;
+my $result = workload();
+say "bench-section-seconds: {now - $t0}";
+say $result;
