@@ -74,7 +74,8 @@ pub(crate) fn push_codepoint(text: &mut String, ch: char) {
 /// synthetic `U+10FFFD x H H` keeps its four codepoints, as rakudo exposes it.
 // Cost: O(n), n = bytes of `s`; no allocation without a doubled marker.
 pub(crate) fn unescape_literal_marker(s: &str) -> std::borrow::Cow<'_, str> {
-    if !s.contains("\u{10FFFD}\u{10FFFD}") {
+    // An ASCII string holds no marker: skip the substring search's setup.
+    if s.is_ascii() || !s.contains("\u{10FFFD}\u{10FFFD}") {
         return std::borrow::Cow::Borrowed(s);
     }
     let mut out = String::with_capacity(s.len());

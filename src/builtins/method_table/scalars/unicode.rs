@@ -345,31 +345,41 @@ pub(crate) fn uniparse(target: &Value, _args: &[Value]) -> Option<Result<Value, 
     ))
 }
 
-/// The text a normalization form reads: the codepoints of an `Array` of
-/// `Int`s (a `Uni`-like list), else the string form.
+/// Run `f` on the text a normalization form reads: the codepoints of an
+/// `Array` of `Int`s (a `Uni`-like list), else the string form. A plain Str
+/// is read where it lies, with no copy of its text.
 // Cost: O(n), n = codepoints of the receiver.
-fn normalization_text(target: &Value) -> String {
-    match target.view() {
+fn with_normalization_text<R>(target: &Value, f: impl FnOnce(&str) -> R) -> R {
+    let view = target.view();
+    match &view {
         ValueView::Array(items, ..)
             if items.iter().all(|v| matches!(v.view(), ValueView::Int(_))) =>
         {
-            items
+            let text: String = items
                 .iter()
                 .filter_map(|v| match v.view() {
                     ValueView::Int(cp) => char::from_u32(cp as u32),
                     _ => None,
                 })
-                .collect()
+                .collect();
+            f(&text)
         }
         // A doubled marker is one literal U+10FFFD (ADR-17800).
-        _ => crate::grapheme_break::unescape_literal_marker(&target.to_string_value()).into_owned(),
+        ValueView::Str(s) => f(&crate::grapheme_break::unescape_literal_marker(s.as_str())),
+        _ => f(&crate::grapheme_break::unescape_literal_marker(
+            &target.to_string_value(),
+        )),
     }
 }
 
-/// The `Uni` of `text` normalized to `form`.
+/// The `Uni` of `text` normalized to `form`, built straight from the
+/// normalized text's codepoints.
 // Cost: O(n), n = codepoints of the text.
 fn normalized(name: &str, form: Normal, text: &str) -> Value {
-    Value::uni(name.to_string(), normalize(text, form).into_owned())
+    Value::uni_from_codepoints(
+        name.to_string(),
+        normalize(text, form).chars().map(|c| c as u32),
+    )
 }
 
 macro_rules! normalization {
@@ -377,7 +387,7 @@ macro_rules! normalization {
         $(
             // Cost: O(n), n = codepoints of the receiver.
             pub(crate) fn $handler(target: &Value, _args: &[Value]) -> Option<Result<Value, RuntimeError>> {
-                Some(Ok(normalized($name, $form, &normalization_text(target))))
+                Some(Ok(with_normalization_text(target, |text| normalized($name, $form, text))))
             }
 
             // Cost: O(n), n = codepoints of the `Uni`.
