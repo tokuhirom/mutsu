@@ -496,6 +496,16 @@ impl Interpreter {
                         _ => vec![v],
                     };
                     for item in items {
+                        // A generator that answers a `Failure` (`fail` in a
+                        // `&sub ... *` generator) throws it when the sequence
+                        // reaches that element, as rakudo's sequence iterator
+                        // does, instead of caching the Failure as an element
+                        // that every later read trips over (#19344). The
+                        // elements before it stay cached.
+                        if let Err(e) = Self::throw_if_failure(&item) {
+                            publish_generated(cache, history, &mut published);
+                            return Err(e);
+                        }
                         let reached_endpoint = state.endpoint.as_ref().is_some_and(|endpoint| {
                             if let crate::value::ValueView::Package(type_name) = endpoint.view() {
                                 Self::seq_type_matches(&item, &type_name.resolve())

@@ -432,12 +432,12 @@ impl Interpreter {
         compiler.seed_prebound_placeholders(&data.params);
         compiler.seed_prebound_amp_params(&data.params);
         compiler.compile_as_block_body();
+        // Inline map/grep/first loops consume the callback result from the
+        // stack. Keep the unit tail there, including an output statement's
+        // True result, instead of replacing the loop's bound topic.
+        compiler.unit_tail_on_stack = true;
         if topic_slot_candidate(data) {
             compiler.seed_topic_local();
-            // The body's value travels on the stack rather than through the
-            // env's `_` (`SetTopic`), which the loop no longer binds: every
-            // inline loop reads the stack first.
-            compiler.unit_tail_on_stack = true;
         }
         if let Some(origin) = data.compiled_code.as_deref() {
             compiler.seed_amp_shadowed_calls_from(origin);

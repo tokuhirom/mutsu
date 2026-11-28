@@ -7,6 +7,9 @@ pub(crate) mod char_byte_cursor;
 pub(crate) mod class_body_statics_plan;
 mod complex_real;
 mod module_check_restart;
+#[cfg(test)]
+#[path = "our_writeback_tests.rs"]
+mod our_writeback_tests;
 mod package_keyed;
 mod published_outer_package;
 mod rw_writeback_slots;

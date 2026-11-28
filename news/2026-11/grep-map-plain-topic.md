@@ -23,12 +23,7 @@ the loop already made no per-element allocation.
 
 A follow-up compiles such a body with a hidden local slot for `$_`. Each
 element is seeded into that slot. The env gets no `_` / `$_` binding at all
-when the code names the topic nowhere by name and makes no closure. The
-body's value now comes back on the stack instead of through the env's `_`.
+when the code names the topic nowhere by name and makes no closure.
 `benchmarks/array-ops.raku` goes from 539,986,655 to 398,235,306
 instructions, another -26% (-45% in total). That is about 2,990 instructions
 per callback invocation; rakupp v5.9.0 spends about 3,200.
-
-As a side effect, `(1, 2).map({ say $_ })` now yields `(True True)`, as in
-rakudo. A body that can observe its topic still yields the element there
-(#19355).
