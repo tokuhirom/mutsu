@@ -99,7 +99,13 @@ pub(super) unsafe extern "C" fn element_store_sunk(
             concat_append: false,
             element_share: false,
         }) = chunk.ops.get(op_idx as usize)
-            && vm.try_lean_local_element_store(chunk, *slot, *name_idx, *is_positional, *index_first)
+            && vm.try_lean_local_element_store(
+                chunk,
+                *slot,
+                *name_idx,
+                *is_positional,
+                *index_first,
+            )
         {
             // What the `SinkPopAssign` arm does with a plain scalar.
             vm.sync_source_line(chunk, op_idx as usize + 1);
