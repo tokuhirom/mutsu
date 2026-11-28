@@ -507,8 +507,8 @@ impl Interpreter {
             .zip(plan.attr_syms.iter())
             .enumerate()
         {
-            if let Some(provided) = provided_attrs[i].clone() {
-                attributes.insert(attr_sym, provided);
+            if let Some(provided) = &provided_attrs[i] {
+                attributes.insert(attr_sym, provided.value.clone());
                 continue;
             }
             let attr_name = &attr.name;
@@ -707,12 +707,23 @@ impl Interpreter {
         // Override with named args from bless call. A key that names a declared
         // attribute reuses its pre-interned Symbol (the common case — `|%_`
         // passthrough in a user `new`); anything else interns as before.
-        for (arg, attr_idx) in args.iter().zip(arg_attr_idx.iter()) {
+        // `bless(*%attrinit)` binds its named arguments into a hash, so of
+        // several arguments naming one attribute only the last is ever
+        // assigned (`self.bless(|%_, :v(3))` overrides a caller's `:v<bad>`
+        // without type-checking it).
+        let mut last_arg_for_attr: Vec<Option<usize>> = vec![None; plan.class_attrs.len()];
+        for (arg_idx, attr_idx) in arg_attr_idx.iter().enumerate() {
+            if let Some(i) = attr_idx {
+                last_arg_for_attr[*i as usize] = Some(arg_idx);
+            }
+        }
+        for (arg_idx, (arg, attr_idx)) in args.iter().zip(arg_attr_idx.iter()).enumerate() {
             if let ValueView::Pair(key, value) = arg.view() {
                 if build_owned_attrs.contains(key.as_str()) {
                     continue;
                 }
                 match attr_idx.map(|i| i as usize) {
+                    Some(i) if last_arg_for_attr[i] != Some(arg_idx) => None,
                     Some(i) => {
                         if plan.attr_binds[i] {
                             let needs_check = match plan.store_check_needed.get(i) {
@@ -735,14 +746,22 @@ impl Interpreter {
                             deferred_defaults.retain(|d| d.name.as_str() != &**key);
                             continue;
                         }
+                        let sigil = plan.class_attrs[i].sigil;
+                        // The argument that seeded the attribute above was
+                        // coerced there already: reuse that value instead of
+                        // coercing (a `%` attribute: building a Hash) again.
+                        let seeded = provided_attrs[i]
+                            .as_ref()
+                            .filter(|p| p.arg_idx == arg_idx);
                         let value = value.deref_container();
                         // Sigil-coerce like `dispatch_new` does: a `%`-attribute
                         // provided as a (list of) Pair(s) becomes a Hash, a
                         // `@`-attribute provided as a List becomes an Array
                         // (META6's `multi method new(*%items) { self.bless(|%items) }`
                         // passes `provides => ("Test::META" => "lib/...",)`).
-                        let sigil = plan.class_attrs[i].sigil;
-                        let coerced = if let Some(type_name) = plan.attr_is_types.get(key.as_str())
+                        let coerced = if let Some(seeded) = seeded {
+                            seeded.value.clone()
+                        } else if let Some(type_name) = plan.attr_is_types.get(key.as_str())
                         {
                             // An `is Type` container is owned by its declared
                             // container type, not by the generic sigil
@@ -755,7 +774,8 @@ impl Interpreter {
                         };
                         let coerced = match plan.attr_constraints[i].as_ref() {
                             Some(tc)
-                                if sigil == '$'
+                                if seeded.is_none()
+                                    && sigil == '$'
                                     && !coerced.is_nil()
                                     && crate::runtime::types::is_coercion_constraint(tc) =>
                             {
@@ -766,7 +786,9 @@ impl Interpreter {
                         // Raku: assigning `Nil` to a scalar container resets it
                         // to the container's declared type default (see the
                         // matching seed in `provided_attrs` above).
-                        let coerced = if sigil == '$' && coerced.is_nil() {
+                        let coerced = if let Some(seeded) = seeded.filter(|p| p.from_nil) {
+                            seeded.value.clone()
+                        } else if seeded.is_none() && sigil == '$' && coerced.is_nil() {
                             self.attr_store_nil_default(
                                 cn_resolved,
                                 &plan.class_attrs[i].name,
@@ -824,8 +846,10 @@ impl Interpreter {
         // storage (which `Array` methods on the instance delegate to). Only
         // touch the storage when there are positional args, so a plain
         // named-args `bless` keeps the empty storage seeded by `dispatch_new`.
-        if self
-            .class_mro(cn_resolved)
+        // The MRO is read once for the container-subclass checks and the
+        // native payload seeding below.
+        let class_mro = self.class_mro(cn_resolved);
+        if class_mro
             .iter()
             .any(|n| *n == crate::sym!("Array") || *n == crate::sym!("List"))
         {
@@ -864,8 +888,7 @@ impl Interpreter {
         // `dict` and `seen-lock` keys (#13087). `Hash.new(a => 1)` on a
         // subclass stores its pairs through `dispatch_new` instead.
         // Bare positional args are folded as alternating key/value entries.
-        if self
-            .class_mro(cn_resolved)
+        if class_mro
             .iter()
             .any(|n| *n == crate::sym!("Hash") || *n == crate::sym!("Map"))
         {
@@ -879,7 +902,6 @@ impl Interpreter {
                 attributes.insert("__mutsu_hash_storage", storage);
             }
         }
-        let class_mro = self.class_mro(cn_resolved);
         let positional_args: Vec<Value> = args
             .iter()
             .filter(|arg| !matches!(arg.view(), ValueView::Pair(..)))
