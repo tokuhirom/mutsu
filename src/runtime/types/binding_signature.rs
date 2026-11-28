@@ -1392,7 +1392,9 @@ impl Interpreter {
                     && !legacy_has_named_placeholder(params));
             let positional_args: Vec<Value> = plain_args
                 .iter()
-                .filter(|a| match a.view() {
+                // Tag probes first here and below: `view()` would
+                // materialize a lazy Match argument (a subst block's `$/`).
+                .filter(|a| !a.is_any_pair_value() || match a.view() {
                     ValueView::Pair(..) => false,
                     ValueView::ValuePair(key, _) if matches!(key.view(), ValueView::Str(..)) => {
                         promote_valuepair_positional
@@ -1404,6 +1406,9 @@ impl Interpreter {
             let named_args: Vec<(String, Value)> = plain_args
                 .iter()
                 .filter_map(|a| {
+                    if !a.is_any_pair_value() {
+                        return None;
+                    }
                     if let ValueView::Pair(key, val) = a.view() {
                         Some((key.clone(), val.clone()))
                     } else if let ValueView::ValuePair(key, val) = a.view() {
@@ -1474,7 +1479,7 @@ impl Interpreter {
             // callback, #8825) must still bind to it.
             let arity_positional_count = plain_args
                 .iter()
-                .filter(|a| !matches!(a.view(), ValueView::Pair(..)))
+                .filter(|a| !(a.is_any_pair_value() && matches!(a.view(), ValueView::Pair(..))))
                 .count();
             let has_placeholder = |p: &String| {
                 p.starts_with('^')
