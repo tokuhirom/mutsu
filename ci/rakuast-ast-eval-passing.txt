@@ -62,6 +62,7 @@ t/collections/array/array-nil-store-default.t
 t/collections/array/array-oob-any.t
 t/collections/array/array-pos-methods-store-in-place.t
 t/collections/array/array-push-byref-coherence.t
+t/collections/array/array-push-lean-local.t
 t/collections/array/array-push-sub-form-named-arg.t
 t/collections/array/array-push-target-forms.t
 t/collections/array/array-push-typed-element-check.t
@@ -3895,6 +3896,7 @@ t/modules/import-export/imported-constant-visible-via-code-ref.t
 t/modules/import-export/imported-exception-when.t
 t/modules/import-export/imported-exported-proto-local-multi.t
 t/modules/import-export/imported-increment-proxy-operand.t
+t/modules/import-export/imported-last-sub-shadows-statement.t
 t/modules/import-export/imported-list-assoc-infix-chain.t
 t/modules/import-export/imported-listop-angle-arg.t
 t/modules/import-export/imported-multi-infix-unicode-mul-declines-to-core-numeric.t
@@ -7072,6 +7074,7 @@ t/rakuast/rakuast-eval-for-elsif.t
 t/rakuast/rakuast-eval-gather.t
 t/rakuast/rakuast-eval-given.t
 t/rakuast/rakuast-eval-imported-infix-candidates.t
+t/rakuast/rakuast-eval-imported-loop-control.t
 t/rakuast/rakuast-eval-infix.t
 t/rakuast/rakuast-eval-interp.t
 t/rakuast/rakuast-eval-module-pod-late-call.t

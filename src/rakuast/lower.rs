@@ -3278,6 +3278,7 @@ fn lower_named_call(names: &NameScope, node: &RakuAstNode) -> Result<Expr, Runti
     };
     if let Some(kind) = kind
         && !super::declared_routines::is_declared(names, &name)
+        && !super::declared_routines::is_user_call(node)
     {
         let flow = |label, value| Expr::ControlFlow {
             kind,
