@@ -5293,6 +5293,7 @@ t/oo/construct/constructor-positional.t
 t/oo/construct/control-construct-value-position.t
 t/oo/construct/control-constructs-in-expression-position.t
 t/oo/construct/cpp-constructor-syntax.t
+t/oo/construct/ctor-definite-required-provided.t
 t/oo/construct/ctor-istype-shaped-attrs.t
 t/oo/construct/ctor-lane-build-tweak.t
 t/oo/construct/ctor-lane-early-form.t
@@ -8183,6 +8184,7 @@ t/regex/regex-ltm-nfa-entry-points.t
 t/regex/regex-ltm-nfa-proto.t
 t/regex/regex-ltm-nfa.t
 t/regex/regex-ltm-proto-dispatch.t
+t/regex/regex-ltm-proto-first-char-gate.t
 t/regex/regex-ltm-recursion-cut.t
 t/regex/regex-ltm-sibling-termination-leak.t
 t/regex/regex-ltm-uniprop-negated-named-fate.t
@@ -8658,6 +8660,7 @@ t/routines/callable-can-list.t
 t/routines/callable-for-phaser-own-code-object.t
 t/routines/callable-set-subset-operators.t
 t/routines/callable-var-paren-assign-call.t
+t/routines/caller-lexical-lists-caller-routines.t
 t/routines/closure/anon-container-cell-inplace-reassign.t
 t/routines/closure/anon-declarator-name-and-gist.t
 t/routines/closure/anon-enum-value-map.t
@@ -11129,6 +11132,7 @@ t/vm/scope/eval-bind-outer-lexical.t
 t/vm/scope/eval-block-hook-import-my-stash.t
 t/vm/scope/eval-dot-form-caller-lexicals.t
 t/vm/scope/eval-identical-sub-own-scope.t
+t/vm/scope/eval-mainline-caller-lexical-stash.t
 t/vm/scope/eval-my-class-out-of-scope.t
 t/vm/scope/eval-my-shadows-caller-lexical.t
 t/vm/scope/eval-prerun-use-scope.t
