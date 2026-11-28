@@ -4003,7 +4003,17 @@ impl Interpreter {
             // Cost: O(c), c = the chunk's container-ref capture names (a linear
             // `Vec::contains`), O(1) when it has none.
             OpCode::WrapVarRef { name_idx, slot } => {
-                self.exec_wrap_var_ref_op_fetching(code, *name_idx, *slot)?;
+                // The value of a named argument `:$x`: the next op turns the
+                // VarRef into the variable's cell, so no binder reads the
+                // declared type it would otherwise carry (#19399).
+                let named_arg = matches!(
+                    code.ops.get(*ip + 1),
+                    Some(OpCode::MakeNamedArg {
+                        readonly: false,
+                        ..
+                    })
+                );
+                self.exec_wrap_var_ref_op_fetching(code, *name_idx, *slot, named_arg)?;
                 *ip += 1;
             }
             // Cost: O(1) with the compiler's slot hint; O(L) by-name locals fallback.
