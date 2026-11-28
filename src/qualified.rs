@@ -212,7 +212,7 @@ mod flags {
     /// not a lexical pseudo-stash (`MY::`, `OUTER::`, `CALLER::`, ...) or the
     /// compiler's internal spelling of one (`@__mutsu_outer::0:a`, the
     /// resolved slot of an `@OUTER::a` past a shadowing `my @a`).
-    pub(super) fn names_package_stash(rest: &str) -> bool {
+    fn names_package_stash(rest: &str) -> bool {
         let Some(at) = super::split::separators(rest).next() else {
             return false;
         };
@@ -236,15 +236,6 @@ mod flags {
                     | "CLIENT"
             )
     }
-}
-
-/// Whether a sigil-stripped `Pkg::name` addresses a real package stash rather
-/// than a lexical pseudo-stash (`MY::`, `OUTER::`, `CALLER::`, ...) or the
-/// compiler's internal spelling of one. A pure function of the text, so the
-/// symbol classifier may ask it while it classifies.
-// Cost: O(|rest|).
-pub(crate) fn names_package_stash(rest: &str) -> bool {
-    flags::names_package_stash(rest)
 }
 
 /// Whether `name` carries a `::` qualifier, decided once per symbol.

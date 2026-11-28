@@ -200,19 +200,16 @@ pub(crate) fn is_plain_user_lexical(name: &str) -> bool {
         // An uppercase initial marks a type name only where a type name can
         // stand: a sigil-less key (scalars are stored sigil-less, so `X` may be
         // either). Behind an `@`/`%` sigil it is an ordinary user array or hash
-        // (`our @A000793`, `my %Cache`) or a package's (`@Pkg::A000793`, the
-        // key an `our` is stored under -- a lowercase `@pkg::x` was already
-        // classed plain): no type, special or dynamic is spelled that way
-        // (dynamics carry their `*` twigil). Classed as system names, the
-        // variables a module exported were kept in every closure capture and
-        // walked by every `.map` plan, so a program that imported a few
-        // hundred of them ran its closures several times slower (#19324). A
-        // pseudo-stash spelling (`@MY::x`, `@CALLER::x`, the compiler's
-        // `@__mutsu_outer::...`) is not a variable of its own and stays a
-        // system name.
+        // (`our @A000793`, `my %Cache`): no type, special or dynamic is
+        // spelled that way (dynamics carry their `*` twigil). Classed as
+        // system names, the arrays a module exported were kept in every
+        // closure capture and walked by every `.map` plan, so a program that
+        // imported a few hundred of them ran its closures several times slower
+        // (#19324). A qualified `@Pkg::X` stays a system name: it is a package
+        // variable, which a closure and a `start` worker must carry whether or
+        // not they name it (`@GLOBAL::x` assigned in a sub, read in a worker).
         Some(c) if c.is_ascii_uppercase() && matches!(first, b'@' | b'%') => {
-            let rest = &name[1..];
-            !crate::qualified::has_separator(rest) || crate::qualified::names_package_stash(rest)
+            !crate::qualified::has_separator(&name[1..])
         }
         _ => false,
     }
@@ -3787,25 +3784,20 @@ mod tests {
             );
         }
         // An uppercase initial behind an `@`/`%` sigil is a user variable, not
-        // a type name -- including the package key an `our` is stored under
-        // (#19324).
-        for k in [
-            "@A000793",
-            "%Cache",
-            "@X1",
-            "@Math::Sequences::Integer::A000001",
-            "%Pkg::Registry",
-            "@GLOBAL::Items",
-        ] {
+        // a type name (#19324).
+        for k in ["@A000793", "%Cache", "@X1"] {
             assert!(
                 is_plain_user_lexical(k),
                 "{k} should be a plain user lexical"
             );
         }
-        // ...but not a pseudo-stash spelling, and not where a type name can
-        // stand (a sigil-less key) or a routine (`&MAIN`) runtime machinery
-        // looks up by name.
+        // ...but not a package variable, a pseudo-stash spelling, a sigil-less
+        // key (where a type name can stand) or a routine (`&MAIN`) runtime
+        // machinery looks up by name.
         for k in [
+            "@Math::Sequences::Integer::A000001",
+            "%Pkg::Registry",
+            "@GLOBAL::Items",
             "@MY::X",
             "@CALLER::X",
             "%OUTER::X",
