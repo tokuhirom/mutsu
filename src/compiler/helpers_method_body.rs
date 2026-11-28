@@ -171,6 +171,7 @@ impl Compiler {
                     .map(str::to_string)
             }));
         method_compiler.class_body_static_code_vars = self.class_body_static_code_vars.clone();
+        method_compiler.class_body_our_code_vars = self.class_body_our_code_vars.clone();
         method_compiler.variables_pragma = self.variables_pragma;
         // A `my class NAME` shadowing an outer `constant NAME` is what a bare
         // `NAME` in its own methods means too (#11517).

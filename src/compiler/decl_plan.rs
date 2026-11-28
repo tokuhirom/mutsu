@@ -670,6 +670,11 @@ impl Compiler {
         // container for every method body (`&k = ...` is not a routine-name
         // assignment); the scope-blind method compilers learn it from here.
         let saved_static_code_vars = self.class_body_static_code_vars.clone();
+        // A body `our &t` is assignable from a method body too (`&t = ...`
+        // writes the package cell the body declaration shares, #19159).
+        let saved_method_our_code_vars = self.class_body_our_code_vars.clone();
+        self.class_body_our_code_vars
+            .extend(Self::body_our_code_var_names(body));
         self.class_body_static_code_vars
             .extend(crate::ast::scope_members(body).filter_map(|s| match s {
                 Stmt::VarDecl {
@@ -792,6 +797,7 @@ impl Compiler {
             keys.push(key);
         }
         self.class_body_static_code_vars = saved_static_code_vars;
+        self.class_body_our_code_vars = saved_method_our_code_vars;
         keys
     }
 
