@@ -36,9 +36,6 @@
 
 use super::*;
 
-/// The most arguments the lane copies off the stack.
-const KERNEL_LANE_MAX_ARGS: usize = 4;
-
 impl Interpreter {
     /// Run `plan`'s kernel for the call at `code.ops[ip]` (whose arity is
     /// `arity` and whose receiver class matched the site entry). `None`:
@@ -59,41 +56,21 @@ impl Interpreter {
             || plan.private
             || plan.container_params
             || plan.named_slurpy
-            || arity > KERNEL_LANE_MAX_ARGS
             || arg_keys.len() != arity
         {
             return None;
         }
         let target_idx = self.stack.len().checked_sub(arity + 1)?;
-        // The arguments where they lie: each a plain instance of exactly the
-        // class its key names.
-        let mut buf: [Value; KERNEL_LANE_MAX_ARGS] = std::array::from_fn(|_| Value::NIL);
-        for ((arg, key), slot) in self.stack[target_idx + 1..]
-            .iter()
-            .zip(arg_keys)
-            .zip(buf.iter_mut())
-        {
-            if !(arg.is_instance_value()
-                && matches!(arg.view(), ValueView::Instance { class_name, .. } if class_name == *key))
-            {
-                return None;
-            }
-            *slot = arg.clone();
-        }
-        let args = &buf[..arity];
-        let target = self.stack[target_idx].clone();
-        let ValueView::Instance { attributes, .. } = target.view() else {
-            return None;
-        };
-        if super::vm_method_call_attrs::CallAttrs::Cell(&attributes).has_alias_meta()
-            || !self.slot_frame_entry_ok()
-            || !self.lean_args_ok(&plan.def, args)
-        {
-            return None;
-        }
-        let value = self.try_method_kernel(kernel, body, &target, args)?;
+        // The kernel reads the receiver and the arguments where they lie on
+        // the operand stack. The stack is lent out for the attempt (a kernel
+        // op neither pushes nor pops: it reads attribute cells and the
+        // accessor lane) and put back before anything else runs.
+        let stack = std::mem::take(&mut self.stack);
+        let value =
+            self.method_site_ic_kernel_on(kernel, body, plan, &stack[target_idx..], arg_keys);
+        self.stack = stack;
+        let value = value?;
         self.sync_source_line(code, ip);
-        drop(buf);
         self.stack.truncate(target_idx);
         self.stack.push(value);
         // The site's entry effects (`run_method_site_ic_plan`), the kernel
@@ -107,5 +84,36 @@ impl Interpreter {
         self.apply_pending_rw_writeback(code);
         self.drain_pending_local_updates_after_call(code);
         Some(())
+    }
+
+    /// The kernel attempt on `operands` (the receiver, then the arguments):
+    /// each argument a plain instance of exactly the class its key names,
+    /// the replay's gates before its kernel, then the kernel.
+    // Cost: O(a + k), a = arguments, k = kernel ops.
+    fn method_site_ic_kernel_on(
+        &mut self,
+        kernel: &super::vm_method_kernel::MethodKernel,
+        body: &CompiledCode,
+        plan: &super::vm_method_call_plan::MethodCallPlan,
+        operands: &[Value],
+        arg_keys: &[Symbol],
+    ) -> Option<Value> {
+        let (target, args) = operands.split_first()?;
+        if !args.iter().zip(arg_keys).all(|(arg, key)| {
+            arg.is_instance_value()
+                && matches!(arg.view(), ValueView::Instance { class_name, .. } if class_name == *key)
+        }) {
+            return None;
+        }
+        let ValueView::Instance { attributes, .. } = target.view() else {
+            return None;
+        };
+        if super::vm_method_call_attrs::CallAttrs::Cell(&attributes).has_alias_meta()
+            || !self.slot_frame_entry_ok()
+            || !self.lean_args_ok(&plan.def, args)
+        {
+            return None;
+        }
+        self.try_method_kernel(kernel, body, target, args)
     }
 }
