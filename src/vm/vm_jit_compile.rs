@@ -36,6 +36,35 @@ unsafe impl Send for Engine {}
 
 static ENGINE: Mutex<Option<Engine>> = Mutex::new(None);
 
+/// The engine behind `guard`, created on first use.
+fn engine_in(guard: &mut Option<Engine>) -> Option<&mut Engine> {
+    if guard.is_none() {
+        let mut flags = settings::builder();
+        flags.set("opt_level", "speed").ok()?;
+        let isa = cranelift_native::builder()
+            .ok()?
+            .finish(settings::Flags::new(flags))
+            .ok()?;
+        let builder = JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
+        *guard = Some(Engine {
+            module: JITModule::new(builder),
+            fn_counter: 0,
+        });
+    }
+    guard.as_mut()
+}
+
+/// Run `f` with the process-wide JIT module and a fresh function-name number,
+/// for a compiler other than this file's (the native kernels, ADR-19288).
+/// `None` when the engine cannot be created on this host.
+pub(super) fn with_engine<R>(f: impl FnOnce(&mut JITModule, u64) -> Option<R>) -> Option<R> {
+    let mut guard = ENGINE.lock().unwrap();
+    let engine = engine_in(&mut guard)?;
+    engine.fn_counter += 1;
+    let n = engine.fn_counter;
+    f(&mut engine.module, n)
+}
+
 /// Compile `code` to a native Tier A body. `None` = bailout (unsupported
 /// opcode, or an internal Cranelift failure): the caller marks the chunk so
 /// it is never scanned again.
@@ -216,22 +245,7 @@ fn build(
     // then is this `OnceLock` read.
     let dump = super::vm_jit_dump::mode();
     let mut guard = ENGINE.lock().unwrap();
-    let engine = match guard.as_mut() {
-        Some(e) => e,
-        None => {
-            let mut flags = settings::builder();
-            flags.set("opt_level", "speed").ok()?;
-            let isa = cranelift_native::builder()
-                .ok()?
-                .finish(settings::Flags::new(flags))
-                .ok()?;
-            let builder = JITBuilder::with_isa(isa, cranelift_module::default_libcall_names());
-            guard.insert(Engine {
-                module: JITModule::new(builder),
-                fn_counter: 0,
-            })
-        }
-    };
+    let engine = engine_in(&mut guard)?;
     let module = &mut engine.module;
 
     let frontend_config = module.target_config();

@@ -242,7 +242,7 @@ fn jit_enabled_from_env() -> bool {
 
 /// Call-count threshold before a chunk is considered hot and compiled.
 #[cfg(feature = "jit")]
-fn jit_threshold() -> u32 {
+pub(super) fn jit_threshold() -> u32 {
     static THRESHOLD: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
     *THRESHOLD.get_or_init(|| {
         std::env::var("MUTSU_JIT_THRESHOLD")

@@ -796,6 +796,20 @@ impl Interpreter {
                                 cl = Self::callsite_line_of_view(&view);
                             }
                         }
+                        // ADR-19288: a closed-int-arithmetic routine runs as
+                        // a native kernel. Its guards demand plain `Int`
+                        // arguments, so a junction or a callsite-line marker
+                        // never enters; a decline (or a bail) leaves the stack
+                        // as it was for the chain below.
+                        if !call_has_slip
+                            && !call_has_named
+                            && let Some(result) =
+                                self.try_call_kernel(cf, name_sym, cur_pkg_sym, arity_usize)
+                        {
+                            self.stack.push(result);
+                            self.drain_and_reconcile_after_cached_call(code);
+                            return Ok(());
+                        }
                         // Slice 2d: array/hash into a plain `$` param must share the
                         // caller's container -> fall through to the slow path.
                         // ADR-0110: a routine the compiler proved typed and

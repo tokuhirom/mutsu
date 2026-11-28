@@ -1,5 +1,7 @@
 mod attribute_decl;
 mod class_body_free_vars;
+#[cfg(feature = "jit")]
+pub(crate) mod kernel_slot;
 #[cfg(test)]
 #[path = "opcode/nested_decl_names_tests.rs"]
 mod nested_decl_names_tests;
@@ -8563,6 +8565,8 @@ pub(crate) struct JitCodeState {
     /// `ranges` mutex; ranges beyond the fixed capacity simply stay on the
     /// mutex path (correct, just slower).
     pub(crate) range_cache: [(std::sync::atomic::AtomicU64, std::sync::atomic::AtomicU64); 4],
+    /// The routine's native int kernel, when it has one (ADR-19288).
+    pub(crate) kernel: kernel_slot::KernelSlot,
 }
 
 /// The per-chunk range table: `(start, end)` keys to shared range states.
