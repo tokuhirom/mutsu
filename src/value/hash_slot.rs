@@ -58,6 +58,11 @@ fn promote_leaf(elem: &mut Value, tag: &PromotionTag) -> Value {
     if let Some(def) = &tag.default {
         cell.set_default(def.clone());
     }
+    // Named after the owning hash (`my $z := %k<a>; $z.VAR.name` is `%k`),
+    // ahead of the bind naming the cell after the alias (#19157).
+    if tag.owner.len() > 1 {
+        cell.name_once(crate::symbol::Symbol::intern(&tag.owner));
+    }
     *elem = Value::ContainerRef(cell.clone());
     Value::ContainerRef(cell)
 }
