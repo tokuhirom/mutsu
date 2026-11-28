@@ -201,7 +201,7 @@ pub(super) fn kernel_elem_kind_hint(
     slot: u32,
 ) -> Option<crate::opcode::kernel_slot::SlotKind> {
     use crate::opcode::kernel_slot::SlotKind;
-    with_plain_array_node(interp, slot, |items| match items.get(0)?.view() {
+    with_plain_array_node(interp, slot, |items| match items.first()?.view() {
         ValueView::Int(_) => Some(SlotKind::Int),
         ValueView::Num(_) => Some(SlotKind::Num),
         _ => None,
