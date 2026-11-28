@@ -33,6 +33,15 @@ impl Interpreter {
         let indices = self.resolve_multidim_indices(target, raw_indices)?;
         // A shaped hash (#19283) tests the entry the key list names.
         if adverb == "none"
+            && let Some(list) = self.shaped_hash_prefix_op(
+                target,
+                &indices,
+                crate::runtime::methods_shaped_hash::PrefixOp::Exists { negated },
+            )?
+        {
+            return Ok(list);
+        }
+        if adverb == "none"
             && let Some((exists, _)) =
                 self.shaped_hash_exists_or_delete(&mut target.clone(), &indices, false)?
         {

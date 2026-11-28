@@ -77,6 +77,16 @@ impl Interpreter {
         // list names, as rakudo 2026.11's `Hash::Shaped.DELETE-KEY` does.
         if let Some((name, dims)) = args.split_first()
             && let Some(mut target) = self.env.get(&name.to_string_value()).cloned()
+            && let Some(list) = self.shaped_hash_prefix_op(
+                &target,
+                dims,
+                crate::runtime::methods_shaped_hash::PrefixOp::Delete,
+            )?
+        {
+            return Ok(list);
+        }
+        if let Some((name, dims)) = args.split_first()
+            && let Some(mut target) = self.env.get(&name.to_string_value()).cloned()
             && let Some((_, removed)) = self.shaped_hash_exists_or_delete(&mut target, dims, true)?
         {
             return Ok(removed);

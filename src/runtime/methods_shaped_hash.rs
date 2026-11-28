@@ -5,6 +5,18 @@
 use super::*;
 use crate::value::shaped_hash::{shaped_hash_dims, storage_key};
 
+/// What a partial-depth subscript of a shaped hash does to the entries it
+/// names (see [`Interpreter::shaped_hash_prefix_op`]).
+#[derive(Clone, Copy)]
+pub(crate) enum PrefixOp<'a> {
+    /// Read them; the adverb (`""`, `"kv"`, `"p"`, `"k"`, `"v"`) picks the shape.
+    Read(&'a str),
+    /// `:exists` (`:!exists` when `negated`): one Bool per entry.
+    Exists { negated: bool },
+    /// `:delete`: remove them and give their values.
+    Delete,
+}
+
 impl Interpreter {
     /// The keys of a shaped hash subscript given as one value: a list or a
     /// Seq gives one key per dimension, anything else is a single key.
@@ -64,6 +76,83 @@ impl Interpreter {
         Ok(self.shaped_hash_key(&dims, &parts, operation)?.1)
     }
 
+    /// A subscript of a shaped hash holding fewer keys than it has dimensions
+    /// (`%h{"a";"b"}` on `%h{Str;Str;Str}`, or `%h<a>`) names every entry
+    /// whose key list starts with those keys, as rakudo 2026.11's
+    /// `Hash::Shaped` does: a read gives their values, `:exists` one Bool per
+    /// entry, `:delete` the removed values, and an adverb (`:kv`, `:p`, `:k`,
+    /// `:v`) shapes the matches the way it does for any slice. Each key is
+    /// checked against its dimension's type. `None` when `target` is not a
+    /// shaped hash or `parts` names a whole key list.
+    // Cost: O(d + n), d = dimensions, n = entries of the hash.
+    pub(crate) fn shaped_hash_prefix_op(
+        &mut self,
+        target: &Value,
+        parts: &[Value],
+        op: PrefixOp<'_>,
+    ) -> Result<Option<Value>, RuntimeError> {
+        let Some(dims) = shaped_hash_dims(&target.deref_container()) else {
+            return Ok(None);
+        };
+        if parts.is_empty() || parts.len() >= dims.len() {
+            return Ok(None);
+        }
+        let mut keys = Vec::with_capacity(parts.len());
+        for (i, (part, ty)) in parts.iter().zip(&dims).enumerate() {
+            let part = part.deref_container();
+            if !self.type_matches_value(ty, &part) {
+                let repr = self.type_check_got_repr(&part);
+                return Err(key_type_error(i + 1, ty, &part, &repr));
+            }
+            keys.push(part);
+        }
+        let prefix = storage_key(&keys);
+        let mut node = target.deref_container();
+        let mut hits: Vec<(Value, Value)> = Vec::new();
+        node.with_hash_mut(|hash| {
+            let matching: Vec<String> = hash
+                .map
+                .keys()
+                .filter(|k| k.starts_with(&prefix))
+                .cloned()
+                .collect();
+            for key in matching {
+                let list = hash
+                    .original_keys
+                    .as_ref()
+                    .and_then(|keys| keys.get(&key))
+                    .cloned()
+                    .unwrap_or(Value::NIL);
+                let value = hash.map.get(&key).map(|v| v.deref_container()).unwrap_or(Value::NIL);
+                if matches!(op, PrefixOp::Delete) {
+                    let data = crate::value::gc_data_mut(hash);
+                    data.map.remove(&key);
+                    if let Some(keys) = data.original_keys.as_mut() {
+                        keys.remove(&key);
+                    }
+                }
+                hits.push((list, value));
+            }
+        });
+        let list = |items: Vec<Value>| {
+            Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(items)),
+                crate::value::ArrayKind::List,
+            )
+        };
+        let items = match op {
+            PrefixOp::Exists { negated } => hits.iter().map(|_| Value::truth(!negated)).collect(),
+            PrefixOp::Read(adverb) => match adverb {
+                "kv" => hits.into_iter().flat_map(|(k, v)| [k, v]).collect(),
+                "p" => hits.into_iter().map(|(k, v)| Value::value_pair(k, v)).collect(),
+                "k" => hits.into_iter().map(|(k, _)| k).collect(),
+                _ => hits.into_iter().map(|(_, v)| v).collect(),
+            },
+            PrefixOp::Delete => hits.into_iter().map(|(_, v)| v).collect(),
+        };
+        Ok(Some(list(items)))
+    }
+
     /// `%h{a;b}` on the shaped hash `target`: the value the key list names, or
     /// the value type object when there is no such entry.
     // Cost: O(d), d = dimensions.
@@ -76,6 +165,9 @@ impl Interpreter {
         let Some(dims) = shaped_hash_dims(&target) else {
             return Ok(None);
         };
+        if let Some(values) = self.shaped_hash_prefix_op(&target, parts, PrefixOp::Read(""))? {
+            return Ok(Some(values));
+        }
         let (key, _) = self.shaped_hash_key(&dims, parts, "access")?;
         let ValueView::Hash(hash) = target.view() else {
             return Ok(None);
