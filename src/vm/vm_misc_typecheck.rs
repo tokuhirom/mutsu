@@ -5,7 +5,9 @@ use crate::value::ValueMap;
 pub(super) enum TypeCheckMode {
     /// `feeds_decl_store`: the statement-form declaration store follows the
     /// check directly (see `type_check_plain_scalar_fast`).
-    Assignment { feeds_decl_store: bool },
+    Assignment {
+        feeds_decl_store: bool,
+    },
     Binding,
     Parameter,
 }
