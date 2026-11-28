@@ -309,6 +309,10 @@ pub(super) fn carried_slots(
     // owns, neither carried nor `my` declarations.
     let mut loop_vars = Vec::new();
     let mut used = Vec::new();
+    // Slots the region writes. A slot it only reads keeps its word through
+    // the run, so the exit writeback (which skips an unchanged word) never
+    // stores into it, and its constraint has nothing to check.
+    let mut written = Vec::new();
     for (start, end, _) in shape.segments() {
         for op in code.ops.get(start..end)? {
             if num_method_call(code, op).is_some() {
@@ -340,9 +344,19 @@ pub(super) fn carried_slots(
                 OpCode::PreIncrement(_, Some(s))
                 | OpCode::PreDecrement(_, Some(s))
                 | OpCode::PostIncrement(_, Some(s))
-                | OpCode::PostDecrement(_, Some(s)) => used.push(*s),
-                OpCode::GetLocal(s) | OpCode::SetLocal(s) => used.push(*s),
-                OpCode::GetLocalMetaAssign { slot, .. } => used.push(*slot),
+                | OpCode::PostDecrement(_, Some(s)) => {
+                    used.push(*s);
+                    written.push(*s);
+                }
+                OpCode::GetLocal(s) => used.push(*s),
+                OpCode::SetLocal(s) => {
+                    used.push(*s);
+                    written.push(*s);
+                }
+                OpCode::GetLocalMetaAssign { slot, .. } => {
+                    used.push(*slot);
+                    written.push(*slot);
+                }
                 OpCode::SetVarDynamic { .. } => declared.push(plain_decl(op)?),
                 OpCode::SetLocalDecl { .. }
                 | OpCode::LoadConst(_)
@@ -390,11 +404,13 @@ pub(super) fn carried_slots(
     out.sort_unstable();
     out.dedup();
     // A typed variable's store checks its constraint, which a kernel would
-    // skip: only untyped slots are carried or declared.
+    // skip: only untyped slots are written or declared. A carried slot the
+    // region only reads (an enclosing loop's parameter, whose constraint is
+    // `Unrecorded`) is never stored into, so any constraint it has holds.
     let untyped = |s: &u32| {
         code.declared_constraint(*s as usize) == crate::binding_desc::DeclaredConstraint::Untyped
     };
-    if !out.iter().all(untyped) || !declared.iter().all(untyped) {
+    if !out.iter().filter(|s| written.contains(s)).all(untyped) || !declared.iter().all(untyped) {
         return None;
     }
     Some((out, elems))
