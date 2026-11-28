@@ -139,7 +139,9 @@ impl Interpreter {
         // same key (plus a `String` alloc for it) on every iteration profiled
         // at ~3% of a hot numeric loop. The careted-placeholder alias pair is
         // resolved here too, so the loop body is one or two `insert_sym`s.
-        let topic_sym = (!use_local_only && param_name.is_none()).then(|| {
+        // A loop that owns its topic slot (`ForLoopSpec::topic_slot_only`)
+        // binds only the slot: its body never reads `_` by name.
+        let topic_sym = (!use_local_only && param_name.is_none() && !spec.topic_slot_only).then(|| {
             crate::env::note_env_key("_");
             crate::symbol::Symbol::intern("_")
         });

@@ -288,7 +288,10 @@ impl Interpreter {
         idx: usize,
         arity: usize,
     ) {
-        if spec.source_var_names.is_empty() {
+        // A loop that owns its topic slot cannot write `$_`
+        // (`ForLoopSpec::topic_slot_only`), so there is nothing to write back,
+        // and the env's `_` it would read is the enclosing topic.
+        if spec.source_var_names.is_empty() || spec.topic_slot_only {
             return;
         }
         if spec.chunks_items() {
