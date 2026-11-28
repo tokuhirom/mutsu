@@ -616,6 +616,7 @@ pub(crate) mod container_read;
 mod dispatch_shape;
 pub(crate) mod mixin_identity;
 pub(crate) use dispatch_shape::iterator_kind::native_iterator_is_lazy;
+mod pair_value_swap;
 pub(crate) mod render_guard;
 pub(crate) mod seq_gen;
 mod varref_declared;
