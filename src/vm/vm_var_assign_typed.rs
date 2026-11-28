@@ -778,6 +778,21 @@ impl Interpreter {
             ));
         }
         let start = self.stack.len() - n;
+        // Every piece a plain `Str` or `Int` (`"key-$i"`): join them where they
+        // sit on the stack. The general loop below takes the same fast path
+        // per piece; this only skips draining them into a vector first.
+        // Whether any type declares a `^find_method` is the one hook a plain
+        // piece could still reach.
+        let plain_pieces_take_fast_path =
+            !crate::runtime::find_method_intercept::any_user_find_method();
+        if plain_pieces_take_fast_path
+            && let Some(joined) =
+                crate::builtins::str_prim::Joiner::join_plain_pieces(&self.stack[start..])
+        {
+            self.stack.truncate(start);
+            self.stack.push(joined);
+            return Ok(());
+        }
         let values: Vec<Value> = self.stack.drain(start..).collect();
         // Slice F: a user `.Str`/`.Stringy` method run during interpolation can
         // mutate a captured-outer caller lexical (`my $c; method Str {$c++; ...}`);
@@ -804,10 +819,6 @@ impl Interpreter {
             }};
         }
 
-        // Whether any type declares a `^find_method`, the one hook below a
-        // plain `Str`/`Int` piece could still reach. Read once per op.
-        let plain_pieces_take_fast_path =
-            !crate::runtime::find_method_intercept::any_user_find_method();
         for (part_index, v) in values.into_iter().enumerate() {
             // A plain `Str` or `Int` piece (`"key-$_"`): none of the checks
             // below applies to one -- it is not a Proxy, container, Seq,

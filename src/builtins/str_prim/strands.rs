@@ -123,6 +123,40 @@ impl Joiner {
         Self::default()
     }
 
+    /// The joined string of `pieces` when every one is a plain `Str` or a
+    /// plain `Int` (`"key-$i"`), else `None`. The pending buffer is sized
+    /// for the whole result up front, so a short interpolation allocates its
+    /// text once instead of growing it piece by piece.
+    ///
+    /// Cost: O(n), n = bytes of the result.
+    pub(crate) fn join_plain_pieces(pieces: &[Value]) -> Option<Value> {
+        // An i64 is at most 20 characters ("-9223372036854775808").
+        const MAX_INT_CHARS: usize = 20;
+        let mut cap = 0usize;
+        for v in pieces {
+            if let crate::value::ValueView::Str(arc) = v.view() {
+                cap += arc.byte_len();
+            } else if v.as_int().is_some() {
+                cap += MAX_INT_CHARS;
+            } else {
+                return None;
+            }
+        }
+        let mut joiner = Joiner {
+            parts: Vec::new(),
+            pending: String::with_capacity(cap),
+            len: 0,
+        };
+        for v in pieces {
+            if let Some(i) = v.as_int() {
+                joiner.push_int(i);
+            } else {
+                joiner.push_value(v);
+            }
+        }
+        Some(joiner.finish())
+    }
+
     /// Append text that has no shareable payload.
     ///
     /// Cost: O(n), n = bytes of `s`.
