@@ -182,12 +182,12 @@ impl Interpreter {
         {
             return None;
         }
-        // An attribute default or a BUILD/TWEAK body may read the caller's
-        // lexicals: a transient scoped overlay env is collapsed first, as the
-        // full path does before its dispatch tail (`try_ctor_lane`).
+        // No scoped overlay env is collapsed: the full path does not collapse
+        // one on its way to `bless` either. The env a BUILD/TWEAK body or an
+        // attribute default runs over is the caller's frame env, scoped or not,
+        // exactly as there (`run_plain_method_lane` has the argument).
         let installed = self.caches.bless_lane.get(&class_sym)?;
         let runs_submethods = installed.has_build || installed.has_tweak;
-        let flatten = runs_submethods || !installed.evaluates_no_decl_expr(self);
         // Committed: the call's own arguments leave the stack.
         let raw_args = self.stack.split_off(target_idx + 1);
         let target = self.stack.pop()?;
@@ -199,9 +199,6 @@ impl Interpreter {
             && let Err(e) = self.reify_map_grep_seq_method_args(&target, method_sym, &args)
         {
             return Some(Err(e));
-        }
-        if flatten {
-            self.flatten_scoped_env();
         }
         let Some(result) = loan_env!(self, try_native_bless(&target, &args)) else {
             // The native `bless` declined (the plan identity says it cannot):
