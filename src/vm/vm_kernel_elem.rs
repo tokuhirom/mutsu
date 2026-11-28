@@ -346,7 +346,9 @@ mod tests {
         }
         // A slot that holds no array never qualifies, whatever the latches.
         let not_array = interp_with(&code, slot, Value::int(1));
-        assert!(!kernel_elem_entry_ok(&not_array, &code, slot, name_idx, false));
+        assert!(!kernel_elem_entry_ok(
+            &not_array, &code, slot, name_idx, false
+        ));
     }
 
     #[test]
