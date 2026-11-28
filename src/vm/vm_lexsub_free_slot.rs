@@ -25,7 +25,8 @@
 //! - **A cell**: re-test the guards (the probes of the chain whose answer can
 //!   change during a call: an rw-return context, an atomic variable of the
 //!   name, a sigilless attribute alias, an escaping `our` capture, a running
-//!   `for` parameter of the name), then read through the cell. A Nil or lazy
+//!   `for` parameter of the name, and for an `@`/`%` name the cross-thread
+//!   atomic lane), then read through the cell. A Nil or lazy
 //!   thunk, and an aggregate the by-name read would reshape (an itemized
 //!   Array, a Hash under `@`), take the by-name path.
 //! - **`Never`** (the chain's answer was not the alias, or the name is one
@@ -64,7 +65,7 @@ impl Interpreter {
             .unwrap_or(Value::NIL);
         if held.is_container_ref() {
             let name = Self::const_str(code, name_idx);
-            if self.lexsub_free_cache_guards_hold(name) {
+            if self.lex_free_guards_hold(name, kind) {
                 let val = held.deref_clone();
                 if Self::lex_free_servable(&val, kind) {
                     self.stack.push(val);
@@ -79,7 +80,7 @@ impl Interpreter {
         }
         // The first read of the call: take the alias straight from the env
         // when nothing ahead of it in the by-name chain can answer.
-        if let Some(cell) = self.lex_free_direct(code, name_idx) {
+        if let Some(cell) = self.lex_free_direct(code, name_idx, kind) {
             let val = cell.deref_clone();
             if Self::lex_free_servable(&val, kind) {
                 #[cfg(debug_assertions)]
@@ -94,7 +95,7 @@ impl Interpreter {
         }
         self.exec_lex_free_by_name(code, name_idx, kind, ip)?;
         if let Some(val) = self.stack.last().cloned() {
-            self.lex_free_fill(code, slot, name_idx, &val);
+            self.lex_free_fill(code, slot, name_idx, kind, &val);
         }
         Ok(())
     }
@@ -113,10 +114,15 @@ impl Interpreter {
     /// first read.
     // Cost: O(l + a + d), l = running `for` parameter names, a = the sub's
     // aliases, d = env chain depth.
-    fn lex_free_direct(&self, code: &CompiledCode, name_idx: u32) -> Option<Value> {
+    fn lex_free_direct(
+        &self,
+        code: &CompiledCode,
+        name_idx: u32,
+        kind: LexFreeKind,
+    ) -> Option<Value> {
         let name = Self::const_str(code, name_idx);
         let name_sym = code.const_sym(name_idx);
-        if !self.lexsub_free_cache_guards_hold(name)
+        if !self.lex_free_guards_hold(name, kind)
             || code.free_var_rebinds.contains(&name_sym)
             || self.env().frame_capture_holds_name(name, Some(name_sym))
         {
@@ -146,6 +152,19 @@ impl Interpreter {
             Self::const_str(code, name_idx)
         );
         Ok(())
+    }
+
+    /// The probes of the by-name chain that run ahead of the alias and whose
+    /// answer can change while one call runs: the scalar chain's (see
+    /// `lexsub_free_cache_guards_hold`), and for an `@`/`%` name the
+    /// cross-thread atomic lane, which answers before the alias once any
+    /// atomic container operation has created an entry.
+    // Cost: O(l), l = names of the running `for` parameters.
+    #[inline]
+    fn lex_free_guards_hold(&self, name: &str, kind: LexFreeKind) -> bool {
+        self.lexsub_free_cache_guards_hold(name)
+            && (kind == LexFreeKind::Scalar
+                || !crate::runtime::shared_store::atomic_lane_entries_exist())
     }
 
     /// The by-name read `kind` stands for.
@@ -188,9 +207,16 @@ impl Interpreter {
     /// otherwise mark the slot [`LEX_FREE_NEVER`]. A guard that fails now may
     /// hold on the next read, so it leaves the slot empty.
     // Cost: O(a + d), a = the sub's aliases, d = env chain depth.
-    fn lex_free_fill(&mut self, code: &CompiledCode, slot: u32, name_idx: u32, val: &Value) {
+    fn lex_free_fill(
+        &mut self,
+        code: &CompiledCode,
+        slot: u32,
+        name_idx: u32,
+        kind: LexFreeKind,
+        val: &Value,
+    ) {
         let name = Self::const_str(code, name_idx);
-        if !self.lexsub_free_cache_guards_hold(name) {
+        if !self.lex_free_guards_hold(name, kind) {
             return;
         }
         let name_sym = code.const_sym(name_idx);

@@ -5,7 +5,7 @@ use nqp;
 # own frame (ADR-18244 stage B, #18274): the first read of a call resolves the
 # alias, later reads load it. Every answer here must match a by-name read.
 
-plan 16;
+plan 17;
 
 # Scalar, array and hash reads across many calls, with writes in between.
 {
@@ -159,6 +159,16 @@ plan 16;
         (^3).map({ add($_) }).join(',')
     }
     is threaded(), '10,11,12', 'reads from a started thread';
+}
+
+# An outer array read from started threads.
+{
+    sub workers() {
+        my @o = 1, 2, 3;
+        sub sum-o() { [+] @o }
+        (await (^3).map: { start { sum-o() } }).join(',')
+    }
+    is workers(), '6,6,6', 'an outer array read from started threads';
 }
 
 # A closure over a loop variable passed to the nested sub.
