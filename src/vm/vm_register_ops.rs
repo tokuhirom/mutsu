@@ -172,8 +172,10 @@ impl Interpreter {
         // `use MONKEY-SEE-NO-EVAL` is lexical: a regex that closes over names
         // and interpolates a string carrying code blocks (`<{$re}>`) keeps the
         // pragma of the scope it was written in, whoever matches it later.
-        if self.monkey_see_no_eval()
-            && matches!(base.view(), ValueView::Regex(p) if p.contains("<{"))
+        // The pattern test first: `monkey_see_no_eval` is a pragma lookup, and
+        // this runs on every evaluation of a regex literal.
+        if matches!(base.view(), ValueView::Regex(p) if p.contains("<{"))
+            && self.monkey_see_no_eval()
         {
             // The interpolated string is compiled in the regex's own lexical
             // scope, so its code blocks may name any lexical visible there

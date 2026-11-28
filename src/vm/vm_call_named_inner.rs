@@ -296,7 +296,7 @@ impl Interpreter {
         self.finish_call_capture(&args);
         // The binding is done: the call site's `static_arg_types` must not
         // reach a call the body makes through a route that publishes none.
-        self.static_call_args = false;
+        self.static_call_args = crate::runtime::StaticCallSite::default();
         self.prepare_definite_return_slot(return_spec.as_deref());
 
         // Raku: $! is scoped per routine — fresh Nil on entry.

@@ -213,6 +213,42 @@ impl Interpreter {
         }
     }
 
+    /// [`Self::smartmatch_rhs_sync`] and [`Self::smartmatch_rhs_adverb_names`]
+    /// of the `SmartMatchExpr` op whose RHS is `[rhs_start, rhs_end)`, computed
+    /// for every such op of the chunk on first use and memoized on it: both
+    /// are pure functions of the chunk's ops and constants.
+    // Cost: O(1) after the chunk's first smartmatch; that first call is
+    // O(o + p), o = the chunk's ops, p = the total length of the patterns its
+    // smartmatch RHSs hold.
+    pub(super) fn smartmatch_rhs_names(
+        code: &CompiledCode,
+        rhs_start: usize,
+        rhs_end: usize,
+    ) -> std::sync::Arc<crate::opcode::SmartMatchRhsNames> {
+        let compute = |start: usize, end: usize| {
+            std::sync::Arc::new(crate::opcode::SmartMatchRhsNames {
+                sync: Self::smartmatch_rhs_sync(code, start, end),
+                adverb: Self::smartmatch_rhs_adverb_names(code, start, end),
+            })
+        };
+        let table = code.smartmatch_rhs_names.get_or_init(|| {
+            code.ops
+                .iter()
+                .enumerate()
+                .filter_map(|(i, op)| match op {
+                    OpCode::SmartMatchExpr { rhs_end, .. } => {
+                        Some((i + 1, compute(i + 1, *rhs_end as usize)))
+                    }
+                    _ => None,
+                })
+                .collect()
+        });
+        match table.get(&rhs_start) {
+            Some(names) => std::sync::Arc::clone(names),
+            None => compute(rhs_start, rhs_end),
+        }
+    }
+
     /// Publish the locals `names` selected (env-key spellings).
     // Cost: O(n), n = names.
     pub(super) fn apply_smartmatch_sync(&mut self, code: &CompiledCode, names: &[String]) {

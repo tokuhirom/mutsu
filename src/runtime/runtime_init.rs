@@ -187,7 +187,7 @@ impl Interpreter {
         let mut interpreter = Self {
             types: type_state::TypeState::new(),
             literal_native_args: 0,
-            static_call_args: false,
+            static_call_args: StaticCallSite::default(),
             env: Env::from(env),
             io: io_state::IoState::new(),
             control: control_state::ControlState::new(),

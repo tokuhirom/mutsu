@@ -1,5 +1,7 @@
 use super::vm_call_helpers::CallArgKinds;
 use super::*;
+use crate::opcode::StaticArgTypes;
+use crate::runtime::StaticCallSite;
 use crate::runtime::dispatch_key;
 use crate::runtime::native_increment_dispatch::IncrementOp;
 use crate::symbol::Symbol;
@@ -482,11 +484,14 @@ impl Interpreter {
         spec_idx: u32,
         arg_sources_idx: Option<u32>,
         literal_native_args: u32,
-        static_arg_types: bool,
+        static_arg_types: StaticArgTypes,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let saved = std::mem::replace(&mut self.literal_native_args, literal_native_args);
-        let saved_static = std::mem::replace(&mut self.static_call_args, static_arg_types);
+        let saved_static = std::mem::replace(
+            &mut self.static_call_args,
+            StaticCallSite::of(code, static_arg_types),
+        );
         let r = self.exec_call_func_named_op_inner(
             code,
             name_idx,
@@ -633,11 +638,14 @@ impl Interpreter {
         arity: u32,
         arg_sources_idx: Option<u32>,
         literal_native_args: u32,
-        static_arg_types: bool,
+        static_arg_types: StaticArgTypes,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
         let saved = std::mem::replace(&mut self.literal_native_args, literal_native_args);
-        let saved_static = std::mem::replace(&mut self.static_call_args, static_arg_types);
+        let saved_static = std::mem::replace(
+            &mut self.static_call_args,
+            StaticCallSite::of(code, static_arg_types),
+        );
         let arg_kinds = Self::stack_arg_kinds(code, arg_sources_idx);
         let r = self.exec_call_func_op_inner(
             code,
@@ -2088,7 +2096,7 @@ impl Interpreter {
                 arity,
                 arg_sources_idx,
                 0,
-                false,
+                StaticArgTypes::NONE,
                 compiled_fns,
             );
         }

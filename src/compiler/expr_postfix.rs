@@ -267,6 +267,7 @@ impl Compiler {
             } else {
                 self.compile_incdec_nomatch("postfix:<++>", expr);
             }
+        } else if self.compile_multidim_incdec(expr, true, true) {
         } else if !self.compile_incdec_named_sub_lvalue(expr, true, false) {
             self.compile_incdec_nomatch("postfix:<++>", expr);
         }
@@ -394,6 +395,7 @@ impl Compiler {
             } else {
                 self.compile_incdec_nomatch("postfix:<-->", expr);
             }
+        } else if self.compile_multidim_incdec(expr, false, true) {
         } else if !self.compile_incdec_named_sub_lvalue(expr, false, false) {
             self.compile_incdec_nomatch("postfix:<-->", expr);
         }

@@ -303,7 +303,7 @@ impl Interpreter {
         // provenance mask. Native variables must retain their source type
         // when this call boxes them for ordinary multi dispatch.
         let saved = std::mem::replace(&mut self.literal_native_args, call.native_args);
-        let saved_static = std::mem::replace(&mut self.static_call_args, false);
+        let saved_static = std::mem::take(&mut self.static_call_args);
         let armed = self.trir_gen_arm(call.name);
         // Only an `is rw` parameter was handed a container, so only then do
         // the arguments need keeping for the read-back below.

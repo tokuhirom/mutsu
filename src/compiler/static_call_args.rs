@@ -21,8 +21,35 @@ impl Compiler {
     ///
     /// Known gap: the parser folds `pi`/`e`/`tau` into numeric literals, so
     /// `f(pi)` is treated as static here where rakudo checks it at run time.
-    pub(super) fn static_arg_types(&self, args: &[Expr]) -> bool {
-        args.iter().all(|arg| self.is_static_typed_arg(arg))
+    pub(super) fn static_arg_types(&mut self, args: &[Expr]) -> crate::opcode::StaticArgTypes {
+        use crate::opcode::StaticArgTypes;
+        if !args.iter().all(|arg| self.is_static_typed_arg(arg)) {
+            return StaticArgTypes::NONE;
+        }
+        // The declared type of each typed-variable argument rides on the site,
+        // so a run-time binding failure can tell a variable declared with a
+        // supertype of its parameter (rakudo leaves that to the binder, #19071).
+        let declared: Vec<Value> = args
+            .iter()
+            .filter(|arg| !Self::is_callsite_line_marker(arg))
+            .map(|arg| match arg {
+                Expr::Var(name) => self
+                    .local_types
+                    .get(name)
+                    .map_or(Value::NIL, |tc| Value::str(tc.clone())),
+                _ => Value::NIL,
+            })
+            .collect();
+        if declared.iter().all(Value::is_nil) {
+            return StaticArgTypes::STATIC;
+        }
+        let idx = self.code.add_constant(Value::array(declared));
+        StaticArgTypes::with_var_types(idx)
+    }
+
+    /// The parser's synthetic `__mutsu_test_callsite_line => N` argument.
+    fn is_callsite_line_marker(arg: &Expr) -> bool {
+        Self::callsite_line_marker_const(arg).is_some()
     }
 
     fn is_static_typed_arg(&self, arg: &Expr) -> bool {

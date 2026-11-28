@@ -76,7 +76,7 @@ impl Interpreter {
         let mut cloned = Self {
             types: self.types.fork_for_thread(),
             literal_native_args: 0,
-            static_call_args: false,
+            static_call_args: StaticCallSite::default(),
             env: flat_env.unwrap_or_else(|| self.env.clone()),
             io: self.io.fork_for_thread(),
             control: self.control.fork_for_thread(),

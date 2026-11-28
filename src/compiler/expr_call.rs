@@ -495,12 +495,13 @@ impl Compiler {
             }
             let arg_sources_idx = self.add_arg_sources_constant(args);
             let name_idx = self.code.add_constant(Value::str(name.resolve()));
+            let static_arg_types = self.static_arg_types(args);
             self.code.emit(OpCode::CallFunc {
                 name_idx,
                 arity: args.len() as u32,
                 arg_sources_idx,
                 literal_native_args: self.literal_native_args_mask(name, args),
-                static_arg_types: self.static_arg_types(args),
+                static_arg_types,
             });
             return;
         }
@@ -638,7 +639,7 @@ impl Compiler {
                 arity: args.len() as u32,
                 arg_sources_idx: None,
                 literal_native_args: 0,
-                static_arg_types: false,
+                static_arg_types: crate::opcode::StaticArgTypes::NONE,
             });
             return;
         }
@@ -1200,7 +1201,7 @@ impl Compiler {
                 arity: 5,
                 arg_sources_idx: None,
                 literal_native_args: 0,
-                static_arg_types: false,
+                static_arg_types: crate::opcode::StaticArgTypes::NONE,
             });
             self.code.emit(OpCode::SetGlobal(tmp_result_idx));
 
@@ -1263,7 +1264,7 @@ impl Compiler {
                 arity: 5,
                 arg_sources_idx: None,
                 literal_native_args: 0,
-                static_arg_types: false,
+                static_arg_types: crate::opcode::StaticArgTypes::NONE,
             });
             self.code.emit(OpCode::SetGlobal(tmp_result_idx));
 
@@ -1289,7 +1290,7 @@ impl Compiler {
                 arity: 1,
                 arg_sources_idx: None,
                 literal_native_args: 0,
-                static_arg_types: false,
+                static_arg_types: crate::opcode::StaticArgTypes::NONE,
             });
             return;
         } else if *name == crate::sym!("atomic-assign")
@@ -1308,7 +1309,7 @@ impl Compiler {
                 arity: 2,
                 arg_sources_idx: None,
                 literal_native_args: 0,
-                static_arg_types: false,
+                static_arg_types: crate::opcode::StaticArgTypes::NONE,
             });
             return;
         } else if let Some((helper, has_operand, negate)) = Self::int_atomic_routine(name.as_str())
@@ -1357,7 +1358,7 @@ impl Compiler {
                     arity: 2,
                     arg_sources_idx: None,
                     literal_native_args: 0,
-                    static_arg_types: false,
+                    static_arg_types: crate::opcode::StaticArgTypes::NONE,
                 });
                 return;
             }
@@ -1402,7 +1403,7 @@ impl Compiler {
                             arity: 2,
                             arg_sources_idx: None,
                             literal_native_args: 0,
-                            static_arg_types: false,
+                            static_arg_types: crate::opcode::StaticArgTypes::NONE,
                         });
                         return;
                     }
@@ -1438,7 +1439,7 @@ impl Compiler {
                 arity,
                 arg_sources_idx: None,
                 literal_native_args: 0,
-                static_arg_types: false,
+                static_arg_types: crate::opcode::StaticArgTypes::NONE,
             });
             return;
         }
@@ -1517,7 +1518,7 @@ impl Compiler {
                     arity: 1,
                     arg_sources_idx: None,
                     literal_native_args: 0,
-                    static_arg_types: false,
+                    static_arg_types: crate::opcode::StaticArgTypes::NONE,
                 });
             } else if let Some(vname) = var_name {
                 // For @/% variables, clear in-place so references see the change.
@@ -1558,7 +1559,7 @@ impl Compiler {
                     arity: 1,
                     arg_sources_idx: None,
                     literal_native_args: 0,
-                    static_arg_types: false,
+                    static_arg_types: crate::opcode::StaticArgTypes::NONE,
                 });
             }
         }
@@ -1878,12 +1879,13 @@ impl Compiler {
                 self.compile_call_arg(arg);
             }
             let name_idx = self.code.add_constant(Value::str(name.resolve()));
+            let static_arg_types = self.static_arg_types(&rewritten_args);
             self.code.emit(OpCode::CallFunc {
                 name_idx,
                 arity,
                 arg_sources_idx,
                 literal_native_args: self.literal_native_args_mask(name, &rewritten_args),
-                static_arg_types: self.static_arg_types(&rewritten_args),
+                static_arg_types,
             });
         }
         // Rewrite cas($target, $expected, $new)
@@ -1911,7 +1913,7 @@ impl Compiler {
                     arity: 5,
                     arg_sources_idx: None,
                     literal_native_args: 0,
-                    static_arg_types: false,
+                    static_arg_types: crate::opcode::StaticArgTypes::NONE,
                 });
             }
             // Accessor CAS: cas($obj.attr, $expected, $new) swaps the attribute
@@ -1937,7 +1939,7 @@ impl Compiler {
                     arity: 4,
                     arg_sources_idx: None,
                     literal_native_args: 0,
-                    static_arg_types: false,
+                    static_arg_types: crate::opcode::StaticArgTypes::NONE,
                 });
             }
             // Multi-dim array element CAS: cas(@arr[d1;d2;...], $expected, $new)
@@ -1967,7 +1969,7 @@ impl Compiler {
                     arity: 5,
                     arg_sources_idx: None,
                     literal_native_args: 0,
-                    static_arg_types: false,
+                    static_arg_types: crate::opcode::StaticArgTypes::NONE,
                 });
             } else {
                 let assign_stmt = match &args[0] {
@@ -2030,12 +2032,13 @@ impl Compiler {
                         self.compile_expr(arg);
                     }
                     let name_idx = self.code.add_constant(Value::str(name.resolve()));
+                    let static_arg_types = self.static_arg_types(args);
                     self.code.emit(OpCode::CallFunc {
                         name_idx,
                         arity,
                         arg_sources_idx,
                         literal_native_args: self.literal_native_args_mask(name, args),
-                        static_arg_types: self.static_arg_types(args),
+                        static_arg_types,
                     });
                 }
             }
@@ -2121,7 +2124,7 @@ impl Compiler {
                     arity: 4,
                     arg_sources_idx: None,
                     literal_native_args: 0,
-                    static_arg_types: false,
+                    static_arg_types: crate::opcode::StaticArgTypes::NONE,
                 });
             } else if let Expr::Index { target, index, .. } = &args[0]
                 && let Some(arr_name) = target.container_var_key().filter(|k| k.starts_with('@'))
@@ -2140,7 +2143,7 @@ impl Compiler {
                     arity: 4,
                     arg_sources_idx: None,
                     literal_native_args: 0,
-                    static_arg_types: false,
+                    static_arg_types: crate::opcode::StaticArgTypes::NONE,
                 });
             } else if let Expr::MultiDimIndex {
                 target, dimensions, ..
@@ -2165,7 +2168,7 @@ impl Compiler {
                     arity: 4,
                     arg_sources_idx: None,
                     literal_native_args: 0,
-                    static_arg_types: false,
+                    static_arg_types: crate::opcode::StaticArgTypes::NONE,
                 });
             } else {
                 let arity = args.len() as u32;
@@ -2174,12 +2177,13 @@ impl Compiler {
                     self.compile_expr(arg);
                 }
                 let name_idx = self.code.add_constant(Value::str(name.resolve()));
+                let static_arg_types = self.static_arg_types(args);
                 self.code.emit(OpCode::CallFunc {
                     name_idx,
                     arity,
                     arg_sources_idx,
                     literal_native_args: self.literal_native_args_mask(name, args),
-                    static_arg_types: self.static_arg_types(args),
+                    static_arg_types,
                 });
             }
         } else {
@@ -2246,12 +2250,13 @@ impl Compiler {
                 } else {
                     self.register_late_import_fallback(*name);
                 }
+                let static_arg_types = self.static_arg_types(args);
                 self.code.emit(OpCode::CallFunc {
                     name_idx,
                     arity: args.len() as u32,
                     arg_sources_idx,
                     literal_native_args: self.literal_native_args_mask(name, args),
-                    static_arg_types: self.static_arg_types(args),
+                    static_arg_types,
                 });
             } else if self.try_compile_list_assign_rhs_op(*name, args) {
                 // `my ($a, $b) = EXPR`'s right-hand side (`destructure_lane.rs`).
@@ -2387,6 +2392,7 @@ impl Compiler {
                     self.code.emit(OpCode::LexImportCall { chain_idx });
                 }
                 if named_entries.is_empty() {
+                    let static_arg_types = self.static_arg_types(args);
                     self.code.emit(OpCode::CallFunc {
                         name_idx,
                         arity,
@@ -2397,12 +2403,13 @@ impl Compiler {
                         // the mask at 0 -- named values travel out-of-band, so
                         // an `args` index is not a stack position there.
                         literal_native_args: self.literal_native_args_mask(name, args),
-                        static_arg_types: self.static_arg_types(args),
+                        static_arg_types,
                     });
                 } else {
                     let spec_idx = self.code.add_named_arg_spec(crate::opcode::NamedArgsSpec {
                         entries: named_entries,
                     });
+                    let static_arg_types = self.static_arg_types(args);
                     self.code.emit(OpCode::CallFuncNamed {
                         name_idx,
                         arity,
@@ -2412,7 +2419,7 @@ impl Compiler {
                         // True only when the sole "named" argument is the
                         // parser's callsite-line marker (`f()`): a real named
                         // argument makes the call a run-time one.
-                        static_arg_types: self.static_arg_types(args),
+                        static_arg_types,
                     });
                 }
             }

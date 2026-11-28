@@ -2113,6 +2113,65 @@ impl Interpreter {
     }
 }
 
+/// The CURRENT call site's static-argument facts (`OpCode::CallFunc::
+/// static_arg_types`), published for the callee's binder.
+#[derive(Clone, Default)]
+pub(crate) struct StaticCallSite {
+    /// Every argument's type is known at compile time.
+    pub(crate) is_static: bool,
+    /// An `Array` of each positional argument's declared variable type (`Str`)
+    /// or `Nil`, when some argument is a typed variable (#19071).
+    pub(crate) var_types: Option<Value>,
+}
+
+impl StaticCallSite {
+    /// The declared type of each positional argument (`None` for one that is
+    /// not a typed variable); empty when no argument is a typed variable.
+    // Cost: O(n), n = arguments.
+    pub(crate) fn var_type_names(&self) -> Vec<Option<String>> {
+        let Some(types) = &self.var_types else {
+            return Vec::new();
+        };
+        match types.view() {
+            ValueView::Array(items, ..) => items
+                .iter()
+                .map(|v| match v.view() {
+                    ValueView::Str(s) => Some(s.to_string()),
+                    _ => None,
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// The site a TRIR call site republishes.
+    // Cost: O(n), n = arguments.
+    pub(crate) fn from_trir(is_static: bool, var_types: &[Option<String>]) -> Self {
+        Self {
+            is_static,
+            var_types: (!var_types.is_empty()).then(|| {
+                Value::array(
+                    var_types
+                        .iter()
+                        .map(|t| t.as_ref().map_or(Value::NIL, |t| Value::str(t.clone())))
+                        .collect(),
+                )
+            }),
+        }
+    }
+
+    /// The site of an opcode's `static_arg_types`.
+    // Cost: O(1).
+    pub(crate) fn of(code: &crate::opcode::CompiledCode, s: crate::opcode::StaticArgTypes) -> Self {
+        Self {
+            is_static: s.is_static(),
+            var_types: s
+                .var_types_idx()
+                .map(|i| code.constants[i as usize].clone()),
+        }
+    }
+}
+
 /// The interpreter.
 ///
 /// **On the `Arc<...>` collection fields.** A large group of this struct's
@@ -2245,7 +2304,7 @@ pub struct Interpreter {
     /// through any other route never inherits it) and reports a binding
     /// failure as the compile-time `X::TypeCheck::Argument` only when it was
     /// set (#10640; see `Interpreter::enhance_binding_error`).
-    pub(crate) static_call_args: bool,
+    pub(crate) static_call_args: StaticCallSite,
     /// `rw-arg writeback source name -> caller local slot`, captured at arg-binding
     /// time (clobber-safe: before the callee body runs) from
     /// `pending_call_arg_source_slots`. The value also records the call-frame depth

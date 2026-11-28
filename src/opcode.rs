@@ -916,6 +916,35 @@ pub(crate) enum VarTraitCtl {
     SeedRestore,
 }
 
+/// What a call site knows statically about its arguments (`CallFunc`'s
+/// `static_arg_types`): `NONE` for a call with a run-time-typed argument,
+/// `STATIC` when every argument's type is known at compile time, and
+/// `with_var_types(i)` when some argument is a typed variable: constant `i` is
+/// an `Array` holding each positional argument's declared type (`Str`) or `Nil`
+/// (#19071). Packed in a `u32` to keep the opcode small.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+pub(crate) struct StaticArgTypes(u32);
+
+impl StaticArgTypes {
+    pub(crate) const NONE: Self = Self(0);
+    pub(crate) const STATIC: Self = Self(1);
+
+    // Cost: O(1).
+    pub(crate) fn with_var_types(constant_idx: u32) -> Self {
+        Self(constant_idx + 2)
+    }
+
+    // Cost: O(1).
+    pub(crate) fn is_static(self) -> bool {
+        self.0 != 0
+    }
+
+    // Cost: O(1).
+    pub(crate) fn var_types_idx(self) -> Option<u32> {
+        self.0.checked_sub(2)
+    }
+}
+
 #[derive(Debug, Clone, bincode::Encode, bincode::Decode)]
 #[bincode(decode_context = "crate::precomp_codec::DecodeCtx")]
 pub(crate) enum OpCode {
@@ -2763,7 +2792,7 @@ pub(crate) enum OpCode {
         /// work with declared signature ..."); any other call keeps the
         /// run-time `X::TypeCheck::Binding::Parameter` (#10640). See
         /// `Compiler::static_arg_types`.
-        static_arg_types: bool,
+        static_arg_types: StaticArgTypes,
     },
     /// An `nqp::` VALUE op (`nqp::add_i`, `nqp::ordat`, `nqp::atpos_i`, ...)
     /// with a fixed, all-positional argument list: pop `arity` operands, run
@@ -2834,7 +2863,7 @@ pub(crate) enum OpCode {
         /// and a boxed candidate.
         literal_native_args: u32,
         /// See `CallFunc::static_arg_types`.
-        static_arg_types: bool,
+        static_arg_types: StaticArgTypes,
     },
     /// Method call: pop `arity` args + target, call method, push result.
     CallMethod {
@@ -8395,6 +8424,13 @@ pub(crate) struct CompiledCode {
     /// Lazily-built enum-bare env keys (`enum_bare_key`) of
     /// [`free_var_syms`](Self::free_var_syms) -- see [`Self::free_enum_bare_keys`].
     pub(crate) free_enum_bare_keys: std::sync::OnceLock<Box<[Symbol]>>,
+    /// Lazily-built, per `SmartMatchExpr` op (keyed by its RHS start): the
+    /// names its RHS's regex literals and substitutions can read by name
+    /// (`vm_smartmatch_sync`). A pure function of the chunk's ops and
+    /// constants, which every execution of the op used to recompute by
+    /// re-scanning the RHS and re-parsing each pattern.
+    pub(crate) smartmatch_rhs_names:
+        std::sync::OnceLock<rustc_hash::FxHashMap<usize, Arc<SmartMatchRhsNames>>>,
     /// Lazily-built name indexes over [`locals`](Self::locals) (see
     /// [`LocalSlotIndex`]), so a block exit can find the slots of the handful
     /// of names it has to reset without scanning every local of the frame
@@ -9070,6 +9106,7 @@ impl CompiledCode {
             capture_probe_keys: std::sync::OnceLock::new(),
             body_name_tokens: std::sync::OnceLock::new(),
             free_enum_bare_keys: std::sync::OnceLock::new(),
+            smartmatch_rhs_names: std::sync::OnceLock::new(),
             local_slot_index: std::sync::OnceLock::new(),
             op_scan_index: std::sync::OnceLock::new(),
             stmt_pool_bodies: std::sync::OnceLock::new(),
@@ -16037,4 +16074,15 @@ fn nqp_op_names_lexical(id: u16, binds_only: bool) -> bool {
                 | "curlexpad"
                 | "ctx"
         ))
+}
+
+/// What a `SmartMatchExpr` op's RHS can read by name, settled once per chunk
+/// (see [`CompiledCode::smartmatch_rhs_names`]).
+#[derive(Debug, Default)]
+pub(crate) struct SmartMatchRhsNames {
+    /// The variables its regex literals, substitution patterns and
+    /// replacements name.
+    pub(crate) sync: Vec<String>,
+    /// The variables its adverbed regex literals (`m:i/$re/`) name.
+    pub(crate) adverb: Vec<String>,
 }
