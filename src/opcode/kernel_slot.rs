@@ -53,6 +53,9 @@ pub(crate) struct LoopKernelInfo {
     /// `CheckReadOnly` / `CheckReadOnlyModify` name operands of the region,
     /// checked once at entry (`true` = the modify form).
     pub(crate) readonly_checks: Box<[(bool, u32)]>,
+    /// `.Num` call sites `(ip, receiver kind)`, checked at entry to reach
+    /// the built-in method.
+    pub(crate) num_sites: Box<[(u32, SlotKind)]>,
 }
 
 /// A loop site's variant: the carried kinds it was compiled for, and the
