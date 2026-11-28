@@ -536,8 +536,9 @@ impl Interpreter {
 /// term (`\size`) or the readonly marker of one
 /// (`__mutsu_sigilless_readonly::\size`), a lexical type's own key
 /// (`\u{1}Foo`) or a `state` variable's metadata key
-/// (`__mutsu_state_key::<name>`, read only for a free variable `<name>`).
-/// `None` for a sigiled variable, a `&` code variable, a dynamic, any other
+/// (`__mutsu_state_key::<name>`, read only for a free variable `<name>`), or a
+/// non-global package array or hash (`@Pkg::X`, standing for the bare `@X`).
+/// `None` for any other sigiled variable, a `&` code variable, a dynamic, any other
 /// internal `__mutsu_*` key and a `?`/`=` special: those are read by machinery
 /// that does not name them.
 // Cost: O(1) after the first call per symbol (a memo probe); the first call
@@ -586,6 +587,25 @@ fn droppable_subject_uncached(k: &Symbol) -> Option<Symbol> {
             }
             let (_, tail) = crate::qualified::split_qualified(Symbol::intern(qualified))?;
             return tail.with_str(ident).then_some(tail);
+        }
+        // A package array or hash (`@Math::Sequences::Integer::A000793`, the
+        // key an `our` is stored under) is reached by its own name or, from
+        // inside its package, by the bare `@A000793`; the bare form stands
+        // for it, as for a routine above. A module that exports a few hundred
+        // of them put every one into every plan's capture list (#19324).
+        // `GLOBAL`/`PROCESS` variables are also reached through their dynamic
+        // spelling (`@*x`), which the bare form does not cover, so they stay.
+        if term.starts_with(['@', '%']) {
+            let key = Symbol::intern(term);
+            if !(crate::qualified::is_package_array(key) || crate::qualified::is_package_hash(key))
+            {
+                return None;
+            }
+            let var = crate::qualified::split_qualified_var(key)?;
+            if var.pkg.is_empty() || matches!(var.pkg, "GLOBAL" | "PROCESS") || !ident(var.bare) {
+                return None;
+            }
+            return Some(Symbol::intern(&format!("{}{}", var.sigil, var.bare)));
         }
         // Only a type-shaped name qualifies unmarked; a readonly marker is
         // always for a sigilless term.
