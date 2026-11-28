@@ -145,6 +145,12 @@ impl Drop for TreeEvalGuard {
     }
 }
 
+/// Whether execution is inside EVAL of a RakuAST tree.
+// Cost: O(1).
+pub(crate) fn tree_eval_active() -> bool {
+    TREE_EVAL_DEPTH.with(|depth| depth.get() != 0)
+}
+
 /// The unit a closure built by a RakuAST tree belongs to: the unit a slang
 /// production is being replayed for. rakudo compiles such a tree into the
 /// compilation unit that holds the production's text (`$*CU`), so the
@@ -152,7 +158,7 @@ impl Drop for TreeEvalGuard {
 /// code (`Mold::Compiler.compile-block-expr`) asked for the tree to be built.
 // Cost: O(1).
 pub(crate) fn tree_closure_unit() -> Option<Symbol> {
-    if TREE_EVAL_DEPTH.with(Cell::get) == 0 {
+    if !tree_eval_active() {
         return None;
     }
     REPLAY_UNIT.with(Cell::get)

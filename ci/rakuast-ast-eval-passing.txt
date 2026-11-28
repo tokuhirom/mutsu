@@ -7054,6 +7054,7 @@ t/rakuast/rakuast-eval-try.t
 t/rakuast/rakuast-eval-typed-param.t
 t/rakuast/rakuast-eval-typeterm.t
 t/rakuast/rakuast-eval-undeclared-scan-scopes.t
+t/rakuast/rakuast-eval-unit-lexical-view.t
 t/rakuast/rakuast-eval-unless-until.t
 t/rakuast/rakuast-eval-var.t
 t/rakuast/rakuast-eval-whatever-code.t
@@ -11151,6 +11152,7 @@ t/vm/scope/pseudo-stash-constant-keys.t
 t/vm/scope/pseudo-stash-lexical-outer-frames.t
 t/vm/scope/pseudo-stash-my-body-root.t
 t/vm/scope/pseudo-stash-my-nested-block.t
+t/vm/scope/pseudo-stash-unit-from-sub.t
 t/vm/scope/pseudo-stash.t
 t/vm/scope/pseudo-unit-scope.t
 t/vm/scope/pseudostash-type.t
