@@ -1138,6 +1138,12 @@ pub struct ContainerCell {
     /// `constraint` lock, so the dispatcher's per-argument probe is one relaxed
     /// atomic load for every cell that is not native.
     native_typed: std::sync::atomic::AtomicBool,
+    /// Set (never cleared) before `quanthash_weight` or `default` is first
+    /// given a value. While it is unset both are `None`, so the cycle
+    /// collector's per-drop acyclicity check
+    /// (`<ContainerCell as Trace>::currently_acyclic`) skips their two locks:
+    /// almost no cell ever has either (#19323).
+    side_edges: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Debug, Clone)]
@@ -1199,7 +1205,23 @@ impl ContainerCell {
             name: std::sync::OnceLock::new(),
             declared_untyped: std::sync::atomic::AtomicBool::new(false),
             native_typed: std::sync::atomic::AtomicBool::new(false),
+            side_edges: std::sync::atomic::AtomicBool::new(false),
         }
+    }
+
+    /// Whether `quanthash_weight` or `default` may hold a value (see
+    /// `side_edges`).
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn may_have_side_edges(&self) -> bool {
+        self.side_edges.load(std::sync::atomic::Ordering::Acquire)
+    }
+
+    // Cost: O(1).
+    #[inline]
+    fn note_side_edge(&self) {
+        self.side_edges
+            .store(true, std::sync::atomic::Ordering::Release);
     }
 
     /// Record that this cell was made from a variable declared without a type
@@ -1325,6 +1347,7 @@ impl ContainerCell {
     // Cost: O(1).
     pub fn set_default(&self, value: Value) {
         CELL_METADATA_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.note_side_edge();
         *self.default.lock().unwrap() = Some(value);
     }
 
@@ -1410,6 +1433,7 @@ pub fn register_quanthash_weight_ref(
     source: String,
     key: Value,
 ) {
+    cell.note_side_edge();
     *cell.quanthash_weight.lock().unwrap() = Some(QuantHashWeightRef { source, key });
 }
 

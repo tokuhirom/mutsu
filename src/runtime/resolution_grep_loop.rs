@@ -553,7 +553,9 @@ impl Interpreter {
                                 } else {
                                     first.clone()
                                 };
-                                if arity == 1 {
+                                // An unobservable topic was never written:
+                                // the source item is unchanged.
+                                if arity == 1 && !topic_unobservable {
                                     list_items[i] = updated_item.clone();
                                 }
                                 if vm.eval_predicate_truthy(&pred) {
@@ -600,7 +602,9 @@ impl Interpreter {
                                 } else {
                                     first.clone()
                                 };
-                                if arity == 1 {
+                                // An unobservable topic was never written:
+                                // the source item is unchanged.
+                                if arity == 1 && !topic_unobservable {
                                     list_items[i] = updated_item.clone();
                                 }
                                 if vm.eval_predicate_truthy(&pred) {
