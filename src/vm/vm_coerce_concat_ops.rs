@@ -479,7 +479,15 @@ impl Interpreter {
         // one of them answers it unchanged. Infix `~`, `eq` and the other
         // string operators coerce two operands per call, so this skips a
         // dozen probes on their most common operand.
-        if matches!(v.view(), ValueView::Str(_)) {
+        //
+        // A plain `Int` or `Num` is answered unchanged for the same reason:
+        // it is not an `Instance`, `Package`, Proxy, Seq, Failure, Rational,
+        // Nil, Code, mixin or list, so every probe below declines it and the
+        // last match returns it as is (the pure `concat_values` renders it).
+        if matches!(
+            v.view(),
+            ValueView::Str(_) | ValueView::Int(_) | ValueView::Num(_)
+        ) {
             return Ok(v);
         }
         // An exact `ObjAt` / `ValueObjAt` instance (`.WHICH`) is its identity
@@ -792,6 +800,12 @@ impl Interpreter {
     // `STRAND_MIN_BYTES` whose join cannot compose); O(n1 + n2) otherwise (a
     // small result, or a join that is renormalized over a bounded window).
     pub(crate) fn concat_values(left: Value, right: Value) -> Result<Value, RuntimeError> {
+        // Only an `Instance` (a Blob) or a holder around one takes the Buf
+        // branches below; two operands that are neither go straight to the
+        // string join, skipping four Blob probes per `~`.
+        if !Self::may_hold_buf(&left) && !Self::may_hold_buf(&right) {
+            return Ok(crate::builtins::str_prim::concat(left, &right));
+        }
         // `$blob.item` / `$sock.read(..).item` hands `~` a Scalar around the Blob;
         // rakudo decontainerizes it, so the byte-concatenation branch below must
         // see the Blob itself (LWP::Simple's `($status, $h, $content) = ...item`).
@@ -845,6 +859,16 @@ impl Interpreter {
         Ok(crate::builtins::str_prim::concat(left, &right))
     }
 
+    /// Whether `v` is a Blob or a holder that may wrap one: the only values
+    /// the Buf branches of [`Self::concat_values`] act on.
+    // Cost: O(1) — one tag view.
+    fn may_hold_buf(v: &Value) -> bool {
+        matches!(
+            v.view(),
+            ValueView::Instance { .. } | ValueView::Scalar(_) | ValueView::ContainerRef(_)
+        )
+    }
+
     /// A Scalar/container holder around a Blob, peeled; anything else unchanged.
     // Cost: O(1) — one view match and, for a holder, one clone of the inner handle.
     fn peel_scalar_around_buf(v: Value) -> Value {
@@ -886,7 +910,7 @@ impl Interpreter {
 
     pub fn is_buf_value(val: &Value) -> bool {
         if let ValueView::Instance { class_name, .. } = val.view() {
-            crate::runtime::utils::is_buf_or_blob_class(&class_name.resolve())
+            crate::runtime::utils::is_buf_or_blob_class(class_name.as_str())
         } else {
             false
         }
