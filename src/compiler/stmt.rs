@@ -2200,7 +2200,7 @@ impl Compiler {
                         // only for a plain `our &name = ...`; an operator-named
                         // or bodiless declaration keeps the two-store sequence.
                         && (!name.starts_with('&')
-                            || (has_explicit_initializer && !name.contains(':')))
+                            || ((has_explicit_initializer || is_our_bare_decl) && !name.contains(':')))
                         && !binds_term
                         && !has_default_trait
                         && !scalar_bind_decont

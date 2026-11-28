@@ -1517,12 +1517,8 @@ pub(crate) struct Compiler {
     /// body statement's `&t = ...` assigns the package variable `&S::t`, so
     /// it is not a routine-name assignment either; unlike
     /// [`Self::class_body_static_code_vars`] the name stays package-qualified
-    /// (#19152). Set only for the body's own statement chunks: a method or
-    /// sub body does not reach a bare `our &t` through the package cell.
-    // TODO: a bodiless `our &t` keeps the two-store sequence (no cell shared
-    // with `&S::t`), so a method's `&t = ...` and a later body statement's
-    // `t()` cannot see the package value yet; once it shares the cell as
-    // `our &t = ...` does, inherit this set into method and sub bodies too.
+    /// (#19152). A method or sub body inherits the set too: a bodiless `our &t` shares its cell with
+    /// `&S::t` as `our &t = ...` does (#19159).
     pub(crate) class_body_our_code_vars: HashSet<String>,
     /// While a class declaration's methods compile (`add_class_decl_plan`):
     /// the outer names they write, and those they rebind, which the class
@@ -3306,6 +3302,8 @@ impl Compiler {
         }
         sub.class_body_static_code_vars
             .extend(self.class_body_static_code_vars.iter().cloned());
+        sub.class_body_our_code_vars
+            .extend(self.class_body_our_code_vars.iter().cloned());
         // A `:=`-bound container-less scalar stays container-less inside the
         // closures and routines that capture it (`for $l` iterates there too).
         // Ours are inherited as they stand; an ancestor's only while this scope
