@@ -43,8 +43,8 @@ impl Interpreter {
         lazy: bool,
     ) {
         let (left, right) = if lazy && !readonly {
-            let right = self.stack.pop().unwrap();
-            let left = self.stack.pop().unwrap().deitemize_element();
+            let right = self.stack.pop().unwrap_or(Value::NIL);
+            let left = self.stack.pop().unwrap_or(Value::NIL).deitemize_element();
             (left, right)
         } else {
             self.pop_pair_operands_capturing(code, true)
