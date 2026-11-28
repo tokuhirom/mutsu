@@ -22,8 +22,10 @@
 //! - the container: an ordinary `Array` node (not a `List`, lazy, shaped or
 //!   jagged), no type meta, native backing or default;
 //! - the value: a plain immutable scalar (not `Nil`, a container, a `Proxy`,
-//!   a `Slip` or a boot box), so neither the `Nil` default nor a reference
-//!   push nor the alias check applies.
+//!   a `Slip` or a boot box), or an instance of a class (`@a.push(Dog.new)`;
+//!   not a lazy `Match`, a boot object or a `Proxy`), so neither the `Nil`
+//!   default nor a reference push nor the alias check applies: the general
+//!   push hands an instance to `itemize_value` unchanged.
 //!
 //! Anything else returns `false` with the stack untouched, and
 //! `exec_array_push_op` runs unchanged as the authority on semantics.
@@ -56,7 +58,9 @@ impl Interpreter {
             return false;
         }
         match self.stack.last() {
-            Some(top) if Self::lean_store_value_is_plain(top) => {}
+            Some(top)
+                if Self::lean_store_value_is_plain(top)
+                    || Self::lean_push_value_is_plain_instance(top) => {}
             _ => return false,
         }
         if !self.lean_store_variable_ok(code, slot, name_idx) {
@@ -103,5 +107,18 @@ impl Interpreter {
         data.push(Self::itemize_value(val));
         self.stack.push(array);
         true
+    }
+
+    /// Whether the pushed value is an instance the general push would append
+    /// as it is: not a lazy `Match` (stored unviewed), a `Proxy` (FETCHed on
+    /// the way in) or a boot object (a raw VM value the general push routes
+    /// through its own lanes).
+    // Cost: O(1), tag probes and one class-name compare.
+    fn lean_push_value_is_plain_instance(val: &Value) -> bool {
+        val.is_instance_value()
+            && !val.is_lazy_match_value()
+            && !val.is_proxy_value()
+            && !val.is_boot_scalar_box()
+            && !crate::runtime::boot_collection::is_boot_collection_invocant(val)
     }
 }
