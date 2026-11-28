@@ -1844,8 +1844,15 @@ impl Interpreter {
         // Save current Interpreter state. Locals are kept coherent with env by
         // write-through (`flush_local_to_env`), so no explicit flush is needed
         // here; we restore locals directly on return.
+        // The puller's env is restored exactly as it was (plus the body's
+        // merged-back writes), so it is saved as its chain -- an `Arc` clone --
+        // not flattened: `clone_env` collapsed a scoped chain into one fresh
+        // map, which then became the puller's env. Every pull copied the whole
+        // program/module scope and left every per-tier memo (the closure
+        // capture's `Tier::capture_sys`) cold, so a closure made after a pull
+        // rebuilt it over every name in scope (#19352).
         crate::vm::vm_stats::record_clone_env();
-        let saved_env = self.clone_env();
+        let saved_env = self.env().clone();
         let saved_locals_base = self.locals.push_frame(0);
         let saved_stack = std::mem::take(&mut self.stack);
         // `LazyList` has no upvalue array of its own (its captures live in

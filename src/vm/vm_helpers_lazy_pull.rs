@@ -170,8 +170,15 @@ impl Interpreter {
         // not leak into the gather body's own vardecl/store opcodes.
         let _mark_context_guard = crate::vm::vm_call_state_guard::MarkContextGuard::new(self);
         // Save current Interpreter state
+        // The puller's env is restored exactly as it was (plus the body's
+        // merged-back writes), so it is saved as its chain -- an `Arc` clone --
+        // not flattened: `clone_env` collapsed a scoped chain into one fresh
+        // map, which then became the puller's env. Every pull copied the whole
+        // program/module scope and left every per-tier memo (the closure
+        // capture's `Tier::capture_sys`) cold, so a closure made after a pull
+        // rebuilt it over every name in scope (#19352).
         crate::vm::vm_stats::record_clone_env();
-        let saved_env = self.clone_env();
+        let saved_env = self.env().clone();
         let saved_locals_base = self.locals.push_frame(0);
         let saved_stack = std::mem::take(&mut self.stack);
         // See the matching comment in `force_lazy_list_vm_inner`: this inline

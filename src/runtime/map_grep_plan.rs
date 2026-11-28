@@ -375,35 +375,76 @@ impl Interpreter {
                         | OpCode::MakeGather(..)
                 )
             });
-        let captures = data
-            .env
-            .iter()
-            .filter(|(k, _)| {
-                // A captured type or enum name the body never mentions is
-                // not worth installing in the consuming frame and putting
-                // back again for every element: the program's own names
-                // (`CookieName`, `Path`, ...) are in every closure's capture
-                // once a module is loaded, and each cost a probe, an insert
-                // and a remove per call (`@a.map(* * 2).grep(* > 4)`: 4x the
-                // bare program with Cro loaded, #7817). Only a body that
-                // cannot reach a name any other way qualifies: no nested
-                // closure or routine, no by-name lookup.
-                // A shared cell or a captured free variable wins over the
-                // consuming frame's binding, but a name the body does not
-                // mention (`mentions_name` covers its free variables) cannot be
-                // read there, so that rule has nothing to decide for it.
-                !(body_names_only_what_it_mentions
-                    && !temporaries.contains(k)
-                    && droppable_subject(k).is_some_and(|subject| {
-                        !code.mentions_name(k) && !code.mentions_name(&subject)
-                    }))
-            })
-            .map(|(k, v)| CaptureKey {
-                name: *k,
-                overwrites: super::resolution_map_grep::capture_wins_over_caller(free_vars, k, v),
-                is_temporary: temporaries.contains(k),
-            })
-            .collect();
+        let keep = |k: &Symbol| -> bool {
+            // A captured type or enum name the body never mentions is
+            // not worth installing in the consuming frame and putting
+            // back again for every element: the program's own names
+            // (`CookieName`, `Path`, ...) are in every closure's capture
+            // once a module is loaded, and each cost a probe, an insert
+            // and a remove per call (`@a.map(* * 2).grep(* > 4)`: 4x the
+            // bare program with Cro loaded, #7817). Only a body that
+            // cannot reach a name any other way qualifies: no nested
+            // closure or routine, no by-name lookup.
+            // A shared cell or a captured free variable wins over the
+            // consuming frame's binding, but a name the body does not
+            // mention (`mentions_name` covers its free variables) cannot be
+            // read there, so that rule has nothing to decide for it.
+            !(body_names_only_what_it_mentions
+                && !temporaries.contains(k)
+                && droppable_subject(k).is_some_and(|subject| {
+                    !code.mentions_name(k) && !code.mentions_name(&subject)
+                }))
+        };
+        let mut captures: Vec<CaptureKey> = Vec::new();
+        let mut take = |k: Symbol, v: &Value| {
+            if keep(&k) {
+                captures.push(CaptureKey {
+                    name: k,
+                    overwrites: super::resolution_map_grep::capture_wins_over_caller(
+                        free_vars, &k, v,
+                    ),
+                    is_temporary: temporaries.contains(&k),
+                });
+            }
+        };
+        // A body that names only what it mentions keeps, from a shared
+        // system-name layer of its capture, the keys with no subject and the
+        // ones its mentioned names (or its temporaries) select: walking just
+        // those, through the layer's memoized index, keeps exactly what the
+        // filter keeps without visiting every system name in scope (a module
+        // exporting hundreds of package arrays, #19352).
+        let walked = body_names_only_what_it_mentions
+            && code.mentioned_names().is_some_and(|mentioned| {
+                let pick = |tier: &crate::env_tier::Tier| -> Vec<Symbol> {
+                    let index = tier.plan_key_index(droppable_subject);
+                    let mut keys = index.always.to_vec();
+                    for name in mentioned.iter().chain(temporaries.iter()) {
+                        if let Some(hits) = index.by_subject.get(name) {
+                            keys.extend_from_slice(hits);
+                        }
+                    }
+                    keys
+                };
+                data.env.for_each_capture_entry_sparse(&pick, &mut take)
+            });
+        if !walked {
+            for (k, v) in data.env.iter() {
+                take(*k, v);
+            }
+        }
+        // The sparse walk must keep exactly what filtering every entry keeps.
+        #[cfg(debug_assertions)]
+        if walked {
+            let mut sparse: Vec<Symbol> = captures.iter().map(|c| c.name).collect();
+            let mut full: Vec<Symbol> = data.env.iter().map(|(k, _)| *k).filter(&keep).collect();
+            sparse.sort_unstable_by_key(|s| s.as_str().to_string());
+            full.sort_unstable_by_key(|s| s.as_str().to_string());
+            debug_assert_eq!(
+                sparse.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                full.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+                "sparse capture walk disagrees with the filtered full walk"
+            );
+        }
         let keeps_outer_topic = super::resolution_map_grep::block_keeps_outer_topic(data);
         let topic_unobservable = !keeps_outer_topic
             && crate::compiler::for_topic_alias::topic_alias_unobservable(&data.body);
