@@ -126,6 +126,33 @@ impl Compiler {
         out
     }
 
+    /// Rewrite the bodies compiled under `keys` to read the free variables
+    /// `aliases` covers through slots of their own frames
+    /// ([`CompiledCode::lexsub_free_slot_plan`](crate::opcode::CompiledCode::lexsub_free_slot_plan)).
+    // Cost: O(k * (o + v * c)), k = `keys`, o = a body's ops, v = aliased
+    // variables, c = its constants.
+    pub(super) fn assign_lexsub_free_slots(
+        &mut self,
+        keys: &[Symbol],
+        aliases: &[LexSubFreeAlias],
+    ) {
+        if aliases.is_empty() {
+            return;
+        }
+        let vars: Vec<Symbol> = aliases.iter().map(|a| a.var).collect();
+        for key in keys {
+            let Some(cf) = self.compiled_functions.get(key) else {
+                continue;
+            };
+            let Some(plan) = cf.code.lexsub_free_slot_plan(&vars) else {
+                continue;
+            };
+            let mut cf = (**cf).clone();
+            std::sync::Arc::make_mut(&mut cf.code).apply_lexsub_free_slot_plan(plan);
+            self.compiled_functions.insert(*key, cf);
+        }
+    }
+
     /// A `&name` code-variable read (`&t`, `&t(...)`) of a lexically visible
     /// routine-nested sub: the fetched Sub may be called after the declaring
     /// routine returned, so fold its free variables exactly as a call site

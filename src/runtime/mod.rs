@@ -1557,6 +1557,11 @@ pub(crate) enum ConstructionPhaseStep {
         /// re-intern it for every phase call.
         mro_sym: crate::symbol::Symbol,
         pinned: Option<MethodDef>,
+        /// The pinned candidate's whole effect is its attributive named
+        /// parameters (`submethod BUILD(:$!a, :@!b) { }`): an empty body,
+        /// so a call binds the attributes and runs no frame
+        /// (`ctor_phase_bind_only`).
+        bind_only: bool,
     },
 }
 

@@ -273,15 +273,14 @@ impl Interpreter {
         let cool_coercion = positionals > 0
             && NIL_COOL_COERCIONS.contains(&method)
             && !(method == "round" && positionals == 1);
-        let declared = cool_coercion
-            || (0..=7).any(|arity| {
-                crate::builtins::method_table::owner_row(
-                    crate::symbol::Symbol::intern("Nil"),
-                    crate::symbol::Symbol::intern(method),
-                    arity,
-                )
-                .is_some()
-            });
+        let declared = cool_coercion || {
+            // Interned once, not once per probed arity.
+            let nil = crate::symbol::Symbol::intern("Nil");
+            let method_sym = crate::symbol::Symbol::intern(method);
+            (0..=7).any(|arity| {
+                crate::builtins::method_table::owner_row(nil, method_sym, arity).is_some()
+            })
+        };
         if !declared {
             return None;
         }
@@ -977,11 +976,39 @@ impl Interpreter {
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
+        let receiver_class = match self.stack.last().map(Value::view) {
+            Some(ValueView::Instance { class_name, .. }) => Some(class_name),
+            _ => None,
+        };
         if let Some(result) =
             self.try_early_accessor_lane(name.sym, arity, modifier_idx, quoted, arg_sources_idx)
         {
-            self.stack.push(result?);
+            let value = result?;
+            // A plain read the accessor lane can replay for this site
+            // (`vm_method_site_ic`): the lane is filled from this answer.
+            if let Some(class_name) = receiver_class
+                && self.caches.method_site_ic_site.is_some()
+            {
+                self.install_method_site_ic(
+                    class_name,
+                    name.sym,
+                    0,
+                    super::vm_method_site_ic::MethodSiteIcAction::Accessor,
+                );
+            }
+            self.stack.push(value);
             return Ok(());
+        }
+        // `.parse` / `.subparse` on a grammar (`vm_grammar_parse_site`).
+        if let Some(result) = self.try_grammar_parse_site(
+            code,
+            name.raw,
+            arity,
+            modifier_idx,
+            quoted,
+            arg_sources_idx,
+        ) {
+            return result;
         }
         // A recorded argument-less `.?name` miss (#17987). Only while no
         // accessor-ref marker is pending: this dispatch would consume it.

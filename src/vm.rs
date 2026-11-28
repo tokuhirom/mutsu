@@ -154,6 +154,9 @@ mod vm_decimal_key;
 mod vm_eval_unit_capture;
 mod vm_frame_lexical;
 mod vm_frame_type_aliases;
+mod vm_get_aggregate_var;
+mod vm_get_global;
+mod vm_get_global_chain;
 mod vm_lex_import_builtin_op;
 mod vm_lex_import_call;
 mod vm_lex_import_light_call;
@@ -161,6 +164,7 @@ mod vm_lexical_role;
 mod vm_lexsub_aliases;
 mod vm_lexsub_capture;
 mod vm_lexsub_free_cache;
+mod vm_lexsub_free_slot;
 mod vm_light_aggregate_params;
 mod vm_maybe_call_miss_lane;
 mod vm_module_own_type;
@@ -196,6 +200,7 @@ mod vm_bareword_site;
 mod vm_call_method_site_lane;
 mod vm_call_nqp_list;
 mod vm_cursor_match_lane;
+mod vm_grammar_parse_site;
 mod vm_iterator_site_lane;
 mod vm_method_site_lane;
 mod vm_method_site_static;
@@ -321,6 +326,8 @@ pub(crate) mod vm_jit;
 #[cfg(feature = "jit")]
 mod vm_jit_compile;
 #[cfg(feature = "jit")]
+mod vm_jit_concat_step;
+#[cfg(feature = "jit")]
 mod vm_jit_dump;
 #[cfg(feature = "jit")]
 mod vm_jit_element_step;
@@ -403,6 +410,7 @@ pub(crate) mod vm_method_lean_frame;
 mod vm_method_named_slurpy;
 mod vm_method_return_spec;
 mod vm_method_role_bindings;
+pub(crate) mod vm_method_site_ic;
 pub(crate) mod vm_method_slot_frame;
 mod vm_method_straight;
 pub(crate) mod vm_misc_assign;

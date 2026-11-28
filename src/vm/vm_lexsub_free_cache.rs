@@ -80,7 +80,7 @@ impl Interpreter {
     /// binding to stand.
     // Cost: O(l), l = names of the running `for` parameters.
     #[inline]
-    fn lexsub_free_cache_guards_hold(&self, name: &str) -> bool {
+    pub(super) fn lexsub_free_cache_guards_hold(&self, name: &str) -> bool {
         !self.rw_return_context
             && !(self.atomic_var_seen() && Self::atomic_name_possible(name))
             && !self.threads.sigilless_attrs_active

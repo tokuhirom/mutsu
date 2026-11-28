@@ -360,7 +360,7 @@ impl Interpreter {
     /// The plan for this resolved call, or `None` when its shape is outside
     /// what a replay may skip (see the module docs).
     // Cost: O(p * a), p = parameters, a = arguments.
-    fn method_call_plan_for(
+    pub(super) fn method_call_plan_for(
         &mut self,
         method_sym: Symbol,
         owner: Symbol,

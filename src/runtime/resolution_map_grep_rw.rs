@@ -261,6 +261,22 @@ impl Interpreter {
             // See `CompiledCode::immutable_topic` / `set_loop_topic_readonly`.
             let immutable_topic = plan.immutable_topic;
             let topic_per_element = plan.topic_per_element;
+            // A single-topic body that cannot observe its topic's container
+            // (`plan.topic_unobservable`: it cannot write, bind or capture
+            // `$_`, call user code, or reach the source by another name) can
+            // write nothing back, so this loop runs it as the plain map loop
+            // does (#19360, #19387): the element's value is the topic, seeded
+            // into the body's topic slot, with no write-back key to clear or
+            // read and no readonly scope. `* * 2` and `{ $_ * 2 }` over an
+            // `Array` take this.
+            let lean_topic = arity == 1
+                && rw_param.is_none()
+                && plan.topic_unobservable
+                && super::resolution_map_grep::implicit_topic_block(&data);
+            let topic_slot = plan.topic_slot.filter(|_| lean_topic);
+            let topic_env_free = topic_slot.is_some()
+                && plan.topic_env_free
+                && crate::vm::vm_jit::USER_INFIX_DECLS.load(std::sync::atomic::Ordering::Relaxed) == 0;
 
             // CP-3 collapse: run the rw map loop with fresh execution registers
             // (replaces the `mem::take(self)` + `VM::new` sub-VM). The closure
@@ -304,7 +320,18 @@ impl Interpreter {
                     // instead of `topic_key` (which never mirrors a NAMED
                     // param write, only `$_`/`_`).
                     let mut rw_cell: Option<crate::gc::Gc<crate::value::ContainerCell>> = None;
-                    {
+                    let mut seed_topic: Option<Value> = None;
+                    if lean_topic {
+                        let topic = super::resolution_map_grep::unobservable_topic(&src.buf[i]);
+                        if !topic_env_free {
+                            if let Some(&p) = plan.param_syms.first() {
+                                vm.env_mut().insert_sym_noting(p, topic.clone());
+                            }
+                            bind_loop_topic(vm.env_mut(), &topic, false, &outer_topic);
+                        }
+                        // The body reads its topic slot, if it has one.
+                        seed_topic = topic_slot.map(|_| topic);
+                    } else {
                         let assumed_count = data.assumed_positional.len();
                         for (idx, val) in data.assumed_positional.iter().enumerate() {
                             if let Some(&p) = plan.param_syms.get(idx) {
@@ -369,7 +396,7 @@ impl Interpreter {
                         }
                     }
                     let writeback = |list_items: &mut [Value], vm: &Interpreter| {
-                        if arity != 1 {
+                        if arity != 1 || lean_topic {
                             return;
                         }
                         if let Some(cell) = &rw_cell {
@@ -402,15 +429,25 @@ impl Interpreter {
                     // proper (panic-safe) readonly scope per iteration — the
                     // same guard a real call frame uses — gives this body the
                     // same isolation `call_compiled_closure_with_topic` does.
-                    let _readonly_guard =
-                        crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
-                    vm.mark_placeholder_params_readonly(&data.params);
-                    super::resolution_map_grep::set_loop_topic_readonly(vm, immutable_topic, topic_per_element);
-                    match vm.run_loop_body(code, compiled_fns, declares_routines) {
+                    //
+                    // A lean-topic body marks nothing, so it opens no scope.
+                    let _readonly_guard = (!lean_topic).then(|| {
+                        let guard = crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
+                        vm.mark_placeholder_params_readonly(&data.params);
+                        super::resolution_map_grep::set_loop_topic_readonly(
+                            vm,
+                            immutable_topic,
+                            topic_per_element,
+                        );
+                        guard
+                    });
+                    let seed = topic_slot.zip(seed_topic.clone());
+                    match vm.run_loop_body_seeded(code, compiled_fns, declares_routines, seed) {
                         Ok(()) => {
                             let val = vm
                                 .last_stack_value()
                                 .cloned()
+                                .or_else(|| seed_topic.clone())
                                 .or_else(|| vm.env().get_sym(crate::symbol::wk::topic()).cloned())
                                 .unwrap_or(Value::NIL);
                             writeback(&mut src.buf, vm);

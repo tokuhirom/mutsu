@@ -77,6 +77,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::GetCodeVarLocal { .. }
             | OpCode::GetSelfOrNoSelf(_)
             | OpCode::GetUpvalue { .. }
+            | OpCode::GetLexFree { .. }
             // Variable writes / declarations
             | OpCode::SetGlobal(_)
             | OpCode::SetGlobalRaw { .. }

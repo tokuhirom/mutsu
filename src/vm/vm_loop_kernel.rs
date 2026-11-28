@@ -218,6 +218,12 @@ impl Interpreter {
                 return Ok(LoopOutcome::Declined);
             }
         }
+        // A `"prefix$i"` key is built as the built-in interpolation builds
+        // it, which a user `^find_method` could intercept (the plain-piece
+        // fast path of `exec_string_concat_plain` asks the same).
+        if info.str_keys && crate::runtime::find_method_intercept::any_user_find_method() {
+            return Ok(LoopOutcome::Declined);
+        }
         // Each `.Num` site must reach the built-in method: the method lane
         // answers it (no augment, wrap or user `find_method`), with a Num.
         for &(site_ip, kind) in info.num_sites.iter() {
@@ -372,6 +378,7 @@ impl Interpreter {
                     readonly_checks: typed.readonly_checks.clone().into_boxed_slice(),
                     num_sites: typed.num_sites.clone().into_boxed_slice(),
                     calls: typed.calls.clone().into_boxed_slice(),
+                    str_keys: typed.str_keys,
                 }))
             });
         if compiled.is_some() {

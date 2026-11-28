@@ -107,10 +107,14 @@ impl Interpreter {
                 });
             if has_non_submethod {
                 let pinned = self.try_pin_phase_candidate(mro_class, method_name);
+                let bind_only = pinned
+                    .as_ref()
+                    .is_some_and(super::ctor_phase_bind_only::phase_step_bind_only);
                 steps.push(ConstructionPhaseStep::Class {
                     mro_class: mro_class.to_string(),
                     mro_sym: Symbol::intern(mro_class),
                     pinned,
+                    bind_only,
                 });
             }
         }
@@ -235,7 +239,19 @@ impl Interpreter {
                     mro_class,
                     mro_sym,
                     pinned,
+                    bind_only,
                 } => {
+                    // An empty-bodied step binds its attributive parameters
+                    // without a frame (`ctor_phase_bind_only`), unless the
+                    // fast-path gate refuses this call.
+                    if *bind_only
+                        && !live_has_alias
+                        && let Some(def) = pinned
+                        && !self.has_any_wrap_chains()
+                        && self.run_bind_only_phase_step(mro_class, *mro_sym, def, inv, &cell, args)
+                    {
+                        continue;
+                    }
                     // The pinned direct run must stay equivalent to full
                     // dispatch: a wrap chain registered after plan build
                     // re-routes through the full path (a runtime-global
