@@ -977,6 +977,12 @@ impl Interpreter {
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
+        if let Some(result) =
+            self.try_early_accessor_lane(name.sym, arity, modifier_idx, quoted, arg_sources_idx)
+        {
+            self.stack.push(result?);
+            return Ok(());
+        }
         // A recorded argument-less `.?name` miss (#17987). Only while no
         // accessor-ref marker is pending: this dispatch would consume it.
         if !self.accessor_ref_pending

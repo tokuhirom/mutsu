@@ -13,6 +13,7 @@
 
 use crate::runtime::{Interpreter, UserMethodOrAccessor};
 use crate::symbol::Symbol;
+use crate::value::{RuntimeError, Value, ValueView};
 
 /// Names the fast accessor read never answers, even when a public attribute
 /// of that name exists: object-protocol and introspection methods whose
@@ -89,5 +90,66 @@ impl Interpreter {
                         .is_some()
                 })
         })
+    }
+
+    /// A 0-arg plain call (`self.name`, `$obj.x`) whose receiver is an
+    /// instance and whose name is a plain public accessor of its class, read
+    /// before the general `CallMethod` preamble.
+    ///
+    /// The preamble runs some twenty lanes before it reaches the accessor read
+    /// (~2,900 instructions per call, #19293). For this receiver and name each
+    /// of them declines: they act on a modifier, a quoted name, a container
+    /// request, Seq/Slip/lazy/mixin/Package/container receivers, a wrapped or
+    /// `^find_method` method, `.take`, a thrown exception's `.message`, an
+    /// `Attribute` meta-object or a `Sequence` role method -- each excluded
+    /// here -- or on a name the accessor gate already refuses (`WHAT`, `Str`,
+    /// `gist`, `raku`, `return`, ...).
+    // Cost: O(1) — a few tag tests and one memo lookup, plus the read.
+    pub(super) fn try_early_accessor_lane(
+        &mut self,
+        method_sym: Symbol,
+        arity: u32,
+        modifier_idx: Option<u32>,
+        quoted: bool,
+        arg_sources_idx: Option<u32>,
+    ) -> Option<Result<Value, RuntimeError>> {
+        if arity != 0
+            || modifier_idx.is_some()
+            || quoted
+            || arg_sources_idx.is_some()
+            || self.accessor_ref_pending
+            || self.has_any_wrap_chains()
+            || crate::runtime::find_method_intercept::any_user_find_method()
+        {
+            return None;
+        }
+        let method = method_sym.as_str();
+        if matches!(method, "take" | "message") || Self::is_sequence_role_method(method) {
+            return None;
+        }
+        let target = self.stack.last()?;
+        if target.is_lazy_match_value() {
+            return None;
+        }
+        let ValueView::Instance { class_name, .. } = target.view() else {
+            return None;
+        };
+        if class_name == crate::sym!("Attribute")
+            || !self.accessor_read_is_plain(class_name, method_sym)
+        {
+            return None;
+        }
+        let target = self.stack.pop()?;
+        self.set_pending_call_arg_sources(None);
+        match self.try_fast_accessor_read(&target, method_sym, &[], false, false, false) {
+            Some(result) => {
+                crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "accessor");
+                Some(result)
+            }
+            None => {
+                self.stack.push(target);
+                None
+            }
+        }
     }
 }
