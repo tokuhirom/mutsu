@@ -261,8 +261,12 @@ impl Interpreter {
         // allocation, which the caller's local already shares, so it needs no
         // writeback — while a rebinding to an equal-looking value (which the
         // string comparison missed) now is reported.
-        let snapshot: HashMap<Symbol, Value> =
-            self.env.iter().map(|(k, v)| (*k, v.clone())).collect();
+        // Keyed with Fx over the symbol id: the default SipHash of every
+        // binding, once to build and once to probe, was a third of a block
+        // run's fixed cost (#12917).
+        let mut snapshot: rustc_hash::FxHashMap<Symbol, Value> =
+            rustc_hash::FxHashMap::with_capacity_and_hasher(self.env.len(), Default::default());
+        snapshot.extend(self.env.iter().map(|(k, v)| (*k, v.clone())));
         let saved_in_block = self.regex_state.in_regex_code_block;
         self.regex_state.in_regex_code_block = true;
         let eval_result = self.eval_block_value_cached(stmts, cache_id);

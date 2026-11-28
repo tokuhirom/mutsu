@@ -277,14 +277,15 @@ impl Interpreter {
             (stmts, code_cache_id)
         };
         let visible_caps = caps.inline_capture_view();
-        // The bindings to install for the body, and to restore afterwards.
-        let mut env: Vec<(String, Value)> = Vec::new();
+        // The bindings to install for the body, and to restore afterwards,
+        // keyed by symbol so neither installing nor restoring re-interns.
+        let mut env: Vec<(Symbol, Value)> = Vec::new();
         // In-regex `:my`/`:let` lexicals (and anything a preceding inline `{ }`
         // block wrote to them). They are lexical to the regex, so they are
         // installed here and restored with the rest of the regex bindings —
         // `:my $x = 'y'; <?{ $x eq 'y' }>` must see 'y', not an outer `$x`.
         for (k, v) in caps.regex_vars() {
-            env.push((k.clone(), v.clone()));
+            env.push((Symbol::intern(k), v.clone()));
         }
         // The engine-scope subject: derives `$0…` texts from the live
         // accumulator's spans (the accumulator's own `target` is only set at
@@ -296,14 +297,21 @@ impl Interpreter {
         // `/ (\d) { say $0 } \d+ /` prints `｢1｣`, not the bare `1` a `Str`
         // binding produced here.
         for (i, slot) in visible_caps.positional.iter().enumerate() {
-            env.push((i.to_string(), Value::pos_slot_value(slot, &live_target)));
+            env.push((
+                super::regex_code_env_keys::positional_var_sym(i),
+                Value::pos_slot_value(slot, &live_target),
+            ));
         }
         // `$N` beyond what this match has captured so far is unset, not the
         // `$N` an earlier, unrelated match left in the enclosing scope.
         // Cost: O(s), s = stale captures left in the enclosing scope.
         let mut stale = visible_caps.positional.len();
-        while self.env.get(&stale.to_string()).is_some() {
-            env.push((stale.to_string(), Value::NIL));
+        while self
+            .env
+            .get_sym(super::regex_code_env_keys::positional_var_sym(stale))
+            .is_some()
+        {
+            env.push((super::regex_code_env_keys::positional_var_sym(stale), Value::NIL));
             stale += 1;
         }
         // Build `$/` as a proper Match object so `$/.Str`/`$/.lc`/`~$/` yield the
@@ -332,12 +340,12 @@ impl Interpreter {
         // object as `$/` here (`/ .{ $c = $¢ } /` must leave `$c` with a usable
         // `.pos`, roast/S05-capture/match-object.t). The reduce-time replay always
         // installed both; running inline has to as well.
-        env.push(("\u{00A2}".to_string(), cursor.clone()));
+        env.push((super::regex_code_env_keys::cursor_var_sym(), cursor.clone()));
         // A routine the body calls can `make` on this very `$/` (EEL 0.3's
         // `&make` reaches it through `nqp::getlexcaller`, #16888): that writes
         // the object in place but not this frame's `made` slot.
         let block_slash = cursor.clone();
-        env.push(("/".to_string(), cursor));
+        env.push((super::regex_code_env_keys::match_var_sym(), cursor));
         // When the assertion references `.made` AND we are inside a
         // `Grammar.parse(:actions(...))`, run the relevant action method on each
         // just-matched named capture so `$<x>.made` is available *during* the
@@ -366,24 +374,22 @@ impl Interpreter {
             if k.starts_with(crate::runtime::SILENT_ACTION_MARKER_PREFIX) {
                 continue;
             }
+            let key = super::regex_code_env_keys::named_capture_var_sym(k);
             if let Some(m) = made_named.get(k.as_str()) {
-                env.push((format!("<{}>", k), m.clone()));
+                env.push((key, m.clone()));
                 continue;
             }
             // Like `$0` above: a named capture read mid-match is the same
             // `Match` the finished `$/<name>` holds, so `.from`/`.made`/`.hash`
             // all answer rather than dying on a `Str`.
-            env.push((
-                format!("<{}>", k),
-                Value::named_slot_value(slot, &live_target),
-            ));
+            env.push((key, Value::named_slot_value(slot, &live_target)));
         }
         // The assertion's own `my` declarations are lexical to it, so scope them
         // alongside the regex bindings. `eval_block_value` does not scope plain
         // lexicals (mutsu's env is flat), and without this an assertion's
         // `my $card = …` would clobber a same-named variable in the enclosing
         // scope — day18's assertion declares exactly that.
-        let mut scoped: Vec<String> = env.iter().map(|(k, _)| k.clone()).collect();
+        let mut scoped: Vec<Symbol> = env.iter().map(|(k, _)| *k).collect();
         // The names the body declares with `my`. They are lexical to the body, so
         // besides being restored below they must be kept out of the caller-slot
         // writeback: a block-local name in `pending_local_updates` makes the VM
@@ -397,17 +403,18 @@ impl Interpreter {
                 if !block_locals.contains(name) {
                     block_locals.push(name.clone());
                 }
-                if !scoped.contains(name) {
-                    scoped.push(name.clone());
+                let sym = Symbol::intern(name);
+                if !scoped.contains(&sym) {
+                    scoped.push(sym);
                 }
             }
         }
-        let saved: Vec<(String, Option<Value>)> = scoped
+        let saved: Vec<(Symbol, Option<Value>)> = scoped
             .iter()
-            .map(|k| (k.clone(), self.env.get(k).cloned()))
+            .map(|k| (*k, self.env.get_sym(*k).cloned()))
             .collect();
         for (k, v) in env {
-            self.env.insert(k, v);
+            self.env.insert_sym_noting(k, v);
         }
         // `make` writes `env["made"]`. Running the block inline means that slot
         // is shared with every other rule being matched right now, so it is
@@ -458,7 +465,10 @@ impl Interpreter {
                 &mut free_var_writes,
             );
             self.regex_state.in_regex_code_block = saved_in_block;
-            self.writeback_assertion_free_var_writes(&free_var_writes, &scoped);
+            if !free_var_writes.is_empty() {
+                let scoped: Vec<String> = scoped.iter().map(|k| k.resolve()).collect();
+                self.writeback_assertion_free_var_writes(&free_var_writes, &scoped);
+            }
             r
         };
         // Harvest writes to the in-regex lexicals *before* restoring them: the
@@ -492,15 +502,16 @@ impl Interpreter {
             // `:my` lexicals), so it stays installed until the rule frame's
             // window is uninstalled. Rakudo does not undo it on backtracking
             // either (#13222).
-            let dyn_key = k.strip_prefix('$').unwrap_or(&k);
+            let name = k.as_str();
+            let dyn_key = name.strip_prefix('$').unwrap_or(name);
             if writes.contains_key(dyn_key)
                 && super::regex_helpers::grammar_dynvar_scope_active(dyn_key)
             {
                 continue;
             }
             match orig {
-                Some(v) => self.env.insert(k, v),
-                None => self.env.remove(&k),
+                Some(v) => self.env.insert_sym_noting(k, v),
+                None => self.env.remove_sym(k),
             };
         }
         // A genuine exception (`die`) inside an embedded `{ … }` / `<?{ … }>`
