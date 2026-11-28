@@ -118,6 +118,30 @@
 # set it, and the column is appended last so a reader of the default three can
 # ignore it.
 #
+# THE `@net` ROWS: THE SAME COUNTS WITH THE INTERPRETER'S OWN STARTUP TAKEN OUT.
+#
+# Every raw row above includes mutsu's startup (loader, runtime and prelude
+# initialisation, the precompilation-cache probe): a constant floor under every
+# file, large next to a light benchmark, so a 10% change in the benchmark's own
+# work moves the raw count by far less (an `int-arith` that is mostly floor
+# barely reads a regression). For each benchmark and JIT mode the script also
+# prints `<name>@net` / `<name>@net+jit`: the raw count minus the count of an
+# EMPTY script measured in the same job, in the same JIT mode, by the same
+# callgrind invocation. The raw rows stay, unchanged, so the older series
+# continues; the net rows are an addition, not a replacement.
+#
+# Why subtract a measured baseline rather than toggle collection around the
+# workload (`--toggle-collect`): the baseline needs no knowledge of the
+# interpreter's function names, which are the first thing a refactor renames,
+# and it cannot silently collect nothing (a mistyped toggle yields an empty
+# profile that reads as "this benchmark became free"). What it costs is a small
+# honesty limit, stated here rather than hidden: the net count still contains
+# everything the benchmark does that an empty script does not -- parsing and
+# compiling the file, loading the modules it `use`s, and the warm-up runs the
+# section convention adds (none under BENCH_DET=1, where the workload runs once).
+# It is "this file minus a bare interpreter", not "the timed section alone".
+# Counts below the baseline clamp to 0 rather than going negative.
+#
 # Cost: about 4 minutes for the whole suite per configuration on a 4-core box
 # (callgrind is ~90x slower than native, and the benchmarks are short). The
 # JIT-on pass is cheaper than the JIT-off one, because there are fewer
@@ -290,6 +314,14 @@ fi
 
 mkdir -p "$(dirname "$CG_OUT")"
 
+# The startup baseline for the `@net` rows: an empty script (see above), next to
+# the callgrind output (tmp/ by default), created exclusively by mktemp.
+EMPTY=$(mktemp "$(dirname "$CG_OUT")/bench-det-empty.XXXXXX")
+trap 'rm -f "$EMPTY"' EXIT
+mv "$EMPTY" "$EMPTY.raku"
+EMPTY="$EMPTY.raku"
+warm "$EMPTY"
+
 measure() { # $1=bench-file; sets $ir and $allocs
     local raw
     ir=NA
@@ -318,14 +350,43 @@ bytes() { # $1=bench-file -> bytes allocated, or NA
     if [ -n "${n:-}" ]; then printf '%s' "$n"; else printf 'NA'; fi
 }
 
-emit() { # $1=row-name $2=bench-file
+# $1=value $2=baseline -> value-baseline clamped at 0, or NA if either is NA
+net() {
+    if [ "$1" = NA ] || [ "$2" = NA ]; then
+        echo NA
+    else
+        awk -v v="$1" -v b="$2" 'BEGIN{ d = v - b; printf "%d\n", (d < 0 ? 0 : d) }'
+    fi
+}
+
+emit() { # $1=row-name $2=bench-file; leaves the counts in LAST_IR / LAST_ALLOCS
     local ir allocs
     measure "$2"
+    LAST_IR=$ir
+    LAST_ALLOCS=$allocs
     if [ "$WANT_BYTES" = 1 ]; then
         printf '%s\t%s\t%s\t%s\n' "$1" "$ir" "$allocs" "$(bytes "$2")"
     else
         printf '%s\t%s\t%s\n' "$1" "$ir" "$allocs"
     fi
+}
+
+# The empty script's own counts, per JIT mode: the floor the `@net` rows subtract.
+measure_baseline() { # $1=off|on -> sets BASE_IR / BASE_ALLOCS
+    MUTSU_JIT=$1 measure "$EMPTY"
+    BASE_IR=$ir
+    BASE_ALLOCS=$allocs
+}
+measure_baseline off
+OFF_IR=$BASE_IR OFF_ALLOCS=$BASE_ALLOCS
+measure_baseline on
+ON_IR=$BASE_IR ON_ALLOCS=$BASE_ALLOCS
+
+emit_net() { # $1=row-name $2=baseline ir $3=baseline allocs (after an emit)
+    local t=$'\t' row
+    row="$1${t}$(net "$LAST_IR" "$2")${t}$(net "$LAST_ALLOCS" "$3")"
+    if [ "$WANT_BYTES" = 1 ]; then row="$row${t}NA"; fi
+    printf '%s\n' "$row"
 }
 
 for bench in "${benches[@]}"; do
@@ -334,5 +395,7 @@ for bench in "${benches[@]}"; do
     # can be read across both histories: the plain one pins MUTSU_JIT=off as
     # the interpreter baseline, `+jit` is the default configuration.
     MUTSU_JIT=off emit "$name" "$bench"
+    emit_net "$name@net" "$OFF_IR" "$OFF_ALLOCS"
     MUTSU_JIT=on emit "$name+jit" "$bench"
+    emit_net "$name@net+jit" "$ON_IR" "$ON_ALLOCS"
 done
