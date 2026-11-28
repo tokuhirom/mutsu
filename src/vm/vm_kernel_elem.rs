@@ -71,31 +71,7 @@ pub(super) fn kernel_elem_entry_ok(
     if !kernel_elem_slot_ok(code, slot) || idx >= interp.locals.len() {
         return false;
     }
-    // The aggregate `GetLocal` fast path's dynamic half: no `$CALLER::`
-    // alias, sigilless attribute alias or atomic variable that could answer
-    // this name instead of the slot.
-    let unspoiled = crate::vm::vm_jit::local_read_unspoiled();
-    if !unspoiled
-        && (!crate::vm::vm_jit::local_read_unspoiled_by_any_name()
-            || code
-                .locals
-                .get(idx)
-                .is_none_or(|name| Interpreter::atomic_name_possible(name)))
-    {
-        return false;
-    }
-    // The process latches both fast lanes check: a thread clone reads the
-    // shared snapshot, an atomic lane answers `@` reads, a second mutator
-    // thread needs the container stripes, shared vars sync by name, and a
-    // user `postcircumfix:<[ ]>` outranks the core subscript.
-    if interp.is_thread_clone()
-        || crate::runtime::shared_store::atomic_lane_entries_exist()
-        || crate::value::container_lock::multi_mutator_threads_live()
-        || interp.threads.shared_vars_active
-        || interp.dispatch.skip_postcircumfix_overload
-        || interp.rw_return_context
-        || interp.user_subscript_routine_may_answer(true)
-    {
+    if !local_read_unspoiled_for(code, idx) || !process_latches_clear(interp, true) {
         return false;
     }
     let Some((LeanStoreNode::Array(items), cell)) = interp.lean_store_slot_node(idx) else {
@@ -109,12 +85,41 @@ pub(super) fn kernel_elem_entry_ok(
         && interp.lean_store_alias_agrees(code.const_sym(name_idx), node, cell.as_ref())
 }
 
+/// The aggregate `GetLocal` fast path's dynamic half for slot `idx`: no
+/// `$CALLER::` alias, sigilless attribute alias or atomic variable that could
+/// answer this name instead of the slot.
+// Cost: O(1) (two latch loads; a name probe once an atomic exists).
+pub(super) fn local_read_unspoiled_for(code: &CompiledCode, idx: usize) -> bool {
+    crate::vm::vm_jit::local_read_unspoiled()
+        || (crate::vm::vm_jit::local_read_unspoiled_by_any_name()
+            && code
+                .locals
+                .get(idx)
+                .is_some_and(|name| !Interpreter::atomic_name_possible(name)))
+}
+
+/// The process latches every kernel container lane checks at entry: a
+/// thread clone reads the shared snapshot, an atomic lane answers `@`/`%`
+/// reads, a second mutator thread needs the container stripes, shared vars
+/// sync by name, and a user `postcircumfix:<[ ]>` (`positional`) or
+/// `postcircumfix:<{ }>` outranks the core subscript.
+// Cost: O(1) (latch loads).
+pub(super) fn process_latches_clear(interp: &Interpreter, positional: bool) -> bool {
+    !(interp.is_thread_clone()
+        || crate::runtime::shared_store::atomic_lane_entries_exist()
+        || crate::value::container_lock::multi_mutator_threads_live()
+        || interp.threads.shared_vars_active
+        || interp.dispatch.skip_postcircumfix_overload
+        || interp.rw_return_context
+        || interp.user_subscript_routine_may_answer(positional))
+}
+
 /// The array node the slot holds, in its own word or inside its binding cell,
 /// when the node is one the lane serves: an ordinary `Array` with no native
 /// backing, element type, `is default` or shape.
 // Cost: O(1) (one refcount bump; one uncontended cell lock for a cell).
 #[inline(always)]
-fn plain_array_node(interp: &Interpreter, slot: u32) -> Option<crate::gc::Gc<ArrayData>> {
+pub(super) fn plain_array_node(interp: &Interpreter, slot: u32) -> Option<crate::gc::Gc<ArrayData>> {
     let word = interp.locals.get(slot as usize)?;
     let items = match word.view() {
         ValueView::Array(items, ArrayKind::Array | ArrayKind::ItemArray) => items.clone(),
