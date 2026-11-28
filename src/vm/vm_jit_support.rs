@@ -195,6 +195,11 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::SinkPop(_, _)
             | OpCode::SinkPopCall(_)
             | OpCode::SinkPopKeepProxy(_, _)
+            // An assignment statement's sink: straight-line like `SinkPop`
+            // (its arm drains a lazy value or raises a fatal Failure, then
+            // steps). Unlisted, every loop body holding an element store
+            // (`@a[$i] = $v;`) was rejected whole and ran interpreted (#19285).
+            | OpCode::SinkPopAssign
             // Topic / context markers
             | OpCode::MarkBindContext
             // `my $x := ...`'s scalar-bind marker, the sibling of
