@@ -140,11 +140,49 @@ impl Interpreter {
         name_sym: Symbol,
         val: &Value,
     ) {
-        if (self.lexicals.lexsub_free_aliases.is_empty()
-            && self.lexicals.mainline_lexical_subs.is_empty())
-            || !crate::env::is_plain_user_lexical(name)
+        if !crate::env::is_plain_user_lexical(name)
             || name.starts_with(['$', '@', '%', '&', '*', '!', '.', '^', '?'])
             || name == "_"
+        {
+            return;
+        }
+        self.lexsub_free_cache_fill_checked(code, name, name_sym, val);
+    }
+
+    /// [`Self::lexsub_free_cache_fill`] for an `@`-sigiled free variable
+    /// (`GetArrayVar`): a routine-nested sub pushing onto its routine's
+    /// `my @out` reads it on every push. The binding is the container
+    /// itself, so it is as fixed for the call as a scalar's cell; only the
+    /// name's shape differs (`@` and a plain lexical after it).
+    // Cost: as `lexsub_free_cache_fill`.
+    pub(super) fn lexsub_free_cache_fill_array(
+        &mut self,
+        code: &CompiledCode,
+        name: &str,
+        name_sym: Symbol,
+        val: &Value,
+    ) {
+        let Some(bare) = name.strip_prefix('@') else {
+            return;
+        };
+        if !crate::env::is_plain_user_lexical(bare)
+            || bare.starts_with(['$', '@', '%', '&', '*', '!', '.', '^', '?'])
+        {
+            return;
+        }
+        self.lexsub_free_cache_fill_checked(code, name, name_sym, val);
+    }
+
+    /// The fill, once the caller has checked the name's shape.
+    fn lexsub_free_cache_fill_checked(
+        &mut self,
+        code: &CompiledCode,
+        name: &str,
+        name_sym: Symbol,
+        val: &Value,
+    ) {
+        if (self.lexicals.lexsub_free_aliases.is_empty()
+            && self.lexicals.mainline_lexical_subs.is_empty())
             || crate::qualified::is_qualified(name_sym)
             || code.free_var_rebinds.contains(&name_sym)
         {

@@ -978,120 +978,134 @@ impl Interpreter {
                     *ip += 1;
                     return Ok(());
                 }
-                // A package-qualified array's canonical store is `our_vars`, as
-                // for a hash (`GetHashVar`) and a scalar (`GetGlobal`): a rebind
-                // in another frame or on another thread (`Q::<@a> := [...]`)
-                // lands there, and this frame's env may hold a stale copy.
-                let package_val = if crate::qualified::is_package_array(code.const_sym(*name_idx)) {
-                    self.qualified_our_var_read(code.const_sym(*name_idx))
-                        .or_else(|| self.our_var_pseudo_unqualified(name))
+                // mutsu#17971, for an array: a routine-nested sub's free `@`
+                // variable this call already resolved to its alias binding
+                // (`vm_lexsub_free_cache.rs`).
+                let cached = self.lexsub_free_cache_read(name, code.const_sym(*name_idx));
+                let val = if let Some(val) = cached {
+                    val
                 } else {
-                    None
-                };
-                let val = package_val
-                    // A package-block `my @a` read by the package's own subs,
-                    // ahead of a same-named enclosing lexical (as `GetGlobal`).
-                    .or_else(|| self.eval_unit_package_capture(name))
-                    .or_else(|| self.package_scope_lexical_in(code, name))
-                    // Constant-pool name: hand over the chunk's memoized
-                    // `Symbol` instead of re-interning it on every array read.
-                    .or_else(|| self.get_env_with_main_alias_sym(name, code.const_sym(*name_idx)))
-                    .or_else(|| self.global_package_dynamic_fallback(name))
-                    .or_else(|| self.get_local_by_bare_name(code, name))
-                    .or_else(|| {
-                        // Fallback: check bare name in env (for closures capturing params)
-                        name.strip_prefix('@')
-                            .and_then(|bare| self.env().get(bare).cloned())
-                    })
-                    .or_else(|| {
-                        // Fallback for fast-path method dispatch (skip_env_setup=true):
-                        // @.attr and @!attr are not set in env, so read directly from
-                        // self's instance attributes when available.
-                        let attr_name = name
-                            .strip_prefix("@.")
-                            .or_else(|| name.strip_prefix("@!"))?;
-                        if attr_name.is_empty() {
-                            return None;
-                        }
-                        let self_val = self.get_env_self()?;
-                        if let ValueView::Instance { attributes, .. } = self_val.view() {
-                            attributes.as_map().get(attr_name).cloned()
+                    // A package-qualified array's canonical store is `our_vars`, as
+                    // for a hash (`GetHashVar`) and a scalar (`GetGlobal`): a rebind
+                    // in another frame or on another thread (`Q::<@a> := [...]`)
+                    // lands there, and this frame's env may hold a stale copy.
+                    let package_val =
+                        if crate::qualified::is_package_array(code.const_sym(*name_idx)) {
+                            self.qualified_our_var_read(code.const_sym(*name_idx))
+                                .or_else(|| self.our_var_pseudo_unqualified(name))
                         } else {
                             None
-                        }
-                    })
-                    // A file-scope `my @a` of the running routine's own module
-                    // (see `module_scope_lexicals`; keys keep the `@` sigil).
-                    .or_else(|| self.module_scope_lexical(name))
-                    // A nested class method can close over a class-body array
-                    // declared by an enclosing package (`class Outer { my @a;
-                    // class Inner { method m { @a } } }`). Walk package
-                    // ancestors just as scalar reads do; the immediate package
-                    // lookup below cannot see Outer from Outer::Inner.
-                    .or_else(|| self.package_chain_var_fallback(code.const_sym(*name_idx)))
-                    // `$E::v` through `constant E = A::B` (#11315).
-                    .or_else(|| self.package_alias_var_read(name))
-                    // Class-body outer-lexical fallback — see the GetHashVar twin.
-                    .or_else(|| self.auto_qualified_bare_env_read(code.const_sym(*name_idx)))
-                    // Last resort before the undeclared-variable default: a
-                    // package-block/class-body `my @a` static persisted in
-                    // `package_lexicals` (persist_class_body_statics /
-                    // exec_package_scope_op) after its bare `env` key was
-                    // deliberately removed — the class-body case has no live
-                    // `env` binding left to find above, so this is the only
-                    // remaining source of the initialized value. Kept LAST
-                    // (not ahead of `env`, unlike the scalar `GetGlobal`
-                    // ordering) because a package-block array/hash that is
-                    // still `env`-live (e.g. mutated in place via `.push`
-                    // across calls) must keep resolving through that live
-                    // binding — package_lexicals only holds this name's
-                    // declaration-time snapshot, taken once at block exit
-                    // (#8869).
-                    .or_else(|| self.eval_unit_package_capture(name))
-                    .or_else(|| self.package_scope_lexical_in(code, name))
-                    .map(Ok)
-                    .unwrap_or_else(|| {
-                        // A never-declared `@*`-twigil (dynamic) variable: the
-                        // caller-chain lookup genuinely found nothing, so raku
-                        // raises `X::Dynamic::NotFound` -- as a lazy Failure
-                        // here (not an eager throw), mirroring the scalar
-                        // `GetGlobal` fallback above so `.^name`/`.defined`
-                        // still answer and `//` still falls through to its RHS.
-                        // A builtin dynamic (`@*ARGS`, ...) is always
-                        // "declared" by the setting, so it is exempted the
-                        // same way the scalar fallback and the assignment-side
-                        // `CheckDynamicVarDeclared` check are -- and so is a
-                        // name this exact chunk `my @*x`-declares later on
-                        // (`dynamic_declared_sym`), deferring to that
-                        // declaration's own X::Dynamic::Postdeclaration throw
-                        // instead of exploding on the earlier read (see the
-                        // scalar `GetGlobal` fallback's fuller comment).
-                        if name.strip_prefix('@').is_some_and(|n| n.starts_with('*'))
-                            && !runtime::utils::is_builtin_dynamic_var(name)
-                            && !code
-                                .dynamic_declared_sym
-                                .contains(&crate::symbol::Symbol::intern(
-                                    name.trim_start_matches(['$', '@', '%', '&']),
+                        };
+                    let val = package_val
+                        // A package-block `my @a` read by the package's own subs,
+                        // ahead of a same-named enclosing lexical (as `GetGlobal`).
+                        .or_else(|| self.eval_unit_package_capture(name))
+                        .or_else(|| self.package_scope_lexical_in(code, name))
+                        // Constant-pool name: hand over the chunk's memoized
+                        // `Symbol` instead of re-interning it on every array read.
+                        .or_else(|| {
+                            self.get_env_with_main_alias_sym(name, code.const_sym(*name_idx))
+                        })
+                        .or_else(|| self.global_package_dynamic_fallback(name))
+                        .or_else(|| self.get_local_by_bare_name(code, name))
+                        .or_else(|| {
+                            // Fallback: check bare name in env (for closures capturing params)
+                            name.strip_prefix('@')
+                                .and_then(|bare| self.env().get(bare).cloned())
+                        })
+                        .or_else(|| {
+                            // Fallback for fast-path method dispatch (skip_env_setup=true):
+                            // @.attr and @!attr are not set in env, so read directly from
+                            // self's instance attributes when available.
+                            let attr_name = name
+                                .strip_prefix("@.")
+                                .or_else(|| name.strip_prefix("@!"))?;
+                            if attr_name.is_empty() {
+                                return None;
+                            }
+                            let self_val = self.get_env_self()?;
+                            if let ValueView::Instance { attributes, .. } = self_val.view() {
+                                attributes.as_map().get(attr_name).cloned()
+                            } else {
+                                None
+                            }
+                        })
+                        // A file-scope `my @a` of the running routine's own module
+                        // (see `module_scope_lexicals`; keys keep the `@` sigil).
+                        .or_else(|| self.module_scope_lexical(name))
+                        // A nested class method can close over a class-body array
+                        // declared by an enclosing package (`class Outer { my @a;
+                        // class Inner { method m { @a } } }`). Walk package
+                        // ancestors just as scalar reads do; the immediate package
+                        // lookup below cannot see Outer from Outer::Inner.
+                        .or_else(|| self.package_chain_var_fallback(code.const_sym(*name_idx)))
+                        // `$E::v` through `constant E = A::B` (#11315).
+                        .or_else(|| self.package_alias_var_read(name))
+                        // Class-body outer-lexical fallback — see the GetHashVar twin.
+                        .or_else(|| self.auto_qualified_bare_env_read(code.const_sym(*name_idx)))
+                        // Last resort before the undeclared-variable default: a
+                        // package-block/class-body `my @a` static persisted in
+                        // `package_lexicals` (persist_class_body_statics /
+                        // exec_package_scope_op) after its bare `env` key was
+                        // deliberately removed — the class-body case has no live
+                        // `env` binding left to find above, so this is the only
+                        // remaining source of the initialized value. Kept LAST
+                        // (not ahead of `env`, unlike the scalar `GetGlobal`
+                        // ordering) because a package-block array/hash that is
+                        // still `env`-live (e.g. mutated in place via `.push`
+                        // across calls) must keep resolving through that live
+                        // binding — package_lexicals only holds this name's
+                        // declaration-time snapshot, taken once at block exit
+                        // (#8869).
+                        .or_else(|| self.eval_unit_package_capture(name))
+                        .or_else(|| self.package_scope_lexical_in(code, name))
+                        .map(Ok)
+                        .unwrap_or_else(|| {
+                            // A never-declared `@*`-twigil (dynamic) variable: the
+                            // caller-chain lookup genuinely found nothing, so raku
+                            // raises `X::Dynamic::NotFound` -- as a lazy Failure
+                            // here (not an eager throw), mirroring the scalar
+                            // `GetGlobal` fallback above so `.^name`/`.defined`
+                            // still answer and `//` still falls through to its RHS.
+                            // A builtin dynamic (`@*ARGS`, ...) is always
+                            // "declared" by the setting, so it is exempted the
+                            // same way the scalar fallback and the assignment-side
+                            // `CheckDynamicVarDeclared` check are -- and so is a
+                            // name this exact chunk `my @*x`-declares later on
+                            // (`dynamic_declared_sym`), deferring to that
+                            // declaration's own X::Dynamic::Postdeclaration throw
+                            // instead of exploding on the earlier read (see the
+                            // scalar `GetGlobal` fallback's fuller comment).
+                            if name.strip_prefix('@').is_some_and(|n| n.starts_with('*'))
+                                && !runtime::utils::is_builtin_dynamic_var(name)
+                                && !code.dynamic_declared_sym.contains(
+                                    &crate::symbol::Symbol::intern(
+                                        name.trim_start_matches(['$', '@', '%', '&']),
+                                    ),
+                                )
+                            {
+                                Ok(self.fail_error_to_failure_value(
+                                    &runtime::utils::dynamic_not_found_error(name),
                                 ))
-                        {
-                            Ok(self.fail_error_to_failure_value(
-                                &runtime::utils::dynamic_not_found_error(name),
-                            ))
-                        } else if crate::qualified::is_package_array(code.const_sym(*name_idx)) {
-                            // A package-qualified slot nobody has written is
-                            // an empty Scalar in raku (`@GLOBAL::nv.raku` is
-                            // `Any`); a write stores an itemized Array there
-                            // (#10962).
-                            Ok(Value::package(crate::symbol::wk::any()))
-                        } else {
-                            // An undeclared plain `@`-sigil variable defaults to
-                            // an empty Array (raku auto-declares it as Array
-                            // under `no strict`): `@x[2]` is `(Any)`, `@x.end`
-                            // is `-1`, `@x.raku` is `[]`. Anonymous `@`-sigil
-                            // variables share this default.
-                            Ok(Value::real_array(vec![]))
-                        }
-                    })?;
+                            } else if crate::qualified::is_package_array(code.const_sym(*name_idx))
+                            {
+                                // A package-qualified slot nobody has written is
+                                // an empty Scalar in raku (`@GLOBAL::nv.raku` is
+                                // `Any`); a write stores an itemized Array there
+                                // (#10962).
+                                Ok(Value::package(crate::symbol::wk::any()))
+                            } else {
+                                // An undeclared plain `@`-sigil variable defaults to
+                                // an empty Array (raku auto-declares it as Array
+                                // under `no strict`): `@x[2]` is `(Any)`, `@x.end`
+                                // is `-1`, `@x.raku` is `[]`. Anonymous `@`-sigil
+                                // variables share this default.
+                                Ok(Value::real_array(vec![]))
+                            }
+                        })?;
+                    self.lexsub_free_cache_fill_array(code, name, code.const_sym(*name_idx), &val);
+                    val
+                };
                 // A whole-container `:=` bind (`my @b := @a`) stores a shared
                 // `ContainerRef` cell in the slot so both aliases observe
                 // mutations. Decontainerize the top-level cell here so the read
