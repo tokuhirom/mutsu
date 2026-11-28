@@ -27,6 +27,14 @@ issues = [8673]
 survey = "what-rakupp-actually-runs"
 note = "Loses only to rakupp's native C++ JSON parser; ratio vs rakudo is the comparable number."
 
+["bench-json-fast-encode@section"]
+issues = [8673]
+note = "to-json of a META6-shaped document alone; against rakupp it is not engine against engine (rakupp encodes JSON natively)."
+
+["bench-json-fast-decode@section"]
+issues = [8673]
+note = "from-json of a META6-shaped document alone; against rakupp it is not engine against engine (rakupp parses JSON natively)."
+
 ["bench-json-fast-spdx"]
 issues = [8673]
 survey = "what-rakupp-actually-runs"

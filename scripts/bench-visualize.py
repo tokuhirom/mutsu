@@ -209,6 +209,8 @@ _NOTE_NON_PIE = {"tag": "mostly startup; rakupp is non-PIE", "engine": False,
 BENCH_NOTES = {
     "bench-json-fast": {"ratiopp": _NOTE_NATIVE_JSON},
     "bench-json-fast-spdx": {"ratiopp": _NOTE_NATIVE_JSON},
+    "bench-json-fast-encode": {"ratiopp": _NOTE_NATIVE_JSON},
+    "bench-json-fast-decode": {"ratiopp": _NOTE_NATIVE_JSON},
     "bench-startup": {"ratiopp": _NOTE_NON_PIE},
 }
 

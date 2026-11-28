@@ -16,6 +16,11 @@
 #    this half is a complexity guard: it is cheap while the scan stays linear
 #    and grows without bound if the copy ever comes back.
 #
+# The two halves cost very differently (on 2026-11-28 the encode was ~10x the
+# decode), so bench-json-fast-encode.raku and bench-json-fast-decode.raku time
+# each alone on the same document. This file stays as the combined trend line
+# and the long-string complexity guard.
+#
 # Sized so a release mutsu takes well under a second, because
 # scripts/bench-det.sh re-runs every benchmark under callgrind at ~90x native.
 #
