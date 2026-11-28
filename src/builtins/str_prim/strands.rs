@@ -171,11 +171,9 @@ impl Joiner {
     ///
     /// Cost: O(d), d = decimal digits of `i`.
     pub(crate) fn push_int(&mut self, i: i64) {
-        use std::fmt::Write as _;
-        let before = self.pending.len();
-        // Writing into a `String` cannot fail.
-        let _ = write!(self.pending, "{i}");
-        self.len += self.pending.len() - before;
+        let text = super::IntDecimal::of(i);
+        self.pending.push_str(text.as_str());
+        self.len += text.as_str().len();
     }
 
     /// Append a value's string form: a big `Str` is referenced, anything
