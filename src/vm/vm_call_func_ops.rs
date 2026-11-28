@@ -708,7 +708,9 @@ impl Interpreter {
             {
                 Some(crate::runtime::PosLightTarget::Compiled { key, fingerprint }) => {
                     let fingerprint = *fingerprint;
-                    compiled_fns.get(key).filter(|cf| cf.fingerprint == fingerprint)?
+                    compiled_fns
+                        .get(key)
+                        .filter(|cf| cf.fingerprint == fingerprint)?
                 }
                 _ => return None,
             },
