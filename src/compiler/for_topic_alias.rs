@@ -243,6 +243,20 @@ impl<'ast> Visit<'ast> for AliasScan {
             // Reading `%h{$k}` (and the element a `%h{$k}++` writes): a hash
             // element is never an element of the source array.
             expr if is_hash_element(expr) => true,
+            // Reading `@a[$i]`: an rvalue element read hands the subscript's
+            // value to the subscript, never the parameter's binding, and
+            // writes nothing (an `@a[$i] = v` or `@a[$i]++` is a different
+            // node, still refused). The `@a` target is a name the scan does
+            // not otherwise admit, so only the subscript is walked.
+            Expr::Index {
+                target,
+                index,
+                is_positional: true,
+                ..
+            } if matches!(**target, Expr::ArrayVar(_)) => {
+                self.visit_expr(index);
+                return;
+            }
             Expr::Binary { op, .. } => safe_binary(op),
             Expr::Unary { op, expr, .. } => {
                 safe_unary(op)
@@ -309,6 +323,19 @@ mod tests {
         assert!(unobservable("my %h; for @a { --%h{$_} }"));
         assert!(unobservable("my %h; my $n = 0; for @a { $n += %h{$_} }"));
         assert!(!unobservable("my @o; for @a { @o[$_]++ }"));
+    }
+
+    #[test]
+    fn positional_element_reads_are_unobservable() {
+        assert!(unobservable("my $n = 0; for @a { $n += @b[$_ % 4] }"));
+        assert!(param_unobservable(
+            "my $s = 0; for ^9 -> $i { $s += @a[$i +& 255] + $r }",
+            "i"
+        ));
+        assert!(!param_unobservable("for ^9 -> $i { @a[$i] = 1 }", "i"));
+        assert!(!param_unobservable("for ^9 -> $i { @a[$i]++ }", "i"));
+        assert!(!param_unobservable("for ^9 -> $i { $s += @a[f($i)] }", "i"));
+        assert!(!param_unobservable("for ^9 -> $i { $s += $a[$i] }", "i"));
     }
 
     fn param_unobservable(src: &str, param: &str) -> bool {
