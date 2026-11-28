@@ -110,11 +110,19 @@ impl Interpreter {
                 let bind_only = pinned
                     .as_ref()
                     .is_some_and(super::ctor_phase_bind_only::phase_step_bind_only);
+                let mro_sym = Symbol::intern(mro_class);
+                let lean = match &pinned {
+                    Some(def) if !bind_only => {
+                        self.phase_step_lean_plan(mro_sym, Symbol::intern(method_name), def)
+                    }
+                    _ => None,
+                };
                 steps.push(ConstructionPhaseStep::Class {
                     mro_class: mro_class.to_string(),
-                    mro_sym: Symbol::intern(mro_class),
+                    mro_sym,
                     pinned,
                     bind_only,
+                    lean,
                 });
             }
         }
@@ -240,6 +248,7 @@ impl Interpreter {
                     mro_sym,
                     pinned,
                     bind_only,
+                    lean,
                 } => {
                     // An empty-bodied step binds its attributive parameters
                     // without a frame (`ctor_phase_bind_only`), unless the
@@ -256,7 +265,25 @@ impl Interpreter {
                     // dispatch: a wrap chain registered after plan build
                     // re-routes through the full path (a runtime-global
                     // prefilter there too).
-                    let r = if let Some(def) = pinned
+                    // The lean frame (`vm_phase_step_lean`), for the
+                    // calls whose arguments it admits.
+                    let lean_result = match (lean, pinned) {
+                        (Some(lean), Some(def)) if !self.has_any_wrap_chains() => {
+                            self.push_method_samewith_context_named(
+                                *mro_sym,
+                                std::borrow::Cow::Borrowed(method_name),
+                                args,
+                                Some(inv.clone()),
+                            );
+                            let r = self.run_phase_step_lean(*lean, def, inv, args, live_has_alias);
+                            self.pop_method_samewith_context();
+                            r
+                        }
+                        _ => None,
+                    };
+                    let r = if let Some(r) = lean_result {
+                        r
+                    } else if let Some(def) = pinned
                         && !self.has_any_wrap_chains()
                     {
                         // The class and method arrive interned and the name is

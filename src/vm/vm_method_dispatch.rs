@@ -1830,112 +1830,29 @@ impl Interpreter {
                 continue;
             }
             if let Some(pd) = pd.filter(|pd| pd.named) {
-                // Simple named/attributive param (gate: `named_param_fast_eligible`).
-                let bound = Self::named_param_fast_match_key(pd).and_then(|key| {
-                    args.iter().rev().find_map(|a| {
-                        let a = a.unwrap_varref();
-                        // The tag test spares the positional arguments a
-                        // full `view()` decode.
-                        if !a.is_string_pair_value() {
-                            return None;
-                        }
-                        match a.view() {
-                            ValueView::Pair(k, v) if k.as_str() == key => Some(v.clone()),
-                            _ => None,
-                        }
-                    })
-                });
-                let bound = bound.map(|value| {
-                    if crate::value::attr_twigil_base(&pd.name).is_some() {
-                        value.deref_container()
-                    } else {
-                        value
+                // Simple named/attributive param (gate: `named_param_fast_eligible`),
+                // bound by the arm the lean frame shares (`vm_named_param_bind`).
+                let (val, outcome) = self.bind_named_param_fast(
+                    owner_sym,
+                    method_def,
+                    idx,
+                    pd,
+                    &args,
+                    attrs_cell.as_ref(),
+                );
+                match outcome {
+                    super::vm_named_param_bind::NamedParamBind::Plain => {}
+                    super::vm_named_param_bind::NamedParamBind::RawReadonly => {
+                        raw_readonly_params.push(binding_sym);
                     }
-                });
-                let val = match bound {
-                    // A `:$x is raw` the gate admitted
-                    // (`method_container_args_light`) and the promotion
-                    // rewrote: a shared cell or a Proxy aliases the caller's
-                    // container, anything else is a read-only term.
-                    Some(v) if pd.binds_caller_container() => {
-                        let v = crate::runtime::types::unwrap_varref_value(v);
-                        if !(v.is_container_ref() || v.is_proxy_value()) {
-                            raw_readonly_params.push(binding_sym);
-                        }
-                        v
+                    super::vm_named_param_bind::NamedParamBind::DeferredDefault => {
+                        deferred_defaults.push(
+                            super::vm_method_default_prologue::DeferredDefault {
+                                param_idx: idx,
+                                sym: binding_sym,
+                            },
+                        );
                     }
-                    // `@`-sigiled (attributive) named param: re-home a List
-                    // into an Array (mirrors `bind_param_value`); scalar named
-                    // params are item bindings (mirrors the slow binder's
-                    // named arm).
-                    Some(v) if pd.name.starts_with("@!") || pd.name.starts_with("@.") => {
-                        Self::attributive_array_param_value(v)
-                    }
-                    Some(v) if pd.name.starts_with('@') => {
-                        Self::normalize_positional_param_value(v)
-                    }
-                    Some(v) if pd.name.starts_with('%') => v,
-                    Some(v) => Self::itemize_plain_scalar_param(pd, v),
-                    // An unsupplied optional named param binds its type-object
-                    // default. For an attributive param this overwrites the
-                    // attribute — the slow path and rakudo both do (pinned by
-                    // t/tweak-named-fast-path.t).
-                    None => match method_def
-                        .named_fast(idx)
-                        .and_then(|plan| plan.fill.clone())
-                    {
-                        Some(default) => default,
-                        None if pd.default.is_some() && method_def.default_prologue(idx) => {
-                            deferred_defaults.push(
-                                super::vm_method_default_prologue::DeferredDefault {
-                                    param_idx: idx,
-                                    sym: binding_sym,
-                                },
-                            );
-                            Self::missing_optional_param_value(pd)
-                        }
-                        None => Self::missing_optional_param_value(pd),
-                    },
-                };
-                // `:$!x` binds by assignment: an explicit Nil stores the
-                // attribute's container default (`BUILD(:$!x)` with
-                // `.new(:x(Nil))` leaves `$!x` as `Any`).
-                let val = if val.is_nil() && pd.name.starts_with('!') {
-                    self.attr_store_nil_default(owner_class, &pd.name[1..], '$', val)
-                } else {
-                    val
-                };
-                // Attributive param: write the one attribute through `self`'s
-                // shared cell (the single-key cell write `bind_param_value`
-                // performs) BEFORE the locals-init loop below reads attribute
-                // slots off the cell.
-                if let Some((attr_name, is_private)) = crate::value::attr_twigil_base(&pd.name)
-                    && let Some(cell) = &attrs_cell
-                {
-                    // Inside a BUILD phase this bind counts as "BUILD set it",
-                    // even unpassed (the type-object bind must suppress the
-                    // `has $.a = 5` initializer; the seed comparison alone
-                    // cannot tell — an untyped attribute's seed IS the same
-                    // type object). The slow path records this via its exit
-                    // attr-local sync through `write_attr_cell_by_key`; the
-                    // fast path records it here. No-op outside BUILD.
-                    // One intern for both uses: the symbol-keyed insert also
-                    // saves the `String` allocation the name-keyed one paid.
-                    let bare_sym = crate::symbol::Symbol::intern(attr_name);
-                    // A scalar and a container attribute may share a bare name
-                    // (`has %!c; has $!c`); resolve the storage key by sigil so
-                    // `:$!c` does not overwrite the `%!c` slot.
-                    let sigil = crate::value::attr_twigil_sigil(&pd.name).unwrap_or('$');
-                    let attr_sym = Self::attr_key_in_map(
-                        Some(owner_sym),
-                        bare_sym,
-                        is_private,
-                        sigil,
-                        &cell.as_map(),
-                    )
-                    .unwrap_or(bare_sym);
-                    self.record_build_attr_write(cell, attr_sym);
-                    cell.insert(attr_sym, val.clone());
                 }
                 param_values.push((binding_name, binding_sym, val));
                 continue;

@@ -1562,6 +1562,9 @@ pub(crate) enum ConstructionPhaseStep {
         /// so a call binds the attributes and runs no frame
         /// (`ctor_phase_bind_only`).
         bind_only: bool,
+        /// The pinned candidate runs in the lean method frame
+        /// (`vm_phase_step_lean`), when this call's arguments allow.
+        lean: Option<crate::vm::vm_phase_step_lean::PhaseStepLean>,
     },
 }
 
