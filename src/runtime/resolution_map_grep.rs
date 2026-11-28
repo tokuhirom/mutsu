@@ -152,8 +152,36 @@ pub(crate) fn bind_loop_topic(
 /// compiled code ([`super::map_grep_plan::InlineLoopPlan::topic_slot`]).
 // Cost: O(n), n = AST nodes of the body.
 pub(crate) fn topic_slot_candidate(data: &SubData) -> bool {
-    data.params.is_empty()
+    implicit_topic_block(data)
         && crate::compiler::for_topic_alias::topic_alias_unobservable(&data.body)
+}
+
+/// Whether `data`'s only parameter is the topic itself: no parameters at all
+/// (`{ $_ * 2 }`), or a single plain `$_` -- what a WhateverCode (`* * 2`)
+/// is built with -- untyped, with no default, `where`, trait or
+/// sub-signature, and nothing supplied by `.assuming`. Binding the element as
+/// the topic is then the whole bind.
+// Cost: O(1).
+pub(crate) fn implicit_topic_block(data: &SubData) -> bool {
+    match data.params.as_slice() {
+        [] => true,
+        [only] => {
+            only == "_"
+                && data.assumed_positional.is_empty()
+                && data.assumed_named.is_empty()
+                && data.param_defs.first().is_none_or(|pd| {
+                    pd.type_constraint.is_none()
+                        && pd.default.is_none()
+                        && pd.where_constraint.is_none()
+                        && pd.traits.is_empty()
+                        && pd.sub_signature.is_none()
+                        && pd.outer_sub_signature.is_none()
+                        && !pd.slurpy
+                        && !pd.named
+                })
+        }
+        _ => false,
+    }
 }
 
 /// The topic a loop with an unobservable topic
@@ -907,7 +935,7 @@ impl Interpreter {
             let immutable_topic = plan.immutable_topic;
             let topic_per_element = plan.topic_per_element;
             let topic_unobservable = plan.topic_unobservable && arity == 1;
-            let lean_readonly = topic_unobservable && data.params.is_empty();
+            let lean_readonly = topic_unobservable && implicit_topic_block(&data);
             let topic_slot = plan.topic_slot.filter(|_| topic_unobservable);
             let topic_env_free = topic_slot.is_some()
                 && plan.topic_env_free
@@ -985,8 +1013,12 @@ impl Interpreter {
                                     }
                                     None => item.clone(),
                                 };
-                                vm.env_mut()
-                                    .insert_sym_noting(plan.param_syms[assumed_count], bound);
+                                // An env-free body reads its topic -- which
+                                // this `$_` parameter is -- from its slot.
+                                if !topic_env_free {
+                                    vm.env_mut()
+                                        .insert_sym_noting(plan.param_syms[assumed_count], bound);
+                                }
                             }
                             if topic_unobservable {
                                 let topic = unobservable_topic(&item);

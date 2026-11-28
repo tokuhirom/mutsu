@@ -448,7 +448,8 @@ impl Interpreter {
         let keeps_outer_topic = super::resolution_map_grep::block_keeps_outer_topic(data);
         let topic_unobservable = !keeps_outer_topic
             && crate::compiler::for_topic_alias::topic_alias_unobservable(&data.body);
-        let topic_slot = (topic_unobservable && data.params.is_empty())
+        let topic_slot = (topic_unobservable
+            && super::resolution_map_grep::implicit_topic_block(data))
             .then(|| {
                 let name = crate::symbol::wk::loop_topic();
                 code.locals_sym.iter().position(|n| *n == name)

@@ -364,7 +364,8 @@ impl Interpreter {
             let immutable_topic = plan.immutable_topic;
             let topic_per_element = plan.topic_per_element;
             let topic_unobservable = plan.topic_unobservable && arity == 1;
-            let lean_readonly = topic_unobservable && data.params.is_empty();
+            let lean_readonly = topic_unobservable
+                && crate::runtime::resolution_map_grep::implicit_topic_block(&data);
             let topic_slot = plan.topic_slot.filter(|_| topic_unobservable);
             let topic_env_free = topic_slot.is_some()
                 && plan.topic_env_free
@@ -443,7 +444,11 @@ impl Interpreter {
                                 }
                             }
                             if arity == 1 {
-                                if let Some(&p) = plan.param_syms.get(assumed_count) {
+                                // An env-free body reads its topic -- which
+                                // a `$_` parameter is -- from its slot.
+                                if let Some(&p) = plan.param_syms.get(assumed_count)
+                                    && !topic_env_free
+                                {
                                     vm.env_mut().insert_sym_noting(p, first.clone());
                                 }
                                 if topic_unobservable {
