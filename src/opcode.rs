@@ -8431,6 +8431,11 @@ pub(crate) struct CompiledCode {
     /// re-scanning the RHS and re-parsing each pattern.
     pub(crate) smartmatch_rhs_names:
         std::sync::OnceLock<rustc_hash::FxHashMap<usize, Arc<SmartMatchRhsNames>>>,
+    /// Lazily-built, per regex-literal constant (keyed by its constant index):
+    /// what `capture_regex_closure` asks of the literal's pattern text on
+    /// every execution of its `LoadRegexClosure` (see [`RegexLiteralFacts`]).
+    pub(crate) regex_literal_facts:
+        std::sync::OnceLock<rustc_hash::FxHashMap<u32, RegexLiteralFacts>>,
     /// Lazily-built name indexes over [`locals`](Self::locals) (see
     /// [`LocalSlotIndex`]), so a block exit can find the slots of the handful
     /// of names it has to reset without scanning every local of the frame
@@ -9107,6 +9112,7 @@ impl CompiledCode {
             body_name_tokens: std::sync::OnceLock::new(),
             free_enum_bare_keys: std::sync::OnceLock::new(),
             smartmatch_rhs_names: std::sync::OnceLock::new(),
+            regex_literal_facts: std::sync::OnceLock::new(),
             local_slot_index: std::sync::OnceLock::new(),
             op_scan_index: std::sync::OnceLock::new(),
             stmt_pool_bodies: std::sync::OnceLock::new(),
@@ -16085,4 +16091,17 @@ pub(crate) struct SmartMatchRhsNames {
     pub(crate) sync: Vec<String>,
     /// The variables its adverbed regex literals (`m:i/$re/`) name.
     pub(crate) adverb: Vec<String>,
+}
+
+/// What a regex literal's pattern text says about evaluating it, settled once
+/// per chunk (see [`CompiledCode::regex_literal_facts`]): both are pure
+/// functions of the constant pattern, which `capture_regex_closure` used to
+/// scan on every execution.
+#[derive(Debug, Default, Clone, Copy)]
+pub(crate) struct RegexLiteralFacts {
+    /// The pattern interpolates a string as regex source (`<{ ... }>`).
+    pub(crate) has_eval_block: bool,
+    /// The pattern embeds code (`$( )`, `<{ }>`, or a `{ }` block that is not
+    /// a quantifier range).
+    pub(crate) has_code: bool,
 }
