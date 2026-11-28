@@ -6,7 +6,8 @@
 //! more than the lane itself costs. This shim calls the lane directly, the way
 //! `vm_jit_native_int_step` does for a `++` on a proven `my int`: the plain
 //! `@a[$i]` / `%h{$k}` read (`Interpreter::index_fast_path_element`) and the
-//! lean `@a[$i] = $v` store (`Interpreter::try_lean_local_array_store`). Every
+//! lean `@a[$i] = $v` / `%h{$k} = $v` store
+//! (`Interpreter::try_lean_local_element_store`). Every
 //! shape either lane declines is handed to `step`, which runs the op
 //! generically, so the shim adds no semantics of its own. Same safety
 //! contract as every shim in `vm_jit_helpers`.
@@ -41,12 +42,12 @@ pub(super) unsafe extern "C" fn element_step(
             Some(OpCode::IndexAssignLocal {
                 slot,
                 name_idx,
-                is_positional: true,
+                is_positional,
                 index_first,
                 concat_append: false,
                 element_share: false,
             }) => vm
-                .try_lean_local_array_store(chunk, *slot, *name_idx, *index_first)
+                .try_lean_local_element_store(chunk, *slot, *name_idx, *is_positional, *index_first)
                 .then_some(Ok(())),
             Some(OpCode::Index { is_positional }) => vm.try_index_fast_path_step(*is_positional),
             _ => None,
