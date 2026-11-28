@@ -454,7 +454,17 @@ impl Interpreter {
         {
             let method_pkg = data.package.resolve();
             let invocant = args.first();
-            if let Some(ValueView::Instance { class_name, .. }) = invocant.map(Value::view) {
+            // Only a body with `$!attr` locals can fail this check, so ask that
+            // (a scan of the closure's own locals) before viewing the first
+            // argument: `view()` materializes a lazy Match, and every subst
+            // replacement block is called with one.
+            let has_attr_locals = cc
+                .locals
+                .iter()
+                .any(|name| name.starts_with('!') && name.len() > 1);
+            if has_attr_locals
+                && let Some(ValueView::Instance { class_name, .. }) = invocant.map(Value::view)
+            {
                 let class = class_name.resolve();
                 // Only check free-standing methods (not defined in a class, or defined
                 // in a different class than the invocant).
@@ -466,17 +476,10 @@ impl Interpreter {
                         || (!self.has_class(&method_pkg)
                             && !self.registry().roles.contains_key(&method_pkg)));
                 if is_foreign {
-                    // Check if the compiled code has any !attr locals
-                    let has_attr_locals = cc
-                        .locals
-                        .iter()
-                        .any(|name| name.starts_with('!') && name.len() > 1);
-                    if has_attr_locals {
-                        return Err(RuntimeError::new(format!(
-                            "Cannot access private attribute from outside class {}",
-                            class
-                        )));
-                    }
+                    return Err(RuntimeError::new(format!(
+                        "Cannot access private attribute from outside class {}",
+                        class
+                    )));
                 }
             }
         }
@@ -626,7 +629,7 @@ impl Interpreter {
             let Some(v) = capture_tier.get(&k) else {
                 continue;
             };
-            if !matches!(v.view(), ValueView::ContainerRef(_)) {
+            if !v.is_container_ref() {
                 continue;
             }
             // But a *dynamic* variable (`$*x`) is dynamic-scope: its live value
@@ -648,12 +651,15 @@ impl Interpreter {
                 // the caller shares with the closure), the insert changes
                 // nothing a read can see, and cost ~1.5k Ir per captured
                 // cell per call (#7565).
+                // `cur` can be the `$/` Match a subst publishes per
+                // occurrence: the tag probe keeps it from being materialized.
                 let already_this_cell = self.env().get_sym(k).is_some_and(|cur| {
-                    matches!(
-                        (cur.view(), v.view()),
-                        (ValueView::ContainerRef(a), ValueView::ContainerRef(b))
-                            if crate::gc::Gc::ptr_eq(&a, &b)
-                    )
+                    cur.is_container_ref()
+                        && matches!(
+                            (cur.view(), v.view()),
+                            (ValueView::ContainerRef(a), ValueView::ContainerRef(b))
+                                if crate::gc::Gc::ptr_eq(&a, &b)
+                        )
                 });
                 if !already_this_cell {
                     self.env_mut().insert_sym(k, v.clone());
