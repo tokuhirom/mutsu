@@ -69,7 +69,10 @@ impl Interpreter {
             Some(cell) => cell.load(),
             None => self.locals[slot].clone(),
         };
-        if !matches!(array.view(), ValueView::Array(_, crate::value::ArrayKind::Array)) {
+        if !matches!(
+            array.view(),
+            ValueView::Array(_, crate::value::ArrayKind::Array)
+        ) {
             return false;
         }
         if items.has_type_meta()
