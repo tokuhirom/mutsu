@@ -86,6 +86,12 @@ impl Interpreter {
                 nfa
             }
         };
+        // The character in front of the ranking decides it on its own when
+        // at most one branch can begin with it (`LtmNfa::gated_ranking`).
+        if let Some(ranked) = nfa.gated_ranking(chars, pos) {
+            order.extend(ranked.into_iter().map(|idx| (idx, (0, 0))));
+            return;
+        }
         self.ltm_measure_roots(&nfa, chars, pos, |idx, measured| {
             order.push((idx, measured.branch_rank()));
         });

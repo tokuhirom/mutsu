@@ -125,6 +125,9 @@ pub(crate) struct LtmNfa {
     /// Per node, what a thread arriving there at a character the guard rejects
     /// cannot go on from (`regex_ltm_nfa_guard`): the run drops it unasked.
     pub(super) guards: Vec<Option<super::regex_prefilter_firstset::FirstSet>>,
+    /// Per root, the characters a match of it can begin with, when every root
+    /// has such a set (`regex_ltm_nfa_guard::root_gates`).
+    pub(super) root_gates: Option<Box<[super::regex_prefilter_firstset::FirstSet]>>,
 }
 
 impl LtmNfa {
@@ -132,12 +135,47 @@ impl LtmNfa {
     // Cost: O(s), s = nodes.
     pub(super) fn new(nodes: Vec<NfaNode>, start: u32, roots: Vec<NfaRoot>) -> Self {
         let guards = super::regex_ltm_nfa_guard::node_guards(&nodes);
+        let root_gates = super::regex_ltm_nfa_guard::root_gates(&nodes, &roots);
         LtmNfa {
             nodes,
             start,
             roots,
             guards,
+            root_gates,
         }
+    }
+
+    /// The ranking of this NFA's roots at `pos` when the root gates decide it
+    /// without a run: at most one root's gate admits the character there, so
+    /// every other root fails at its first character, in the measurement and
+    /// in the match alike. The admitting root (if any) comes first and the
+    /// rest keep their order, which is the order a run ranks them in whenever
+    /// that root measures any length; when it measures none, no root can match
+    /// at all except possibly it, so trying it first changes no outcome.
+    /// `None` when the gates do not decide it (several roots admit the
+    /// character, a root has no gate, or a left-recursion activation is live,
+    /// whose seed a run would read through a call instead of a character).
+    // Cost: O(r), r = roots.
+    pub(super) fn gated_ranking(&self, chars: &[char], pos: usize) -> Option<Vec<usize>> {
+        let gates = self.root_gates.as_deref()?;
+        let mut winner = None;
+        if pos < chars.len() {
+            for (idx, gate) in gates.iter().enumerate() {
+                if gate.admits_at(chars, pos) {
+                    if winner.is_some() {
+                        return None;
+                    }
+                    winner = Some(idx);
+                }
+            }
+        }
+        if super::regex_lr_state::lr_any_live() {
+            return None;
+        }
+        let mut order = Vec::with_capacity(gates.len());
+        order.extend(winner);
+        order.extend((0..gates.len()).filter(|&idx| Some(idx) != winner));
+        Some(order)
     }
 }
 
