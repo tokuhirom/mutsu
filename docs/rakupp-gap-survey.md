@@ -45,6 +45,11 @@ on it.
 
 ## The rows (CI, `13320ba6`, interpreter series)
 
+> **Reading rule (2026-11-28):** ratios against rakudo and rakupp are read on the JIT-on rows
+> (`@section+jit` / `+jit`) only. This survey was taken on the JIT-off (interpreter) series, so
+> its ratios overstate the gap the shipped binary has; a JIT-off row is never a perf gap. Re-read
+> a row on its `+jit` series (`docs/benchmarks.md`) before designing a fix from it.
+
 | benchmark | mutsu | rakudo | rakupp | vs rakudo | vs rakupp |
 |---|---:|---:|---:|---:|---:|
 | bench-json-fast-spdx@section | 0.0374 | 0.0310 | 0.0022 | 1.21 | 17.00 |

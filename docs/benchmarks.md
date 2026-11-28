@@ -23,6 +23,16 @@ the same job, and against Raku++ (`rakupp`) as a second reference. What the raku
 is made of, row by row, and which of its rows are not engine against engine (rakupp answers
 JSON::Fast natively) is in [rakupp-gap-survey.md](rakupp-gap-survey.md).
 
+### Which rows are compared against rakudo and rakupp
+
+**Ratios against rakudo and rakupp are read on the JIT-on rows only** (maintainer decision,
+2026-11-28): `<name>@section+jit`, or `<name>+jit` for a benchmark with no section. The JIT is on
+by default in the shipped binary (ADR-0001 §7); the plain `<name>` / `<name>@section` rows pin
+`MUTSU_JIT=off` (`scripts/bench-ci.sh`) and are mutsu's own interpreter baseline. **A JIT-off row
+is never a perf gap**: losing to rakudo or rakupp there is not a defect, and a `todo:perf` issue's
+close condition or headline number is stated on the `+jit` row. The JIT-off series is kept for
+mutsu's own JIT-on vs JIT-off comparison (seconds and counter charts), never as a ratio.
+
 ### Adding a benchmark
 
 - Keep it **deterministic** and **self-checking** (print a checksum).
@@ -60,7 +70,7 @@ say "bench-section-seconds: {now - $t0}";
 say $result;
 ```
 
-Read the `@section` rows when comparing against rakudo — a whole-script row charges rakudo its JIT
+Read the `@section+jit` rows when comparing against rakudo — a whole-script row charges rakudo its JIT
 warm-up as well, which ADR-0099 §2.1 measured as most of a 4.2x headline. Under
 `scripts/bench-det.sh` (`BENCH_DET=1`) the workload runs once, so the deterministic series keeps a
 single execution per file; those series are whole-script (startup included) — see
@@ -134,12 +144,18 @@ previous commit", because a one-commit move on this runner pool is mostly noise:
   benchmark whose section series has no point yet keep the whole-script series as headline. The
   dotted green line marks the commit where a card's section series starts.
 - Each card, and the table, shows **vs rakudo** and **vs rakupp**: the **median of the last 10
-  commits** of mutsu ÷ the reference on the `+jit` series (the default build), not the latest
-  point. A ratio above 1.0x is red; it is lighter (*marginal*) when a quarter or more of those
+  commits** of mutsu ÷ the reference on the JIT-on series (`@section+jit`, else `+jit`), not the
+  latest point. The JIT-off series is drawn on the seconds and counter metrics only, as mutsu's own
+  baseline next to `+jit`: a ratio chart, the win/loss colouring, the sort order, the table's
+  ratio columns and `--report` never read it. A ratio above 1.0x is red; it is lighter (*marginal*) when a quarter or more of those
   commits were at or under parity. A ratio rakupp wins by something other than running the same
   Raku code faster (its native JSON parser, its non-PIE startup) is not coloured and does not
   count as a loss: the card shows its note instead, in every metric. Wins are not coloured,
   so the losses read at a glance.
+- **Each ratio tab emphasizes only its own reference.** On "ratio vs rakudo" the cards, the red/win
+  colouring, the notes and the table columns are rakudo's alone; on "ratio vs rakupp" they are
+  rakupp's alone, including the "rakupp does not run JSON::Fast's Raku code" note. The seconds and
+  counter metrics show both. A table sort key of the hidden reference falls back to the shown one.
 - A ratio is only as stable as its baseline. Each history row records the reference versions it
   ran against (the `rakudo` and `rakupp` columns, the first line of each `--version`), and the
   page names the current ones at the top ("vs Rakudo 2026.11 · Raku++ v5.9.0"). A ratio chart
