@@ -280,7 +280,7 @@ impl Interpreter {
             // `named_mu_only_arg`.
             if a.is_string_pair_value() {
                 return match a.view() {
-                    ValueView::Pair(_, v) => !v.is_proxy_value() && self.light_arg_is_any(&v),
+                    ValueView::Pair(_, v) => !v.is_proxy_value() && self.light_arg_is_any(v),
                     _ => false,
                 };
             }
