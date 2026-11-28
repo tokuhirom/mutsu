@@ -4,7 +4,7 @@ use Test;
 # each execution must resolve the constraint as the first did, and pick up
 # whatever renames it since (#12917's per-site declaration memo).
 
-plan 17;
+plan 21;
 
 role Tag { }
 class ShortTag does Tag { }
@@ -63,3 +63,13 @@ is Pk::decl(Pk::PC.new), 'Pk::PC', 'and keeps a value doing it';
 
 my $msg = (try { $c.m(Other.new) }) // $!.message;
 like $msg, /'expected Tag but got Other'/, 'the refusal names both types';
+
+# A Nil initializer reaching a builtin-typed declaration's store.
+sub nil-of() { Nil }
+sub str-decl() { my Str $s = nil-of(); $s }
+is str-decl().^name, 'Str', 'a Nil leaves Str (first call)';
+is str-decl().^name, 'Str', 'a Nil leaves Str (memoized call)';
+sub default-decl() { my Str $s is default('d') = nil-of(); $s }
+is default-decl(), 'd', 'an `is default` value takes over a Nil';
+sub reassign() { my Tag $t = ShortTag.new; $t = nil-of(); $t.^name }
+is reassign(), 'Tag', 'a later Nil assignment resets to the role type object';

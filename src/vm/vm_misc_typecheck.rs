@@ -3,7 +3,11 @@ use super::*;
 use crate::value::ValueMap;
 
 pub(super) enum TypeCheckMode {
-    Assignment,
+    /// `feeds_decl_store`: the statement-form declaration store follows the
+    /// check directly (see `type_check_plain_scalar_fast`).
+    Assignment {
+        feeds_decl_store: bool,
+    },
     Binding,
     Parameter,
 }
@@ -18,7 +22,10 @@ impl Interpreter {
         has_explicit_initializer: bool,
         smiley_from_pragma: bool,
     ) -> Result<(), RuntimeError> {
-        let bind_mode = !matches!(mode, TypeCheckMode::Assignment);
+        let (bind_mode, feeds_decl_store) = match mode {
+            TypeCheckMode::Assignment { feeds_decl_store } => (false, feeds_decl_store),
+            _ => (true, false),
+        };
         let parameter_mode = matches!(mode, TypeCheckMode::Parameter);
         let var_name: Option<&str> = var_name_idx.map(|idx| Self::const_str(code, idx));
         // Set again below only when this check fully matched the value, so the
@@ -26,7 +33,7 @@ impl Interpreter {
         self.decl_typechecked_context().set(false);
         if !bind_mode
             && (self.type_check_native_scalar_fast(code, tc_idx, var_name)
-                || self.type_check_plain_scalar_fast(code, tc_idx, var_name)?)
+                || self.type_check_plain_scalar_fast(code, tc_idx, var_name, feeds_decl_store)?)
         {
             return Ok(());
         }
@@ -779,21 +786,28 @@ impl Interpreter {
         code: &CompiledCode,
         tc_idx: u32,
         var_name: Option<&str>,
+        feeds_decl_store: bool,
     ) -> Result<bool, RuntimeError> {
         let constraint = Self::const_str(code, tc_idx);
         if !var_name.is_some_and(|n| n.starts_with('$')) {
             return Ok(false);
         }
-        let plain = if self.type_decl_constraint_is_plain_builtin(code, tc_idx, constraint) {
-            !crate::runtime::native_types::is_native_int_type(constraint)
-                && !matches!(constraint, "num" | "num32" | "num64" | "str")
-        } else {
-            // A registered user class or role, which the general path checks
-            // for visibility (ADR-11136) before matching: a module's type
-            // that is not merged here is refused there, so it is left to it.
-            self.type_decl_constraint_is_plain_user_type(code, tc_idx, constraint)
-                && !self.module_name_hidden_here(constraint)
-        };
+        // `env_checked`: the user-type answer already asked whether an env
+        // binding renames the spelling.
+        let (plain, env_checked) =
+            if self.type_decl_constraint_is_plain_builtin(code, tc_idx, constraint) {
+                let non_native = !crate::runtime::native_types::is_native_int_type(constraint)
+                    && !matches!(constraint, "num" | "num32" | "num64" | "str");
+                (non_native, false)
+            } else {
+                // A registered user class or role, which the general path
+                // checks for visibility (ADR-11136) before matching: a
+                // module's type that is not merged here is refused there, so
+                // it is left to it.
+                let user = self.type_decl_constraint_is_plain_user_type(code, tc_idx, constraint)
+                    && !self.module_name_hidden_here(constraint);
+                (user, true)
+            };
         if !plain {
             return Ok(false);
         }
@@ -804,6 +818,20 @@ impl Interpreter {
             // A Nil for a plain, non-definite, non-native constraint passes
             // the general path untouched -- nothing to match, coerce or
             // vouch for; the store resets the variable to its type object.
+            // When that store is the very next op, the reset is done here,
+            // from the site's own constant: the store then finds a vouched
+            // type object instead of deriving the same one by name.
+            if feeds_decl_store
+                && constraint != "Nil"
+                && var_name.is_some_and(|n| self.var_default(&n[1..]).is_none())
+                && (env_checked || !self.decl_type_name_rebound_in_env(code.const_sym(tc_idx)))
+            {
+                let seed = Value::package(code.const_sym(tc_idx));
+                if let Some(top) = self.stack.last_mut() {
+                    *top = seed;
+                }
+                self.decl_typechecked_context().set(true);
+            }
             return Ok(true);
         }
         let value = value.clone();
