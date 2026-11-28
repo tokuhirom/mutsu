@@ -34,6 +34,17 @@ impl Interpreter {
                 return Ok(());
             }
         }
+        // The topic: every routine's own `$_`, read in every `with` / `given`
+        // body and statement-modifier loop. Answered from `env` exactly as the
+        // scalar shortcut below answers it, without the probes ahead of that
+        // shortcut that cannot hold `_` (see `topic_read_shortcut`).
+        if code.const_sym(name_idx) == crate::symbol::wk::topic()
+            && let Some(val) = self.topic_read_shortcut(code)
+        {
+            self.stack.push(val);
+            *ip += 1;
+            return Ok(());
+        }
         // mutsu#17971: a routine-nested sub's free variable this call
         // already resolved to its alias cell (`vm_lexsub_free_cache.rs`).
         if let Some(val) = self.lexsub_free_cache_read(name, code.const_sym(name_idx)) {
@@ -242,5 +253,38 @@ impl Interpreter {
         self.stack.push(val);
         *ip += 1;
         Ok(())
+    }
+
+    /// A `GetGlobal` of the topic `_`, when it takes the plain-env shortcut:
+    /// the same value, gates and filter as that shortcut, minus the probes
+    /// that run before it and cannot answer for `_` -- the routine-nested
+    /// free-variable cache never holds the topic, `_` is neither of the magic
+    /// names nor a private attribute, it is never package-qualified, and a
+    /// running loop parameter named `_` lives in `env` like any other topic.
+    /// `None` sends the read down the full arm.
+    // Cost: O(d), d = env tiers walked.
+    #[inline]
+    fn topic_read_shortcut(&self, code: &CompiledCode) -> Option<Value> {
+        if self.rw_return_context
+            || (self.atomic_var_seen() && Self::atomic_name_possible("_"))
+            || self.threads.sigilless_attrs_active
+            || !self.lexicals.escaping_our_lexical_names.is_empty()
+        {
+            return None;
+        }
+        debug_assert!(
+            self.topic_outside_env_stores_miss(code),
+            "a store ahead of env holds the topic"
+        );
+        match self.env().get_sym(crate::symbol::wk::topic()) {
+            Some(val)
+                if !val.is_nil()
+                    && !val.is_container_ref()
+                    && !matches!(val.view(), ValueView::LazyThunk(_)) =>
+            {
+                Some(val.clone())
+            }
+            _ => None,
+        }
     }
 }
