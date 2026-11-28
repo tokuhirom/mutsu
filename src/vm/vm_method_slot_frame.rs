@@ -187,8 +187,8 @@ impl Interpreter {
     /// the receiver is slot 0, and its attribute cell is the only storage the
     /// read can mean (a slot-frame owner is never a role, never a CStruct,
     /// and [`Self::slot_frame_entry_ok`] ruled out every name-keyed answer).
-    /// When the cell holds no such attribute, the value seeded at entry is
-    /// the answer, as the general arm's tail gives it.
+    /// When the cell holds no such attribute the answer is Nil, which is what
+    /// the lean frame's seed from that same cell would have held.
     // Cost: O(1) — one attribute-site read (a cache miss costs the general
     // attribute resolution, O(m), m = mixin layers).
     pub(super) fn slot_frame_attr_read(&mut self, code: &CompiledCode, idx: usize) {
@@ -196,12 +196,7 @@ impl Interpreter {
             self.stack.push(val);
             return;
         }
-        let val = self.locals[idx].clone();
-        if val.is_container_ref() {
-            self.push_container_ref_read(val, false);
-        } else {
-            self.stack.push(val);
-        }
+        self.stack.push(Value::NIL);
     }
 
     /// Run a planned lean call in a slot frame. The caller checked
@@ -239,12 +234,6 @@ impl Interpreter {
             ..
         } = call;
         self.pending_skip_constraint_recheck = false;
-        // A slot-frame owner is never a role (`method_attr_cells_for` with
-        // `owner_is_role = false`): the receiver's own attribute cell is the
-        // only one, so there is no role cell to prefer and no distinct
-        // fallback. Read it directly rather than resolving the owner's name.
-        let attrs_cell = Self::self_instance_attrs(&base);
-        let fallback_attrs_cell: Option<crate::gc::Gc<crate::value::InstanceAttrs>> = None;
         let _mark_context_guard = crate::vm::vm_call_state_guard::MarkContextGuard::new(self);
 
         // The slim record (ADR-18393 D1). No env overlay: the body reads and
@@ -277,18 +266,6 @@ impl Interpreter {
                         .unwrap_or(Value::NIL),
                 }
             };
-            let attrs_guard = attrs_cell.as_ref().map(|c| c.as_map());
-            let fallback_attrs_guard = fallback_attrs_cell.as_ref().map(|c| c.as_map());
-            let attr_get = |key: Symbol| -> Option<Value> {
-                attrs_guard
-                    .as_ref()
-                    .and_then(|g| g.get(key).cloned())
-                    .or_else(|| {
-                        fallback_attrs_guard
-                            .as_ref()
-                            .and_then(|g| g.get(key).cloned())
-                    })
-            };
             let plan = method_def.frame_plan(owner_sym, cc);
             for (i, init) in plan.locals.iter().enumerate() {
                 self.locals[i] = match *init {
@@ -297,13 +274,14 @@ impl Interpreter {
                     LocalInit::Class => class_val.clone(),
                     LocalInit::Role | LocalInit::Nil => Value::NIL,
                     LocalInit::Topic => Value::package(crate::symbol::wk::any()),
-                    LocalInit::AttrPrivate { qualified, bare } => attr_get(qualified)
-                        .or_else(|| attr_get(bare))
-                        .unwrap_or(Value::NIL),
-                    LocalInit::AttrPublic { bare } => attr_get(bare).unwrap_or(Value::NIL),
-                    LocalInit::AttrAggregate { sigil_key, bare } => attr_get(sigil_key)
-                        .or_else(|| attr_get(bare))
-                        .unwrap_or(Value::NIL),
+                    // An attribute slot is never read from the slot in a slot
+                    // frame: a scalar one is read from the receiver's cell
+                    // (`slot_frame_attr_read`, which answers Nil itself when the
+                    // cell has no such attribute, as this seed would), and the
+                    // body admits no other access to one (`slot_frame_body_ok`).
+                    LocalInit::AttrPrivate { .. }
+                    | LocalInit::AttrPublic { .. }
+                    | LocalInit::AttrAggregate { .. } => Value::NIL,
                     // Refused by `slot_frame_body_ok`.
                     LocalInit::Outer => Value::NIL,
                 };

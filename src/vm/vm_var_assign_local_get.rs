@@ -139,7 +139,7 @@ impl Interpreter {
     /// deferred hash entry's current value, or -- in container mode -- an
     /// empty cell itself.
     // Cost: O(1).
-    pub(super) fn push_container_ref_read(&mut self, val: Value, keep_deferred_entry: bool) {
+    fn push_container_ref_read(&mut self, val: Value, keep_deferred_entry: bool) {
         // A deferred array entry carried by a bound slice lives inside a
         // temporary cell until its first write. In value context unwrap it
         // one more step so callers see the array hole, while lvalue context
