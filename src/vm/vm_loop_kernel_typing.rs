@@ -11,8 +11,8 @@
 //! edge.
 
 use super::vm_loop_kernel_types::{
-    K, LoopShape, LoopVar, is_topic, nested_range, nested_while, num_const, num_method_call,
-    plain_decl,
+    ElemRead, ElemShape, K, LoopShape, LoopVar, is_topic, nested_range, nested_while, num_const,
+    num_method_call, plain_decl,
 };
 use super::*;
 use crate::opcode::kernel_slot::SlotKind;
@@ -50,10 +50,11 @@ struct Walk<'c> {
     live: Vec<u32>,
     /// Nesting depth of the walk (0 = the kernel's own body).
     depth: u32,
-    /// The element kind of each array the region reads, settled at entry.
-    elem_reads: &'c [(u32, SlotKind)],
-    /// The arrays the region stores into.
-    elem_stores: &'c [u32],
+    /// The shape and element kind of each array or hash the region reads,
+    /// settled at entry.
+    elem_reads: &'c [ElemRead],
+    /// The arrays and hashes the region stores into (`true` = a hash).
+    elem_stores: &'c [(u32, bool)],
 }
 
 impl Walk<'_> {
@@ -72,7 +73,7 @@ impl Walk<'_> {
         let mut open = true;
         let mut incoming: BTreeMap<usize, Vec<K>> = BTreeMap::new();
         let edge = |incoming: &mut BTreeMap<usize, Vec<K>>, t: usize, stack: &[K]| -> Option<()> {
-            if t <= start || t > end || stack.iter().any(|k| matches!(k, K::Arr(_))) {
+            if t <= start || t > end || stack.iter().any(|k| matches!(k, K::Arr(_) | K::Row(_))) {
                 return None;
             }
             match incoming.get(&t) {
@@ -142,7 +143,7 @@ impl Walk<'_> {
                 continue;
             }
             match op {
-                OpCode::GetLocal(s) if self.elem_reads.iter().any(|(e, _)| e == s) => {
+                OpCode::GetLocal(s) if self.elem_reads.iter().any(|e| e.0 == *s) => {
                     stack.push(K::Arr(*s));
                 }
                 OpCode::GetLocal(s) | OpCode::GetLocalMetaAssign { slot: s, .. } => {
@@ -150,20 +151,33 @@ impl Walk<'_> {
                 }
                 // `@a[$i]`: an Int index into a read array; the element is
                 // the kind the entry settled (a different one declines there).
-                OpCode::Index {
-                    is_positional: true,
-                } => {
+                // `@g[$i]` of a grid is a row, which only a second subscript
+                // consumes; `%h{$i}` keys a hash by an Int.
+                OpCode::Index { is_positional } => {
                     if stack.pop()? != K::Int {
                         return None;
                     }
-                    let K::Arr(s) = stack.pop()? else {
-                        return None;
+                    let (s, row) = match stack.pop()? {
+                        K::Arr(s) => (s, false),
+                        K::Row(s) => (s, true),
+                        _ => return None,
                     };
-                    let (_, k) = self.elem_reads.iter().find(|(e, _)| *e == s)?;
-                    stack.push(K::of(*k));
+                    let &(_, shape, k) = self.elem_reads.iter().find(|e| e.0 == s)?;
+                    stack.push(match (shape, row, *is_positional) {
+                        (ElemShape::Array, false, true) | (ElemShape::Hash, false, false) => {
+                            K::of(k)
+                        }
+                        (ElemShape::Grid, false, true) => K::Row(s),
+                        (ElemShape::Grid, true, true) => K::of(k),
+                        _ => return None,
+                    });
                 }
-                // `@a[$i] = v`: the value stays on the stack.
-                OpCode::IndexAssignLocal { slot, .. } if self.elem_stores.contains(slot) => {
+                // `@a[$i] = v` / `%h{$i} = v`: the value stays on the stack.
+                OpCode::IndexAssignLocal {
+                    slot,
+                    is_positional,
+                    ..
+                } if self.elem_stores.contains(&(*slot, !*is_positional)) => {
                     let v = stack.pop()?;
                     if !v.numeric() || stack.pop()? != K::Int {
                         return None;
@@ -206,7 +220,8 @@ impl Walk<'_> {
                 | OpCode::Mod
                 | OpCode::BitAnd
                 | OpCode::BitOr
-                | OpCode::BitXor => {
+                | OpCode::BitXor
+                | OpCode::BitShiftRight => {
                     if stack.pop()? != K::Int || stack.pop()? != K::Int {
                         return None;
                     }
@@ -323,7 +338,7 @@ impl Walk<'_> {
         if !open
             || stack.len() != leaves
             || pending.is_some()
-            || stack.iter().any(|k| matches!(k, K::Arr(_)))
+            || stack.iter().any(|k| matches!(k, K::Arr(_) | K::Row(_)))
         {
             return None;
         }
@@ -339,8 +354,8 @@ pub(super) fn type_region(
     code: &CompiledCode,
     shape: &LoopShape,
     carried: &[(u32, SlotKind)],
-    elem_reads: &[(u32, SlotKind)],
-    elem_stores: &[u32],
+    elem_reads: &[ElemRead],
+    elem_stores: &[(u32, bool)],
 ) -> Option<Typed> {
     let mut w = Walk {
         code,

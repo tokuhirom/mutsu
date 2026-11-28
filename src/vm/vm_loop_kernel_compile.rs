@@ -77,7 +77,7 @@ pub(super) fn compile(
     code: &CompiledCode,
     shape: &LoopShape,
     carried: &[(u32, SlotKind)],
-    elem_reads: &[(u32, SlotKind)],
+    elem_reads: &[super::vm_loop_kernel_types::ElemRead],
     typed: &Typed,
 ) -> Option<usize> {
     with_engine(|module, n| build(module, n, code, shape, carried, elem_reads, typed))
@@ -89,7 +89,7 @@ fn build(
     code: &CompiledCode,
     shape: &LoopShape,
     carried: &[(u32, SlotKind)],
-    elem_reads: &[(u32, SlotKind)],
+    elem_reads: &[super::vm_loop_kernel_types::ElemRead],
     typed: &Typed,
 ) -> Option<usize> {
     let frontend_config = module.target_config();
@@ -126,6 +126,14 @@ fn build(
         read: elem_sig(&mut b, ptr),
         store_int: elem_sig(&mut b, types::I64),
         store_num: elem_sig(&mut b, types::F64),
+        read2: {
+            let mut sig = cranelift_codegen::ir::Signature::new(module.isa().default_call_conv());
+            for t in [ptr, ptr, types::I32, types::I64, types::I64, ptr] {
+                sig.params.push(AbiParam::new(t));
+            }
+            sig.returns.push(AbiParam::new(types::I32));
+            b.import_signature(sig)
+        },
         interp_offset: std::mem::offset_of!(LoopCtx, interp) as i32,
         code_offset: std::mem::offset_of!(LoopCtx, code) as i32,
     };
