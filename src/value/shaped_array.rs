@@ -135,6 +135,32 @@ pub(crate) fn shaped_array_shape(value: &Value) -> Option<Vec<usize>> {
     Some(inferred_shape)
 }
 
+/// The declared shape of a jagged array (`my @a[2;*]`, #19282), `None` for a
+/// dimension of no set length; `None` for any other value.
+///
+/// A jagged array is an ordinary growable `Array` of rows whose
+/// `ArrayData.shape` names its declared shape, with `0` (never a legal
+/// length) standing for a `*` dimension. Each row is the array the remaining
+/// dimensions describe: a plain `Array` for a lone `*`, a fixed shaped array,
+/// or a jagged array again.
+// Cost: O(d), d = dimensions.
+pub(crate) fn jagged_array_shape(value: &Value) -> Option<Vec<Option<usize>>> {
+    let ValueView::Array(items, ArrayKind::Array) = value.view() else {
+        return None;
+    };
+    let shape = items.shape.as_ref()?;
+    if shape.len() < 2 || !shape.contains(&0) {
+        return None;
+    }
+    Some(shape.iter().map(|&d| (d != 0).then_some(d)).collect())
+}
+
+/// Encodes a jagged shape for `ArrayData.shape` (see [`jagged_array_shape`]).
+// Cost: O(d), d = dimensions.
+pub(crate) fn encode_jagged_shape(shape: &[Option<usize>]) -> Vec<usize> {
+    shape.iter().map(|d| d.unwrap_or(0)).collect()
+}
+
 pub(crate) fn mark_shaped_array(value: &Value, shape: Option<&[usize]>) {
     let ValueView::Array(items, ..) = value.view() else {
         return;

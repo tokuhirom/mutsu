@@ -1,6 +1,7 @@
 pub(crate) mod methods;
 mod methods_adhoc_slurpy;
 mod methods_aggregate_ctor;
+mod methods_jagged_array;
 mod methods_call_dispatch;
 mod methods_call_helpers;
 mod methods_classhow;

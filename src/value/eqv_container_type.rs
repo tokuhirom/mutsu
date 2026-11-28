@@ -49,6 +49,9 @@ pub(crate) fn same_container_parameterization(a: &Value, b: &Value) -> bool {
         (ValueView::Array(x, _), ValueView::Array(y, _)) => {
             parameterization("Array", &x.value_type, &x.key_type, &x.declared_type)
                 == parameterization("Array", &y.value_type, &y.key_type, &y.declared_type)
+                // A jagged array's type is of its shape (#19282).
+                && super::shaped_array::jagged_array_shape(a)
+                    == super::shaped_array::jagged_array_shape(b)
         }
         (ValueView::Hash(x), ValueView::Hash(y)) => {
             parameterization("Hash", &x.value_type, &x.key_type, &x.declared_type)
