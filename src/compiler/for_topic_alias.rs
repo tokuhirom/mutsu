@@ -73,6 +73,8 @@ fn safe_binary(op: &TokenKind) -> bool {
             | TokenKind::Star
             | TokenKind::StarStar
             | TokenKind::Percent
+            | TokenKind::PercentPercent
+            | TokenKind::BangPercentPercent
             | TokenKind::Slash
             | TokenKind::Tilde
             | TokenKind::EqEq
@@ -222,6 +224,8 @@ mod tests {
         assert!(unobservable("my $c = 0; for @a { $c++ }"));
         assert!(unobservable("my %h; for @a { %h{$_} = 1 }"));
         assert!(unobservable("my %h; for @a { %h{$_ ~ 'x'} = $_ + 1 }"));
+        assert!(unobservable("my $n = 0; for @a { $n++ if $_ %% 3 }"));
+        assert!(unobservable("my $n = 0; for @a { $n++ if $_ !%% 3 }"));
     }
 
     #[test]

@@ -145,6 +145,28 @@ pub(crate) fn bind_loop_topic(
     }
 }
 
+/// The topic a loop with an unobservable topic
+/// ([`super::map_grep_plan::InlineLoopPlan::topic_unobservable`]) binds for
+/// `item`: the plain value of a `:=`/element cell, or the item itself when it
+/// is no cell or its cell holds something a read still has to resolve (a
+/// `Proxy`, a nested cell, a lazy thunk, `Nil`, a deferred hash entry), which the ordinary read path owns.
+// Cost: O(1) (one cell lock and a value clone).
+pub(crate) fn unobservable_topic(item: &Value) -> Value {
+    if !item.is_container_ref() {
+        return item.clone();
+    }
+    let value = item.deref_container();
+    if value.is_proxy_value()
+        || value.is_container_ref()
+        || value.is_lazy_thunk_value()
+        || matches!(value.view(), ValueView::Nil | ValueView::HashEntryRef { .. })
+    {
+        item.clone()
+    } else {
+        value
+    }
+}
+
 /// Set the topic's read-only marking for one iteration of a map/grep loop.
 ///
 /// raku binds a callback's implicit `$_` to the source ELEMENT, so `$_ = ...`
@@ -854,6 +876,8 @@ impl Interpreter {
             // `CompiledCode::immutable_topic` and `set_loop_topic_readonly`.
             let immutable_topic = plan.immutable_topic;
             let topic_per_element = plan.topic_per_element;
+            let topic_unobservable = plan.topic_unobservable && arity == 1;
+            let lean_readonly = topic_unobservable && data.params.is_empty();
 
             // CP-3 collapse: run the map loop with fresh execution registers
             // (replaces the `mem::take(self)` + `VM::new` sub-VM, reusing one
@@ -929,7 +953,17 @@ impl Interpreter {
                                 vm.env_mut()
                                     .insert_sym_noting(plan.param_syms[assumed_count], bound);
                             }
-                            bind_loop_topic(vm.env_mut(), &item, is_whatever_code, &outer_topic);
+                            if topic_unobservable {
+                                let topic = unobservable_topic(&item);
+                                bind_loop_topic(vm.env_mut(), &topic, false, &outer_topic);
+                            } else {
+                                bind_loop_topic(
+                                    vm.env_mut(),
+                                    &item,
+                                    is_whatever_code,
+                                    &outer_topic,
+                                );
+                            }
                         } else {
                             // The topic is the first element; a `$_` parameter among the
                             // block's own is bound after it and wins.
@@ -971,10 +1005,15 @@ impl Interpreter {
                     // into every later, unrelated same-named lexical in the
                     // program (see the sibling fix + comment in
                     // `resolution_map_grep_rw.rs`).
-                    let _readonly_guard =
-                        crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
-                    vm.mark_placeholder_params_readonly(&data.params);
-                    set_loop_topic_readonly(vm, immutable_topic, topic_per_element);
+                    //
+                    // A body that cannot write its topic and binds no
+                    // parameter marks nothing, so it opens no scope (#19323).
+                    let _readonly_guard = (!lean_readonly).then(|| {
+                        let guard = crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
+                        vm.mark_placeholder_params_readonly(&data.params);
+                        set_loop_topic_readonly(vm, immutable_topic, topic_per_element);
+                        guard
+                    });
                     match vm.run_loop_body(code, compiled_fns, declares_routines) {
                         Ok(()) => {
                             let val = vm

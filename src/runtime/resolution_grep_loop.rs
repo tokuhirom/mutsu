@@ -6,7 +6,7 @@
 
 use super::*;
 use crate::runtime::map_grep_plan::{InlineLoopKind, MapGrepPlanSlot};
-use crate::runtime::resolution_map_grep::bind_loop_topic;
+use crate::runtime::resolution_map_grep::{bind_loop_topic, unobservable_topic};
 use crate::value::{PullOut, ValueView};
 
 /// What a grep over a list of items produced: the matched values, the source
@@ -363,6 +363,8 @@ impl Interpreter {
             // See `CompiledCode::immutable_topic` / `set_loop_topic_readonly`.
             let immutable_topic = plan.immutable_topic;
             let topic_per_element = plan.topic_per_element;
+            let topic_unobservable = plan.topic_unobservable && arity == 1;
+            let lean_readonly = topic_unobservable && data.params.is_empty();
 
             // CP-3 collapse: run the grep loop with fresh execution registers
             // (replaces the `mem::take(self)` + `VM::new` sub-VM). The closure
@@ -439,14 +441,21 @@ impl Interpreter {
                                 if let Some(&p) = plan.param_syms.get(assumed_count) {
                                     vm.env_mut().insert_sym_noting(p, first.clone());
                                 }
-                                bind_loop_topic(
-                                    vm.env_mut(),
-                                    &first,
-                                    keeps_outer_topic,
-                                    &outer_topic,
-                                );
-                                if !keeps_outer_topic {
-                                    vm.env_mut().insert_sym(topic_source_key, first.clone());
+                                if topic_unobservable {
+                                    // Nothing can write the topic back: the
+                                    // element's plain value, no source key.
+                                    let topic = unobservable_topic(&first);
+                                    bind_loop_topic(vm.env_mut(), &topic, false, &outer_topic);
+                                } else {
+                                    bind_loop_topic(
+                                        vm.env_mut(),
+                                        &first,
+                                        keeps_outer_topic,
+                                        &outer_topic,
+                                    );
+                                    if !keeps_outer_topic {
+                                        vm.env_mut().insert_sym(topic_source_key, first.clone());
+                                    }
                                 }
                             } else {
                                 // The topic is the first element; a `$_` parameter among the
@@ -470,7 +479,7 @@ impl Interpreter {
                         // element, so it must not write back to it.
                         // Set per element (the body may have changed it), but
                         // without a fresh `String` when it already names the key.
-                        let wants_source = arity == 1 && !keeps_outer_topic;
+                        let wants_source = arity == 1 && !keeps_outer_topic && !topic_unobservable;
                         if vm.topic_state.topic_source_var.as_deref()
                             != wants_source.then(|| topic_source_key.as_str())
                         {
@@ -485,10 +494,20 @@ impl Interpreter {
                         // `run_reuse`, without `push_call_frame`, so a mark made
                         // inside it would otherwise skip the undo journal and
                         // leak permanently (see `mark_readonly_sym_with`).
-                        let _readonly_guard =
-                            crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
-                        vm.mark_placeholder_params_readonly(&data.params);
-                        super::resolution_map_grep::set_loop_topic_readonly(vm, immutable_topic, topic_per_element);
+                        //
+                        // A body that cannot write its topic and binds no
+                        // parameter marks nothing, so it opens no scope (#19323).
+                        let _readonly_guard = (!lean_readonly).then(|| {
+                            let guard =
+                                crate::vm::vm_call_state_guard::ReadonlyFrameGuard::new(vm);
+                            vm.mark_placeholder_params_readonly(&data.params);
+                            super::resolution_map_grep::set_loop_topic_readonly(
+                                vm,
+                                immutable_topic,
+                                topic_per_element,
+                            );
+                            guard
+                        });
                         match vm.run_loop_body(code, compiled_fns, declares_routines) {
                             Ok(()) => {
                                 let pred = vm
@@ -498,7 +517,9 @@ impl Interpreter {
                                         vm.env().get_sym(crate::symbol::wk::topic()).cloned()
                                     })
                                     .unwrap_or(Value::NIL);
-                                let updated_item = if arity == 1 {
+                                let updated_item = if topic_unobservable {
+                                    first.clone()
+                                } else if arity == 1 {
                                     let topic = vm
                                         .env()
                                         .get_sym(topic_source_key)
@@ -543,7 +564,9 @@ impl Interpreter {
                             Err(e) if e.is_succeed() => {
                                 vm.set_when_matched(saved_when_matched);
                                 let pred = e.return_value.unwrap_or(Value::NIL);
-                                let updated_item = if arity == 1 {
+                                let updated_item = if topic_unobservable {
+                                    first.clone()
+                                } else if arity == 1 {
                                     let topic = vm
                                         .env()
                                         .get_sym(topic_source_key)

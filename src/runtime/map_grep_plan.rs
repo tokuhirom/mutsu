@@ -77,6 +77,15 @@ pub(crate) struct InlineLoopPlan {
     /// while a bare one (`(1, 2)` reaching `.map` through a parameter, #16949)
     /// makes it immutable.
     pub(crate) topic_per_element: bool,
+    /// The body cannot tell whether its implicit `$_` is the source element's
+    /// container or a copy of its value
+    /// ([`crate::compiler::for_topic_alias::topic_alias_unobservable`]: it
+    /// cannot write, bind or capture `$_`, call user code, or reach the source
+    /// by another name). The loop then binds the element's plain value as the
+    /// topic: no container cell is cloned into the env and dropped again per
+    /// element, there is no write-back key to bind or read back, and no
+    /// readonly marking to set, since nothing can assign the topic (#19323).
+    pub(crate) topic_unobservable: bool,
     /// See `frame_authoritative_set`.
     pub(crate) block_authoritative: Vec<Symbol>,
     /// Names the loop binds per iteration or the body declares: the params,
@@ -388,6 +397,8 @@ impl Interpreter {
             })
             .collect();
         let keeps_outer_topic = super::resolution_map_grep::block_keeps_outer_topic(data);
+        let topic_unobservable = !keeps_outer_topic
+            && crate::compiler::for_topic_alias::topic_alias_unobservable(&data.body);
         InlineLoopPlan {
             kind,
             origin,
@@ -402,6 +413,7 @@ impl Interpreter {
                     .as_ref()
                     .is_some_and(|cc| cc.immutable_topic),
             topic_per_element: false,
+            topic_unobservable,
             block_authoritative: data
                 .compiled_code
                 .as_ref()
