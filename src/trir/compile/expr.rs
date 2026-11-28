@@ -75,6 +75,7 @@ impl TrirCompiler<'_> {
                         });
                         return None;
                     }
+                    self.sigilless_reads.push((slot, self.ops.len()));
                     self.load(slot, kind);
                     return Some(kind);
                 }
@@ -120,6 +121,11 @@ impl TrirCompiler<'_> {
                 Some(TrKind::Obj)
             }
             Expr::Unary { op, expr, .. } => self.compile_unary(op, expr, false),
+            Expr::PostfixOp { op, expr }
+                if matches!(op, TokenKind::PlusPlus | TokenKind::MinusMinus) =>
+            {
+                self.compile_postfix_step(op, expr)
+            }
             Expr::Binary {
                 left, op, right, ..
             } => self.compile_binary(left, op, right),
@@ -173,7 +179,7 @@ impl TrirCompiler<'_> {
         if let Expr::Grouped(inner) = e {
             return self.compile_expr_sink(inner);
         }
-        if let Expr::Unary { op, expr, .. } = e
+        if let Expr::Unary { op, expr, .. } | Expr::PostfixOp { op, expr } = e
             && matches!(op, TokenKind::PlusPlus | TokenKind::MinusMinus)
         {
             self.compile_unary(op, expr, true)?;
@@ -245,7 +251,7 @@ impl TrirCompiler<'_> {
         Some(kind)
     }
 
-    fn compile_var(&mut self, name: &str) -> Option<TrKind> {
+    pub(super) fn compile_var(&mut self, name: &str) -> Option<TrKind> {
         if let Some(Binding { slot, kind }) = self.binding_of(name) {
             self.load(slot, kind);
             if kind == TrKind::Obj && self.nqp_bound.contains(&slot) {
@@ -294,72 +300,6 @@ impl TrirCompiler<'_> {
         !(name.is_empty()
             || name.starts_with(['$', '@', '%', '&', '*', '?', '!', '.', '='])
             || crate::qualified::is_qualified(crate::symbol::Symbol::intern(name)))
-    }
-
-    fn compile_unary(&mut self, op: &TokenKind, expr: &Expr, sink: bool) -> Option<TrKind> {
-        match op {
-            TokenKind::PlusPlus | TokenKind::MinusMinus => {
-                let Expr::Var(name) = expr else {
-                    self.note_decline(|| "++/-- on something other than a variable".to_string());
-                    return None;
-                };
-                let Some(Binding { slot, kind }) = self.binding_of(name) else {
-                    let n = name.clone();
-                    self.note_decline(|| format!("++/-- on non-local {n}"));
-                    return None;
-                };
-                if kind != TrKind::Int {
-                    self.note_decline(|| format!("++/-- on a {kind:?} variable"));
-                    return None;
-                }
-                if self.slot_is_readonly_param(slot, kind) {
-                    let n = name.clone();
-                    self.note_decline(|| format!("++/-- on the read-only parameter {n}"));
-                    return None;
-                }
-                if self.slot_is_sized(slot, kind) {
-                    let n = name.clone();
-                    self.note_decline(|| format!("++/-- on the sized native {n}"));
-                    return None;
-                }
-                let up = *op == TokenKind::PlusPlus;
-                let by_ref = self.slot_is_ref(slot, kind);
-                self.ops.push(match (up, sink, by_ref) {
-                    (true, false, false) => TrOp::IncI(slot),
-                    (true, true, false) => TrOp::IncIVoid(slot),
-                    (false, false, false) => TrOp::DecI(slot),
-                    (false, true, false) => TrOp::DecIVoid(slot),
-                    (true, false, true) => TrOp::IncRefI(slot),
-                    (true, true, true) => TrOp::IncRefIVoid(slot),
-                    (false, false, true) => TrOp::DecRefI(slot),
-                    (false, true, true) => TrOp::DecRefIVoid(slot),
-                });
-                Some(TrKind::Int)
-            }
-            TokenKind::Bang => {
-                let k = self.compile_expr(expr)?;
-                self.truthy(k)?;
-                self.ops.push(TrOp::NotI);
-                Some(TrKind::Int)
-            }
-            TokenKind::Minus => {
-                let k = self.compile_expr(expr)?;
-                match k {
-                    TrKind::Int => {
-                        self.ops.push(TrOp::NegI);
-                        Some(TrKind::Int)
-                    }
-                    other => {
-                        self.note_decline(|| format!("unary minus on {other:?}"));
-                        None
-                    }
-                }
-            }
-            other => {
-                self.note_decline(|| format!("prefix operator {other:?}"));
-                None
-            }
-        }
     }
 
     /// `a ?? b !! c`, and the shared lowering behind `&&`/`||`.

@@ -258,8 +258,9 @@ impl Interpreter {
             }
             let idx = caller_slot as usize;
             // Every argument here is a caller variable, which a sigilless
-            // parameter would bind as a container.
-            if p.sigilless || idx >= self.locals.len() {
+            // parameter would bind as a container -- indistinguishably from
+            // its value only when the body reads it before any effect.
+            if (p.sigilless && !p.value_at_entry) || idx >= self.locals.len() {
                 return None;
             }
             if let Some(cell) = self.trir_captured_cell(caller_code, idx) {
@@ -310,6 +311,7 @@ impl Interpreter {
             }
             let arg = &self.stack[args_base + i];
             if p.sigilless
+                && !p.value_at_entry
                 && matches!(
                     arg.view(),
                     ValueView::VarRef { .. } | ValueView::ContainerRef(_)
@@ -317,7 +319,7 @@ impl Interpreter {
             {
                 return None;
             }
-            let val = arg.unwrap_varref().clone();
+            let val = deref_cell(arg.unwrap_varref());
             self.bind_ro_param(frame, p, &val)?;
         }
         Some((rw, rw_len))
