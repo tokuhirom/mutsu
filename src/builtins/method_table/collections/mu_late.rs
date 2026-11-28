@@ -49,6 +49,9 @@ pub(super) static ROWS: &[MethodRow] = &[
         are
     ),
     late!("Array", "shape", 0, LATE, shape),
+    // A shaped hash's `Hash::Shaped.shape` (#19283); declines for any other
+    // hash, which has no `shape`.
+    late!("Hash", "shape", 0, LATE, shape),
     // The twins of `Any`'s pure `nl-out` and `pending` rows (`any_misc.rs`)
     // for a receiver with no shape (a user class's instance).
     late!("Any", "nl-out", 0, LATE, nl_out),

@@ -69,7 +69,28 @@ impl Interpreter {
     /// The positional spelling (`@a[1;2]:delete`, `postcircumfix:<[; ]>`) IS
     /// valid and keeps [`Self::builtin_multidim_delete`]; the parser picks
     /// between the two by subscript form (`multidim_delete_fn`).
-    pub(super) fn builtin_multidim_delete_assoc(&mut self) -> Result<Value, RuntimeError> {
+    pub(super) fn builtin_multidim_delete_assoc(
+        &mut self,
+        args: &[Value],
+    ) -> Result<Value, RuntimeError> {
+        // A shaped hash (`my %h{Str;Int}`, #19283) deletes the entry the key
+        // list names, as rakudo 2026.11's `Hash::Shaped.DELETE-KEY` does.
+        if let Some((name, dims)) = args.split_first()
+            && let Some(target) = self.env.get(&name.to_string_value()).cloned()
+            && let Some(list) = self.shaped_hash_prefix_op(
+                &target,
+                dims,
+                crate::runtime::methods_shaped_hash::PrefixOp::Delete,
+            )?
+        {
+            return Ok(list);
+        }
+        if let Some((name, dims)) = args.split_first()
+            && let Some(mut target) = self.env.get(&name.to_string_value()).cloned()
+            && let Some((_, removed)) = self.shaped_hash_exists_or_delete(&mut target, dims, true)?
+        {
+            return Ok(removed);
+        }
         let msg = concat!(
             "Cannot resolve caller postcircumfix:<{; }>(Hash:D, List:D, :delete); ",
             "none of these signatures matches:\n",

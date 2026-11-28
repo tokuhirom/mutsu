@@ -26,6 +26,10 @@ impl Interpreter {
         if constraint == "Mu" {
             return Ok(key);
         }
+        // A shaped hash's key spec (`Str;Int`, #19283) takes a key list.
+        if constraint.contains(';') {
+            return self.shaped_hash_single_key(constraint, &key, "assign to");
+        }
         let key = self.coerce_key_for_constraint(constraint, key)?;
         if !self.type_matches_value(constraint, &key) {
             return Err(self.typecheck_binding_parameter_failure("key", constraint, &key));

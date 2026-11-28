@@ -349,6 +349,16 @@ impl Interpreter {
         if let Some(result) = self.user_postcircumfix_for_adverb(args)? {
             return Ok(result);
         }
+        // A shaped hash (#19283) takes `%h<a>:kv` as a whole or partial key list.
+        {
+            let mode = args[2].to_string_value();
+            if matches!(mode.as_str(), "k" | "v" | "kv" | "p") {
+                let parts = Self::shaped_hash_parts(&index);
+                if let Some(answer) = self.shaped_hash_adverb_read(&args[0], &parts, &mode)? {
+                    return Ok(answer);
+                }
+            }
+        }
         // Which bracket the subscript was written with, as recorded by the
         // parser. `None` for a call shape that predates the marker.
         let subscript_is_positional = args.iter().skip(4).find_map(|a| match a.view() {

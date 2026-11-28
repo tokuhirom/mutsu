@@ -266,6 +266,18 @@ impl Interpreter {
     }
 
     pub(crate) fn dispatch_shape(&self, target: &Value) -> Option<Result<Value, RuntimeError>> {
+        // A shaped hash's shape is its dimension types (#19283).
+        if let ValueView::Hash(_) = target.view() {
+            let dims = crate::value::shaped_hash::shaped_hash_dims(target)?;
+            return Some(Ok(Value::array_with_kind(
+                crate::gc::Gc::new(crate::value::ArrayData::new(
+                    dims.iter()
+                        .map(|d| Value::package(crate::symbol::Symbol::intern(d)))
+                        .collect(),
+                )),
+                crate::value::ArrayKind::List,
+            )));
+        }
         if let Some(shape) = crate::value::shaped_array::jagged_array_shape(target) {
             return Some(Ok(Value::array(
                 shape

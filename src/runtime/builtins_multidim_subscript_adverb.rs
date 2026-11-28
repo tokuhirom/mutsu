@@ -59,6 +59,14 @@ impl Interpreter {
         let raw_indices = &args[2..];
         let indices = self.resolve_multidim_indices(target, raw_indices)?;
 
+        // A shaped hash (#19283) is keyed by the key list, or a prefix of one.
+        if matches!(adverb.as_str(), "k" | "v" | "kv" | "p")
+            && !has_multi_indices(&indices)
+            && let Some(answer) = self.shaped_hash_adverb_read(target, &indices, &adverb)?
+        {
+            return Ok(answer);
+        }
+
         // Check if we need multi-result mode
         if has_multi_indices(&indices) {
             return self.multidim_subscript_adverb_multi(target, &adverb, &indices);

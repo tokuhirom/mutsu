@@ -67,6 +67,15 @@ impl Interpreter {
             return Ok(());
         }
 
+        // A shaped hash (`my %h{Str;Int}`, #19283) is keyed by the whole key list.
+        if !is_positional
+            && !dims.iter().any(Self::dim_is_multi)
+            && let Some(value) = self.shaped_hash_read(&target, &dims)?
+        {
+            self.stack.push(value);
+            return Ok(());
+        }
+
         // For shaped arrays, check bounds before reading
         let is_shaped = crate::runtime::utils::is_shaped_array(&target);
         if is_shaped {
@@ -289,6 +298,14 @@ impl Interpreter {
         // must be consulted here as on the rvalue path.
         if let Some(result) = self.try_user_multidim_subscript(&target, &dims, is_positional)? {
             self.stack.push(result);
+            return Ok(());
+        }
+        // A shaped hash (#19283) reads the entry the key list names.
+        if !is_positional
+            && !dims.iter().any(Self::dim_is_multi)
+            && let Some(value) = self.shaped_hash_read(&target, &dims)?
+        {
+            self.stack.push(value);
             return Ok(());
         }
         let assoc_scalar_slice = Self::assoc_multislice(is_positional)
@@ -1309,6 +1326,11 @@ impl Interpreter {
             if is_shaped {
                 // For shaped arrays, use bounds-checked assignment
                 Self::assign_array_multidim(container, &resolved_dims, assign_value)
+            } else if !is_positional
+                && !dims.iter().any(Self::dim_is_multi)
+                && slf.shaped_hash_store(container, &dims, assign_value.clone())?
+            {
+                Ok(())
             } else {
                 slf.prepare_jagged_write(container, &resolved_dims, Some(&assign_value))?;
                 slf.multi_dim_assign(

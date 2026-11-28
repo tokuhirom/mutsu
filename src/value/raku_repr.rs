@@ -1312,10 +1312,10 @@ fn raku_value_node(v: &Value) -> String {
                     .as_deref()
                     .unwrap_or(if map.key_type.is_some() { "Mu" } else { "Any" });
                 let value_type = super::type_arg_display_name(value_type);
-                let key_suffix = match map.key_type.as_deref() {
-                    Some(kt) => format!("{{{}}}", super::type_arg_display_name(kt)),
-                    None => String::new(),
-                };
+                let key_suffix = super::shaped_hash::raku_key_suffix(
+                    map.key_type.as_deref(),
+                    map.declared_type.as_deref(),
+                );
                 let inner = parts.join(", ");
                 if inner.is_empty() {
                     format!("(my {} %{})", value_type, key_suffix)

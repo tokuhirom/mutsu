@@ -623,11 +623,10 @@ impl Interpreter {
                 }
             })
             .collect();
-        let key_suffix = if let Some(ref kt) = info.key_type {
-            format!("{{{}}}", crate::value::type_arg_display_name(kt))
-        } else {
-            String::new()
-        };
+        let key_suffix = crate::value::shaped_hash::raku_key_suffix(
+            info.key_type.as_deref(),
+            map.declared_type.as_deref(),
+        );
         // An object hash with no element-type constraint is a `:{...}`
         // literal — rakudo's Hash[Mu,Mu], shown as `my Mu`.
         let value_type = if !info.value_type.is_empty() {

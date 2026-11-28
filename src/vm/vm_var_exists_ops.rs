@@ -120,6 +120,25 @@ impl Interpreter {
             return Ok(());
         }
 
+        // A shaped hash (#19283) takes a key prefix (`%h<a>:exists`) as every
+        // entry under it.
+        if !is_zen && adverb_bits == 0 && self.stack.len() >= 2 {
+            let n = self.stack.len();
+            let (target, index) = (self.stack[n - 2].clone(), self.stack[n - 1].clone());
+            let parts = Self::shaped_hash_parts(&index);
+            if let Some(list) = self.shaped_hash_prefix_op(
+                &target,
+                &parts,
+                crate::runtime::methods_shaped_hash::PrefixOp::Exists {
+                    negated: effective_negated,
+                },
+            )? {
+                self.stack.truncate(n - 2);
+                self.stack.push(list);
+                return Ok(());
+            }
+        }
+
         // Whether the *index form* is a slice (list, Range, zen, `*`), as opposed
         // to a single index. It is the form that decides the result shape, not
         // how many indices the form happened to produce: `@a[0,]:exists` and

@@ -1739,6 +1739,20 @@ impl Interpreter {
         }
         if let ValueView::Hash(items) = target.view() {
             let hash_val = Value::hash_with_data(items.clone());
+            // A shaped hash (#19283) takes `%h<a>` / `%h{$keys}` as a key list,
+            // possibly a prefix of one.
+            if crate::value::shaped_hash::shaped_hash_dims(&hash_val).is_some()
+                && !matches!(
+                    index.view(),
+                    ValueView::Whatever | ValueView::Nil | ValueView::Sub(..)
+                )
+            {
+                let parts = Self::shaped_hash_parts(&index);
+                if let Some(value) = self.shaped_hash_read(&hash_val, &parts)? {
+                    self.stack.push(value);
+                    return Ok(());
+                }
+            }
             if let Some(key_type) = self.hash_key_type(&hash_val)
                 && !matches!(
                     index.view(),
