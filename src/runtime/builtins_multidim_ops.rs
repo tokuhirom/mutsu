@@ -76,7 +76,7 @@ impl Interpreter {
         // A shaped hash (`my %h{Str;Int}`, #19283) deletes the entry the key
         // list names, as rakudo 2026.11's `Hash::Shaped.DELETE-KEY` does.
         if let Some((name, dims)) = args.split_first()
-            && let Some(mut target) = self.env.get(&name.to_string_value()).cloned()
+            && let Some(target) = self.env.get(&name.to_string_value()).cloned()
             && let Some(list) = self.shaped_hash_prefix_op(
                 &target,
                 dims,
