@@ -229,7 +229,14 @@ impl Interpreter {
         // iteration it could not finish (`vm_for_loop_list_kernel`).
         #[cfg(feature = "jit")]
         let resume_index = if resume_index == 0 && live.is_none() && stream.is_none() {
-            match self.try_list_loop_kernel(code, spec, items, body_start, loop_end, compiled_fns)? {
+            match self.try_list_loop_kernel(
+                code,
+                spec,
+                items,
+                body_start,
+                loop_end,
+                compiled_fns,
+            )? {
                 Some(done) if done >= items.len() && iteration_end_at.is_none() => {
                     return Ok(true);
                 }
