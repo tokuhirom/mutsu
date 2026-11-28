@@ -66,6 +66,10 @@ pub(crate) struct TrirCompiler<'a> {
     /// Every read of a sigilless parameter: `(slot, index of the load op)`.
     /// Decides [`TrParam::value_at_entry`] once the body is compiled.
     pub(super) sigilless_reads: Vec<(u16, usize)>,
+    /// Slots holding a `given`/`with` block's topic. Each is a read-only copy
+    /// of the topic's value, so no write may reach it and it is never handed
+    /// to a callee as a variable (`blocks.rs`).
+    pub(super) topic_slots: HashSet<u16>,
     /// The routine declares `--> Nil`, so every `return` discards its value.
     pub(super) returns_nil: bool,
     /// The routine declares a definite return value (`--> True`): the body
@@ -192,6 +196,7 @@ impl<'a> TrirCompiler<'a> {
             nqp_int_result: false,
             nqp_operand: false,
             sigilless_reads: Vec::new(),
+            topic_slots: HashSet::new(),
             returns_nil: return_type == Some("Nil") || definite_return.is_some(),
             definite_return,
             nqp_bound: HashSet::new(),
@@ -241,6 +246,7 @@ impl<'a> TrirCompiler<'a> {
             return_check,
             inline_regions: c.inline_regions,
             readonly_slots: c.readonly_slots,
+            lexical_routines: Vec::new(),
         })
     }
 
@@ -370,6 +376,22 @@ impl<'a> TrirCompiler<'a> {
                     }
                     self.compile_if(cond, then_branch, else_branch)?;
                 }
+                // `given X { ... }` / `with X { ... }`'s body: the topic is a
+                // read-only local of the block (`blocks.rs`).
+                Stmt::Given {
+                    topic,
+                    body: given_body,
+                    is_statement_modifier,
+                    ..
+                } => {
+                    if !sink_all && Some(i) == final_idx {
+                        self.note_decline(|| {
+                            "a trailing `given`, whose value is the routine's".to_string()
+                        });
+                        return None;
+                    }
+                    self.compile_given(topic, given_body, *is_statement_modifier)?;
+                }
                 // `die EXPR` is a call, and compiling it as one is what lets a
                 // routine whose hot loop is typed keep its cold error path
                 // instead of declining for it.
@@ -398,36 +420,6 @@ impl<'a> TrirCompiler<'a> {
             }
         }
         Some(last)
-    }
-
-    /// `if COND { ... } else { ... }` as a statement. Both branches are
-    /// compiled in sink position: an `if` statement's own value is not one
-    /// TRIR tracks, and every JSON::Fast use of it is for effect.
-    fn compile_if(
-        &mut self,
-        cond: &crate::ast::Expr,
-        then_branch: &[Stmt],
-        else_branch: &[Stmt],
-    ) -> Option<()> {
-        let ck = self.compile_expr(cond)?;
-        self.truthy(ck)?;
-        let branch_at = self.ops.len();
-        self.ops.push(TrOp::JumpIfFalseI(0));
-        self.compile_body(then_branch, true)?;
-        let jump_end_at = self.ops.len();
-        self.ops.push(TrOp::Jump(0));
-        let else_at = self.ops.len() as u32;
-        self.compile_body(else_branch, true)?;
-        let end = self.ops.len() as u32;
-        match &mut self.ops[branch_at] {
-            TrOp::JumpIfFalseI(x) => *x = else_at,
-            _ => return None,
-        }
-        match &mut self.ops[jump_end_at] {
-            TrOp::Jump(x) => *x = end,
-            _ => return None,
-        }
-        Some(())
     }
 
     /// Insert `op` at `at`, keeping every jump target pointing at the same
@@ -502,6 +494,7 @@ impl<'a> TrirCompiler<'a> {
 
 mod attr;
 mod binary;
+mod blocks;
 mod call;
 mod dump;
 mod expr;

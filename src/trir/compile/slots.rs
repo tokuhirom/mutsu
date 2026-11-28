@@ -91,7 +91,16 @@ impl TrirCompiler<'_> {
                 return None;
             }
         };
-        let init = self.compile_expr(expr)?;
+        let bound = *bind == Some(crate::ast::bind_decl::BindKind::Scalar);
+        // An assignment copies the initializer's VALUE into the fresh slot, so
+        // a sigilless parameter read there is as safe as an `nqp::` operand
+        // (`with obj { ... }` declares `my $__with_tmp = obj`); a binding
+        // would alias its container and keeps the general rule.
+        let init = if bound {
+            self.compile_expr(expr)?
+        } else {
+            self.compile_nqp_operand(expr)?
+        };
         let from_nqp = self.nqp_sourced;
         self.coerce_store(init, kind, width.map_or("int", |w| w.2))?;
         let slot = self.alloc(name, kind);
@@ -103,7 +112,6 @@ impl TrirCompiler<'_> {
         if let Some(w) = width {
             self.sized.insert(slot, w);
         }
-        let bound = *bind == Some(crate::ast::bind_decl::BindKind::Scalar);
         if kind == TrKind::Obj && bound && tc.is_none() && from_nqp {
             self.nqp_bound.insert(slot);
         }
@@ -229,6 +237,10 @@ impl TrirCompiler<'_> {
     /// narrow, and a sized native one, which an increment or an `is rw`
     /// callee would write without the width's wrap.
     pub(super) fn check_not_bound(&mut self, slot: u16, kind: TrKind, name: &str) -> Option<()> {
+        if kind == TrKind::Obj && self.topic_slots.contains(&slot) {
+            self.note_decline(|| "a write to a `given`/`with` topic".to_string());
+            return None;
+        }
         if kind == TrKind::Obj && self.nqp_bound.contains(&slot) {
             let n = name.to_string();
             self.note_decline(|| format!("a write to the `:=`-bound {n}"));

@@ -363,6 +363,14 @@ impl Compiler {
                 let code = std::sync::Arc::make_mut(&mut cf.code);
                 visit_code_mut(code, &wants, &mut equip);
                 super::frame_lexical_inherit::mark_lexical_subtree(code);
+                // The routine's TRIR chunk compiles from the AST, before this
+                // proof ran, so its generic call sites learn the same table.
+                if !code.lexical_routines.is_empty()
+                    && let Some(chunk) = cf.trir.as_mut()
+                {
+                    std::sync::Arc::make_mut(chunk).lexical_routines =
+                        cf.code.lexical_routines.clone();
+                }
             }
         }
     }

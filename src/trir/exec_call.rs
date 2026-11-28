@@ -227,10 +227,19 @@ impl Interpreter {
         // Only a by-variable argument can be handed over as a container, so a
         // call whose arguments are all already-evaluated values needs no
         // signature lookup at all — which is most of them (`die "..."`).
-        let rw_mask = if call.args.iter().any(|a| !matches!(a, TrArg::Value(_))) {
-            self.trir_callee_rw_mask(&call.name.resolve())
+        // A sibling `my sub` of the enclosing routine (ADR-0113), which no
+        // registry lists: resolved from the chunk's frame-lexical table.
+        let frame_lexical = if chunk.lexical_routines.is_empty() {
+            None
         } else {
+            self.trir_frame_lexical_target(&chunk.lexical_routines, call.name)
+        };
+        let rw_mask = if !call.args.iter().any(|a| !matches!(a, TrArg::Value(_))) {
             0
+        } else if let Some(target) = frame_lexical.as_ref() {
+            Self::rw_positional_mask_of(&target.cf.param_defs)
+        } else {
+            self.trir_callee_rw_mask(&call.name.resolve())
         };
         let mut args: Vec<Value> = vec![Value::NIL; call.args.len()];
         for (i, arg) in call.args.iter().enumerate().rev() {
@@ -322,13 +331,17 @@ impl Interpreter {
                     .any(|o| o.name.as_str() == target.as_str())
             })
             .and_then(|target| self.bind_lvalue_unit_redirect(&target));
-        let result = match self.trir_declared_amp_callable(chunk, call.name) {
-            Some(callable) => self.vm_call_sub_value(callable, args),
-            None => match self.trir_user_routine_shadowing_builtin(&name, &args) {
-                Ok(Some(def)) => self.call_routine_def(&def, args),
-                Ok(None) => self.call_function(&name, args),
-                Err(e) => Err(e),
-            },
+        let result = if let Some(target) = frame_lexical.as_ref() {
+            self.trir_call_frame_lexical(target, args, compiled_fns)
+        } else {
+            match self.trir_declared_amp_callable(chunk, call.name) {
+                Some(callable) => self.vm_call_sub_value(callable, args),
+                None => match self.trir_user_routine_shadowing_builtin(&name, &args) {
+                    Ok(Some(def)) => self.call_routine_def(&def, args),
+                    Ok(None) => self.call_function(&name, args),
+                    Err(e) => Err(e),
+                },
+            }
         };
         self.end_lvalue_unit_redirect(unit_redirect);
         self.trir_gen_settle(chunk, site, armed);
@@ -465,19 +478,27 @@ impl Interpreter {
         mask
     }
 
-    /// The `is rw` bits of `def`'s first 64 positional parameters.
+    /// The bits of `def`'s first 64 positional parameters that bind the
+    /// argument's container: `is rw`, and a sigilless (`\x`) parameter, which
+    /// is implicitly raw and aliases a variable handed to it.
     // Cost: O(p), p = the routine's parameters.
     fn rw_positional_mask(def: &crate::ast::FunctionDef) -> u64 {
+        Self::rw_positional_mask_of(&def.param_defs)
+    }
+
+    /// [`Self::rw_positional_mask`] over a parameter list.
+    // Cost: O(p), p = parameters.
+    pub(crate) fn rw_positional_mask_of(param_defs: &[crate::ast::ParamDef]) -> u64 {
         let mut mask = 0u64;
         let mut positional = 0usize;
-        for pd in &def.param_defs {
+        for pd in param_defs {
             if pd.named {
                 continue;
             }
             if positional >= 64 {
                 break;
             }
-            if pd.traits.iter().any(|t| t == "rw") {
+            if pd.traits.iter().any(|t| t == "rw") || (pd.sigilless && !pd.slurpy && !pd.onearg) {
                 mask |= 1 << positional;
             }
             positional += 1;

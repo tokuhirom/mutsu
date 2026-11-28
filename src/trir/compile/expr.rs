@@ -138,6 +138,20 @@ impl TrirCompiler<'_> {
                 quoted: false,
                 ..
             } => self.compile_method_call(target, &name.resolve(), args),
+            // `.^name`: the receiver's type name (every type dispatcher's
+            // "don't know how to ..." message). It reads the receiver's
+            // value only; the other meta-methods dispatch through a HOW and
+            // stay declined.
+            Expr::MethodCall {
+                target,
+                name,
+                args,
+                modifier: Some('^'),
+                quoted: false,
+                ..
+            } if args.is_empty() && name.resolve() == "name" => {
+                self.compile_method_call(target, "^name", args)
+            }
             Expr::AssignExpr {
                 name,
                 expr,
@@ -244,6 +258,16 @@ impl TrirCompiler<'_> {
     fn compile_sigiled_var(&mut self, sigil: char, bare: &str) -> Option<TrKind> {
         let key = format!("{sigil}{bare}");
         let Some(Binding { slot, kind }) = self.binding_of(&key) else {
+            // An enclosing routine's `my @out` read by a nested sub
+            // (JSON::Fast's `jsonify` pushes onto `to-json`'s `@out`): a free
+            // variable, served as an outer like a scalar one. The binding is
+            // the container itself, so an in-place op on it (`nqp::push_s`)
+            // reaches the one the enclosing routine reads.
+            if Self::is_plain_outer_name(bare) && !matches!(bare, "_" | "/" | "!") {
+                let idx = self.outer(&key);
+                self.ops.push(TrOp::LoadOuter(idx));
+                return Some(TrKind::Obj);
+            }
             self.note_decline(|| format!("container {key} is not this frame's"));
             return None;
         };
@@ -304,7 +328,9 @@ impl TrirCompiler<'_> {
 
     /// `a ?? b !! c`, and the shared lowering behind `&&`/`||`.
     fn compile_ternary(&mut self, c: &Expr, t: &Expr, e: &Expr) -> Option<TrKind> {
-        let ck = self.compile_expr(c)?;
+        // The condition is read for its truth, a property of the value: a
+        // sigilless parameter there is as safe as an `nqp::` operand.
+        let ck = self.compile_nqp_operand(c)?;
         self.truthy(ck)?;
         let branch_at = self.ops.len();
         self.ops.push(TrOp::JumpIfFalseI(0));

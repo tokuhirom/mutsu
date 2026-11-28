@@ -330,6 +330,12 @@ pub(crate) struct TrChunk {
     /// passes one on hands over its value, never its container, exactly as
     /// the callee's own frame did ([`TrChunk::is_readonly_param_slot`]).
     pub(crate) readonly_slots: Vec<(u16, TrKind)>,
+    /// The frame-lexical routines (ADR-0113) this body calls by bare name:
+    /// the enclosing routine's other `my sub`s, which no registry lists. A
+    /// generic call site resolves its name here first, as the bytecode's
+    /// frame-lexical call does through `CompiledCode::lexical_routines`
+    /// (filled by the same proof, `compiler/frame_lexical_routines.rs`).
+    pub(crate) lexical_routines: Vec<crate::opcode::FrameLexicalRef>,
 }
 
 /// One callee inlined into a TRIR body (ADR-8673 D2).

@@ -153,6 +153,7 @@ mod vm_core_routine_autothread;
 mod vm_decimal_key;
 mod vm_eval_unit_capture;
 mod vm_frame_lexical;
+mod vm_frame_lexical_trir;
 mod vm_frame_type_aliases;
 mod vm_lex_import_builtin_op;
 mod vm_lex_import_call;

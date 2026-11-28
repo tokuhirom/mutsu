@@ -29,6 +29,7 @@ impl Encode for TrChunk {
             return_check,
             inline_regions,
             readonly_slots,
+            lexical_routines,
         } = self;
         ops.encode(encoder)?;
         constants.encode(encoder)?;
@@ -44,6 +45,7 @@ impl Encode for TrChunk {
         return_check.encode(encoder)?;
         inline_regions.encode(encoder)?;
         readonly_slots.encode(encoder)?;
+        lexical_routines.encode(encoder)?;
         Ok(())
     }
 }
@@ -69,6 +71,7 @@ impl Decode<DecodeCtx> for TrChunk {
             return_check: Decode::decode(decoder)?,
             inline_regions: Decode::decode(decoder)?,
             readonly_slots: Decode::decode(decoder)?,
+            lexical_routines: Decode::decode(decoder)?,
         })
     }
 }

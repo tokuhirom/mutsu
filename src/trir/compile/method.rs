@@ -22,7 +22,8 @@ use crate::trir::{TrKind, TrMethodCall, TrOp};
 /// Methods that read their receiver's value and nothing else.
 const VALUE_METHODS: &[&str] = &[
     "Numeric", "Bool", "Str", "Int", "Num", "raku", "gist", "base", "chars", "substr", "fmt",
-    "chr", "ord", "NFC", "NFD", "NFKC", "NFKD",
+    "chr", "ord", "NFC", "NFD", "NFKC", "NFKD", "defined", "Rat", "FatRat", "Bridge", "key",
+    "value", "contains", "cache", "DateTime", "^name",
 ];
 
 impl TrirCompiler<'_> {

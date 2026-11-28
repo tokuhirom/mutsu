@@ -369,7 +369,7 @@ impl Interpreter {
         result.map(Some)
     }
 
-    fn call_frame_lexical_target(
+    pub(super) fn call_frame_lexical_target(
         &mut self,
         code: &CompiledCode,
         target: &FrameLexicalTarget,
@@ -394,6 +394,11 @@ impl Interpreter {
             compiled_fns,
         )? {
             return Ok(threaded);
+        }
+        if let Some(result) =
+            self.try_frame_lexical_trir(code, cf, &args, call_has_named, compiled_fns)
+        {
+            return result;
         }
         let result = if args.is_empty() && !cf.is_raw && Self::is_fast_call_eligible(cf, name) {
             self.call_compiled_function_fast(cf, name, name_sym, compiled_fns)?
