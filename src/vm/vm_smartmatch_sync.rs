@@ -249,6 +249,37 @@ impl Interpreter {
         }
     }
 
+    /// Whether the RHS `[rhs_start, rhs_end)` is a lone regex literal load
+    /// whose closure will carry every one of `names` itself: each is captured
+    /// from a local slot that holds a value, so `capture_regex_closure` takes
+    /// it from that slot (never from `env`), and the match installs it over
+    /// `env` for the engine's by-name reads (`install_regex_closure_scope`).
+    /// Publishing those names before the RHS, and again from the RHS value
+    /// (whose pattern is the same literal), is then invisible to the match.
+    // Cost: O(n * c), n = names, c = the literal's captures (both a handful).
+    pub(super) fn lone_regex_closure_covers(
+        &self,
+        code: &CompiledCode,
+        rhs_start: usize,
+        rhs_end: usize,
+        names: &[String],
+    ) -> bool {
+        if rhs_end != rhs_start + 1 {
+            return false;
+        }
+        let Some(OpCode::LoadRegexClosure { captures, .. }) = code.ops.get(rhs_start) else {
+            return false;
+        };
+        names.iter().all(|name| {
+            captures.iter().any(|(sym, slot)| {
+                *slot != crate::opcode::NOT_A_LOCAL
+                    && *slot != crate::opcode::OUTER_STORE_ONLY
+                    && sym.as_str() == name.as_str()
+                    && self.locals.get(*slot as usize).is_some_and(|v| !v.is_nil())
+            })
+        })
+    }
+
     /// Publish the locals `names` selected (env-key spellings).
     // Cost: O(n), n = names.
     pub(super) fn apply_smartmatch_sync(&mut self, code: &CompiledCode, names: &[String]) {
