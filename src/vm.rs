@@ -591,6 +591,7 @@ pub(crate) use vm_scalar_param_bind::ScalarParamBind;
 mod vm_var_ops;
 mod vm_var_trait_ops;
 mod vm_var_type_ops;
+mod vm_var_type_user_site;
 mod vm_whatever_code_call;
 
 fn cmp_values(left: &Value, right: &Value) -> std::cmp::Ordering {

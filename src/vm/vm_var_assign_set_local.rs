@@ -2528,7 +2528,11 @@ impl Interpreter {
                 && constraint != "Nil"
                 && self.var_default(name).is_none()
             {
-                val = self.typed_scalar_nil_seed_value(name, constraint);
+                // `constraint` is the variable's own declared constraint (or
+                // its attribute's), which the by-name read inside
+                // `typed_scalar_nil_seed_value` would only fetch -- and copy --
+                // again.
+                val = self.typed_scalar_nil_seed_value_with_base(constraint, None);
             } else {
                 // A `:=` bind stores a `ContainerRef` cell (e.g. `my Offset $o := @a[$i]`
                 // aliases the array element). The type constraint applies to the
