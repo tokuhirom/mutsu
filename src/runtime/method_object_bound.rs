@@ -144,7 +144,10 @@ impl Interpreter {
         else {
             return None;
         };
-        if self.has_class(package.as_str()) {
+        // A constructor's row re-enters `new` by name on the invocant
+        // (`Map.^lookup('new')(MyMap)` from `MyMap.new` would recurse), so it
+        // keeps the by-name call.
+        if self.has_class(package.as_str()) || name.as_str() == "new" {
             return None;
         }
         let user_receiver = match args.first()?.view() {
