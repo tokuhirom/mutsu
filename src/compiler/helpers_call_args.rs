@@ -1407,11 +1407,9 @@ impl Compiler {
         else {
             return;
         };
-        let is_values = self
-            .code
-            .constants
-            .get(*name_idx as usize)
-            .is_some_and(|c| matches!(c.view(), crate::value::ValueView::Str(s) if s.as_str() == "values"));
+        let is_values = self.code.constants.get(*name_idx as usize).is_some_and(
+            |c| matches!(c.view(), crate::value::ValueView::Str(s) if s.as_str() == "values"),
+        );
         if !is_values {
             return;
         }
