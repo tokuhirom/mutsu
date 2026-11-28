@@ -90,9 +90,9 @@ pub(crate) struct InlineLoopPlan {
     /// a `topic_unobservable` implicit-topic block is compiled with one
     /// (`Compiler::seed_topic_local`).
     pub(crate) topic_slot: Option<usize>,
-    /// The body reads its topic only through `topic_slot`: its code names the
-    /// topic nowhere by name and makes no closure that could read it from the
-    /// env, so the loop binds no `_` / `$_` in the env at all.
+    /// The body reads its topic only through `topic_slot`
+    /// (`code_reads_topic_only_from_slot`), so the loop binds no `_` / `$_` in
+    /// the env at all while no user infix operator exists.
     pub(crate) topic_env_free: bool,
     /// See `frame_authoritative_set`.
     pub(crate) block_authoritative: Vec<Symbol>,
@@ -413,7 +413,7 @@ impl Interpreter {
                 code.locals_sym.iter().position(|n| *n == name)
             })
             .flatten();
-        let topic_env_free = topic_slot.is_some() && !code_reaches_topic_by_name(&code);
+        let topic_env_free = topic_slot.is_some() && code_reads_topic_only_from_slot(&code);
         InlineLoopPlan {
             kind,
             origin,
@@ -548,27 +548,46 @@ impl Interpreter {
     }
 }
 
-/// Whether `code` could read the topic other than through its own slot: a
-/// constant naming `_` or `$_` (a by-name read or write), or an op that makes
-/// a closure or registers a routine, whose body would read the env.
-// Cost: O(k + n), k = constants, n = ops.
-fn code_reaches_topic_by_name(code: &CompiledCode) -> bool {
-    code.constants
-        .iter()
-        .any(|c| matches!(c.view(), crate::value::ValueView::Str(s) if s.as_str() == "_" || s.as_str() == "$_"))
-        || code.ops.iter().any(|op| {
-            matches!(
-                op,
-                OpCode::RegisterDecl(..)
-                    | OpCode::RoutineScope { .. }
-                    | OpCode::PackageScope { .. }
-                    | OpCode::MakeAnonSub(..)
-                    | OpCode::MakeAnonSubParams(..)
-                    | OpCode::MakeLambda(..)
-                    | OpCode::MakeBlockClosure(..)
-                    | OpCode::MakeGather(..)
-            )
-        })
+/// Whether `code` reads its topic only through its own slot: every op is a
+/// slot read, a constant, or a built-in arithmetic, comparison or string
+/// operator. Anything else might read `$_` from the env behind the slot's
+/// back -- a by-name read, a closure, a boolified regex value (which matches
+/// against the env's topic, v6.c), a call -- so its loop keeps binding the
+/// topic in the env. A user infix operator is checked per loop run
+/// (`USER_INFIX_DECLS`), since one can be declared after the plan is built.
+// Cost: O(n), n = ops.
+fn code_reads_topic_only_from_slot(code: &CompiledCode) -> bool {
+    code.ops.iter().all(|op| {
+        matches!(
+            op,
+            OpCode::GetLocal(_)
+                | OpCode::LoadConst(_)
+                | OpCode::Add
+                | OpCode::Sub
+                | OpCode::Mul
+                | OpCode::Div
+                | OpCode::Mod
+                | OpCode::IntDiv
+                | OpCode::IntMod
+                | OpCode::Pow
+                | OpCode::Negate
+                | OpCode::DivisibleBy
+                | OpCode::NotDivisibleBy
+                | OpCode::NumEq
+                | OpCode::NumNe
+                | OpCode::NumLt
+                | OpCode::NumLe
+                | OpCode::NumGt
+                | OpCode::NumGe
+                | OpCode::StrEq
+                | OpCode::StrNe
+                | OpCode::StrLt
+                | OpCode::StrLe
+                | OpCode::StrGt
+                | OpCode::StrGe
+                | OpCode::Concat
+        )
+    })
 }
 
 /// The name a captured key stands for when it is one a body can only reach by
