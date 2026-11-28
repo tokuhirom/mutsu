@@ -123,6 +123,22 @@ impl Interpreter {
     }
 
     pub(super) fn interpolate_regex_scalars(&self, pattern: &str) -> Result<String, RuntimeError> {
+        self.interpolate_regex_scalars_traced(pattern).map(|(out, _)| out)
+    }
+
+    /// [`Self::interpolate_regex_scalars`], also reporting whether the pass
+    /// consulted anything but the text: a variable read (`$name`, `${name}`,
+    /// `@name`, `@$name`, `(@name)`, a qq atom's thunk or array), or the
+    /// enclosing pattern's `:my` names. When it did not, the output is a pure
+    /// function of `pattern`, so `parse_regex` may memoize the parse by the
+    /// text (`REGEX_PURE_DYNAMIC_PARSE_CACHE`). Every branch below that reads
+    /// state sets `consulted` before it does.
+    // Cost: O(n + k), n = the pattern's length, k = the variables it splices.
+    pub(super) fn interpolate_regex_scalars_traced(
+        &self,
+        pattern: &str,
+    ) -> Result<(String, bool), RuntimeError> {
+        let consulted = std::cell::Cell::new(false);
         let chars: Vec<char> = pattern.chars().collect();
         // The quote state at `i`, carried forward as `i` advances.
         let mut quotes = RegexQuoteCursor::new();
@@ -138,8 +154,14 @@ impl Interpreter {
         // its sub-patterns, parsed by a nested call (see `ENCLOSING_REGEX_VARS`).
         let mut declared_my_vars: std::collections::HashSet<String> =
             std::collections::HashSet::new();
+        // A name the text itself declares is decided by the text; any other
+        // is decided by the enclosing pattern or by a variable read.
         let is_regex_local = |name: &String, declared: &std::collections::HashSet<String>| {
-            declared.contains(name) || super::regex::regex_helpers::is_enclosing_regex_var(name)
+            if declared.contains(name) {
+                return true;
+            }
+            consulted.set(true);
+            super::regex::regex_helpers::is_enclosing_regex_var(name)
         };
         // A rule body's runtime-parameter declaration block
         // (`regex_rule_params`): its names are bound when the rule runs, so a
@@ -257,6 +279,10 @@ impl Interpreter {
             // A `"..."` atom the compiler lowered to a qq thunk: splice the
             // thunk's result (installed with the regex's scope) as a literal.
             if crate::regex_qq_atoms::is_dq_opener(ch)
+                && {
+                    consulted.set(true);
+                    true
+                }
                 && let Some(next) = self.splice_regex_qq_thunk_result(&chars, i, &mut out)
             {
                 i = next;
@@ -283,6 +309,7 @@ impl Interpreter {
                             k += 1;
                         }
                         if k < chars.len() && chars[k] == ')' {
+                            consulted.set(true);
                             let bare_name: String = chars[name_start..j].iter().collect();
                             let sigiled_name = format!("@{}", bare_name);
                             let value = self
@@ -617,6 +644,10 @@ impl Interpreter {
                     continue;
                 }
                 if quotes.inside_double(&chars, i)
+                    && {
+                        consulted.set(true);
+                        true
+                    }
                     && let Some(next) = self.interpolate_qq_array_in_regex(&chars, i, &mut out)
                 {
                     i = next;
@@ -633,6 +664,7 @@ impl Interpreter {
                         j += 1;
                     }
                     if j > name_start {
+                        consulted.set(true);
                         let bare_name: String = chars[name_start..j].iter().collect();
                         let value = self
                             .env
@@ -698,6 +730,7 @@ impl Interpreter {
                     {
                         j += 1;
                     }
+                    consulted.set(true);
                     let bare_name: String = chars[name_start..j].iter().collect();
                     let sigiled_name = format!("@{bare_name}");
                     let value =
@@ -776,7 +809,7 @@ impl Interpreter {
             out.push(ch);
             i += 1;
         }
-        Ok(out)
+        Ok((out, consulted.get()))
     }
 
     /// Convert a Value to its regex pattern representation and push to output.

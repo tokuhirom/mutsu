@@ -254,6 +254,12 @@ impl Interpreter {
     }
 
     pub(super) fn parse_anchored_single_subrule(pattern: &str) -> Option<String> {
+        // The shape is `^ <name> $`: reject anything else before building the
+        // whitespace-free copy, as this runs on every match.
+        let trimmed = pattern.trim();
+        if !trimmed.starts_with('^') || !trimmed.ends_with('$') {
+            return None;
+        }
         let compact: String = pattern.chars().filter(|c| !c.is_whitespace()).collect();
         let inner = compact.strip_prefix("^<")?.strip_suffix(">$")?;
         if inner.is_empty()
