@@ -4,20 +4,65 @@ use crate::value::{Value, ValueView, make_rat};
 use num_bigint::BigInt as NumBigInt;
 use num_traits::{Signed, ToPrimitive, Zero};
 
+/// The four Rat operations on `(numerator, denominator)` parts.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RatOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+}
+
+/// The unreduced `(numerator, denominator)` of `a op b` in i128, where every
+/// i64 product fits: the one formula `rat_*_checked` and the opcode fast path
+/// (`plain_rat_small`) share.
+// Cost: O(1).
+#[inline]
+fn rat_parts(op: RatOp, an: i64, ad: i64, bn: i64, bd: i64) -> (i128, i128) {
+    let (an, ad, bn, bd) = (an as i128, ad as i128, bn as i128, bd as i128);
+    match op {
+        RatOp::Add => (an * bd + bn * ad, ad * bd),
+        RatOp::Sub => (an * bd - bn * ad, ad * bd),
+        RatOp::Mul => (an * bn, ad * bd),
+        RatOp::Div => (an * bd, ad * bn),
+    }
+}
+
 /// Perform Rat addition with overflow detection.
 /// Returns Num if the result's denominator would exceed i64 range.
 pub(crate) fn rat_add_checked(an: i64, ad: i64, bn: i64, bd: i64) -> Value {
-    // Use i128 to detect overflow
-    let n = an as i128 * bd as i128 + bn as i128 * ad as i128;
-    let d = ad as i128 * bd as i128;
+    let (n, d) = rat_parts(RatOp::Add, an, ad, bn, bd);
     rat_from_i128_or_num(n, d)
 }
 
 /// Perform Rat subtraction with overflow detection.
 pub(crate) fn rat_sub_checked(an: i64, ad: i64, bn: i64, bd: i64) -> Value {
-    let n = an as i128 * bd as i128 - bn as i128 * ad as i128;
-    let d = ad as i128 * bd as i128;
+    let (n, d) = rat_parts(RatOp::Sub, an, ad, bn, bd);
     rat_from_i128_or_num(n, d)
+}
+
+/// `left op right` for a plain `Rat`/`Int` pair (at least one `Rat`, see
+/// [`plain_rat_pair`]; or two `Int`s for `Div`) whose unreduced result parts fit an i64 `Rat`: the
+/// value `rat_*_checked` returns for it. `None` for anything else, including
+/// a zero divisor and a result that does not fit, whose `BigRat`/`Num`
+/// degradation consults `$*RAT-OVERFLOW` and so stays on the general path.
+// Cost: O(log min(|n|, |d|)), the gcd.
+pub(crate) fn plain_rat_small(left: &Value, right: &Value, op: RatOp) -> Option<Value> {
+    // `Int / Int` is a Rat too (`arith_div` hands it to `rat_div_checked`).
+    let (an, ad, bn, bd) = match (plain_rat_pair(left, right), op) {
+        (Some(parts), _) => parts,
+        (None, RatOp::Div) => match (left.view(), right.view()) {
+            (ValueView::Int(a), ValueView::Int(b)) => (a, 1, b, 1),
+            _ => return None,
+        },
+        (None, _) => return None,
+    };
+    let (n, d) = rat_parts(op, an, ad, bn, bd);
+    if d == 0 {
+        return None;
+    }
+    let (n64, d64) = (i64::try_from(n).ok()?, i64::try_from(d).ok()?);
+    (n64 != i64::MIN && d64 != i64::MIN).then(|| make_rat(n64, d64))
 }
 
 /// The `(numerator, denominator)` parts of two operands that are each a plain
@@ -38,15 +83,13 @@ pub(crate) fn plain_rat_pair(left: &Value, right: &Value) -> Option<(i64, i64, i
 
 /// Perform Rat multiplication with overflow detection.
 pub(crate) fn rat_mul_checked(an: i64, ad: i64, bn: i64, bd: i64) -> Value {
-    let n = an as i128 * bn as i128;
-    let d = ad as i128 * bd as i128;
+    let (n, d) = rat_parts(RatOp::Mul, an, ad, bn, bd);
     rat_from_i128_or_num(n, d)
 }
 
 /// Perform Rat division with overflow detection.
 pub(crate) fn rat_div_checked(an: i64, ad: i64, bn: i64, bd: i64) -> Value {
-    let n = an as i128 * bd as i128;
-    let d = ad as i128 * bn as i128;
+    let (n, d) = rat_parts(RatOp::Div, an, ad, bn, bd);
     rat_from_i128_or_num(n, d)
 }
 
