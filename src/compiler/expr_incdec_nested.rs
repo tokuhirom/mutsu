@@ -344,9 +344,9 @@ impl Compiler {
         };
         let tmp_val = format!("__mutsu_multidim_incdec_val_{seq}");
         let tmp_val_idx = self.code.add_constant(Value::str(tmp_val.clone()));
-        let tmp_result_idx = self.code.add_constant(Value::str(format!(
-            "__mutsu_multidim_incdec_result_{seq}"
-        )));
+        let tmp_result_idx = self
+            .code
+            .add_constant(Value::str(format!("__mutsu_multidim_incdec_result_{seq}")));
         // The element's current value, stepped in a temp. The step leaves the
         // old value (postfix) or the new one (prefix) on the stack: keep it.
         self.compile_expr(&element);
