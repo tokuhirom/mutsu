@@ -243,9 +243,9 @@ impl Interpreter {
         let old_match = captures
             .is_some()
             .then(|| self.env_mut().publish_match_var(topic.clone()));
-        self.env_mut().insert("_".to_string(), topic);
+        self.env_mut().insert("_".to_string(), topic.clone());
 
-        let result = self.call_sub_value(closure.clone(), vec![]);
+        let result = self.call_sub_value(closure.clone(), vec![topic]);
         if let Some(old) = old_match {
             self.env_mut().restore_match_var(old);
         }

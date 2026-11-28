@@ -90,12 +90,11 @@ impl Interpreter {
         let compiled_code = Self::resolve_closure_code(code, cc_idx);
         self.note_frame_lexical_closure_body(code, idx, &compiled_code);
         // A block closes over its creator's topic binding. Share its container
-        // so a later assignment is visible in either direction; topicalizers
-        // replace the binding and leave this cell with the earlier scope.
-        if compiled_code
-            .as_ref()
-            .is_some_and(|cc| !cc.is_routine && cc.reads_topic)
-        {
+        // so later assignments are visible in either direction. Blocks with
+        // their own `$_` parameter (including WhateverCode) own that binding.
+        if compiled_code.as_ref().is_some_and(|cc| {
+            !cc.is_routine && cc.reads_topic && !cc.locals_sym.contains(&crate::symbol::wk::topic())
+        }) {
             self.topic_container_cell();
         }
         if spec.capture_match_var {

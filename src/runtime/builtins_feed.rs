@@ -269,7 +269,7 @@ impl Interpreter {
             let rhs_value = if op == "andthen" || op == "orelse" {
                 let saved_topic = self.env.get("_").cloned();
                 self.env.insert("_".to_string(), left.clone());
-                let result = self.eval_call_on_value(thunk.clone(), Vec::new());
+                let result = self.eval_call_on_value(thunk.clone(), vec![left.clone()]);
                 match saved_topic {
                     Some(value) => {
                         self.env.insert("_".to_string(), value);
@@ -356,7 +356,7 @@ impl Interpreter {
                 ran_thunks.push(entry.clone());
                 let saved_topic = self.env.get("_").cloned();
                 self.env.insert("_".to_string(), left.clone());
-                let result = self.eval_call_on_value(entry, Vec::new());
+                let result = self.eval_call_on_value(entry, vec![left.clone()]);
                 match saved_topic {
                     Some(value) => {
                         self.env.insert("_".to_string(), value);
@@ -426,7 +426,7 @@ impl Interpreter {
             thunk_ran = true;
             let saved_topic = self.env.get("_").cloned();
             self.env.insert("_".to_string(), left.clone());
-            let result = self.eval_call_on_value(thunk.clone(), Vec::new());
+            let result = self.eval_call_on_value(thunk.clone(), vec![left.clone()]);
             match saved_topic {
                 Some(value) => {
                     self.env.insert("_".to_string(), value);

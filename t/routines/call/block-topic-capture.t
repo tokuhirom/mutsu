@@ -1,7 +1,7 @@
 use v6;
 use Test;
 
-plan 8;
+plan 9;
 
 $_ = 5;
 my $read = { $_ };
@@ -11,6 +11,10 @@ is $read(), 6, 'a block reads a later assignment to its creator topic';
 my $write = { $_ = 7 };
 $write();
 is $_, 7, 'a block assignment reaches its creator topic';
+
+$_ = 5;
+({ $_ = 7 })();
+is $_, 7, 'an immediately called block also writes its creator topic';
 
 sub outer-topic {
     $_ = 5;
