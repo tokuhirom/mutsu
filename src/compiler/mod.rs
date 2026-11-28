@@ -3192,6 +3192,19 @@ impl Compiler {
     /// DoBlock, whose stray-placeholder check would otherwise die on `$^p`
     /// even though the closure's own signature bound it. Stored caret-form
     /// (`^p`), sigil stripped, matching `collect_unattached_placeholders`.
+    /// Give the chunk a local slot for the topic `$_`, so the body reads it
+    /// with `GetLocal` instead of by name. Only for an inline map/grep body
+    /// that cannot observe its topic's container (#19323): the loop then
+    /// seeds the slot with each element instead of binding `_` in the env.
+    // Cost: O(1).
+    pub(crate) fn seed_topic_local(&mut self) {
+        // The slot has its own hidden name, so no by-name slot resolver or
+        // env/slot coherence check pairs it with the env's `_`; `$_` reads
+        // resolve to it through `local_map`.
+        let slot = self.alloc_fresh_local(crate::symbol::wk::loop_topic().as_str());
+        self.local_map.insert("_".to_string(), slot);
+    }
+
     pub(crate) fn seed_prebound_placeholders(&mut self, params: &[String]) {
         for p in params {
             let bare = p.trim_start_matches(['$', '@', '%', '&']);

@@ -685,12 +685,36 @@ impl Interpreter {
         code: &CompiledCode,
         compiled_fns: &CompiledFns,
     ) -> Result<(), RuntimeError> {
+        self.run_reuse_seeded(code, compiled_fns, None)
+    }
+
+    /// [`Self::run_reuse`] with local slot `seed.0` started at `seed.1`
+    /// instead of at the env's binding of its name: an inline map/grep loop
+    /// hands its body the topic this way (#19323).
+    // Cost: as `run_reuse`.
+    pub(crate) fn run_reuse_seeded(
+        &mut self,
+        code: &CompiledCode,
+        compiled_fns: &CompiledFns,
+        mut seed: Option<(usize, Value)>,
+    ) -> Result<(), RuntimeError> {
         Self::validate_labels(code)?;
         self.stack.clear();
         // Initialize local variable slots
         self.locals.resize_slots(code.locals.len());
+        let loop_topic = crate::symbol::wk::loop_topic();
         for (i, name) in code.locals.iter().enumerate() {
-            if let Some(val) = self.env().get(name) {
+            if let Some((_, val)) = seed.take_if(|(slot, _)| *slot == i) {
+                self.locals[i] = val;
+            } else if code.locals_sym.get(i) == Some(&loop_topic) {
+                // An unseeded topic slot starts at the env's topic, the
+                // binding a `$_` read by name would have found.
+                self.locals[i] = self
+                    .env()
+                    .get_sym(crate::symbol::wk::topic())
+                    .cloned()
+                    .unwrap_or(Value::NIL);
+            } else if let Some(val) = self.env().get(name) {
                 self.locals[i] = val.clone();
             } else {
                 self.locals[i] = Value::NIL;

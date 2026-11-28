@@ -20,3 +20,10 @@ cannot call user code and cannot reach the source by another name, the loop:
 730,123,170 to 539,986,655 instructions, **-26%**. Per callback invocation
 that is about 5,500 → 4,050 instructions. The allocation count is unchanged:
 the loop already made no per-element allocation.
+
+A follow-up compiles such a body with a hidden local slot for `$_`. Each
+element is seeded into that slot. The env gets no `_` / `$_` binding at all
+when the code names the topic nowhere by name and makes no closure.
+`benchmarks/array-ops.raku` goes from 539,986,655 to 398,235,306
+instructions, another -26% (-45% in total). That is about 2,990 instructions
+per callback invocation; rakupp v5.9.0 spends about 3,200.

@@ -86,6 +86,14 @@ pub(crate) struct InlineLoopPlan {
     /// element, there is no write-back key to bind or read back, and no
     /// readonly marking to set, since nothing can assign the topic (#19323).
     pub(crate) topic_unobservable: bool,
+    /// The body's local slot for `$_`, which the loop seeds with each element:
+    /// a `topic_unobservable` implicit-topic block is compiled with one
+    /// (`Compiler::seed_topic_local`).
+    pub(crate) topic_slot: Option<usize>,
+    /// The body reads its topic only through `topic_slot`
+    /// (`code_reads_topic_only_from_slot`), so the loop binds no `_` / `$_` in
+    /// the env at all while no user infix operator exists.
+    pub(crate) topic_env_free: bool,
     /// See `frame_authoritative_set`.
     pub(crate) block_authoritative: Vec<Symbol>,
     /// Names the loop binds per iteration or the body declares: the params,
@@ -399,6 +407,13 @@ impl Interpreter {
         let keeps_outer_topic = super::resolution_map_grep::block_keeps_outer_topic(data);
         let topic_unobservable = !keeps_outer_topic
             && crate::compiler::for_topic_alias::topic_alias_unobservable(&data.body);
+        let topic_slot = (topic_unobservable && data.params.is_empty())
+            .then(|| {
+                let name = crate::symbol::wk::loop_topic();
+                code.locals_sym.iter().position(|n| *n == name)
+            })
+            .flatten();
+        let topic_env_free = topic_slot.is_some() && code_reads_topic_only_from_slot(&code);
         InlineLoopPlan {
             kind,
             origin,
@@ -414,6 +429,8 @@ impl Interpreter {
                     .is_some_and(|cc| cc.immutable_topic),
             topic_per_element: false,
             topic_unobservable,
+            topic_slot,
+            topic_env_free,
             block_authoritative: data
                 .compiled_code
                 .as_ref()
@@ -529,6 +546,48 @@ impl Interpreter {
             }
         }
     }
+}
+
+/// Whether `code` reads its topic only through its own slot: every op is a
+/// slot read, a constant, or a built-in arithmetic, comparison or string
+/// operator. Anything else might read `$_` from the env behind the slot's
+/// back -- a by-name read, a closure, a boolified regex value (which matches
+/// against the env's topic, v6.c), a call -- so its loop keeps binding the
+/// topic in the env. A user infix operator is checked per loop run
+/// (`USER_INFIX_DECLS`), since one can be declared after the plan is built.
+// Cost: O(n), n = ops.
+fn code_reads_topic_only_from_slot(code: &CompiledCode) -> bool {
+    code.ops.iter().all(|op| {
+        matches!(
+            op,
+            OpCode::GetLocal(_)
+                | OpCode::LoadConst(_)
+                | OpCode::Add
+                | OpCode::Sub
+                | OpCode::Mul
+                | OpCode::Div
+                | OpCode::Mod
+                | OpCode::IntDiv
+                | OpCode::IntMod
+                | OpCode::Pow
+                | OpCode::Negate
+                | OpCode::DivisibleBy
+                | OpCode::NotDivisibleBy
+                | OpCode::NumEq
+                | OpCode::NumNe
+                | OpCode::NumLt
+                | OpCode::NumLe
+                | OpCode::NumGt
+                | OpCode::NumGe
+                | OpCode::StrEq
+                | OpCode::StrNe
+                | OpCode::StrLt
+                | OpCode::StrLe
+                | OpCode::StrGt
+                | OpCode::StrGe
+                | OpCode::Concat
+        )
+    })
 }
 
 /// The name a captured key stands for when it is one a body can only reach by
