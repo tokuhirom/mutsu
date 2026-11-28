@@ -4,8 +4,7 @@
 /// than to the Rakudo snapshot. ADR-10723 section 6.92 records hash captures.
 // Cost: O(1), one fixed owner/name pair.
 pub(crate) fn model_extension(owner: &str, name: &str) -> bool {
-    (owner == "RakuAST::Regex::NamedCapture" && name == "hash")
-        || role_provided(owner, name)
+    (owner == "RakuAST::Regex::NamedCapture" && name == "hash") || role_provided(owner, name)
 }
 
 /// `properties` / `reducer-name` of the owners that get them from the
