@@ -147,6 +147,14 @@ impl Interpreter {
                 Self::value_sync_at(item, left_is_hash, depth + 1, seen, names);
             }
         };
+        // A lazy `Match` holds no regex the smartmatch would run -- it falls in
+        // the same no-op bucket as the eager Instance it presents as -- and
+        // `view()` would force its materialization. That cost is per element:
+        // `$s ~~ s:g/../../` returns the list of every occurrence's Match, and
+        // syncing it used to materialize (and then drop) each one.
+        if value.is_lazy_match_value() {
+            return;
+        }
         match value.view() {
             ValueView::Regex(pattern) => {
                 merge_names(names, &regex_pattern_var_names(pattern.as_str()))
