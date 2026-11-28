@@ -7073,6 +7073,9 @@ pub(crate) struct OuterCapture {
 const LOCAL_READ_NOT_PLAIN: u8 = 0;
 const LOCAL_READ_PLAIN_SCALAR: u8 = 1;
 const LOCAL_READ_PLAIN_AGGREGATE: u8 = 2;
+/// A plain aggregate that is also a plain user `@` lexical this chunk declares,
+/// not `our` or `state`: the static half of the lean element store (#19285).
+const LOCAL_READ_PLAIN_USER_ARRAY: u8 = 3;
 
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledCode {
@@ -9143,12 +9146,25 @@ impl CompiledCode {
     /// key, no `!`/`.` twigil -- is settled here (#19286).
     // Cost: O(1) (memoized per chunk with `local_read_plain`).
     pub(crate) fn local_read_plain_aggregate(&self, idx: usize) -> bool {
-        self.local_read_class(idx) == LOCAL_READ_PLAIN_AGGREGATE
+        matches!(
+            self.local_read_class(idx),
+            LOCAL_READ_PLAIN_AGGREGATE | LOCAL_READ_PLAIN_USER_ARRAY
+        )
+    }
+
+    /// Whether slot `idx` is a [`Self::local_read_plain_aggregate`] slot that is
+    /// also a plain user `@` lexical (`env::is_plain_user_lexical`) this chunk
+    /// declares, and not an `our` or `state` variable: the chunk-settled half
+    /// of the lean element store's conditions (#19285).
+    // Cost: O(1) (memoized per chunk with `local_read_plain`).
+    pub(crate) fn lean_element_store_slot(&self, idx: usize) -> bool {
+        self.local_read_class(idx) == LOCAL_READ_PLAIN_USER_ARRAY
     }
 
     /// The memoized read class of slot `idx`: not plain, a plain scalar, or a
     /// plain aggregate (see the two predicates above).
-    // Cost: O(1) after the first call per chunk; O(L) once, L = locals.
+    // Cost: O(1) after the first call per chunk; O(L * (o + s)) once, L =
+    // locals, o / s = the chunk's `our` / `state` locals (a handful).
     fn local_read_class(&self, idx: usize) -> u8 {
         let slots = self.local_read_plain.get_or_init(|| {
             (0..self.locals.len())
@@ -9158,6 +9174,14 @@ impl CompiledCode {
                     }
                     match self.locals[i].as_bytes().first() {
                         Some(b'!') | Some(b'.') => LOCAL_READ_NOT_PLAIN,
+                        Some(b'@')
+                            if self.declares_slot(i)
+                                && crate::env::is_plain_user_lexical(&self.locals[i])
+                                && !self.our_locals.iter().any(|(s, _)| *s == i)
+                                && !self.state_locals.iter().any(|(s, _)| *s == i) =>
+                        {
+                            LOCAL_READ_PLAIN_USER_ARRAY
+                        }
                         Some(b'@') | Some(b'%') => LOCAL_READ_PLAIN_AGGREGATE,
                         _ => LOCAL_READ_PLAIN_SCALAR,
                     }
