@@ -7,6 +7,8 @@
 //! compiler maps between a constant's spelling and its storage key.
 
 use super::Compiler;
+use crate::opcode::OpCode;
+use crate::value::Value;
 
 impl Compiler {
     // Cost: O(n) expected, n = candidate names in the caller's environment.
@@ -80,6 +82,22 @@ impl Compiler {
             && !self.enclosing_sigilless.contains(name)
             && !self.lexical_type_shadows.contains(name)
             && !self.lexical_types_in_scope.contains(name)
+    }
+
+    /// Emit a read of the enclosing scope's sigil-less constant whose term
+    /// key is `key`: a by-name read whose answer a hidden local of this frame
+    /// keeps for the rest of the call (`OpCode::GetLexFree` with
+    /// `LexFreeKind::Constant`, ADR-18244 stage B, #18274). A constant cannot
+    /// be rebound, so the first read of a call answers for every later one.
+    // Cost: O(1) amortized.
+    pub(super) fn emit_outer_term_constant_read(&mut self, key: String) {
+        let slot = self.alloc_local(&format!("__mutsu_lexfree_{key}"));
+        let name_idx = self.code.add_constant(Value::str(key));
+        self.code.emit(OpCode::GetLexFree {
+            slot,
+            name_idx,
+            kind: crate::opcode::LexFreeKind::Constant,
+        });
     }
 
     /// Whether a sigil-less assignment target `name` names no binding this

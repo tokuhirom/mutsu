@@ -901,6 +901,10 @@ pub(crate) enum LexFreeKind {
     Array,
     /// `GetHashVar`: a `%` name.
     Hash,
+    /// `GetGlobal` of the term key of a sigil-less constant an enclosing
+    /// scope declares (`my constant DAYS = ...` read from a module's subs):
+    /// immutable, so the slot keeps whatever the first by-name read answered.
+    Constant,
 }
 
 /// Bytecode operations for the VM.

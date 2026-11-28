@@ -34,6 +34,11 @@
 //! holds; so does every read while a guard fails. A debug build checks each
 //! first read of a call against the by-name read.
 //!
+//! A read of an enclosing scope's sigil-less constant (`LexFreeKind::Constant`,
+//! emitted by `Compiler::emit_outer_term_constant_read` in any chunk) needs no
+//! alias: a constant is never rebound, so the slot keeps whatever the call's
+//! first by-name read answered.
+//!
 //! The slot is per frame by construction, so recursion, threads and a sub
 //! that escaped its declaring activation need no bookkeeping: a call through
 //! a code object that captured its activation fails the capture test and
@@ -72,6 +77,9 @@ impl Interpreter {
             }
             return self.exec_lex_free_by_name(code, name_idx, kind, ip);
         }
+        if kind == LexFreeKind::Constant {
+            return self.exec_lex_free_constant_first(code, slot, name_idx, ip);
+        }
         if let Some(binding) = self.lex_free_binding(code, name_idx, kind) {
             let val = binding.deref_clone();
             if Self::lex_free_servable(&val, kind) {
@@ -88,6 +96,32 @@ impl Interpreter {
         self.exec_lex_free_by_name(code, name_idx, kind, ip)
     }
 
+    /// The first read of a call of an enclosing scope's sigil-less constant:
+    /// read it by name and keep the answer in the slot. A constant is never
+    /// rebound, so every later read of the call would answer the same; only a
+    /// value the by-name read would not pass through unchanged is left out.
+    // Cost: the by-name read.
+    fn exec_lex_free_constant_first(
+        &mut self,
+        code: &CompiledCode,
+        slot: u32,
+        name_idx: u32,
+        ip: &mut usize,
+    ) -> Result<(), RuntimeError> {
+        self.exec_get_global_op(code, name_idx, ip)?;
+        let name = Self::const_str(code, name_idx);
+        if self.lex_free_guards_hold(name, LexFreeKind::Constant)
+            && let Some(val) = self.stack.last()
+            && Self::lex_free_servable(val, LexFreeKind::Constant)
+        {
+            let val = val.clone();
+            if let Some(entry) = self.locals.get_mut(slot as usize) {
+                *entry = val;
+            }
+        }
+        Ok(())
+    }
+
     /// The probes of the by-name chain that run ahead of the alias and whose
     /// answer can change while one call runs: the scalar chain's (see
     /// `lexsub_free_cache_guards_hold`), and for an `@`/`%` name the
@@ -97,7 +131,7 @@ impl Interpreter {
     #[inline]
     fn lex_free_guards_hold(&self, name: &str, kind: LexFreeKind) -> bool {
         self.lexsub_free_cache_guards_hold(name)
-            && (kind == LexFreeKind::Scalar
+            && (matches!(kind, LexFreeKind::Scalar | LexFreeKind::Constant)
                 || !crate::runtime::shared_store::atomic_lane_entries_exist())
     }
 
@@ -111,7 +145,9 @@ impl Interpreter {
         ip: &mut usize,
     ) -> Result<(), RuntimeError> {
         match kind {
-            LexFreeKind::Scalar => self.exec_get_global_op(code, name_idx, ip),
+            LexFreeKind::Scalar | LexFreeKind::Constant => {
+                self.exec_get_global_op(code, name_idx, ip)
+            }
             LexFreeKind::Array => self.exec_get_array_var_op(code, name_idx, ip),
             LexFreeKind::Hash => self.exec_get_hash_var_op(code, name_idx, ip),
         }
@@ -128,7 +164,7 @@ impl Interpreter {
             return false;
         }
         match kind {
-            LexFreeKind::Scalar => true,
+            LexFreeKind::Scalar | LexFreeKind::Constant => true,
             LexFreeKind::Array => {
                 matches!(val.view(), ValueView::Array(_, k) if !k.is_itemized())
             }
