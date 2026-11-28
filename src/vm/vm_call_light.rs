@@ -393,7 +393,7 @@ impl Interpreter {
         // through a shared cell (`vm_call_light_sigilless.rs`). Like the `is rw`
         // pre-pass above, a promotion indexes the CALLER's locals, so it runs
         // before the frame push below.
-        let sigilless_writable = if cf.has_sigilless_positional_param {
+        let sigilless_bits = if cf.has_sigilless_positional_param {
             match self.bind_light_sigilless_args(
                 cf,
                 args_base,
@@ -409,8 +409,16 @@ impl Interpreter {
                 }
             }
         } else {
-            0
+            super::vm_call_light_sigilless::LightSigillessBits::default()
         };
+        // The values the topic parameters were bound to, for the exit's
+        // writeback (`write_back_light_sigilless_topics`).
+        let sigilless_topic_bound: Vec<Value> = if sigilless_bits.topic != 0 {
+            self.stack[args_base..args_base + actual_count].to_vec()
+        } else {
+            Vec::new()
+        };
+        let sigilless_writable = sigilless_bits.writable;
 
         // Open the callee's frame at its real size in one step: sizing it later
         // (an empty `push_frame` plus a `refill_slots`) cost a second
@@ -1316,6 +1324,11 @@ impl Interpreter {
         self.stack.truncate(saved_stack_depth);
 
         self.cur_source_line = saved_line;
+        let sigilless_topic_finals = if sigilless_bits.topic != 0 {
+            self.light_sigilless_topic_finals(cf, sigilless_bits.topic, &sigilless_topic_bound)
+        } else {
+            Vec::new()
+        };
         self.locals.pop_frame(saved_locals_base);
         self.topic_state
             .loop_local_vars
@@ -1341,6 +1354,9 @@ impl Interpreter {
         // mid-body cannot leave the caller's env pointed at the callee's own
         // overlay.
         self.finish_light_env(cf, caller_env);
+        if !sigilless_topic_finals.is_empty() {
+            self.write_back_light_sigilless_topics(sigilless_topic_finals);
+        }
         self.leave_routine_package(saved_package);
         // Leave the callee's compilation unit HERE, alongside every other
         // piece of per-call state, and not after the return-type check below:
