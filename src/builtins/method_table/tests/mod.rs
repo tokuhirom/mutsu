@@ -530,6 +530,9 @@ fn rows_are_declared_by_rakudo() {
         // `is DEPRECATED` mixes a role declaring `DEPRECATED` into the
         // attribute; mutsu answers it on `Attribute` (ADR-11276 §9.161).
         .filter(|row| !(row.owner == "Attribute" && row.name == "DEPRECATED"))
+        // A shaped hash mixes in `Hash::Shaped`, which declares `shape`;
+        // mutsu answers it on `Hash` for a shaped hash only (#19283).
+        .filter(|row| !(row.owner == "Hash" && row.name == "shape"))
         // A method of language revision 6.e is checked against what 6.e adds
         // (`declared.e`), which the catalog need not record for a name 6.d
         // already recognizes on the owner (`Complex.sign`).

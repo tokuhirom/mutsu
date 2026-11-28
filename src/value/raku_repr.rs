@@ -1300,9 +1300,15 @@ fn raku_value_node(v: &Value) -> String {
                     .as_deref()
                     .unwrap_or(if map.key_type.is_some() { "Mu" } else { "Any" });
                 let value_type = super::type_arg_display_name(value_type);
-                let key_suffix = match map.key_type.as_deref() {
-                    Some(kt) => format!("{{{}}}", super::type_arg_display_name(kt)),
-                    None => String::new(),
+                // A shaped hash shows its dimension types (`%{Str;Int}`, #19283).
+                let shaped = map
+                    .declared_type
+                    .as_deref()
+                    .and_then(super::shaped_hash::dims_of_declared_type);
+                let key_suffix = match (shaped, map.key_type.as_deref()) {
+                    (Some(dims), _) => format!("{{{}}}", dims.join(";")),
+                    (None, Some(kt)) => format!("{{{}}}", super::type_arg_display_name(kt)),
+                    (None, None) => String::new(),
                 };
                 let inner = parts.join(", ");
                 if inner.is_empty() {

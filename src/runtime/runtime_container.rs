@@ -418,10 +418,17 @@ impl Interpreter {
             && let Some((value_type, key_part)) = raw.split_once('{')
             && let Some(key_type) = key_part.strip_suffix('}')
         {
-            let (value_type, key_type) = (
-                value_type.trim(),
-                crate::runtime::types::first_key_dimension(key_type),
-            );
+            let value_type = value_type.trim();
+            // A key type per dimension (`my %h{Str;Int}`) makes a shaped hash,
+            // keyed by a `List` of them (#19283).
+            if let Some(declared) = crate::value::shaped_hash::declared_type_for(value_type, key_type) {
+                return ContainerConstraintParts {
+                    value_type,
+                    key_type: Some("List"),
+                    declared_type: Some(declared),
+                };
+            }
+            let key_type = crate::runtime::types::first_key_dimension(key_type);
             return ContainerConstraintParts {
                 value_type,
                 key_type: Some(key_type),

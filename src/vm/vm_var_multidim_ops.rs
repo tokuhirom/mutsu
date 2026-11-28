@@ -67,6 +67,15 @@ impl Interpreter {
             return Ok(());
         }
 
+        // A shaped hash (`my %h{Str;Int}`, #19283) is keyed by the whole key list.
+        if !is_positional
+            && !dims.iter().any(Self::dim_is_multi)
+            && let Some(value) = self.shaped_hash_read(&target, &dims)?
+        {
+            self.stack.push(value);
+            return Ok(());
+        }
+
         // For shaped arrays, check bounds before reading
         let is_shaped = crate::runtime::utils::is_shaped_array(&target);
         if is_shaped {
@@ -1309,6 +1318,11 @@ impl Interpreter {
             if is_shaped {
                 // For shaped arrays, use bounds-checked assignment
                 Self::assign_array_multidim(container, &resolved_dims, assign_value)
+            } else if !is_positional
+                && !dims.iter().any(Self::dim_is_multi)
+                && slf.shaped_hash_store(container, &dims, assign_value.clone())?
+            {
+                Ok(())
             } else {
                 slf.multi_dim_assign(
                     container,

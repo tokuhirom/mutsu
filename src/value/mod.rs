@@ -689,6 +689,7 @@ mod rakuast_colonpair;
 mod rakuast_edit;
 mod rakuast_replace_body;
 pub(crate) mod shaped_array;
+pub(crate) mod shaped_hash;
 pub(crate) use nanbox::CONTAINER_CELLS;
 #[cfg(feature = "jit")]
 pub(crate) use nanbox::jit_words;

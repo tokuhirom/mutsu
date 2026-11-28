@@ -31,6 +31,13 @@ impl Interpreter {
         let adverb = args[2].to_string_value();
         let raw_indices = &args[3..];
         let indices = self.resolve_multidim_indices(target, raw_indices)?;
+        // A shaped hash (#19283) tests the entry the key list names.
+        if adverb.is_empty()
+            && let Some((exists, _)) =
+                self.shaped_hash_exists_or_delete(&mut target.clone(), &indices, false)?
+        {
+            return Ok(Value::truth(exists != negated));
+        }
         // A nested single-dimension slice (`@a[(3, (30, (5,)))]:exists`) is a
         // structure-preserving slice, NOT a multidim coordinate walk: recurse the
         // index tree and report an existence Bool per leaf, keeping the nesting.
