@@ -208,68 +208,114 @@ pub(super) fn kernel_elem_kind_hint(
     })
 }
 
-/// Read the element at `index` of the slot's array in place, when it is
-/// present (not a hole, in range, non-negative index), as `read` answers it.
-/// The element is never cloned.
-// Cost: O(1).
-#[inline(always)]
-fn read_element_with<R>(
-    interp: &Interpreter,
-    slot: u32,
-    index: i64,
-    read: impl FnOnce(&Value) -> Option<R>,
-) -> Option<R> {
-    let i = usize::try_from(index).ok()?;
-    with_plain_array_node(interp, slot, |items| read(items.get(i)?))
+/// How many element arrays a loop kernel may read through views (the loop
+/// kernel's `MAX_ELEMS`).
+pub(super) const ELEM_VIEWS: usize = 8;
+
+/// A read-only array's elements as one loop-kernel run sees them: the slot
+/// they belong to and the element slice, resolved once at kernel entry
+/// ([`kernel_elem_view`]). `slot == u32::MAX` marks an unused entry.
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub(super) struct ElemView {
+    pub(super) slot: u32,
+    pub(super) ptr: *const Value,
+    pub(super) len: usize,
 }
 
-/// `@a[$i]` for an element that is a plain `Int`.
+impl ElemView {
+    pub(super) const EMPTY: ElemView = ElemView {
+        slot: u32::MAX,
+        ptr: std::ptr::null(),
+        len: 0,
+    };
+}
+
+/// The view of the slot's array for a kernel run that only reads it.
+///
+/// The slice stays valid for the whole run: the node is held by the slot
+/// (or its binding cell), the region stores into no array it reads under any
+/// name (the entry compares node identities), a kernel runs no user code, a
+/// sub kernel it calls touches no array, and no second mutator thread exists
+/// (`kernel_elem_entry_ok`), so nothing can resize, replace or free it. A
+/// poll only reaches the cycle collector, which neither moves nor mutates a
+/// reachable node.
+// Cost: O(1).
+pub(super) fn kernel_elem_view(interp: &Interpreter, slot: u32) -> Option<ElemView> {
+    with_plain_array_node(interp, slot, |items| {
+        let elems = items.as_slice();
+        Some(ElemView {
+            slot,
+            ptr: elems.as_ptr(),
+            len: elems.len(),
+        })
+    })
+}
+
+/// The element at `index` through the run's views, when `slot` has one and
+/// `index` is in range.
 ///
 /// # Safety
-/// `interp` and `code` are the live interpreter and chunk the kernel entry
-/// received; `out` points to a writable `i64`. No other borrow of the
-/// interpreter is live during the call.
+/// `views` points to the run's [`ELEM_VIEWS`] entries, each filled by
+/// [`kernel_elem_view`] at this kernel entry (or [`ElemView::EMPTY`]).
+// Cost: O(v), v <= ELEM_VIEWS = views scanned.
+#[inline(always)]
+unsafe fn view_element<'a>(views: *const ElemView, slot: u32, index: i64) -> Option<&'a Value> {
+    // SAFETY: `views` holds `ELEM_VIEWS` initialized entries (contract).
+    let views = unsafe { std::slice::from_raw_parts(views, ELEM_VIEWS) };
+    let view = views.iter().find(|v| v.slot == slot)?;
+    let i = usize::try_from(index).ok().filter(|&i| i < view.len)?;
+    // SAFETY: `i < len`, and the slice is live and unmodified for the whole
+    // run (see `kernel_elem_view`).
+    Some(unsafe { &*view.ptr.add(i) })
+}
+
+/// `@a[$i]` for an element that is a plain `Int`, read through the run's
+/// element views. A slot with no view, an index out of range or any other
+/// element declines.
+///
+/// # Safety
+/// As [`view_element`]; `out` points to a writable `i64`. The second
+/// argument is unused (the helper shares the read signature).
 // Cost: O(1).
-pub(super) unsafe extern "C" fn kernel_elem_read_int(
-    interp: *mut Interpreter,
-    _code: *const CompiledCode,
+pub(super) unsafe extern "C" fn kernel_elem_read_int_view(
+    views: *const ElemView,
+    _unused: *const u8,
     slot: u32,
     index: i64,
     out: *mut i64,
 ) -> u32 {
     // SAFETY: see the function's safety contract.
-    let vm = unsafe { &*interp };
-    match read_element_with(vm, slot, index, Value::as_int) {
+    match unsafe { view_element(views, slot, index) }.and_then(Value::as_int) {
         Some(n) => {
             // SAFETY: `out` is writable (contract).
             unsafe { *out = n };
             KERNEL_ELEM_OK
         }
-        _ => KERNEL_ELEM_DECLINE,
+        None => KERNEL_ELEM_DECLINE,
     }
 }
 
-/// `@a[$i]` for an element that is a plain `Num`.
+/// `@a[$i]` for an element that is a plain `Num`, through the run's views.
 ///
 /// # Safety
-/// As [`kernel_elem_read_int`], with `out` a writable `f64`.
+/// As [`kernel_elem_read_int_view`], with `out` a writable `f64`.
 // Cost: O(1).
-pub(super) unsafe extern "C" fn kernel_elem_read_num(
-    interp: *mut Interpreter,
-    _code: *const CompiledCode,
+pub(super) unsafe extern "C" fn kernel_elem_read_num_view(
+    views: *const ElemView,
+    _unused: *const u8,
     slot: u32,
     index: i64,
     out: *mut f64,
 ) -> u32 {
     // SAFETY: see the function's safety contract.
-    let vm = unsafe { &*interp };
-    match read_element_with(vm, slot, index, Value::as_num) {
+    match unsafe { view_element(views, slot, index) }.and_then(Value::as_num) {
         Some(f) => {
             // SAFETY: `out` is writable (contract).
             unsafe { *out = f };
             KERNEL_ELEM_OK
         }
-        _ => KERNEL_ELEM_DECLINE,
+        None => KERNEL_ELEM_DECLINE,
     }
 }
 
@@ -365,19 +411,33 @@ mod tests {
         interp
     }
 
+    /// The run's views as a kernel entry would resolve them for `slot`.
+    fn views(interp: &Interpreter, slot: u32) -> [ElemView; ELEM_VIEWS] {
+        let mut views = [ElemView::EMPTY; ELEM_VIEWS];
+        if let Some(v) = kernel_elem_view(interp, slot) {
+            views[0] = v;
+        }
+        views
+    }
+
     fn read_int(interp: &mut Interpreter, slot: u32, index: i64) -> Option<i64> {
+        let views = views(interp, slot);
         let mut out = 0i64;
-        // SAFETY: a live interpreter, a writable `out`; `code` is unused.
-        let status =
-            unsafe { kernel_elem_read_int(interp, std::ptr::null(), slot, index, &mut out) };
+        // SAFETY: `views` holds `ELEM_VIEWS` entries resolved just now, over an
+        // array nothing mutates before the call; `out` is writable.
+        let status = unsafe {
+            kernel_elem_read_int_view(views.as_ptr(), std::ptr::null(), slot, index, &mut out)
+        };
         (status == KERNEL_ELEM_OK).then_some(out)
     }
 
     fn read_num(interp: &mut Interpreter, slot: u32, index: i64) -> Option<f64> {
+        let views = views(interp, slot);
         let mut out = 0f64;
         // SAFETY: as `read_int`.
-        let status =
-            unsafe { kernel_elem_read_num(interp, std::ptr::null(), slot, index, &mut out) };
+        let status = unsafe {
+            kernel_elem_read_num_view(views.as_ptr(), std::ptr::null(), slot, index, &mut out)
+        };
         (status == KERNEL_ELEM_OK).then_some(out)
     }
 

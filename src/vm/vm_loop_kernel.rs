@@ -25,7 +25,7 @@ const MAX_CARRIED: usize = 24;
 const MAX_DECLS: usize = 24;
 
 /// The most arrays a loop kernel's body subscripts.
-const MAX_ELEMS: usize = 8;
+const MAX_ELEMS: usize = super::vm_kernel_elem::ELEM_VIEWS;
 
 /// The counter range of a `for` kernel: the first counter value, the end and
 /// its inclusivity, and for a list loop the items the counter indexes.
@@ -264,6 +264,16 @@ impl Interpreter {
         } = range.unwrap_or_default();
         buf[0] = start as u64;
         buf[2..2 + n].copy_from_slice(&words[..n]);
+        // The arrays the region only reads, resolved once for the run.
+        let mut elem_views = [super::vm_kernel_elem::ElemView::EMPTY; MAX_ELEMS];
+        for (view, &(slot, shape, _)) in elem_views.iter_mut().zip(elem_reads.iter()) {
+            if shape == ElemShape::Array {
+                let Some(v) = super::vm_kernel_elem::kernel_elem_view(self, slot) else {
+                    return Ok(LoopOutcome::Declined);
+                };
+                *view = v;
+            }
+        }
         let mut ctx = LoopCtx {
             poll: LOOP_POLL_EVERY,
             inclusive: inclusive as u32,
@@ -274,6 +284,7 @@ impl Interpreter {
             code: code as *const CompiledCode,
             list: list.map_or(std::ptr::null(), <[i64]>::as_ptr),
             items: items.map_or(std::ptr::null(), <[Value]>::as_ptr),
+            elem_views,
         };
         LOOP_KERNEL_ENTRIES.fetch_add(1, Relaxed);
         // SAFETY: `info.entry` is a finalized loop kernel compiled for this

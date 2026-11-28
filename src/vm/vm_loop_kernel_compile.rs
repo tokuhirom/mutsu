@@ -58,6 +58,10 @@ pub(super) struct LoopCtx {
     /// A `Str` list loop's items (`ListKind::Str`), read in place by the hash
     /// helpers at the counter; null otherwise.
     pub(super) items: *const Value,
+    /// The arrays the region only reads, resolved at entry
+    /// (`vm_kernel_elem::kernel_elem_view`); the array read helpers index them
+    /// instead of resolving the slot per access.
+    pub(super) elem_views: [super::vm_kernel_elem::ElemView; super::vm_kernel_elem::ELEM_VIEWS],
 }
 
 const CTX_POLL: i32 = 0;
@@ -176,6 +180,7 @@ fn build(
         items_offset: std::mem::offset_of!(LoopCtx, items) as i32,
         interp_offset: std::mem::offset_of!(LoopCtx, interp) as i32,
         code_offset: std::mem::offset_of!(LoopCtx, code) as i32,
+        views_offset: std::mem::offset_of!(LoopCtx, elem_views) as i32,
     };
     let mf = MemFlagsData::trusted();
 
