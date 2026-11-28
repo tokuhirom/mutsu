@@ -365,6 +365,8 @@ impl Interpreter {
             let topic_per_element = plan.topic_per_element;
             let topic_unobservable = plan.topic_unobservable && arity == 1;
             let lean_readonly = topic_unobservable && data.params.is_empty();
+            let topic_slot = plan.topic_slot.filter(|_| topic_unobservable);
+            let topic_env_free = topic_slot.is_some() && plan.topic_env_free;
 
             // CP-3 collapse: run the grep loop with fresh execution registers
             // (replaces the `mem::take(self)` + `VM::new` sub-VM). The closure
@@ -430,6 +432,7 @@ impl Interpreter {
                     'body_redo: loop {
                         vm.frame_authoritative = block_authoritative.clone();
                         vm.frame_owned = block_owned.clone();
+                        let mut seed_topic: Option<Value> = None;
                         {
                             let assumed_count = data.assumed_positional.len();
                             for (idx, val) in data.assumed_positional.iter().enumerate() {
@@ -445,7 +448,16 @@ impl Interpreter {
                                     // Nothing can write the topic back: the
                                     // element's plain value, no source key.
                                     let topic = unobservable_topic(&first);
-                                    bind_loop_topic(vm.env_mut(), &topic, false, &outer_topic);
+                                    if !topic_env_free {
+                                        bind_loop_topic(
+                                            vm.env_mut(),
+                                            &topic,
+                                            false,
+                                            &outer_topic,
+                                        );
+                                    }
+                                    // The body reads its topic slot, if it has one.
+                                    seed_topic = topic_slot.map(|_| topic);
                                 } else {
                                     bind_loop_topic(
                                         vm.env_mut(),
@@ -508,11 +520,13 @@ impl Interpreter {
                             );
                             guard
                         });
-                        match vm.run_loop_body(code, compiled_fns, declares_routines) {
+                        let seed = topic_slot.zip(seed_topic.clone());
+                        match vm.run_loop_body_seeded(code, compiled_fns, declares_routines, seed) {
                             Ok(()) => {
                                 let pred = vm
                                     .last_stack_value()
                                     .cloned()
+                                    .or_else(|| seed_topic.clone())
                                     .or_else(|| {
                                         vm.env().get_sym(crate::symbol::wk::topic()).cloned()
                                     })

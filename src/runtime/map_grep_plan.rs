@@ -86,6 +86,14 @@ pub(crate) struct InlineLoopPlan {
     /// element, there is no write-back key to bind or read back, and no
     /// readonly marking to set, since nothing can assign the topic (#19323).
     pub(crate) topic_unobservable: bool,
+    /// The body's local slot for `$_`, which the loop seeds with each element:
+    /// a `topic_unobservable` implicit-topic block is compiled with one
+    /// (`Compiler::seed_topic_local`).
+    pub(crate) topic_slot: Option<usize>,
+    /// The body reads its topic only through `topic_slot`: its code names the
+    /// topic nowhere by name and makes no closure that could read it from the
+    /// env, so the loop binds no `_` / `$_` in the env at all.
+    pub(crate) topic_env_free: bool,
     /// See `frame_authoritative_set`.
     pub(crate) block_authoritative: Vec<Symbol>,
     /// Names the loop binds per iteration or the body declares: the params,
@@ -399,6 +407,13 @@ impl Interpreter {
         let keeps_outer_topic = super::resolution_map_grep::block_keeps_outer_topic(data);
         let topic_unobservable = !keeps_outer_topic
             && crate::compiler::for_topic_alias::topic_alias_unobservable(&data.body);
+        let topic_slot = (topic_unobservable && data.params.is_empty())
+            .then(|| {
+                let name = crate::symbol::wk::loop_topic();
+                code.locals_sym.iter().position(|n| *n == name)
+            })
+            .flatten();
+        let topic_env_free = topic_slot.is_some() && !code_reaches_topic_by_name(&code);
         InlineLoopPlan {
             kind,
             origin,
@@ -414,6 +429,8 @@ impl Interpreter {
                     .is_some_and(|cc| cc.immutable_topic),
             topic_per_element: false,
             topic_unobservable,
+            topic_slot,
+            topic_env_free,
             block_authoritative: data
                 .compiled_code
                 .as_ref()
@@ -529,6 +546,29 @@ impl Interpreter {
             }
         }
     }
+}
+
+/// Whether `code` could read the topic other than through its own slot: a
+/// constant naming `_` or `$_` (a by-name read or write), or an op that makes
+/// a closure or registers a routine, whose body would read the env.
+// Cost: O(k + n), k = constants, n = ops.
+fn code_reaches_topic_by_name(code: &CompiledCode) -> bool {
+    code.constants
+        .iter()
+        .any(|c| matches!(c.view(), crate::value::ValueView::Str(s) if s.as_str() == "_" || s.as_str() == "$_"))
+        || code.ops.iter().any(|op| {
+            matches!(
+                op,
+                OpCode::RegisterDecl(..)
+                    | OpCode::RoutineScope { .. }
+                    | OpCode::PackageScope { .. }
+                    | OpCode::MakeAnonSub(..)
+                    | OpCode::MakeAnonSubParams(..)
+                    | OpCode::MakeLambda(..)
+                    | OpCode::MakeBlockClosure(..)
+                    | OpCode::MakeGather(..)
+            )
+        })
 }
 
 /// The name a captured key stands for when it is one a body can only reach by

@@ -145,6 +145,17 @@ pub(crate) fn bind_loop_topic(
     }
 }
 
+/// Whether `data`'s inline-loop body is compiled with a local slot for `$_`
+/// (`Compiler::seed_topic_local`): an implicit-topic block (no parameters)
+/// whose body cannot observe its topic's container. Whether the loop then
+/// seeds the slot instead of binding `_` in the env is decided from the
+/// compiled code ([`super::map_grep_plan::InlineLoopPlan::topic_slot`]).
+// Cost: O(n), n = AST nodes of the body.
+pub(crate) fn topic_slot_candidate(data: &SubData) -> bool {
+    data.params.is_empty()
+        && crate::compiler::for_topic_alias::topic_alias_unobservable(&data.body)
+}
+
 /// The topic a loop with an unobservable topic
 /// ([`super::map_grep_plan::InlineLoopPlan::topic_unobservable`]) binds for
 /// `item`: the plain value of a `:=`/element cell, or the item itself when it
@@ -351,8 +362,20 @@ impl Interpreter {
         compiled_fns: &CompiledFns,
         declares_routines: bool,
     ) -> Result<(), RuntimeError> {
+        self.run_loop_body_seeded(code, compiled_fns, declares_routines, None)
+    }
+
+    /// [`Self::run_loop_body`] with the body's topic slot seeded (see
+    /// `InlineLoopPlan::topic_slot`).
+    pub(super) fn run_loop_body_seeded(
+        &mut self,
+        code: &CompiledCode,
+        compiled_fns: &CompiledFns,
+        declares_routines: bool,
+        seed: Option<(usize, Value)>,
+    ) -> Result<(), RuntimeError> {
         let snapshot = declares_routines.then(|| self.snapshot_routine_registry());
-        let result = self.run_reuse(code, compiled_fns);
+        let result = self.run_reuse_seeded(code, compiled_fns, seed);
         if let Some(snapshot) = snapshot {
             self.restore_routine_registry(snapshot);
         }
@@ -409,6 +432,13 @@ impl Interpreter {
         compiler.seed_prebound_placeholders(&data.params);
         compiler.seed_prebound_amp_params(&data.params);
         compiler.compile_as_block_body();
+        if topic_slot_candidate(data) {
+            compiler.seed_topic_local();
+            // The body's value travels on the stack rather than through the
+            // env's `_` (`SetTopic`), which the loop no longer binds: every
+            // inline loop reads the stack first.
+            compiler.unit_tail_on_stack = true;
+        }
         if let Some(origin) = data.compiled_code.as_deref() {
             compiler.seed_amp_shadowed_calls_from(origin);
             // The `&`-lexicals the block was written under: a closure nested
@@ -878,6 +908,8 @@ impl Interpreter {
             let topic_per_element = plan.topic_per_element;
             let topic_unobservable = plan.topic_unobservable && arity == 1;
             let lean_readonly = topic_unobservable && data.params.is_empty();
+            let topic_slot = plan.topic_slot.filter(|_| topic_unobservable);
+            let topic_env_free = topic_slot.is_some() && plan.topic_env_free;
 
             // CP-3 collapse: run the map loop with fresh execution registers
             // (replaces the `mem::take(self)` + `VM::new` sub-VM, reusing one
@@ -928,6 +960,7 @@ impl Interpreter {
                     *consumed = consumed_base + (i + arity).min(src.buf.len());
                     vm.frame_authoritative = block_authoritative.clone();
                     vm.frame_owned = block_owned.clone();
+                    let mut seed_topic: Option<Value> = None;
                     {
                         let assumed_count = data.assumed_positional.len();
                         // Bind assumed positional args first
@@ -955,7 +988,11 @@ impl Interpreter {
                             }
                             if topic_unobservable {
                                 let topic = unobservable_topic(&item);
-                                bind_loop_topic(vm.env_mut(), &topic, false, &outer_topic);
+                                if !topic_env_free {
+                                    bind_loop_topic(vm.env_mut(), &topic, false, &outer_topic);
+                                }
+                                // The body reads its topic slot, if it has one.
+                                seed_topic = topic_slot.map(|_| topic);
                             } else {
                                 bind_loop_topic(
                                     vm.env_mut(),
@@ -1014,11 +1051,13 @@ impl Interpreter {
                         set_loop_topic_readonly(vm, immutable_topic, topic_per_element);
                         guard
                     });
-                    match vm.run_loop_body(code, compiled_fns, declares_routines) {
+                    let seed = topic_slot.zip(seed_topic.clone());
+                    match vm.run_loop_body_seeded(code, compiled_fns, declares_routines, seed) {
                         Ok(()) => {
                             let val = vm
                                 .last_stack_value()
                                 .cloned()
+                                .or_else(|| seed_topic.clone())
                                 .or_else(|| vm.env().get_sym(crate::symbol::wk::topic()).cloned())
                                 .unwrap_or(Value::NIL);
                             // A callback that returns a finite lazy `.map`/`.grep`
