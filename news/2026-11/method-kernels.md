@@ -27,4 +27,4 @@ Callgrind slope per loop iteration, profiling build:
 
 | input | before | after |
 | --- | ---: | ---: |
-| `$sum += $p1.distance-to($p2)` (method-call's method) | 13.4k Ir | 6.6k Ir (-51%) |
+| `$sum += $p1.distance-to($p2)` (method-call's method) | 13.4k Ir | 5.7k Ir (-58%) |
