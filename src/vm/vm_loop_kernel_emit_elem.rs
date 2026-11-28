@@ -10,8 +10,8 @@
 //! and rewrites the same elements.
 
 use super::vm_kernel_elem::{
-    kernel_elem_read_int_view, kernel_elem_read_num_view, kernel_elem_store_int,
-    kernel_elem_store_num,
+    kernel_elem_push_int, kernel_elem_push_num, kernel_elem_read_int_view,
+    kernel_elem_read_num_view, kernel_elem_store_int, kernel_elem_store_num,
 };
 use super::vm_kernel_hash::{
     kernel_elem2_read_int, kernel_elem2_read_num, kernel_hash_incdec_int, kernel_hash_incdec_item,
@@ -173,6 +173,18 @@ impl Em<'_, '_> {
         } else {
             kernel_elem_store_num as *const () as usize
         };
+        self.store_via(f, slot, index, value, k);
+    }
+
+    /// `@a.push(value)` for the stored array in `slot`: the store helpers'
+    /// signature, with an unused index.
+    pub(super) fn elem_push(&mut self, slot: u32, value: ClValue, k: K) {
+        let f = if k == K::Int {
+            kernel_elem_push_int as *const () as usize
+        } else {
+            kernel_elem_push_num as *const () as usize
+        };
+        let index = self.b.ins().iconst(types::I64, 0);
         self.store_via(f, slot, index, value, k);
     }
 

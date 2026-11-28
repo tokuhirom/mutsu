@@ -378,6 +378,13 @@ pub(super) fn carried_slots(
                 {
                     elem(*slot, *name_idx, true, true)?
                 }
+                // `@a.push($v)` on a plain declared array: an append, a store
+                // at the array's end.
+                OpCode::ArrayPush {
+                    target_name_idx,
+                    target_slot: Some(slot),
+                    value_source_idx: None,
+                } if array_slot(*slot) => elem(*slot, *target_name_idx, true, false)?,
                 OpCode::PreIncrement(_, Some(s))
                 | OpCode::PreDecrement(_, Some(s))
                 | OpCode::PostIncrement(_, Some(s))

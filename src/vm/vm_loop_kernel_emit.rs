@@ -301,6 +301,15 @@ impl Em<'_, '_> {
                     }
                     stack.push((v, k));
                 }
+                OpCode::ArrayPush {
+                    target_slot: Some(slot),
+                    ..
+                } => {
+                    let (v, k) = stack.pop()?;
+                    self.elem_push(*slot, v, k);
+                    let none = self.b.ins().iconst(types::I64, 0);
+                    stack.push((none, K::Sunk));
+                }
                 OpCode::SinkPopAssign => {
                     stack.pop()?;
                 }

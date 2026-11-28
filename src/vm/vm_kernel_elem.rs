@@ -382,6 +382,76 @@ pub(super) unsafe extern "C" fn kernel_elem_store_num(
     store_element(vm, slot, index, Value::num(value))
 }
 
+/// Append `value` to the slot's array when the lean push
+/// (`vm_data_push_lean`) would: an ordinary `Array` (not a `List` or an
+/// itemized array), not a row view or a bound slice, with the node checks
+/// every kernel store makes. Nothing is written on a decline.
+// Cost: O(1) amortized.
+#[inline(always)]
+fn push_element(interp: &Interpreter, slot: u32, value: Value) -> u32 {
+    let Some(word) = interp.locals.get(slot as usize) else {
+        return KERNEL_ELEM_DECLINE;
+    };
+    let is_array = |v: &Value| matches!(v.view(), ValueView::Array(_, ArrayKind::Array));
+    let plain_kind = match word.view() {
+        ValueView::ContainerRef(cell) => cell.lock().ok().is_some_and(|inner| is_array(&inner)),
+        _ => is_array(word),
+    };
+    if !plain_kind {
+        return KERNEL_ELEM_DECLINE;
+    }
+    let Some(items) = plain_array_node(interp, slot) else {
+        return KERNEL_ELEM_DECLINE;
+    };
+    if items.row_view || items.bound_slice {
+        return KERNEL_ELEM_DECLINE;
+    }
+    // SAFETY: audited aliased in-place container write (see
+    // `value::aliased_mut`), the append the lean push makes. No borrow into
+    // this node is live across the write: `items` is a `Gc` handle and the
+    // views and cell guard it came from are dropped; no second mutator thread
+    // exists (`kernel_elem_entry_ok` checked `multi_mutator_threads_live`), so
+    // this thread is the only writer of the node.
+    let data: &mut ArrayData = unsafe { crate::value::gc_contents_mut(&items) };
+    data.push(value);
+    KERNEL_ELEM_OK
+}
+
+/// `@a.push($v)` for an `Int` value. The index argument is unused: the
+/// helper shares the store signature.
+///
+/// # Safety
+/// As [`kernel_elem_store_int`].
+// Cost: O(1) amortized.
+pub(super) unsafe extern "C" fn kernel_elem_push_int(
+    interp: *mut Interpreter,
+    _code: *const CompiledCode,
+    slot: u32,
+    _index: i64,
+    value: i64,
+) -> u32 {
+    // SAFETY: see the function's safety contract.
+    let vm = unsafe { &*interp };
+    push_element(vm, slot, Value::int(value))
+}
+
+/// `@a.push($v)` for a `Num` value.
+///
+/// # Safety
+/// As [`kernel_elem_store_int`].
+// Cost: O(1) amortized.
+pub(super) unsafe extern "C" fn kernel_elem_push_num(
+    interp: *mut Interpreter,
+    _code: *const CompiledCode,
+    slot: u32,
+    _index: i64,
+    value: f64,
+) -> u32 {
+    // SAFETY: see the function's safety contract.
+    let vm = unsafe { &*interp };
+    push_element(vm, slot, Value::num(value))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

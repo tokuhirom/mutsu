@@ -212,6 +212,17 @@ impl Walk<'_> {
                         _ => return None,
                     }
                 }
+                // `@a.push(v)`: the array it leaves is only ever sunk.
+                OpCode::ArrayPush {
+                    target_slot: Some(slot),
+                    value_source_idx: None,
+                    ..
+                } if self.elem_stores.contains(&(*slot, false)) => {
+                    if !stack.pop()?.numeric() {
+                        return None;
+                    }
+                    stack.push(K::Sunk);
+                }
                 OpCode::SinkPop(..) => {
                     let k = stack.pop()?;
                     if k != K::Sunk && !k.numeric() {
