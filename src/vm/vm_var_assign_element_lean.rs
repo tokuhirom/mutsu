@@ -348,7 +348,10 @@ impl Interpreter {
         // A `:=` pair recorded on this variable's name: the frame may hold a
         // second slot for it the lane does not check (see
         // `bind_pair_names_container`).
-        if self.bind_pair_names_container(code, var_sym.as_str()) {
+        // (The name is only spelled out when a pair is recorded at all.)
+        if !self.local_bind_pairs.is_empty()
+            && self.bind_pair_names_container(code, var_sym.as_str())
+        {
             return false;
         }
         if self.is_readonly_sym(var_sym)
