@@ -209,6 +209,7 @@ mod vm_shapeless_site_lane;
 pub(crate) use vm_attr_type_constraint::AttrTypeConstraintCache;
 mod vm_accessor_lane;
 mod vm_accessor_read_plan;
+mod vm_bless_lane;
 mod vm_block_alias_sync;
 pub(crate) mod vm_block_env;
 mod vm_call_method_compiled_mut;
