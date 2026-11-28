@@ -117,13 +117,6 @@ impl Interpreter {
             && !crate::runtime::find_method_intercept::any_user_find_method()
     }
 
-    /// Remember that the site now being dispatched may record its answer.
-    // Cost: O(1).
-    #[inline]
-    pub(super) fn arm_method_site_ic(&mut self, code: &CompiledCode, ip: usize) {
-        self.caches.method_site_ic_site = Some(site_key(code, ip));
-    }
-
     /// Record `action` for the armed site, if it is `code`'s and its op is a
     /// call of `method` with `arity` arguments on a receiver of `class`.
     // Cost: O(a) to clone the argument keys, a = arguments; once per site and
@@ -254,21 +247,7 @@ impl Interpreter {
                 {
                     return None;
                 }
-                let arg_sources_idx = match code.ops[ip] {
-                    OpCode::CallMethodMut {
-                        arg_sources_idx, ..
-                    } => arg_sources_idx,
-                    _ => return None,
-                };
-                self.run_method_site_ic_plan(
-                    code,
-                    ip,
-                    method,
-                    arity,
-                    arg_sources_idx,
-                    &arg_keys,
-                    &plan,
-                )
+                self.run_method_site_ic_plan(code, ip, method, &arg_keys, &plan)
             }
         }
     }
@@ -276,18 +255,25 @@ impl Interpreter {
     /// The plan replay of a site hit: the plain-method lane's per-call effects
     /// (`try_plain_method_early_lane`), then `run_method_call_plan`, inside
     /// the site's own frame of effects (`call_method_mut_site_around`).
-    #[allow(clippy::too_many_arguments)]
     fn run_method_site_ic_plan(
         &mut self,
         code: &CompiledCode,
         ip: usize,
         method: Symbol,
-        arity: usize,
-        arg_sources_idx: Option<u32>,
         arg_keys: &[Symbol],
         plan: &std::sync::Arc<super::vm_method_call_plan::MethodCallPlan>,
     ) -> Option<Result<(), RuntimeError>> {
-        let target_idx = self.stack.len() - arity - 1;
+        let OpCode::CallMethodMut {
+            arity,
+            arg_sources_idx,
+            target_name_idx,
+            ..
+        } = code.ops[ip]
+        else {
+            return None;
+        };
+        let arity = arity as usize;
+        let target_idx = self.stack.len().checked_sub(arity + 1)?;
         let mut decoded = None;
         let mut args = Vec::new();
         if arity > 0 {
@@ -313,14 +299,12 @@ impl Interpreter {
         } else if !arg_keys.is_empty() {
             return None;
         }
-        let target_name = match code.ops[ip] {
-            OpCode::CallMethodMut {
-                target_name_idx, ..
-            } => Self::const_str(code, target_name_idx),
-            _ => "",
-        };
+        let target_name = Self::const_str(code, target_name_idx);
         self.sync_source_line(code, ip);
-        let target = self.stack.pop().expect("receiver checked above");
+        let Some(target) = self.stack.pop() else {
+            self.stack.extend(args);
+            return None;
+        };
         self.caches.ctor_lane_candidate = None;
         self.caches.plain_method_lane_candidate = None;
         if arity == 0 {
