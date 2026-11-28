@@ -11,7 +11,7 @@ is &say.cando(\()).elems, 2, 'say() matches two candidates';
 is &say.cando(\(1, 2)).elems, 1, 'say(1, 2) matches the slurpy candidate';
 
 my @loc = &say.candidates.map({ .file ~ ":" ~ .line });
-is @loc[0], 'SETTING::src/core.c/io_operators.rakumod:85', 'first say candidate location';
+is @loc[0], 'SETTING::src/core.c/io_operators.rakumod:80', 'first say candidate location (rakudo 2026.11)';
 ok @loc.all.starts-with('SETTING::'), 'every location is in the setting';
 ok &say.candidates.map(*.line).all > 0, 'every candidate has a line';
 
