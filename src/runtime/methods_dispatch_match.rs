@@ -496,7 +496,12 @@ impl Interpreter {
         // `(char index, byte offset)` of the walk's current position; `spans`
         // are ascending, so each lookup resumes where the last one stopped.
         let mut cur = (0usize, 0usize);
+        // An ASCII subject's char index is its byte offset: no walk at all.
+        let ascii = text.is_ascii();
         let mut byte_at = |target: usize| -> usize {
+            if ascii {
+                return target.min(text.len());
+            }
             while cur.0 < target {
                 match text[cur.1..].chars().next() {
                     Some(c) => cur = (cur.0 + 1, cur.1 + c.len_utf8()),
