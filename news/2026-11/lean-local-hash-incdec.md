@@ -18,7 +18,8 @@ plain user `%` lexical, the step now takes the lean element store's checks
 - the hash node's own metadata.
 
 It then steps a plain small `Int` element, or an absent one (which counts from
-0), in place. Anything else declines with the stack untouched and runs the
+0), in place, with one hash probe and with the key read where it sits on the
+stack. Anything else declines with the stack untouched and runs the
 generic op as before: a bound or Proxy element, a `Bool`, `Str` or `Num`
 element, or an overflow to a big `Int`.
 
@@ -26,5 +27,5 @@ callgrind, profiling build, JIT on, `BENCH_DET=1`:
 
 | file | before | after |
 |---|---:|---:|
-| `benchmarks/word-count.raku` | 755,928,530 Ir, 342,602 allocations | 570,772,433 Ir, 242,641 allocations (-24%) |
-| 100,000 × `%c{$_ % 10}++` in a sub | 450,677,620 Ir, 103,225 allocations | 293,479,558 Ir, 3,234 allocations |
+| `benchmarks/word-count.raku` | 755,928,530 Ir, 342,602 allocations | 526,182,471 Ir, 242,635 allocations (-30%) |
+| 100,000 × `%c{$_ % 10}++` in a sub | 450,677,620 Ir, 103,225 allocations | 275,880,156 Ir, 3,235 allocations |

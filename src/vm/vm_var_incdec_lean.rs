@@ -38,8 +38,8 @@ impl Interpreter {
     /// stack names, leaving the old (`return_new == false`) or new value on
     /// the stack in place of the key. `true` = stepped; `false` = declined,
     /// stack untouched.
-    // Cost: O(1) expected (one hash probe and one in-place write or insert),
-    // plus O(k) to copy a new key, k = key bytes.
+    // Cost: O(1) expected (one hash probe, then an in-place write or one
+    // insert), plus O(k) to copy a new key, k = key bytes.
     pub(super) fn try_lean_local_hash_incdec(
         &mut self,
         code: &CompiledCode,
@@ -60,20 +60,18 @@ impl Interpreter {
         {
             return false;
         }
-        // The key's holder is a clone of the stack word (a refcount bump), so
-        // the borrowed key outlives the pop of the commit.
-        let Some(key_holder) = self.stack.last().cloned() else {
+        // The key is read where it sits: every probe below takes `&self`, and
+        // the hash node is reached through its own `Gc` handle, so the stack
+        // is only touched once the step has committed.
+        let Some(top) = self.stack.last() else {
             return false;
         };
+        let top_view = top.view();
         let int_key;
-        let str_key;
-        let key: &str = match key_holder.view() {
-            ValueView::Str(key) => {
-                str_key = key;
-                str_key.as_str()
-            }
+        let key: &str = match &top_view {
+            ValueView::Str(key) => key.as_str(),
             ValueView::Int(n) => {
-                int_key = super::vm_decimal_key::DecimalKey::of(n);
+                int_key = super::vm_decimal_key::DecimalKey::of(*n);
                 int_key.as_str()
             }
             _ => return false,
@@ -93,37 +91,53 @@ impl Interpreter {
         {
             return false;
         }
-        let old = match hash.map.get(key) {
-            None => 0,
-            Some(entry) => match entry.as_int() {
-                Some(n) => n,
-                // A container, a bind token, a Proxy, a big Int, a Num, a Str
-                // that steps by `.succ`: the generic op's.
-                None => return false,
-            },
-        };
-        let new = if increment {
-            old.checked_add(1)
-        } else {
-            old.checked_sub(1)
-        };
-        let Some(new) = new else {
-            return false;
-        };
         let node = crate::gc::Gc::as_ptr(&hash) as usize;
         if !self.lean_store_alias_agrees(code.const_sym(name_idx), node, slot_cell.as_ref()) {
             return false;
         }
-        // ---- commit ----
+        let step = |old: i64| {
+            if increment {
+                old.checked_add(1)
+            } else {
+                old.checked_sub(1)
+            }
+        };
         // SAFETY: audited aliased in-place container write (see
         // `value::aliased_mut`), the one the lean element store makes. No
         // borrow into this node is live across the write: `hash` is a `Gc`
         // handle, the `ValueView` and any cell guard it came from are dropped
         // above, and no second mutator thread exists
         // (`multi_mutator_threads_live` was false), so this thread is the only
-        // writer of the node.
+        // writer of the node. The key borrows the VM stack, not the node.
         let data: &mut crate::value::HashData = unsafe { crate::value::gc_contents_mut(&hash) };
-        Value::hash_insert_through_str(&mut data.map, key, Value::int(new));
+        // One probe: a present entry is stepped in place, an absent one
+        // inserted. Every decline below happens before anything is written.
+        let (old, new) = match data.map.get_mut(key) {
+            Some(entry) => {
+                // A container, a bind token, a Proxy, a big Int, a Bool, a Num
+                // or a Str that steps by `.succ`: the generic op's.
+                let Some(old) = entry.as_int() else {
+                    return false;
+                };
+                let Some(new) = step(old) else {
+                    return false;
+                };
+                // A plain `Int` is stored as is (`itemize_for_hash_element`).
+                *entry = Value::int(new);
+                (old, new)
+            }
+            None => {
+                // No `is default` and no element type (both checked above), so
+                // an absent element counts from `Int` 0, as the generic op does.
+                let Some(new) = step(0) else {
+                    return false;
+                };
+                data.map.insert(key.to_owned(), Value::int(new));
+                (0, new)
+            }
+        };
+        // ---- commit ----
+        drop(top_view);
         self.stack.pop();
         self.stack
             .push(Value::int(if return_new { new } else { old }));
