@@ -103,6 +103,7 @@ fn op_cannot_reach_body_code(op: &OpCode) -> bool {
             | OpCode::GetLocal(_)
             | OpCode::GetLocalMetaAssign { .. }
             | OpCode::GetGlobal(_)
+            | OpCode::GetLexFree { .. }
             | OpCode::SetLocal(_)
             | OpCode::SetLocalDecl { .. }
             | OpCode::CheckReadOnly(_)
