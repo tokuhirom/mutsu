@@ -20,7 +20,17 @@ use crate::opcode::kernel_slot::{ElemSlot, SlotKind};
 pub(super) enum LoopShape {
     /// `for $lo..$hi` / `for ^$n`: the body ops `[body.0, body.1)`, run with
     /// the loop variable set to each integer.
-    Range { body: (usize, usize), var: LoopVar },
+    ///
+    /// With `list`, the loop runs over a materialized list of plain `Int`s
+    /// instead (`for @a { ... }`, `for %h.values { ... }`): the counter is the
+    /// item's index, from the start index to the list's length (exclusive),
+    /// and the loop variable (a slot) is the `Int` at that index, read from
+    /// the `LoopCtx::list` buffer.
+    Range {
+        body: (usize, usize),
+        var: LoopVar,
+        list: bool,
+    },
     /// `while COND { BODY }`: the condition ops `[cond.0, cond.1)` leave one
     /// value, then the body ops `[cond.1, body_end)` run.
     While {

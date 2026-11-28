@@ -195,6 +195,7 @@ impl Interpreter {
                     Some((i, end_val, inclusive)),
                     trips >= 16 || !first,
                     compiled_fns,
+                    None,
                 ) {
                     Ok(super::vm_loop_kernel::LoopOutcome::Declined) => {
                         if first {
@@ -437,6 +438,7 @@ impl Interpreter {
         Some(move |start, end| LoopShape::Range {
             body: (start, end),
             var,
+            list: false,
         })
     }
 }

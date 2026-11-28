@@ -52,11 +52,15 @@ pub(super) struct LoopCtx {
     /// (`vm_kernel_elem`); set by the entry for the length of the run.
     pub(super) interp: *mut Interpreter,
     pub(super) code: *const CompiledCode,
+    /// A list loop's items (`LoopShape::Range { list: true, .. }`), each a
+    /// plain `Int`, indexed by the counter; null for a counted loop.
+    pub(super) list: *const i64,
 }
 
 const CTX_POLL: i32 = 0;
 const CTX_INCLUSIVE: i32 = 4;
 const CTX_END: i32 = 8;
+const CTX_LIST: i32 = std::mem::offset_of!(LoopCtx, list) as i32;
 
 extern "C" fn loop_poll(ctx: *mut LoopCtx) {
     // SAFETY: `ctx` is the `LoopCtx` the entry point passed in, live on its
@@ -207,7 +211,7 @@ fn build(
     em.poll();
     let body_blk = em.b.create_block();
     match *shape {
-        LoopShape::Range { var, .. } => {
+        LoopShape::Range { var, list, .. } => {
             let i = em.b.use_var(counter);
             let end = em.b.ins().load(types::I64, mf, ctxp, CTX_END);
             let incl = em.b.ins().load(types::I32, mf, ctxp, CTX_INCLUSIVE);
@@ -216,9 +220,25 @@ fn build(
             let more = em.b.ins().select(incl, le, lt);
             em.b.ins().brif(more, body_blk, &[], exit, &[]);
             em.b.switch_to_block(body_blk);
-            if let LoopVar::Slot(s) = var {
-                let (v, _) = *em.vars.get(&s)?;
-                em.b.def_var(v, i);
+            match var {
+                // A list loop's variable is the item at the counter: the
+                // entry checked `0 <= counter < end = len` holds for every
+                // index the loop test admits.
+                LoopVar::Slot(s) if list => {
+                    let (v, _) = *em.vars.get(&s)?;
+                    let base = em.b.ins().load(ptr, mf, ctxp, CTX_LIST);
+                    let off = em.b.ins().ishl_imm(i, 3);
+                    let addr = em.b.ins().iadd(base, off);
+                    let item = em.b.ins().load(types::I64, mf, addr, 0);
+                    em.b.def_var(v, item);
+                }
+                LoopVar::Slot(s) => {
+                    let (v, _) = *em.vars.get(&s)?;
+                    em.b.def_var(v, i);
+                }
+                // A list loop always reads its topic through a slot.
+                LoopVar::Topic if list => return None,
+                LoopVar::Topic => {}
             }
             let segs = shape.segments();
             em.segment(segs[0].0, segs[0].1, &typed.joins)?;

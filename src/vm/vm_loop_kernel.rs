@@ -68,6 +68,7 @@ impl Interpreter {
         range: Option<(i64, i64, bool)>,
         hot: bool,
         compiled_fns: &CompiledFns,
+        list: Option<&[i64]>,
     ) -> Result<LoopOutcome, RuntimeError> {
         use std::sync::atomic::Ordering::Relaxed;
         if !super::vm_kernel::kernels_enabled()
@@ -248,6 +249,7 @@ impl Interpreter {
             callees,
             interp: self as *mut Interpreter,
             code: code as *const CompiledCode,
+            list: list.map_or(std::ptr::null(), <[i64]>::as_ptr),
         };
         LOOP_KERNEL_ENTRIES.fetch_add(1, Relaxed);
         // SAFETY: `info.entry` is a finalized loop kernel compiled for this
@@ -317,10 +319,13 @@ impl Interpreter {
         let mut sites = code.jit.loop_kernels.sites.lock().ok()?;
         let site = sites.iter_mut().find(|s| s.ip == ip as u32)?;
         use super::vm_loop_kernel_types::{carried_code, elem_code};
+        // A list loop and a counted loop at the same `ForLoop` (one iterable
+        // a Range, another time a list) compile to different code.
+        let list_marker = matches!(shape, LoopShape::Range { list: true, .. }).then_some(u8::MAX);
         let key = || {
-            carried
-                .iter()
-                .map(|c| carried_code(c.1))
+            list_marker
+                .into_iter()
+                .chain(carried.iter().map(|c| carried_code(c.1)))
                 .chain(elem_reads.iter().map(|r| elem_code(r.1, r.2)))
         };
         if let Some((_, v)) = site

@@ -628,6 +628,7 @@ impl Interpreter {
                     None,
                     iterations == 256,
                     compiled_fns,
+                    None,
                 ) {
                     Ok(super::vm_loop_kernel::LoopOutcome::Declined) => {}
                     Ok(super::vm_loop_kernel::LoopOutcome::Done) => break 'while_loop,
