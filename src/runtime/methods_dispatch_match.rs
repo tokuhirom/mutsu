@@ -457,7 +457,8 @@ impl Interpreter {
                     } else {
                         self.regex_find_all_limited(&pat, &text, max)
                     };
-                Some(Ok(make_seq(Self::char_span_strs(&text, &spans))))
+                let base = crate::value::str_iter::shared_text(&target);
+                Some(Ok(make_seq(Self::char_span_strs(&base, &spans))))
             }
             Some(ValueView::Sub(_) | ValueView::WeakSub(_)) => Some(Err(RuntimeError::new(
                 "none of these signatures match: comb does not accept a Code argument",
@@ -467,7 +468,8 @@ impl Interpreter {
                     let pattern = m.to_string_value();
                     let max = limit.map_or(usize::MAX, |lim| lim as usize);
                     let spans = self.regex_find_all_limited(&pattern, &text, max);
-                    Some(Ok(make_seq(Self::char_span_strs(&text, &spans))))
+                    let base = crate::value::str_iter::shared_text(&target);
+                    Some(Ok(make_seq(Self::char_span_strs(&base, &spans))))
                 } else {
                     // No positional matcher (only nameds, e.g. a handle's
                     // `:close`): graphemes, exactly as `Str.comb` with no args.
@@ -479,11 +481,17 @@ impl Interpreter {
         }
     }
 
-    /// The substrings of `text` at the ascending, non-overlapping char-index
-    /// `spans` a regex search returned.
-    // Cost: O(p + t), p = chars up to the end of the last span (one forward
-    // walk), t = total chars of the result.
-    fn char_span_strs(text: &str, spans: &[(usize, usize)]) -> Vec<Value> {
+    /// The substrings of the invocant `base` at the ascending,
+    /// non-overlapping char-index `spans` a regex search returned. Each one
+    /// shares `base`'s buffer (`StrBody::slice_of`, as `split` and `substr`
+    /// do), so a piece costs one allocation and no copy.
+    // Cost: O(p + r), p = chars up to the end of the last span (one forward
+    // walk), r = spans; a piece `slice_of` declines to share is copied.
+    fn char_span_strs(
+        base: &std::sync::Arc<crate::value::StrBody>,
+        spans: &[(usize, usize)],
+    ) -> Vec<Value> {
+        let text = base.as_str();
         let mut out = Vec::with_capacity(spans.len());
         // `(char index, byte offset)` of the walk's current position; `spans`
         // are ascending, so each lookup resumes where the last one stopped.
@@ -500,7 +508,9 @@ impl Interpreter {
         for &(start, end) in spans {
             let b_start = byte_at(start);
             let b_end = byte_at(end);
-            out.push(Value::str(text[b_start..b_end].to_string()));
+            out.push(Value::str_from_body(crate::value::StrBody::slice_of(
+                base, b_start, b_end,
+            )));
         }
         out
     }

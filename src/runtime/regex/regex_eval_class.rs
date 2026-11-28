@@ -333,9 +333,11 @@ impl Interpreter {
         } else {
             parsed
         };
-        let chars: Vec<char> = match &stripped {
-            Some(s) => s.chars().to_vec(),
-            None => text.chars().collect(),
+        // The target already holds the subject as chars; borrow them rather
+        // than decoding the text a second time.
+        let chars: &[char] = match &stripped {
+            Some(s) => s.chars(),
+            None => target.chars(),
         };
         let mut results = Vec::new();
         let mut pos = 0;
@@ -344,13 +346,13 @@ impl Interpreter {
             let mut found = None;
             if parsed.anchor_start {
                 if pos == 0
-                    && let Some(end) = self.regex_match_end_from_in_pkg(&parsed, &chars, 0, pkg)
+                    && let Some(end) = self.regex_match_end_from_in_pkg(&parsed, chars, 0, pkg)
                 {
                     found = Some((0, end));
                 }
             } else {
-                for start in regex_scan_positions(self, &parsed, &chars, search_start, pkg) {
-                    if let Some(end) = self.regex_match_end_from_in_pkg(&parsed, &chars, start, pkg)
+                for start in regex_scan_positions(self, &parsed, chars, search_start, pkg) {
+                    if let Some(end) = self.regex_match_end_from_in_pkg(&parsed, chars, start, pkg)
                     {
                         found = Some((start, end));
                         break;
