@@ -173,6 +173,28 @@ impl Interpreter {
         self.stack.push(val.into_deref());
     }
 
+    /// [`Self::push_container_ref_read`] for the cell slot `idx` holds, read
+    /// through the slot's own handle: a value read (`keep_deferred_entry`
+    /// false) clones only the cell's value, not the `ContainerRef` word, so
+    /// it pays no handle refcount round trip and no cycle-collector check on
+    /// the handle's drop (#19291). Container mode keeps the owned path.
+    // Cost: O(1) (one cell read; O(c) for a chain of c cells).
+    fn push_slot_cell_read(&mut self, idx: usize, keep_deferred_entry: bool) {
+        if keep_deferred_entry {
+            let val = self.locals[idx].clone();
+            self.push_container_ref_read(val, true);
+            return;
+        }
+        // The same value `push_container_ref_read` derives with
+        // `val.into_deref()` from an owned clone of the word.
+        let inner = self.locals[idx].deref_clone();
+        if matches!(inner.view(), ValueView::HashEntryRef { .. }) {
+            self.stack.push(inner.hash_entry_read());
+        } else {
+            self.stack.push(inner);
+        }
+    }
+
     pub(super) fn exec_get_local_op(
         &mut self,
         code: &CompiledCode,
@@ -326,15 +348,15 @@ impl Interpreter {
                  slot {idx} ({:?}) does not (ADR-0097 §15 env/slot invariant)",
                 code.locals.get(idx)
             );
-            let val = val.clone();
             // A bound or captured scalar's cell: every probe between here and
             // the tail is decided against by the same three conditions (none
             // looks at a plain-named local's cell), so read it the way the
-            // tail does.
+            // tail does -- through the slot's own cell handle (#19291).
             if val.is_container_ref() {
-                self.push_container_ref_read(val, keep_deferred_entry);
+                self.push_slot_cell_read(idx, keep_deferred_entry);
                 return Ok(());
             }
+            let val = val.clone();
             self.stack.push(val);
             return Ok(());
         }
@@ -367,11 +389,11 @@ impl Interpreter {
                  container slot {idx} ({:?}) does not",
                 code.locals.get(idx)
             );
-            let val = val.clone();
             if val.is_container_ref() {
-                self.push_container_ref_read(val, keep_deferred_entry);
+                self.push_slot_cell_read(idx, keep_deferred_entry);
                 return Ok(());
             }
+            let val = val.clone();
             self.stack.push(val);
             return Ok(());
         }
