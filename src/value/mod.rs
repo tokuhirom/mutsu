@@ -2678,6 +2678,11 @@ pub struct ArrayData {
     /// promotion can leave cells in an unrelated array that must keep plain
     /// replace semantics.
     pub bound_slice: bool,
+    /// This array is a row of a multi-dimensional shaped array (#19282):
+    /// rakudo hands it out as an `Array::ShapedView` of the parent, which is
+    /// what `.WHAT` and `.^name` report. Reads and writes go through the
+    /// shared row node either way. A copy is a new array, never a view.
+    pub row_view: bool,
     /// The mutation version a published lock-free snapshot of this node is
     /// validated against (ADR-18637 S1). Unset until a cell first publishes
     /// a snapshot of this node; from then on every mutable access to the node

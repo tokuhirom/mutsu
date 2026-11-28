@@ -19,9 +19,35 @@ impl Interpreter {
                 .map(|cell| Value::container_ref_bound_itemized(cell.clone()))
                 .unwrap_or_else(|| Value::bound_element(value.clone()));
             Self::bind_array_multidim(target, std::slice::from_ref(index), bound)
+        } else if Self::slot_holds_same_row(target, index, value) {
+            // Writing a row back to where it already is (the writeback after
+            // `for @a[0] { ... }` iterated the row in place, #19282) changes
+            // nothing; as a store of one index into a multi-dimensional array
+            // it would be refused.
+            Ok(())
         } else {
             Self::assign_array_multidim(target, std::slice::from_ref(index), value.clone())
         }
+    }
+
+    /// Whether slot `index` of the shaped array `target` holds the very row
+    /// node `value` is.
+    // Cost: O(1).
+    fn slot_holds_same_row(target: &Value, index: &Value, value: &Value) -> bool {
+        let value = value.deref_container();
+        let ValueView::Array(row, _) = value.view() else {
+            return false;
+        };
+        let Some(i) = Self::index_to_usize(index) else {
+            return false;
+        };
+        target.with_deref(|t| match t.view() {
+            ValueView::Array(items, _) => items.get(i).is_some_and(|slot| {
+                matches!(slot.deref_container().view(),
+                    ValueView::Array(existing, _) if crate::gc::Gc::ptr_eq(&existing, &row))
+            }),
+            _ => false,
+        })
     }
 
     /// Array/List subscripts coerce each leaf index to Int. Pair has no valid

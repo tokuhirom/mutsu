@@ -69,6 +69,16 @@ impl Interpreter {
         {
             return self.element_var_meta(element, None, &key, None);
         }
+        // A row of a multi-dimensional shaped or jagged array is bound in its
+        // slot, not held in a Scalar (rakudo's row view, #19282), so its
+        // `.VAR` is the row itself.
+        if let Some(c) = &container
+            && (crate::runtime::utils::shaped_array_shape(c).is_some_and(|s| s.len() > 1)
+                || crate::value::shaped_array::jagged_array_shape(c).is_some())
+            && matches!(element.deref_container().view(), ValueView::Array(..))
+        {
+            return Ok(crate::value::flat::deitemize_flat_operand(&element.deref_container()));
+        }
         self.element_var_meta(element, container, &source_name, subscript)
     }
 

@@ -139,8 +139,9 @@ impl Interpreter {
         // §3), so rows cloned from one child would all observe each other's
         // writes (`@md[0;0] = v` would set `[1;0]` too).
         for _ in 0..len {
-            let child = Self::make_shaped_array_seeded(&dims[1..], seed)?;
+            let mut child = Self::make_shaped_array_seeded(&dims[1..], seed)?;
             crate::runtime::utils::mark_shaped_array(&child, Some(&dims[1..]));
+            crate::value::shaped_array::mark_row_view(&mut child);
             items.push(child);
         }
         let value = Value::shaped_array(items);
