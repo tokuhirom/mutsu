@@ -1254,7 +1254,7 @@ impl Interpreter {
             let positional_count = filtered_args
                 .iter()
                 .filter(|a| {
-                    !is_pair_arg(*a)
+                    !is_pair_arg(a)
                 })
                 .count();
             let required_positional_count = param_defs
@@ -1274,12 +1274,12 @@ impl Interpreter {
             if positional_count == 1 && required_positional_count >= 2 {
                 // Check if the single positional arg is a Seq or non-itemized Array/List
                 let single_pos = filtered_args.iter().find(|a| {
-                    !is_pair_arg(*a)
+                    !is_pair_arg(a)
                 });
                 let named_args: Vec<Value> = filtered_args
                     .iter()
                     .filter(|a| {
-                        is_pair_arg(*a)
+                        is_pair_arg(a)
                     })
                     .cloned()
                     .collect();
@@ -1764,7 +1764,7 @@ impl Interpreter {
                 let remaining_positional: Vec<_> = args[positional_idx..]
                     .iter()
                     .filter(|a| {
-                        !is_pair_arg(*a)
+                        !is_pair_arg(a)
                     })
                     .cloned()
                     .collect();
@@ -4414,7 +4414,7 @@ impl Interpreter {
                     let positional_arg_count = args
                         .iter()
                         .filter(|a| {
-                            !is_pair_arg(*a)
+                            !is_pair_arg(a)
                         })
                         .count();
                     // A method's count includes its invocant (#14565).
@@ -4644,7 +4644,7 @@ fn surplus_positional_error(
         .count();
     let positional_arg_count = plain_args
         .iter()
-        .filter(|a| !is_pair_arg(*a))
+        .filter(|a| !is_pair_arg(a))
         .count();
     (positional_arg_count > positional_param_count).then(|| {
         // A method's count includes its invocant (#14565).
