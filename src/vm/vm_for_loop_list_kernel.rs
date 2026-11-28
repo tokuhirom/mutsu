@@ -27,7 +27,6 @@ impl Interpreter {
     /// plain `Int`. `Ok(None)`: declined, nothing ran. `Ok(Some(k))`: items
     /// before `k` are done (`k == items.len()` when the loop finished).
     // Cost: O(n) to check and copy the items, n = items, plus the native run.
-    #[allow(clippy::too_many_arguments)]
     pub(super) fn try_list_loop_kernel(
         &mut self,
         code: &CompiledCode,
