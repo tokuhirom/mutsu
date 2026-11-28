@@ -12,6 +12,10 @@
 use super::vm_kernel_elem::{
     kernel_elem_read_int, kernel_elem_read_num, kernel_elem_store_int, kernel_elem_store_num,
 };
+use super::vm_kernel_hash::{
+    kernel_elem2_read_int, kernel_elem2_read_num, kernel_hash_read_int, kernel_hash_read_num,
+    kernel_hash_store_int, kernel_hash_store_num,
+};
 use super::vm_loop_kernel_emit::Em;
 use super::vm_loop_kernel_types::K;
 use crate::opcode::OpCode;
@@ -31,6 +35,8 @@ pub(super) struct ElemSigs {
     pub(super) store_int: SigRef,
     /// `(interp, code, slot, index, value: f64) -> status`.
     pub(super) store_num: SigRef,
+    /// `(interp, code, slot, i, j, out) -> status`, for both grid reads.
+    pub(super) read2: SigRef,
     /// Offsets of the interpreter and code pointers in the loop context.
     pub(super) interp_offset: i32,
     pub(super) code_offset: i32,
@@ -61,23 +67,27 @@ impl Em<'_, '_> {
         self.guard(ok);
     }
 
-    /// `@a[index]` for the read array in `slot`, whose elements are `kind`.
-    pub(super) fn elem_read(&mut self, slot: u32, index: ClValue, kind: SlotKind) -> ClValue {
+    /// A read helper `f` called with `keys` after the pointers and slot, the
+    /// element written to an 8-byte stack slot of kind `kind`; a decline bails.
+    fn read_via(
+        &mut self,
+        sig: SigRef,
+        f: usize,
+        slot: u32,
+        keys: &[ClValue],
+        kind: SlotKind,
+    ) -> ClValue {
         let out =
             self.b
                 .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 3));
         let out_addr = self.b.ins().stack_addr(self.ptr, out, 0);
         let (interp, code) = self.elem_ptrs();
         let slot_v = self.b.ins().iconst(types::I32, slot as i64);
-        let f = match kind {
-            SlotKind::Int => kernel_elem_read_int as *const () as usize,
-            SlotKind::Num => kernel_elem_read_num as *const () as usize,
-        };
         let f = self.b.ins().iconst(self.ptr, f as i64);
-        let call =
-            self.b
-                .ins()
-                .call_indirect(self.elem.read, f, &[interp, code, slot_v, index, out_addr]);
+        let mut args = vec![interp, code, slot_v];
+        args.extend_from_slice(keys);
+        args.push(out_addr);
+        let call = self.b.ins().call_indirect(sig, f, &args);
         let status = self.b.inst_results(call)[0];
         self.guard_status(status);
         let ty = match kind {
@@ -87,20 +97,67 @@ impl Em<'_, '_> {
         self.b.ins().stack_load(self.ptr, ty, out, 0)
     }
 
+    /// `@a[index]` for the read array in `slot`, whose elements are `kind`.
+    pub(super) fn elem_read(&mut self, slot: u32, index: ClValue, kind: SlotKind) -> ClValue {
+        let f = match kind {
+            SlotKind::Int => kernel_elem_read_int as *const () as usize,
+            SlotKind::Num => kernel_elem_read_num as *const () as usize,
+        };
+        self.read_via(self.elem.read, f, slot, &[index], kind)
+    }
+
+    /// `%h{key}` for the read hash in `slot`, whose values are `kind`.
+    pub(super) fn hash_read(&mut self, slot: u32, key: ClValue, kind: SlotKind) -> ClValue {
+        let f = match kind {
+            SlotKind::Int => kernel_hash_read_int as *const () as usize,
+            SlotKind::Num => kernel_hash_read_num as *const () as usize,
+        };
+        self.read_via(self.elem.read, f, slot, &[key], kind)
+    }
+
+    /// `@g[i][j]` for the read grid in `slot`, whose elements are `kind`.
+    pub(super) fn elem2_read(
+        &mut self,
+        slot: u32,
+        i: ClValue,
+        j: ClValue,
+        kind: SlotKind,
+    ) -> ClValue {
+        let f = match kind {
+            SlotKind::Int => kernel_elem2_read_int as *const () as usize,
+            SlotKind::Num => kernel_elem2_read_num as *const () as usize,
+        };
+        self.read_via(self.elem.read2, f, slot, &[i, j], kind)
+    }
+
     /// `@a[index] = value` for the stored array in `slot`.
     pub(super) fn elem_store(&mut self, slot: u32, index: ClValue, value: ClValue, k: K) {
+        let f = if k == K::Int {
+            kernel_elem_store_int as *const () as usize
+        } else {
+            kernel_elem_store_num as *const () as usize
+        };
+        self.store_via(f, slot, index, value, k);
+    }
+
+    /// `%h{key} = value` for the stored hash in `slot`.
+    pub(super) fn hash_store(&mut self, slot: u32, key: ClValue, value: ClValue, k: K) {
+        let f = if k == K::Int {
+            kernel_hash_store_int as *const () as usize
+        } else {
+            kernel_hash_store_num as *const () as usize
+        };
+        self.store_via(f, slot, key, value, k);
+    }
+
+    /// A store helper `f` on `slot`; a decline bails.
+    fn store_via(&mut self, f: usize, slot: u32, index: ClValue, value: ClValue, k: K) {
         let (interp, code) = self.elem_ptrs();
         let slot_v = self.b.ins().iconst(types::I32, slot as i64);
-        let (f, sig) = if k == K::Int {
-            (
-                kernel_elem_store_int as *const () as usize,
-                self.elem.store_int,
-            )
+        let sig = if k == K::Int {
+            self.elem.store_int
         } else {
-            (
-                kernel_elem_store_num as *const () as usize,
-                self.elem.store_num,
-            )
+            self.elem.store_num
         };
         let f = self.b.ins().iconst(self.ptr, f as i64);
         let call = self
@@ -132,11 +189,18 @@ impl Em<'_, '_> {
     }
 
     /// `+&`, `+|` and `+^` on two Ints: two's complement, as Raku's
-    /// arbitrary-precision forms are for values in the `i64` range.
+    /// arbitrary-precision forms are for values in the `i64` range. `+>` is
+    /// an arithmetic shift (Raku's floor division by a power of two) for a
+    /// count in `0..64`; any other count bails.
     pub(super) fn bitop(&mut self, op: &OpCode, x: ClValue, y: ClValue) -> ClValue {
         match op {
             OpCode::BitAnd => self.b.ins().band(x, y),
             OpCode::BitOr => self.b.ins().bor(x, y),
+            OpCode::BitShiftRight => {
+                let ok = self.b.ins().icmp_imm_u(IntCC::UnsignedLessThan, y, 64);
+                self.guard(ok);
+                self.b.ins().sshr(x, y)
+            }
             _ => self.b.ins().bxor(x, y),
         }
     }

@@ -19,10 +19,6 @@
 //! decimal `Str`, so the key is formatted on the stack (`DecimalKey`), as the
 //! read fast path does, never into a fresh `String` for a read.
 
-// TODO(#19292): campaign A wires these into loop-kernel typing and emission;
-// until then only the unit tests below call them.
-#![allow(dead_code)]
-
 use super::vm_decimal_key::DecimalKey;
 use super::vm_kernel_elem::{KERNEL_ELEM_DECLINE, KERNEL_ELEM_OK, plain_array_node};
 use super::vm_var_assign_element_lean::LeanStoreNode;

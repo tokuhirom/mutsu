@@ -194,5 +194,46 @@ my $px = 9223372036854775000;
 for ^2000 { $px++ }
 say "incdec-overflow=", $px;
 
+# Hash reads and stores keyed by Int, grid reads, `+>` (campaign B's
+# `vm_kernel_hash` helpers).
+my %kh;
+%kh{$_} = $_ * 3 for ^16;
+my $khs = 0;
+loop (my $hj = 0; $hj < 5000; $hj++) { $khs = $khs + %kh{$hj +& 15} }
+say "hash-read=", $khs;
+my %kn;
+%kn{$_} = $_ + 0.5e0 for ^8;
+my $kns = 0e0;
+for ^2000 -> $i { $kns = $kns + %kn{$i % 8} }
+say "hash-read-num=", $kns;
+my %km;
+%km{$_} = $_ for ^10;
+my $kms = 0;
+for ^300 -> $i { $kms = $kms + (%km{$i % 12} // 100) }
+say "hash-read-missing=", $kms;
+my %ks;
+for ^400 -> $i { %ks{$i % 50} = $i }
+say "hash-store=", %ks.elems, " ", %ks.values.sum;
+my %krw;
+%krw{$_} = $_ for ^20;
+for ^20 -> $i { %krw{$i} = %krw{$i} + 1 }
+say "hash-read-write-same=", %krw.values.sum;
+my @kg;
+@kg[$_] = [($_ * 8) ..^ ($_ * 8 + 8)] for ^8;
+my $kgs = 0;
+loop (my $gk = 0; $gk < 3500; $gk++) { $kgs = $kgs + @kg[$gk +& 7][($gk +> 3) +& 7] }
+say "grid-read=", $kgs;
+my @kgr = [1, 2], [3], [4, 5];
+my $kgrs = 0;
+for ^300 -> $i { $kgrs = $kgrs + (@kgr[$i % 3][1] // 7) }
+say "grid-ragged=", $kgrs;
+my @kgw;
+my $kgws = 0;
+for ^200 -> $i { $kgws = $kgws + @kg[$i % 8][$i % 8]; @kgw[$i] = $i }
+say "grid-with-store=", $kgws, " ", @kgw.sum;
+my $sh = 0;
+for ^500 -> $i { $sh = $sh + (($i - 250) +> 2) + ($i +> ($i % 70)) }
+say "shift-right=", $sh;
+
 # From several threads.
 say "threads=", await((^4).map(-> $o { start { my $z = 0; for ^10000 -> $i { $z = $z + $i * $o }; $z } })).join(",");

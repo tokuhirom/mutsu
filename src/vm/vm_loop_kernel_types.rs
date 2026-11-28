@@ -63,9 +63,36 @@ pub(super) enum K {
     Int,
     Num,
     Bool,
-    /// An array local about to be subscripted (`@a` before `[$i]`): only an
-    /// `Index` consumes it.
+    /// An array or hash local about to be subscripted (`@a` before `[$i]`):
+    /// only an `Index` consumes it.
     Arr(u32),
+    /// A grid's row index already applied (`@g[$i]` before `[$j]`), carrying
+    /// `$i`: only a second `Index` consumes it.
+    Row(u32),
+}
+
+/// What a read element slot holds, settled at kernel entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ElemShape {
+    /// `@a[$i]`: an array of plain `Int`/`Num` elements.
+    Array,
+    /// `@g[$i][$j]`: an array of plain arrays.
+    Grid,
+    /// `%h{$i}`: a hash keyed by the decimal strings of `Int`s.
+    Hash,
+}
+
+/// A read element slot: its local, shape and element kind.
+pub(super) type ElemRead = (u32, ElemShape, SlotKind);
+
+/// The variant-key code of a carried slot's kind.
+pub(super) fn carried_code(k: SlotKind) -> u8 {
+    k as u8
+}
+
+/// The variant-key code of a read element slot's shape and kind.
+pub(super) fn elem_code(shape: ElemShape, k: SlotKind) -> u8 {
+    2 + 2 * shape as u8 + k as u8
 }
 
 impl K {
@@ -82,7 +109,7 @@ impl K {
         match self {
             K::Int => Some(SlotKind::Int),
             K::Num => Some(SlotKind::Num),
-            K::Bool | K::Arr(_) => None,
+            K::Bool | K::Arr(_) | K::Row(_) => None,
         }
     }
 
@@ -228,20 +255,23 @@ pub(super) fn carried_slots(
     shape: &LoopShape,
 ) -> Option<(Vec<u32>, Vec<ElemSlot>)> {
     let mut elems: Vec<ElemSlot> = Vec::new();
-    let mut elem = |slot: u32, name_idx: u32, store: bool| -> Option<()> {
+    let mut elem = |slot: u32, name_idx: u32, store: bool, hash: bool| -> Option<()> {
         match elems.iter().find(|e| e.slot == slot) {
-            Some(e) if e.store != store => None,
+            Some(e) if e.store != store || e.hash != hash => None,
             Some(_) => Some(()),
             None => {
                 elems.push(ElemSlot {
                     slot,
                     name_idx,
                     store,
+                    hash,
                 });
                 Some(())
             }
         }
     };
+    let array_slot = |s: u32| super::vm_kernel_elem::kernel_elem_slot_ok(code, s);
+    let hash_slot = |s: u32| super::vm_kernel_hash::kernel_hash_slot_ok(code, s);
     let mut declared = Vec::new();
     // Nested loops' parameters: readonly per-iteration bindings the kernel
     // owns, neither carried nor `my` declarations.
@@ -261,18 +291,19 @@ pub(super) fn carried_slots(
                 | OpCode::ContainerizePair
                 | OpCode::WrapVarRef { .. }
                 | OpCode::CallFunc { .. } => {}
-                OpCode::GetLocal(s) if super::vm_kernel_elem::kernel_elem_slot_ok(code, *s) => {
-                    elem(*s, 0, false)?
-                }
+                OpCode::GetLocal(s) if array_slot(*s) => elem(*s, 0, false, false)?,
+                OpCode::GetLocal(s) if hash_slot(*s) => elem(*s, 0, false, true)?,
                 OpCode::IndexAssignLocal {
                     slot,
                     name_idx,
-                    is_positional: true,
+                    is_positional,
                     index_first: true,
                     concat_append: false,
                     element_share: false,
-                } if super::vm_kernel_elem::kernel_elem_slot_ok(code, *slot) => {
-                    elem(*slot, *name_idx, true)?
+                } if (*is_positional && array_slot(*slot))
+                    || (!*is_positional && hash_slot(*slot)) =>
+                {
+                    elem(*slot, *name_idx, true, !*is_positional)?
                 }
                 OpCode::PreIncrement(_, Some(s))
                 | OpCode::PreDecrement(_, Some(s))
@@ -292,9 +323,8 @@ pub(super) fn carried_slots(
                 | OpCode::BitAnd
                 | OpCode::BitOr
                 | OpCode::BitXor
-                | OpCode::Index {
-                    is_positional: true,
-                }
+                | OpCode::BitShiftRight
+                | OpCode::Index { .. }
                 | OpCode::SinkPopAssign
                 | OpCode::NumLt
                 | OpCode::NumLe

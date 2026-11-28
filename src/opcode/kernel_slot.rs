@@ -72,12 +72,15 @@ pub(crate) struct ElemSlot {
     /// Whether the body stores into it; otherwise it only reads it. A slot is
     /// never both: a replayed iteration must not read its own earlier store.
     pub(crate) store: bool,
+    /// Whether it is a `%` hash subscripted by an `Int` key (`%h{$i}`)
+    /// rather than an `@` array.
+    pub(crate) hash: bool,
 }
 
-/// A loop site's variant: the carried kinds it was compiled for, followed by
-/// the element kind of each read array, and the kernel (`None` when that
-/// variant declined).
-pub(crate) type LoopVariant = (Box<[SlotKind]>, Option<std::sync::Arc<LoopKernelInfo>>);
+/// A loop site's variant: a code for the kind of each carried slot, followed
+/// by a code for the shape and element kind of each read array or hash, and
+/// the kernel (`None` when that variant declined).
+pub(crate) type LoopVariant = (Box<[u8]>, Option<std::sync::Arc<LoopKernelInfo>>);
 
 /// One loop op's kernel state.
 #[derive(Debug)]

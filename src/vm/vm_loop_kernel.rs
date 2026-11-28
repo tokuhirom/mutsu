@@ -129,31 +129,55 @@ impl Interpreter {
             };
         }
         let carried = &carried[..n];
-        // The arrays the body subscripts: each still served by the element
-        // lane, a read one with the element kind its reads compile for, and a
-        // stored one reachable through no other element name.
-        let mut elem_reads = [(0u32, SlotKind::Int); MAX_ELEMS];
-        let mut elem_stores = [0u32; MAX_ELEMS];
+        // The arrays and hashes the body subscripts: each still served by its
+        // element lane; a read one with the shape and element kind its reads
+        // compile for; a stored one reachable through no other element name;
+        // and no store at all next to a grid read (a row has no identity of
+        // its own to compare).
+        use super::vm_loop_kernel_types::ElemShape;
+        let mut elem_reads = [(0u32, ElemShape::Array, SlotKind::Int); MAX_ELEMS];
+        let mut elem_stores = [(0u32, false); MAX_ELEMS];
         let mut node_ids = [0usize; MAX_ELEMS];
         let (mut nr, mut ns) = (0, 0);
         for (i, e) in elems.iter().enumerate() {
             use super::vm_kernel_elem::{
                 kernel_elem_entry_ok, kernel_elem_kind_hint, kernel_elem_node_id,
             };
-            if !kernel_elem_entry_ok(self, code, e.slot, e.name_idx, e.store) {
-                return Ok(LoopOutcome::Declined);
-            }
-            let Some(id) = kernel_elem_node_id(self, e.slot) else {
+            use super::vm_kernel_hash::{
+                kernel_elem2_kind_hint, kernel_hash_entry_ok, kernel_hash_kind_hint,
+                kernel_hash_node_id,
+            };
+            let (ok, id) = if e.hash {
+                (
+                    kernel_hash_entry_ok(self, code, e.slot, e.name_idx, e.store),
+                    kernel_hash_node_id(self, e.slot),
+                )
+            } else {
+                (
+                    kernel_elem_entry_ok(self, code, e.slot, e.name_idx, e.store),
+                    kernel_elem_node_id(self, e.slot),
+                )
+            };
+            let Some(id) = id.filter(|_| ok) else {
                 return Ok(LoopOutcome::Declined);
             };
             if e.store {
-                elem_stores[ns] = e.slot;
+                elem_stores[ns] = (e.slot, e.hash);
                 ns += 1;
             } else {
-                let Some(kind) = kernel_elem_kind_hint(self, e.slot) else {
+                let shaped = if e.hash {
+                    kernel_hash_kind_hint(self, e.slot).map(|k| (ElemShape::Hash, k))
+                } else {
+                    kernel_elem_kind_hint(self, e.slot)
+                        .map(|k| (ElemShape::Array, k))
+                        .or_else(|| {
+                            kernel_elem2_kind_hint(self, e.slot).map(|k| (ElemShape::Grid, k))
+                        })
+                };
+                let Some((shape, kind)) = shaped else {
                     return Ok(LoopOutcome::Declined);
                 };
-                elem_reads[nr] = (e.slot, kind);
+                elem_reads[nr] = (e.slot, shape, kind);
                 nr += 1;
             }
             node_ids[i] = id;
@@ -162,6 +186,9 @@ impl Interpreter {
             if e.store && (0..elems.len()).any(|j| j != i && node_ids[j] == node_ids[i]) {
                 return Ok(LoopOutcome::Declined);
             }
+        }
+        if ns > 0 && elem_reads[..nr].iter().any(|r| r.1 == ElemShape::Grid) {
+            return Ok(LoopOutcome::Declined);
         }
         let (elem_reads, elem_stores) = (&elem_reads[..nr], &elem_stores[..ns]);
         let Some(info) =
@@ -284,12 +311,18 @@ impl Interpreter {
         ip: usize,
         shape: &LoopShape,
         carried: &[(u32, SlotKind)],
-        elem_reads: &[(u32, SlotKind)],
-        elem_stores: &[u32],
+        elem_reads: &[super::vm_loop_kernel_types::ElemRead],
+        elem_stores: &[(u32, bool)],
     ) -> Option<std::sync::Arc<LoopKernelInfo>> {
         let mut sites = code.jit.loop_kernels.sites.lock().ok()?;
         let site = sites.iter_mut().find(|s| s.ip == ip as u32)?;
-        let key = || carried.iter().chain(elem_reads).map(|c| c.1);
+        use super::vm_loop_kernel_types::{carried_code, elem_code};
+        let key = || {
+            carried
+                .iter()
+                .map(|c| carried_code(c.1))
+                .chain(elem_reads.iter().map(|r| elem_code(r.1, r.2)))
+        };
         if let Some((_, v)) = site
             .variants
             .iter()
@@ -297,7 +330,7 @@ impl Interpreter {
         {
             return v.clone();
         }
-        let kinds: Box<[SlotKind]> = key().collect();
+        let kinds: Box<[u8]> = key().collect();
         // A few kind signatures per site at most; past that, stop compiling.
         if site.variants.len() >= 4 {
             return None;

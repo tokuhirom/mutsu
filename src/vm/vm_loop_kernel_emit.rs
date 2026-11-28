@@ -26,6 +26,8 @@ pub(super) fn clty(k: K) -> types::Type {
         K::Bool => types::I8,
         // A placeholder word: only an `Index` consumes it, by its slot.
         K::Arr(_) => types::I64,
+        // The row index a grid's first subscript applied.
+        K::Row(_) => types::I64,
     }
 }
 
@@ -50,7 +52,7 @@ pub(super) struct Em<'f, 'c> {
     /// Calls emitted so far: the next call's slot in the callee table.
     pub(super) next_call: usize,
     /// The element kind of each array the region reads.
-    pub(super) elem_reads: Vec<(u32, SlotKind)>,
+    pub(super) elem_reads: Vec<super::vm_loop_kernel_types::ElemRead>,
     /// Element helper signatures and context offsets.
     pub(super) elem: super::vm_loop_kernel_emit_elem::ElemSigs,
 }
@@ -244,7 +246,7 @@ impl Em<'_, '_> {
                 continue;
             }
             match op {
-                OpCode::GetLocal(s) if self.elem_reads.iter().any(|(e, _)| e == s) => {
+                OpCode::GetLocal(s) if self.elem_reads.iter().any(|e| e.0 == *s) => {
                     let v = self.b.ins().iconst(types::I64, i64::from(*s));
                     stack.push((v, K::Arr(*s)));
                 }
@@ -254,17 +256,38 @@ impl Em<'_, '_> {
                 }
                 OpCode::Index { .. } => {
                     let (index, _) = stack.pop()?;
-                    let (_, K::Arr(slot)) = stack.pop()? else {
-                        return None;
+                    let (row, k) = stack.pop()?;
+                    let (slot, second) = match k {
+                        K::Arr(s) => (s, false),
+                        K::Row(s) => (s, true),
+                        _ => return None,
                     };
-                    let (_, kind) = *self.elem_reads.iter().find(|(e, _)| *e == slot)?;
-                    let v = self.elem_read(slot, index, kind);
+                    let &(_, shape, kind) = self.elem_reads.iter().find(|e| e.0 == slot)?;
+                    use super::vm_loop_kernel_types::ElemShape;
+                    let v = match (shape, second) {
+                        (ElemShape::Array, _) => self.elem_read(slot, index, kind),
+                        (ElemShape::Hash, _) => self.hash_read(slot, index, kind),
+                        (ElemShape::Grid, false) => {
+                            stack.push((index, K::Row(slot)));
+                            i += 1;
+                            continue;
+                        }
+                        (ElemShape::Grid, true) => self.elem2_read(slot, row, index, kind),
+                    };
                     stack.push((v, K::of(kind)));
                 }
-                OpCode::IndexAssignLocal { slot, .. } => {
+                OpCode::IndexAssignLocal {
+                    slot,
+                    is_positional,
+                    ..
+                } => {
                     let (v, k) = stack.pop()?;
                     let (index, _) = stack.pop()?;
-                    self.elem_store(*slot, index, v, k);
+                    if *is_positional {
+                        self.elem_store(*slot, index, v, k);
+                    } else {
+                        self.hash_store(*slot, index, v, k);
+                    }
                     stack.push((v, k));
                 }
                 OpCode::SinkPopAssign => {
@@ -277,7 +300,7 @@ impl Em<'_, '_> {
                     let v = self.incdec(op, *s)?;
                     stack.push((v, K::Int));
                 }
-                OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor => {
+                OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor | OpCode::BitShiftRight => {
                     let (y, _) = stack.pop()?;
                     let (x, _) = stack.pop()?;
                     let r = self.bitop(op, x, y);
