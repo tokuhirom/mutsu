@@ -4424,9 +4424,10 @@ impl Interpreter {
                 // ... make ... }` -- keeps that `$/` across a regex
                 // smartmatch: rakudo answers the match but leaves `$/`, and so
                 // `$0` / `$<name>`, alone.
+                let slash = crate::symbol::wk::match_var();
                 let saved_slash = self
-                    .is_readonly("/")
-                    .then(|| self.env().get("/").cloned())
+                    .is_readonly_sym(slash)
+                    .then(|| self.env().get_sym(slash).cloned())
                     .flatten();
                 let result = self.exec_smart_match_expr_op(
                     code,
