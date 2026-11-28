@@ -167,6 +167,10 @@ impl Interpreter {
                 let new_val = old.str_appended_nfc(&plan);
                 *guard = new_val.clone();
                 drop(guard);
+                if name == "_" {
+                    self.note_rw_map_topic(&new_val);
+                    self.write_topic_to_source_var(code, &new_val);
+                }
                 self.stack.push(new_val);
                 return Ok(());
             }
@@ -179,6 +183,10 @@ impl Interpreter {
             let new_val = self.coerce_container_cell_store(&arc, new_val)?;
             *guard = new_val.clone();
             drop(guard);
+            if name == "_" {
+                self.note_rw_map_topic(&new_val);
+                self.write_topic_to_source_var(code, &new_val);
+            }
             self.stack.push(new_val);
             return Ok(());
         }

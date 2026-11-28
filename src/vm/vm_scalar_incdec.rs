@@ -279,7 +279,13 @@ impl Interpreter {
         // don't lose updates (Track C), and so closures over this lexical
         // observe the change.
         if let ValueView::ContainerRef(arc) = raw_val.view() {
-            return self.incdec_through_cell(&arc, name, name_sym, k);
+            self.incdec_through_cell(&arc, name, name_sym, k)?;
+            if name == "_" {
+                let updated = arc.load().into_deref();
+                self.note_rw_map_topic(&updated);
+                self.write_topic_to_source_var(code, &updated);
+            }
+            return Ok(());
         }
         // A Proxy: FETCH, step, STORE.
         if let ValueView::Proxy { storer, .. } = raw_val.view()
