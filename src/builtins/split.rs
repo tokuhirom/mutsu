@@ -222,6 +222,9 @@ pub(crate) fn split_by_string(
         return result;
     }
 
+    if let Some(parts) = split_ascii_by_string(text, sep, limit) {
+        return parts;
+    }
     let index = crate::builtins::grapheme_index::GraphemeIndex::build(text);
     let max_splits = limit.map(|l| if l > 0 { l - 1 } else { 0 });
     let mut splits_done = 0;
@@ -268,6 +271,63 @@ pub(crate) fn split_by_string(
                 return result;
             }
         }
+    }
+}
+
+/// [`split_by_string`] for an ASCII invocant with no `\r` and a non-empty
+/// separator, else `None`. Every char of such a text is a grapheme of its own
+/// (`"\r\n"` is the only multi-char ASCII cluster), so a byte-level hit
+/// always starts and ends on grapheme boundaries and a byte offset is the
+/// grapheme index `:k`/`:v`/`:p` report: the grapheme index the general path
+/// builds per call is not needed.
+// Cost: O(n + k), n = bytes of the invocant, k = pieces produced.
+fn split_ascii_by_string(
+    text: &str,
+    sep: &str,
+    limit: Option<usize>,
+) -> Option<Vec<(Piece, Option<SplitMatch>)>> {
+    if !text.is_ascii() || text.as_bytes().contains(&b'\r') {
+        return None;
+    }
+    let max_splits = limit.map(|l| l.saturating_sub(1));
+    // A one-byte separator (`' '`, `','`) is searched as a char, which the
+    // standard library answers with `memchr`.
+    let sep_char = match sep.as_bytes() {
+        [b] => Some(*b as char),
+        _ => None,
+    };
+    let sep_value = Value::str_from(sep);
+    let mut result = Vec::new();
+    let mut pos = 0;
+    let mut splits_done = 0;
+    loop {
+        if max_splits.is_some_and(|max| splits_done >= max) {
+            result.push((Piece::Range(pos, text.len()), None));
+            return Some(result);
+        }
+        let hit = match sep_char {
+            Some(c) => text[pos..].find(c),
+            None => text[pos..].find(sep),
+        };
+        let Some(off) = hit else {
+            result.push((Piece::Range(pos, text.len()), None));
+            return Some(result);
+        };
+        let from = pos + off;
+        let to = from + sep.len();
+        result.push((
+            Piece::Range(pos, from),
+            Some(SplitMatch {
+                from,
+                to,
+                matched: sep_value.clone(),
+                splitter_index: 0,
+                is_regex: false,
+                match_obj: None,
+            }),
+        ));
+        pos = to;
+        splits_done += 1;
     }
 }
 
