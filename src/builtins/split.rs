@@ -297,7 +297,17 @@ fn split_ascii_by_string(
         _ => None,
     };
     let sep_value = Value::str_from(sep);
-    let mut result = Vec::new();
+    // Sized for every piece up front (a one-byte separator's hits are counted
+    // in one vectorized pass), so a 20-word line does not regrow the vector
+    // five times.
+    let hits = match sep_char {
+        Some(c) => text.bytes().filter(|&b| b == c as u8).count(),
+        None => 0,
+    };
+    let mut result = Vec::with_capacity(match max_splits {
+        Some(max) => hits.min(max) + 1,
+        None => hits + 1,
+    });
     let mut pos = 0;
     let mut splits_done = 0;
     loop {
