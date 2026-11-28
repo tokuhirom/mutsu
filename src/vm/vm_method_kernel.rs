@@ -291,7 +291,7 @@ impl Interpreter {
                     sp += 1;
                 }
                 KOp::Attr(idx) => {
-                    stack[sp] = number_of(&self.kernel_attr_read(body, idx as usize, receiver)?)?;
+                    stack[sp] = self.kernel_attr_read(body, idx as usize, receiver)?;
                     sp += 1;
                 }
                 KOp::ParamAccessor(i, name, memo) => {
@@ -322,11 +322,12 @@ impl Interpreter {
         Some(to_value(stack[0]))
     }
 
-    /// The receiver's scalar attribute behind local slot `idx` of `body`, from
-    /// the body's attribute-site cache (filled by the slot frame's own reads);
-    /// `None` when the site is cold or holds another layout.
+    /// The receiver's scalar attribute behind local slot `idx` of `body` as a
+    /// number, from the body's attribute-site cache (filled by the slot
+    /// frame's own reads); `None` when the site is cold, holds another layout
+    /// or the attribute is not a plain number.
     // Cost: O(1).
-    fn kernel_attr_read(&self, body: &CompiledCode, idx: usize, receiver: &Value) -> Option<Value> {
+    fn kernel_attr_read(&self, body: &CompiledCode, idx: usize, receiver: &Value) -> Option<N> {
         let (layout_id, slot) = body.attr_sites.cached(body.attr_site_words(), idx)?;
         let ValueView::Instance { attributes, .. } = receiver.view() else {
             return None;
@@ -335,7 +336,9 @@ impl Interpreter {
         if map.layout()?.id() != layout_id || map.has_undeclared() {
             return None;
         }
-        Some(map.slot_vivify(slot)?.deref_container())
+        // Read in place: `number_of` looks through the one container a
+        // scalar attribute holds, as `deref_container` would.
+        number_of(map.slot_vivify(slot)?)
     }
 
     /// `target.name` as a number, when that is the generated accessor's plain
@@ -361,7 +364,7 @@ impl Interpreter {
                 return None;
             }
             let slot = super::vm_accessor_lane::accessor_lane_slot_index(word as u32);
-            return number_of(&map.slot_vivify(slot)?.deref_container());
+            return number_of(map.slot_vivify(slot)?);
         }
         drop(map);
         if self.caches.accessor_lane.is_empty() {
