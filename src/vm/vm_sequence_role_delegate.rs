@@ -10,7 +10,7 @@
 use super::*;
 
 impl Interpreter {
-    fn is_sequence_role_method(method: &str) -> bool {
+    pub(super) fn is_sequence_role_method(method: &str) -> bool {
         matches!(
             method,
             "list"
