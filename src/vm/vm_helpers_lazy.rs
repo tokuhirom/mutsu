@@ -635,6 +635,12 @@ impl Interpreter {
             }
             match arg.view() {
                 ValueView::Pair(_, v) | ValueView::ValuePair(_, v) => {
+                    // Every step below is a no-op unless the value (through
+                    // its container) is a Seq or a lazy list: ask the tags
+                    // before copying the value out of its container.
+                    if !v.with_deref(|inner| inner.is_seq_value() || inner.is_lazy_list_value()) {
+                        continue;
+                    }
                     let v = v.deref_container();
                     self.reify_map_grep_seq(&v)?;
                     // A named argument's gather fills what it is bound to
