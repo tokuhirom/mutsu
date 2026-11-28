@@ -99,29 +99,28 @@ fn resolve(nodes: &[NfaNode], node: usize, slots: &mut [Slot], depth: usize) -> 
     guard
 }
 
-/// The *gate* of every root of a several-root NFA (`LtmNfa::roots`), or
-/// `None` when some root has none: the set of characters a match of that root
-/// can begin with. It is a node guard that also looks through a `<name>`
-/// call into the callee's body, which the run's own guards must not do (a call
-/// can be a recursion-cut fate, or read a live left-recursion seed, without
-/// testing a character). The ranking that uses a gate
-/// (`ltm_rank_alternation`) answers neither case: a recursion-cut fate at the
-/// start measures the same `(0, 0)` as a root that fails, and the ranking does
-/// not use the gates while any left-recursion activation is live.
+/// The *gate* of every root of a several-root NFA (`LtmNfa::roots`), each
+/// `None` when that root has none, and `None` altogether when no root has
+/// one: the set of characters a match of that root can begin with. It is a
+/// node guard that also looks through a `<name>` call into the callee's body
+/// and covers an `:i` leaf, which the run's own guards must not do (a call can be a recursion-cut
+/// fate, or read a live left-recursion seed, without testing a character).
+/// The rankings that use a gate (`LtmNfa::gated_ranking`) answer neither case:
+/// a recursion-cut fate at the start needs a call to a rule already on the
+/// left-call path, which is a cycle here and leaves the root without a gate,
+/// and the gates are not used while any left-recursion activation is live.
 // Cost: O(s + t), s = nodes, t = split targets and calls (each node is
 // resolved once).
 pub(super) fn root_gates(
     nodes: &[NfaNode],
     roots: &[super::regex_ltm_nfa::NfaRoot],
-) -> Option<Box<[FirstSet]>> {
-    if roots.len() < 2 {
-        return None;
-    }
+) -> Option<Box<[Option<FirstSet>]>> {
     let mut slots = vec![Slot::Todo; nodes.len()];
-    roots
+    let gates: Box<[Option<FirstSet>]> = roots
         .iter()
         .map(|root| resolve_through_calls(nodes, root.entry as usize, &mut slots, 0))
-        .collect()
+        .collect();
+    gates.iter().any(Option::is_some).then_some(gates)
 }
 
 /// [`resolve`], following a call into its callee's body.
@@ -138,12 +137,15 @@ fn resolve_through_calls(
     }
     slots[node] = Slot::Active;
     let guard = match &nodes[node] {
+        // A gate, unlike a run guard, covers an `:i` leaf too: the case-fold
+        // first set is the prefilter's (ADR-0099), which admits every
+        // non-ASCII character and folds only ASCII.
         NfaNode::Leaf {
             atom,
-            ic: false,
+            ic,
             kind: LeafKind::Consume,
             ..
-        } => atom_guard(atom),
+        } => atom_guard_ic(atom, *ic),
         NfaNode::Split(targets) if !targets.is_empty() && depth < MAX_DEPTH => {
             let mut union = FirstSet::empty();
             let mut guarded = true;
@@ -173,13 +175,18 @@ fn resolve_through_calls(
 /// What the matcher of a `Consume` leaf's `atom` can accept at a start
 /// position, for the atoms the module comment names.
 fn atom_guard(atom: &RegexAtom) -> Option<FirstSet> {
+    atom_guard_ic(atom, false)
+}
+
+/// [`atom_guard`] of a leaf matched with `:i` when `ic` is set.
+fn atom_guard_ic(atom: &RegexAtom, ic: bool) -> Option<FirstSet> {
     match atom {
-        RegexAtom::Literal(ch) => Some(literal_first_set(*ch, false)),
+        RegexAtom::Literal(ch) => Some(literal_first_set(*ch, ic)),
         // The whole grapheme has to match, so its first character has to.
         RegexAtom::LiteralGrapheme(grapheme) => {
-            Some(literal_first_set(grapheme.chars().next()?, false))
+            Some(literal_first_set(grapheme.chars().next()?, ic))
         }
-        RegexAtom::CharClass(class) => Some(class_first_set(class, false)),
+        RegexAtom::CharClass(class) => Some(class_first_set(class, ic)),
         RegexAtom::Newline => Some(newline_first_set()),
         _ => None,
     }
@@ -193,7 +200,8 @@ mod tests {
     /// A guard is a superset of what its leaf matches: for every atom with a
     /// guard and every character at the start of a subject (alone, or followed
     /// by what can change how it groups), the matcher accepting the atom
-    /// implies the guard admitting the character.
+    /// implies the guard admitting the character. With `:i` too, as a root
+    /// gate covers it (`atom_guard_ic`).
     #[test]
     fn a_guard_admits_every_character_its_leaf_matches() {
         let mut interp = Interpreter::new();
@@ -220,30 +228,40 @@ mod tests {
             "<[\\n]>",
             "<-[\\n]>",
             "\\x[301]",
+            "K",
+            "s",
+            "i",
+            "\u{DF}",
+            "\u{130}",
+            "'null'",
+            "<[A..F]>",
+            "<-[a..z]>",
         ] {
             let parsed = crate::runtime::regex_parser::RegexParser::new(Some(&interp))
                 .parse_regex_with_mode(pattern, RegexParseMode::Match)
                 .expect("the pattern parses");
             let atom = &parsed.tokens[0].atom;
-            let Some(guard) = atom_guard(atom) else {
-                continue;
-            };
-            guarded += 1;
-            for cp in (0u32..0x400).chain([0x661, 0x2028, 0x3000, 0x1F600]) {
-                let Some(c) = char::from_u32(cp) else {
+            for ic in [false, true] {
+                let Some(guard) = atom_guard_ic(atom, ic) else {
                     continue;
                 };
-                for follow in follows {
-                    let mut chars = vec![c];
-                    chars.extend_from_slice(follow);
-                    if interp
-                        .match_consuming_atom(atom, &chars, 0, pkg, false)
-                        .is_some()
-                    {
-                        assert!(
-                            guard.admits_at(&chars, 0),
-                            "{pattern}: the matcher accepts {c:?} followed by {follow:?}, the guard rejects it"
-                        );
+                guarded += 1;
+                for cp in (0u32..0x400).chain([0x661, 0x212A, 0x2028, 0x3000, 0x1F600]) {
+                    let Some(c) = char::from_u32(cp) else {
+                        continue;
+                    };
+                    for follow in follows {
+                        let mut chars = vec![c];
+                        chars.extend_from_slice(follow);
+                        if interp
+                            .match_consuming_atom(atom, &chars, 0, pkg, ic)
+                            .is_some()
+                        {
+                            assert!(
+                                guard.admits_at(&chars, 0),
+                                "{pattern} (ic {ic}): the matcher accepts {c:?} followed by {follow:?}, the guard rejects it"
+                            );
+                        }
                     }
                 }
             }
