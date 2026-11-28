@@ -180,10 +180,10 @@ impl Em<'_, '_> {
         let slot_v = self.b.ins().iconst(types::I32, slot as i64);
         let prefix_v = self.b.ins().iconst(types::I32, prefix as i64);
         let f = self.b.ins().iconst(self.ptr, f as i64);
-        let call = self
-            .b
-            .ins()
-            .call_indirect(sig, f, &[interp, code, slot_v, prefix_v, key, value]);
+        let call =
+            self.b
+                .ins()
+                .call_indirect(sig, f, &[interp, code, slot_v, prefix_v, key, value]);
         let status = self.b.inst_results(call)[0];
         self.guard_status(status);
     }

@@ -76,7 +76,8 @@ impl Walk<'_> {
         let mut open = true;
         let mut incoming: BTreeMap<usize, Vec<K>> = BTreeMap::new();
         let edge = |incoming: &mut BTreeMap<usize, Vec<K>>, t: usize, stack: &[K]| -> Option<()> {
-            if t <= start || t > end || stack.iter().any(super::vm_loop_kernel_types::k_is_pending) {
+            if t <= start || t > end || stack.iter().any(super::vm_loop_kernel_types::k_is_pending)
+            {
                 return None;
             }
             match incoming.get(&t) {

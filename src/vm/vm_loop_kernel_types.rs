@@ -145,7 +145,10 @@ pub(super) fn k_is_pending(k: &K) -> bool {
 /// Whether constant `idx` is a `Str` (the prefix of a `"key-$i"` key).
 // Cost: O(1).
 pub(super) fn str_const(code: &CompiledCode, idx: u32) -> bool {
-    matches!(code.constants.get(idx as usize).map(Value::view), Some(ValueView::Str(_)))
+    matches!(
+        code.constants.get(idx as usize).map(Value::view),
+        Some(ValueView::Str(_))
+    )
 }
 
 /// A numeric constant operand.
