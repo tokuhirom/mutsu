@@ -909,7 +909,9 @@ impl Interpreter {
             let topic_unobservable = plan.topic_unobservable && arity == 1;
             let lean_readonly = topic_unobservable && data.params.is_empty();
             let topic_slot = plan.topic_slot.filter(|_| topic_unobservable);
-            let topic_env_free = topic_slot.is_some() && plan.topic_env_free;
+            let topic_env_free = topic_slot.is_some()
+                && plan.topic_env_free
+                && crate::vm::vm_jit::USER_INFIX_DECLS.load(std::sync::atomic::Ordering::Relaxed) == 0;
 
             // CP-3 collapse: run the map loop with fresh execution registers
             // (replaces the `mem::take(self)` + `VM::new` sub-VM, reusing one
