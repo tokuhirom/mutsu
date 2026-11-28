@@ -89,6 +89,8 @@ impl Interpreter {
             | ValueView::RangeExclStart(_, _)
             | ValueView::RangeExclBoth(_, _)
             | ValueView::GenericRange { .. } => "Range",
+            // A row of a multi-dimensional shaped array (#19282).
+            ValueView::Array(items, _) if items.row_view => "Array::ShapedView",
             ValueView::Array(_, kind) if kind.is_real_array() => "Array",
             ValueView::Array(_, _) => "List",
             // `value_type_name` is the single oracle for what Raku type a

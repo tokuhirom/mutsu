@@ -211,6 +211,32 @@ impl Interpreter {
                         } else {
                             val
                         };
+                        // A row of a multi-dimensional array is itself shaped
+                        // (`@a[1].shape` is the row shape, `@a[1]` its view,
+                        // #19282): build it as the declaration builds rows.
+                        let mut val = if dims.len() > 1 && matches!(val.view(), ValueView::Array(..)) {
+                            let rest: Vec<Value> =
+                                dims[1..].iter().map(|&d| Value::int(d as i64)).collect();
+                            let shape = if rest.len() == 1 {
+                                rest[0].clone()
+                            } else {
+                                Value::array(rest)
+                            };
+                            self.try_native_array_construct(
+                                class_name,
+                                base_class_name,
+                                type_args,
+                                &[
+                                    Value::pair("shape".to_string(), shape),
+                                    Value::pair("data".to_string(), val),
+                                ],
+                            )?
+                        } else {
+                            val
+                        };
+                        if dims.len() > 1 {
+                            crate::value::shaped_array::mark_row_view(&mut val);
+                        }
                         if i < new_items.len() {
                             new_items[i] = val;
                         }

@@ -155,6 +155,41 @@ pub(crate) fn jagged_array_shape(value: &Value) -> Option<Vec<Option<usize>>> {
     Some(shape.iter().map(|&d| (d != 0).then_some(d)).collect())
 }
 
+/// Marks the row `row` of a multi-dimensional shaped array as the row view
+/// rakudo hands out for it (`ArrayData::row_view`, #19282).
+// Cost: O(1).
+pub(crate) fn mark_row_view(row: &mut Value) {
+    row.with_array_mut(|items, _| crate::value::gc_data_mut(items).row_view = true);
+}
+
+/// Whether `value` is a row view of a multi-dimensional shaped array.
+// Cost: O(1).
+pub(crate) fn is_row_view(value: &Value) -> bool {
+    matches!(value.view(), ValueView::Array(items, _) if items.row_view)
+}
+
+/// A copy of the shaped array (or row view) `value`, every level a new array
+/// with its shape kept; the copied rows below the top are row views of the
+/// copy, the top one is a view only when `top_is_view`.
+// Cost: O(E), E = elements.
+pub(crate) fn copy_shaped_rows(value: &Value, top_is_view: bool) -> Value {
+    let ValueView::Array(items, kind) = value.view() else {
+        return value.clone();
+    };
+    let mut data = (**items).clone();
+    for item in data.live_mut().iter_mut() {
+        if matches!(item.view(), ValueView::Array(_, ArrayKind::Shaped)) {
+            *item = copy_shaped_rows(item, true);
+        } else if matches!(item.view(), ValueView::ContainerRef(_)) {
+            // A bound element is a cell shared with the source; the copy
+            // holds its value, so writes to the copy stay in the copy.
+            *item = item.deref_container();
+        }
+    }
+    data.row_view = top_is_view;
+    Value::array_with_kind(crate::gc::Gc::new(data), kind)
+}
+
 /// Encodes a jagged shape for `ArrayData.shape` (see [`jagged_array_shape`]).
 // Cost: O(d), d = dimensions.
 pub(crate) fn encode_jagged_shape(shape: &[Option<usize>]) -> Vec<usize> {
