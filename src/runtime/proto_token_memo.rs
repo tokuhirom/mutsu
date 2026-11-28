@@ -15,10 +15,12 @@ use super::*;
 use crate::symbol::Symbol;
 use std::cell::RefCell;
 
+/// The generation the entries were filled under, and the answers keyed by
+/// (current package, name).
+type ProtoTokenMemo = (u64, rustc_hash::FxHashMap<(Symbol, Symbol), bool>);
+
 thread_local! {
-    /// The generation the entries were filled under, and the entries.
-    static MEMO: RefCell<(u64, rustc_hash::FxHashMap<(Symbol, Symbol), bool>)> =
-        RefCell::new((0, rustc_hash::FxHashMap::default()));
+    static MEMO: RefCell<ProtoTokenMemo> = RefCell::new((0, rustc_hash::FxHashMap::default()));
 }
 
 impl Interpreter {
