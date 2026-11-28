@@ -212,15 +212,8 @@ impl Interpreter {
         // EVAL modifying a `$GLOBAL::` variable, are now reconciled by precise
         // write-throughs at their own sites).
         let rhs_names = Self::smartmatch_rhs_names(code, rhs_start, rhs_end);
-        // `$x ~~ / $needle /`: the literal's closure carries `$needle` from its
-        // slot and the match installs it, so neither publish is observable.
-        let closure_covers = rhs_names.adverb.is_empty()
-            && !rhs_names.sync.is_empty()
-            && self.lone_regex_closure_covers(code, rhs_start, rhs_end, &rhs_names.sync);
-        if !closure_covers {
-            self.apply_smartmatch_sync(code, &rhs_names.sync);
-            self.apply_smartmatch_adverb_sync(code, &rhs_names.adverb);
-        }
+        self.apply_smartmatch_sync(code, &rhs_names.sync);
+        self.apply_smartmatch_adverb_sync(code, &rhs_names.adverb);
         let saved_in_smartmatch_rhs = self.topic_state.in_smartmatch_rhs;
         self.topic_state.in_smartmatch_rhs = true;
         self.topic_state.transliterate_in_smartmatch = false;
@@ -276,12 +269,8 @@ impl Interpreter {
         }
         // The RHS may have *computed* a regex (`$x ~~ $re`) whose pattern names
         // this frame's locals; publish those before matching against it.
-        // A covered lone literal's value names are its own pattern's, which
-        // `closure_covers` already accounted for.
-        if !closure_covers {
-            let value_names = Self::smartmatch_value_sync(&left, &right);
-            self.apply_smartmatch_sync(code, &value_names);
-        }
+        let value_names = Self::smartmatch_value_sync(&left, &right);
+        self.apply_smartmatch_sync(code, &value_names);
         let native_lhs_match = self.direct_native_lhs_match(
             lhs_var,
             lhs_boxed_native,
