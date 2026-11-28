@@ -86,3 +86,46 @@ say "values=", values-sum();
     my $twice = values-sum() + values-sum();
     say "twice=", $twice;
 }
+
+# `%h{"prefix$i"} = v` in a counted loop: the key's text is built by the
+# kernel's store helper (K::IntKey).
+sub prefixed() {
+    my %h;
+    for ^1000 { %h{"key-$_"} = $_ * 2 }
+    my $sum = 0;
+    for %h.values { $sum += $_ }
+    "{%h.elems},{%h<key-0>},{%h<key-999>},$sum"
+}
+say "prefixed=", prefixed();
+{
+    my %h;
+    for -50..50 { %h{"n$_"} = $_ * 0.5e0 }
+    say "prefixed-num=", %h<n-50>, ",", %h<n50>, ",", %h.elems;
+}
+{
+    my %h;
+    for ^300 { %h{"é$_"} = $_ }
+    for ^300 { %h{"é$_"} = $_ + 1 }
+    say "prefixed-overwrite=", %h.elems, ",", %h{"é299"}, ",", %h.keys.grep(*.starts-with("é")).elems;
+}
+{
+    # A product that overflows mid-loop bails the kernel; the generic rerun
+    # stores the big integer.
+    my %h;
+    for ^100 { %h{"p$_"} = $_ * 4611686018427387904 }
+    say "prefixed-overflow=", %h<p99>, ",", %h.elems;
+}
+{
+    # A bound entry: the kernel declines there and the generic store writes
+    # through the binding.
+    my %h;
+    my $x = 0;
+    %h<b5> := $x;
+    for ^50 { %h{"b$_"} = $_ * 10 }
+    say "prefixed-bound=", $x, ",", %h<b49>;
+}
+{
+    my Int %t;
+    for ^50 { %t{"t$_"} = $_ }
+    say "prefixed-typed=", %t.values.sum;
+}

@@ -59,6 +59,9 @@ pub(crate) struct LoopKernelInfo {
     /// Sub calls `(CallFunc ip, arity)`, each resolved to a sub kernel at
     /// entry; the index is the call's slot in the callee table.
     pub(crate) calls: Box<[(u32, u8)]>,
+    /// The region stores under a `"prefix$i"` key, whose text the store
+    /// helper builds as the built-in interpolation would.
+    pub(crate) str_keys: bool,
 }
 
 /// An array local a loop kernel's body reads (`@a[$i]`) or stores into

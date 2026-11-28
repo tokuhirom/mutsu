@@ -1,5 +1,6 @@
 # A `for` over a materialized list of plain Ints, whose body reads `$_`
-# through its own slot, runs as a loop kernel (vm_for_loop_list_kernel). It
+# through its own slot, runs as a loop kernel (vm_for_loop_list_kernel), and a
+# loop kernel stores under a `"prefix$i"` hash key (K::IntKey). It
 # must leave exactly what the generic loop leaves, including a bail that
 # reruns an iteration generically and lists the kernel must refuse.
 #
@@ -7,7 +8,7 @@
 # `MUTSU_JIT=off`. The shapes live in t/fixtures/kernel-list-shapes.raku.
 use Test;
 
-plan 8;
+plan 9;
 
 my $fixture = $?FILE.IO.parent(2).add('fixtures/kernel-list-shapes.raku').Str;
 ok $fixture.IO.e, "fixture is where this test expects it ($fixture)";
@@ -42,3 +43,11 @@ is-deeply
     ('999000', '41791250', '1208925819614629174706176', '41', '2525',
      'outer,1275', '6,0', 'X::Numeric::DivideByZero', '1998000').List,
     'the transcript carries the expected answers';
+
+# The `%h{"prefix$i"} = v` store shapes (a counted loop's kernel builds the
+# key's text in its store helper).
+is-deeply
+    %got<prefixed prefixed-num prefixed-overwrite prefixed-overflow prefixed-bound prefixed-typed>.List,
+    ('1000,0,1998,999000', '-25,25,101', '300,300,300', '456556915824311402496,100',
+     '50,490', '1225').List,
+    'the prefixed-key store shapes carry the expected answers';

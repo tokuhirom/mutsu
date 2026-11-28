@@ -138,6 +138,22 @@ fn build(
             sig.returns.push(AbiParam::new(types::I32));
             b.import_signature(sig)
         },
+        store_prefixed_int: {
+            let mut sig = cranelift_codegen::ir::Signature::new(module.isa().default_call_conv());
+            for t in [ptr, ptr, types::I32, types::I32, types::I64, types::I64] {
+                sig.params.push(AbiParam::new(t));
+            }
+            sig.returns.push(AbiParam::new(types::I32));
+            b.import_signature(sig)
+        },
+        store_prefixed_num: {
+            let mut sig = cranelift_codegen::ir::Signature::new(module.isa().default_call_conv());
+            for t in [ptr, ptr, types::I32, types::I32, types::I64, types::F64] {
+                sig.params.push(AbiParam::new(t));
+            }
+            sig.returns.push(AbiParam::new(types::I32));
+            b.import_signature(sig)
+        },
         interp_offset: std::mem::offset_of!(LoopCtx, interp) as i32,
         code_offset: std::mem::offset_of!(LoopCtx, code) as i32,
     };
