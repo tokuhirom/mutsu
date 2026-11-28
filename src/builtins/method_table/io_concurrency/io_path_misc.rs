@@ -1,6 +1,6 @@
 //! `IO::Path`'s remaining rows (ADR-11276 §9.19): `Numeric` (the basename as a
 //! number), `child` (with `:secure`, which resolves against the filesystem),
-//! `resolve`, `dir` and `watch`.
+//! `resolve`, `resolve-inside`, `dir` and `watch`.
 
 use super::io_path_ctx::{PathCtx, joined_args};
 use crate::builtins::method_table::{Handler, MethodRow, Named, RowFlags};
@@ -35,6 +35,13 @@ pub(super) static ROWS: &[MethodRow] = &[
         resolve_row,
         RowFlags::NONE.or(RowFlags::DEFINITE),
         &["completely"]
+    ),
+    row!(
+        "resolve-inside",
+        1,
+        resolve_inside_row,
+        RowFlags::NONE.or(RowFlags::DEFINITE),
+        &[]
     ),
     row!("dir", 0, dir_row, RowFlags::DEFINITE_MULTI, &["test"]),
     row!(
@@ -85,6 +92,21 @@ fn resolve_row(
 ) -> Option<Result<Value, RuntimeError>> {
     let ctx = PathCtx::of(target)?;
     Some(interp.io_path_resolve(&ctx.attributes, ctx.class, named.pairs()))
+}
+
+/// `IO::Path.resolve-inside($io)`: the resolved path when inside `$io`, else
+/// `Nil`.
+// Cost: O(p + q) plus one filesystem query per segment of either path, p, q =
+// lengths of the two paths.
+fn resolve_inside_row(
+    interp: &mut Interpreter,
+    target: &Value,
+    args: &[Value],
+    _named: Named<'_>,
+) -> Option<Result<Value, RuntimeError>> {
+    let ctx = PathCtx::of(target)?;
+    let root = args.first()?;
+    Some(interp.io_path_resolve_inside(&ctx.attributes, ctx.class, root))
 }
 
 /// `IO::Path.dir(:test)`.
