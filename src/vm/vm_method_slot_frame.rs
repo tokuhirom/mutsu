@@ -70,6 +70,9 @@ pub(super) fn slot_frame_body_ok(
         | OpCode::Add
         | OpCode::Sub
         | OpCode::Mul
+        // A quotient (`$b * $h / 2`): like the other arithmetic ops it reads
+        // and writes no name; an `infix:</>` candidate builds its own frame.
+        | OpCode::Div
         // Unwraps the value on the stack; reads and writes no name.
         | OpCode::DerefContainer => true,
         // A method call on a stack value with no arguments (`($r * 4).Int`):
@@ -101,7 +104,9 @@ pub(super) fn slot_frame_body_ok(
             arg_sources_idx: None,
             ..
         } => is_param_slot(*slot) && cc.const_sym(*name_idx) != crate::sym!("VAR"),
-        OpCode::GetLocal(idx) => cc.local_read_plain(*idx as usize),
+        OpCode::GetLocal(idx) => {
+            cc.local_read_plain(*idx as usize) || slot_attr_read(cc, *idx as usize)
+        }
         _ => false,
     });
     ops_ok
@@ -109,6 +114,23 @@ pub(super) fn slot_frame_body_ok(
             .locals
             .iter()
             .all(|init| !matches!(init, LocalInit::Outer))
+}
+
+/// Whether local slot `idx` of `cc` is a scalar attribute (`$!x`, `$.x`),
+/// which a slot frame reads from the receiver's attribute cell
+/// ([`Interpreter::slot_frame_attr_read`]) rather than by name.
+// Cost: O(1) (the memoized `local_attr_key` table).
+pub(super) fn slot_attr_read(cc: &CompiledCode, idx: usize) -> bool {
+    matches!(cc.local_attr_key(idx), Some((_, _, '$')))
+}
+
+/// Whether the slot body `cc` reads any scalar attribute.
+// Cost: O(n), n = ops.
+pub(super) fn slot_body_reads_attrs(cc: &CompiledCode) -> bool {
+    cc.ops.iter().any(|op| {
+        matches!(op, OpCode::GetLocal(idx)
+            if !cc.local_read_plain(*idx as usize) && slot_attr_read(cc, *idx as usize))
+    })
 }
 
 /// The body a slot frame runs for `cc`, which [`slot_frame_body_ok`] admitted:
@@ -150,7 +172,36 @@ impl Interpreter {
     // Cost: O(1).
     #[inline]
     pub(super) fn slot_frame_entry_ok(&self) -> bool {
-        crate::vm::vm_jit::local_read_unspoiled() && self.lexicals.var_bindings.is_empty()
+        crate::vm::vm_jit::local_read_unspoiled()
+            && self.lexicals.var_bindings.is_empty()
+            // The attribute read below answers from the instance cell; the
+            // general `GetLocal` arm consults an atomic registration, a
+            // cross-thread dirty copy or a container request first, so any
+            // of those keeps the lean frame.
+            && !self.rw_return_context
+            && !self.atomic_var_seen()
+            && !self.shared_vars_dirty_any()
+    }
+
+    /// `GetLocal` of a scalar attribute in a slot frame (`slot_attr_read`):
+    /// the receiver is slot 0, and its attribute cell is the only storage the
+    /// read can mean (a slot-frame owner is never a role, never a CStruct,
+    /// and [`Self::slot_frame_entry_ok`] ruled out every name-keyed answer).
+    /// When the cell holds no such attribute, the value seeded at entry is
+    /// the answer, as the general arm's tail gives it.
+    // Cost: O(1) — one attribute-site read (a cache miss costs the general
+    // attribute resolution, O(m), m = mixin layers).
+    pub(super) fn slot_frame_attr_read(&mut self, code: &CompiledCode, idx: usize) {
+        if let Some(val) = self.read_self_attr_cell_slot(code, idx) {
+            self.stack.push(val);
+            return;
+        }
+        let val = self.locals[idx].clone();
+        if val.is_container_ref() {
+            self.push_container_ref_read(val, false);
+        } else {
+            self.stack.push(val);
+        }
     }
 
     /// Run a planned lean call in a slot frame. The caller checked
