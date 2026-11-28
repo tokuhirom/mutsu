@@ -2803,6 +2803,11 @@ impl Value {
 pub(crate) enum PairKey {
     String(String),
     Value(Value),
+    /// A string key sharing the flat body (`StrBody::Flat`, nothing else) of
+    /// the `Str` it was built from: a named argument's key is a constant of
+    /// its call site, so the Pair holds a reference instead of a copy
+    /// (`Value::pair_str_key`, #19384).
+    Shared(Arc<StrBody>),
 }
 
 #[derive(Debug)]

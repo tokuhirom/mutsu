@@ -93,6 +93,23 @@ impl StrBody {
         self
     }
 
+    /// The buffer of a [`StrBody::Flat`] body. Only a flat body is ever put
+    /// into a shared Pair key (`PairKey::Shared`), so another one here is an
+    /// invariant violation; it answers an empty string rather than panic.
+    ///
+    /// Cost: O(1).
+    #[inline]
+    pub(crate) fn flat_string(&self) -> &String {
+        static EMPTY: String = String::new();
+        match self {
+            StrBody::Flat(s) => s,
+            _ => {
+                debug_assert!(false, "PairKey::Shared holds a non-flat StrBody");
+                &EMPTY
+            }
+        }
+    }
+
     /// `base[start..end]` (byte offsets on `char` boundaries) as a body: a
     /// [`StrBody::Slice`] sharing `base`'s buffer when that is worth it,
     /// otherwise a flat copy.

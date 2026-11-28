@@ -4584,8 +4584,9 @@ impl Interpreter {
                 self.exec_make_pair_op(code)?;
                 *ip += 1;
             }
-            // Cost: O(m), m = chars of a Str key (copied into the Pair); the
-            // value is boxed as for MakePair. Rakudo: O(1) -- see #9252.
+            // Cost: O(1) for a flat Str key (shared with the Pair, #19384);
+            // O(m), m = chars, for a strand or slice key (copied); the value
+            // is boxed as for MakePair. Rakudo: O(1) -- see #9252.
             OpCode::MakeNamedArg { readonly, lazy } => {
                 self.exec_make_named_arg_op(code, *readonly, *lazy);
                 *ip += 1;

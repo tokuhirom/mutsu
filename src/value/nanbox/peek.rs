@@ -1303,6 +1303,7 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
                 let p = peek_gc::<PairData>(bits);
                 match &p.key {
                     PairKey::String(key) => ValueView::Pair(key, &p.value),
+                    PairKey::Shared(body) => ValueView::Pair(body.flat_string(), &p.value),
                     PairKey::Value(key) => ValueView::ValuePair(key, &p.value),
                 }
             }
@@ -1310,6 +1311,7 @@ unsafe fn view_kind<'a>(kind: Kind, bits: u64) -> ValueView<'a> {
                 let p = peek_gc::<PairData>(bits);
                 match &p.key {
                     PairKey::String(key) => ValueView::Pair(key, &p.value),
+                    PairKey::Shared(body) => ValueView::Pair(body.flat_string(), &p.value),
                     PairKey::Value(key) => ValueView::ValuePair(key, &p.value),
                 }
             }

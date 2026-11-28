@@ -32,7 +32,7 @@ impl Interpreter {
     /// directly in an argument list, or a Capture literal's named-lane
     /// element `\(:$a)`) — preserving the in-band named marker those sites
     /// need to reach the callee's binder.
-    // Cost: O(k + l), k = string key bytes, l = by-name locals fallback. Rakudo: O(1) -- see #9252.
+    // Cost: O(k + l), k = key bytes for a strand or slice key (a flat one is shared), l = by-name locals fallback. Rakudo: O(1) -- see #9252.
     ///
     /// `lazy` (#19384): a `WrapVarRef`-tagged value stays in the Pair as it
     /// is, for the `CallMethodMut` site to resolve (`vm_lazy_named_args`).
@@ -63,10 +63,7 @@ impl Interpreter {
         // Use ValuePair for non-string keys, Pair (the named flavour) for
         // string keys — the shape every named-arg key actually has.
         match left.view() {
-            ValueView::Str(_) => {
-                let key = left.to_string_value();
-                self.stack.push(Value::pair(key, right));
-            }
+            ValueView::Str(_) => self.stack.push(Value::pair_str_key(&left, right)),
             _ => {
                 self.stack.push(Value::value_pair(left, right));
             }
