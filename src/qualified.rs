@@ -54,8 +54,8 @@ mod split;
 mod var;
 pub(crate) use split::{
     ends_with_segments, has_separator, is_inside_package, is_type_capture, last_segment,
-    last_separator, segments,
-    separators, split_first, split_qualified, stash_stem, text_segments, type_capture_name,
+    last_separator, segments, separators, split_first, split_qualified, stash_stem, text_segments,
+    type_capture_name,
 };
 pub(crate) use var::{QualifiedVar, qualified_var, qualified_var_package, split_qualified_var};
 
