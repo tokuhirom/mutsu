@@ -1,24 +1,28 @@
 use Test;
 
-plan 7;
+plan 8;
 
 # rakudo's `exit` is overridable through the dynamic `&*EXIT` hook: when one is
-# in scope it is CALLED with the status and `exit` then returns normally,
-# leaving the process running. (The genuine upstream `Test.rakumod`'s
-# `exits-ok` is built entirely on this, but it is a plain language feature.)
+# in scope it is CALLED with the status instead of ending the process. In
+# statement position the call then LEAVES the enclosing block, which returns
+# Nil (the rest of the block is skipped). The genuine upstream `Test.rakumod`'s
+# `exits-ok` is built entirely on this, but it is a plain language feature.
 
 {
     my $seen;
-    my &*EXIT = -> $c { $seen = $c };
-    exit 4;
+    my $after = 'not run';
+    {
+        my &*EXIT = -> $c { $seen = $c };
+        exit 4;
+        $after = 'ran';
+    }
     is $seen, 4, 'exit called the dynamic &*EXIT hook with its status';
-    pass 'and execution continued past the exit';
+    is $after, 'not run', 'and the rest of the block was skipped';
 }
 
 {
     my $seen = -1;
-    my &*EXIT = -> $c { $seen = $c };
-    exit;
+    { my &*EXIT = -> $c { $seen = $c }; exit; }
     is $seen, 0, 'a bare exit hands the hook the default status 0';
 }
 
@@ -51,10 +55,17 @@ plan 7;
     is-deeply ($first, $second), (5, 6), 'sibling blocks each get their own hook';
 }
 
-# `exit` inside a `try` with a hook installed still just calls the hook.
+# A routine whose `exit` is trapped returns Nil, not what follows the exit.
+{
+    sub f { my &*EXIT = -> $c { }; exit 7; 42 }
+    is-deeply f(), Nil, 'a trapped exit makes the routine return Nil';
+}
+
+# `exit` under a hook does not unwind past the routine that called it.
 {
     my $seen;
     my &*EXIT = -> $c { $seen = $c };
-    my $r = do { exit 3; 'after' };
-    is $seen, 3, 'exit under a hook does not unwind';
+    sub g { exit 3; 'after' }
+    my $r = g();
+    is $seen, 3, 'exit under a hook does not unwind the caller';
 }
