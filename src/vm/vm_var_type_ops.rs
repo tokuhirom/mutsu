@@ -61,7 +61,17 @@ impl Interpreter {
         // (see `type_decl_constraint_is_plain_builtin`).
         let plain_builtin =
             self.type_decl_constraint_is_plain_builtin(code, tc_idx, raw_constraint);
-        let constraint: std::borrow::Cow<'_, str> = if plain_builtin {
+        // A registered user class or role named as written resolves to itself
+        // too, per site for one registry generation and package, with the env
+        // bindings that could rename it asked again here
+        // (`type_decl_constraint_is_plain_user_type`). Only the routine-scoped
+        // declaration takes it: its registration is the env entry the seed
+        // below reads back.
+        let plain_user = !plain_builtin
+            && scoped
+            && !hoisted
+            && self.type_decl_constraint_is_plain_user_type(code, tc_idx, raw_constraint);
+        let constraint: std::borrow::Cow<'_, str> = if plain_builtin || plain_user {
             std::borrow::Cow::Borrowed(raw_constraint)
         } else {
             match loan_env!(self, try_resolved_type_capture_name(raw_constraint)) {
@@ -88,6 +98,7 @@ impl Interpreter {
         // memoized flag of the constraint's symbol (`qualified::is_qualified`),
         // and the `[` probe is a byte scan (`str_scan.rs`).
         let constraint: std::borrow::Cow<'_, str> = if !plain_builtin
+            && !plain_user
             && !crate::qualified::is_qualified(match &constraint {
                 // The constant-pool spelling has its symbol in the chunk's table.
                 std::borrow::Cow::Borrowed(_) => code.const_sym(tc_idx),
@@ -101,6 +112,7 @@ impl Interpreter {
                 None => constraint,
             }
         } else if !plain_builtin
+            && !plain_user
             && let Some((base, _)) = constraint.split_once('[')
             && !base.is_empty()
             && !crate::qualified::is_qualified_str(base)
@@ -127,7 +139,8 @@ impl Interpreter {
             self.clear_atomic_array_state(name);
         }
         if scoped {
-            let plain_meta = plain_builtin.then(|| code.constants[tc_idx as usize].clone());
+            let plain_meta =
+                (plain_builtin || plain_user).then(|| code.constants[tc_idx as usize].clone());
             self.loan_env_for(|i| {
                 i.set_var_type_constraint_routine_scoped(
                     name,
@@ -173,9 +186,10 @@ impl Interpreter {
         {
             let init_val = match self.unshadowed_native_nil_seed(&constraint) {
                 Some(native) => native,
+                None if plain_user => Value::package(code.const_sym(tc_idx)),
                 None => {
                     let base = self.var_type_constraint_sym(name_sym);
-                    self.typed_scalar_nil_seed_value_with_base(&constraint, base)
+                    self.typed_scalar_nil_seed_value_with_base(&constraint, base.as_deref())
                 }
             };
             self.locals[slot] = init_val;
@@ -255,9 +269,10 @@ impl Interpreter {
                 // `name` three times per execution (#12151).
                 let init_val = match self.unshadowed_native_nil_seed(&constraint) {
                     Some(native) => native,
+                    None if plain_user => Value::package(code.const_sym(tc_idx)),
                     None => {
                         let base = self.var_type_constraint_sym(name_sym);
-                        self.typed_scalar_nil_seed_value_with_base(&constraint, base)
+                        self.typed_scalar_nil_seed_value_with_base(&constraint, base.as_deref())
                     }
                 };
                 if hoisted {
@@ -449,7 +464,7 @@ impl Interpreter {
             return native;
         }
         let base = loan_env!(self, var_type_constraint(name));
-        self.typed_scalar_nil_seed_value_with_base(constraint, base)
+        self.typed_scalar_nil_seed_value_with_base(constraint, base.as_deref())
     }
 
     /// [`Self::native_nil_seed_value`] unless a user subset spelled like the
@@ -489,7 +504,7 @@ impl Interpreter {
     pub(crate) fn typed_scalar_nil_seed_value_with_base(
         &mut self,
         constraint: &str,
-        base: Option<String>,
+        base: Option<&str>,
     ) -> Value {
         // A user subset spelled like a native type shadows it (#12359).
         if !self.constraint_is_user_subset(constraint)
@@ -518,9 +533,9 @@ impl Interpreter {
                     // smileys stripped (`my Int:_ $a` seeds `Int`, not
                     // `Int:_`) and coercion parens unwrapped — same as the
                     // read-path Nil→type-object conversion it replaces.
-                    let base = base.unwrap_or_else(|| constraint.to_string());
-                    let nominal = loan_env!(self, nominal_type_object_name_for_constraint(&base));
-                    Value::package(Symbol::intern(&nominal))
+                    Value::package(
+                        self.nominal_type_object_sym_for_constraint(base.unwrap_or(constraint)),
+                    )
                 }
             }
         }

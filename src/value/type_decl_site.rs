@@ -22,8 +22,14 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 /// One memo word per string constant of a chunk: `generation + 1`, or `0` for
 /// "never found plain".
+///
+/// `user` is the same shape for a constraint naming a registered user class or
+/// role (`my Tag $t`, `Interpreter::type_decl_constraint_is_plain_user_type`),
+/// whose resolution also depends on the running package: each word packs
+/// `generation + 1` (high 32 bits) with the package symbol's id (low 32), so
+/// one atomic load answers both and a racing writer cannot tear the pair.
 #[derive(Debug, Default)]
-pub(crate) struct TypeDeclSiteCaches(OnceLock<Box<[AtomicU64]>>);
+pub(crate) struct TypeDeclSiteCaches(OnceLock<Box<[AtomicU64]>>, OnceLock<Box<[AtomicU64]>>);
 
 impl Clone for TypeDeclSiteCaches {
     /// A cloned chunk starts cold: the memo is an optimization, not state.
@@ -39,6 +45,41 @@ impl TypeDeclSiteCaches {
     fn words(&self, sites: usize) -> &[AtomicU64] {
         self.0
             .get_or_init(|| (0..sites).map(|_| AtomicU64::new(0)).collect())
+    }
+
+    /// The user-type memo words, built like [`Self::words`].
+    // Cost: O(1) once built; the first call allocates O(sites).
+    fn user_words(&self, sites: usize) -> &[AtomicU64] {
+        self.1
+            .get_or_init(|| (0..sites).map(|_| AtomicU64::new(0)).collect())
+    }
+
+    /// The user-type memo key for `generation` and the running package's
+    /// symbol id, or `None` once the generation no longer fits the packed
+    /// word (the memo then simply never hits).
+    // Cost: O(1).
+    #[inline]
+    pub(crate) fn user_key(generation: u64, package_id: u32) -> Option<u64> {
+        let stamp = generation.checked_add(1).filter(|g| *g <= u64::from(u32::MAX))?;
+        Some((stamp << 32) | u64::from(package_id))
+    }
+
+    /// Whether constant `idx` was found to be a plain user type name under
+    /// `key` ([`Self::user_key`]).
+    // Cost: O(1), one relaxed load.
+    #[inline]
+    pub(crate) fn user_cached(&self, sites: usize, idx: usize, key: u64) -> bool {
+        self.user_words(sites)
+            .get(idx)
+            .is_some_and(|w| w.load(Ordering::Relaxed) == key)
+    }
+
+    /// Remember that constant `idx` is a plain user type name under `key`.
+    // Cost: O(1), one relaxed store.
+    pub(crate) fn remember_user(&self, sites: usize, idx: usize, key: u64) {
+        if let Some(w) = self.user_words(sites).get(idx) {
+            w.store(key, Ordering::Relaxed);
+        }
     }
 
     /// Whether constant `idx` was found to be a plain builtin name under

@@ -20,6 +20,7 @@ mod meta_parameterized;
 pub(crate) use meta_parameterized::split_parameterization;
 pub(crate) mod metamodel_how_roles;
 mod native_backed_class;
+mod nominal_sym;
 mod object_hash_key;
 mod omitted_optional;
 mod param_exprs;

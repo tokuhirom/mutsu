@@ -714,8 +714,9 @@ impl Interpreter {
     }
 
     /// The common declaration check — a `$` scalar typed with a plain,
-    /// unshadowed, non-native builtin name (`my Str $c = "a"`) receiving a
-    /// value that matches it — answered without the general check's
+    /// unshadowed, non-native builtin name (`my Str $c = "a"`) or a plain
+    /// registered user class or role (`my Tag $t`), receiving a value that
+    /// matches it or a Nil — answered without the general check's
     /// preamble. Returns `Ok(true)` when it settled the check, `Ok(false)` to
     /// hand it to the general path (which then re-derives everything).
     ///
@@ -780,18 +781,30 @@ impl Interpreter {
         var_name: Option<&str>,
     ) -> Result<bool, RuntimeError> {
         let constraint = Self::const_str(code, tc_idx);
-        if !var_name.is_some_and(|n| n.starts_with('$'))
-            || !self.type_decl_constraint_is_plain_builtin(code, tc_idx, constraint)
-            || crate::runtime::native_types::is_native_int_type(constraint)
-            || matches!(constraint, "num" | "num32" | "num64" | "str")
-        {
+        if !var_name.is_some_and(|n| n.starts_with('$')) {
+            return Ok(false);
+        }
+        let plain = if self.type_decl_constraint_is_plain_builtin(code, tc_idx, constraint) {
+            !crate::runtime::native_types::is_native_int_type(constraint)
+                && !matches!(constraint, "num" | "num32" | "num64" | "str")
+        } else {
+            // A registered user class or role, which the general path checks
+            // for visibility (ADR-11136) before matching: a module's type
+            // that is not merged here is refused there, so it is left to it.
+            self.type_decl_constraint_is_plain_user_type(code, tc_idx, constraint)
+                && !self.module_name_hidden_here(constraint)
+        };
+        if !plain {
             return Ok(false);
         }
         let Some(value) = self.stack.last() else {
             return Ok(false);
         };
         if value.is_nil() {
-            return Ok(false);
+            // A Nil for a plain, non-definite, non-native constraint passes
+            // the general path untouched -- nothing to match, coerce or
+            // vouch for; the store resets the variable to its type object.
+            return Ok(true);
         }
         let value = value.clone();
         if !self.type_matches_value(constraint, &value) {

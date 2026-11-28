@@ -2496,7 +2496,7 @@ impl Interpreter {
                         val = if constraint_from_cell {
                             self.typed_scalar_nil_seed_value_with_base(
                                 &constraint,
-                                Some(constraint.clone()),
+                                Some(&constraint),
                             )
                         } else {
                             self.typed_scalar_nil_seed_value(&name, &constraint)
