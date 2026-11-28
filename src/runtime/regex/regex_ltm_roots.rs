@@ -87,9 +87,14 @@ impl Interpreter {
             }
         };
         // The character in front of the ranking decides it on its own when
-        // at most one branch can begin with it (`LtmNfa::gated_ranking`).
-        if let Some(ranked) = nfa.gated_ranking(chars, pos) {
-            order.extend(ranked.into_iter().map(|idx| (idx, (0, 0))));
+        // at most one branch can begin with it (`LtmNfa::gated_winner`).
+        if let Some(winner) = nfa.gated_winner(chars, pos) {
+            order.extend(winner.map(|idx| (idx, (1, 0))));
+            order.extend(
+                (0..nfa.root_count())
+                    .filter(|&idx| Some(idx) != winner)
+                    .map(|idx| (idx, (0, 0))),
+            );
             return;
         }
         self.ltm_measure_roots(&nfa, chars, pos, |idx, measured| {

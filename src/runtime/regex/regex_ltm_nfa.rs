@@ -145,18 +145,19 @@ impl LtmNfa {
         }
     }
 
-    /// The ranking of this NFA's roots at `pos` when the root gates decide it
+    /// The root that wins the ranking at `pos` when the root gates decide it
     /// without a run: at most one root's gate admits the character there, so
     /// every other root fails at its first character, in the measurement and
-    /// in the match alike. The admitting root (if any) comes first and the
-    /// rest keep their order, which is the order a run ranks them in whenever
-    /// that root measures any length; when it measures none, no root can match
-    /// at all except possibly it, so trying it first changes no outcome.
-    /// `None` when the gates do not decide it (several roots admit the
-    /// character, a root has no gate, or a left-recursion activation is live,
-    /// whose seed a run would read through a call instead of a character).
+    /// in the match alike. `Some(None)` when no root admits it. The admitting
+    /// root ranks first and the rest keep their order, which is the order a
+    /// run ranks them in whenever that root measures any length; when it
+    /// measures none, no root can match at all except possibly it, so trying
+    /// it first changes no outcome. `None` when the gates do not decide it
+    /// (several roots admit the character, a root has no gate, or a
+    /// left-recursion activation is live, whose seed a run would read through
+    /// a call instead of a character).
     // Cost: O(r), r = roots.
-    pub(super) fn gated_ranking(&self, chars: &[char], pos: usize) -> Option<Vec<usize>> {
+    pub(super) fn gated_winner(&self, chars: &[char], pos: usize) -> Option<Option<usize>> {
         let gates = self.root_gates.as_deref()?;
         let mut winner = None;
         if pos < chars.len() {
@@ -172,10 +173,13 @@ impl LtmNfa {
         if super::regex_lr_state::lr_any_live() {
             return None;
         }
-        let mut order = Vec::with_capacity(gates.len());
-        order.extend(winner);
-        order.extend((0..gates.len()).filter(|&idx| Some(idx) != winner));
-        Some(order)
+        Some(winner)
+    }
+
+    /// The number of roots (branches) of a several-root NFA.
+    // Cost: O(1).
+    pub(super) fn root_count(&self) -> usize {
+        self.roots.len()
     }
 }
 
