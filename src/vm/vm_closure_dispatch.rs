@@ -106,8 +106,12 @@ impl Interpreter {
         // Also filter out named args from the args list to get positional args
         let mut positional_idx = 0usize;
         for (i, arg) in args.iter().enumerate() {
-            // Skip named args (pairs where key matches a named param)
-            if let ValueView::Pair(_, _) = arg.view() {
+            // Skip named args (pairs where key matches a named param). Tag
+            // probes first: a `view()` of a lazy Match argument (a subst
+            // replacement block's `$/`) would materialize it on every call.
+            if arg.is_any_pair_value()
+                && let ValueView::Pair(_, _) = arg.view()
+            {
                 // Check if this is a named argument
                 let is_named = data.param_defs.iter().any(|pd| {
                     pd.named
@@ -122,7 +126,7 @@ impl Interpreter {
                 }
             }
 
-            if let ValueView::Junction { .. } = arg.view() {
+            if arg.is_junction_value() {
                 // Check if the corresponding param accepts Junction
                 if let Some(pd) = positional_params.get(positional_idx) {
                     let constraint_raw = pd.type_constraint.as_deref().unwrap_or(
@@ -1040,7 +1044,7 @@ impl Interpreter {
             && !args.is_empty()
             && let Some(first) = args
                 .iter()
-                .find(|v| !matches!(v.view(), ValueView::Pair(_, _)))
+                .find(|v| !(v.is_any_pair_value() && matches!(v.view(), ValueView::Pair(_, _))))
         {
             // raku binds a bare block's implicit `$_` RAW to its argument,
             // so `my $b = { $_ = 9 }; $b($v)` writes the CALLER's `$v`. The
