@@ -14,11 +14,14 @@ impl Ctx {
     /// Runs `f` in a fresh nested scope seeded with the declared names
     /// `seeds` (see [`param_keys`]).
     fn scoped(&mut self, seeds: Vec<String>, f: impl FnOnce(&mut Ctx)) {
-        self.scopes.push(Scope::new());
+        let id = self.next_scope_id;
+        self.next_scope_id += 1;
+        self.scopes.push(Scope::new(id));
         for key in seeds {
             self.seed(key);
         }
         f(self);
+        self.close_scope(id);
         self.scopes.pop();
     }
 
@@ -63,7 +66,10 @@ impl VisitMut for Ctx {
         // A `for` a `.AST` parse keeps in its RakuAST shape is that loop.
         let stmt = stmt.peel_parsed_mut();
         match stmt {
-            Stmt::SetLine(n, _) => self.line = *n,
+            Stmt::SetLine(n, _) => {
+                self.reach_line(*n);
+                self.line = *n;
+            }
             Stmt::VarDecl { .. } => walk_var_decl(stmt, true, self),
             // Writes read the binding they write to: `temp $y`, `$y = ...`.
             Stmt::Assign { name, .. }
@@ -250,6 +256,9 @@ impl VisitMut for Ctx {
     fn visit_expr_mut(&mut self, expr: &mut Expr) {
         match expr {
             Expr::Var(n) => self.reference_var('$', n),
+            // The body binds where the heredoc starts, here; whether it means
+            // the same where it is written is settled once the walk gets there.
+            Expr::HeredocInterpolation(content, closes) => self.start_heredoc(content, *closes),
             Expr::ArrayVar(n) => self.reference_var('@', n),
             Expr::HashVar(n) => self.reference_var('%', n),
             Expr::AssignExpr { name, .. } => {
