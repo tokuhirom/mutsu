@@ -866,7 +866,7 @@ impl Interpreter {
     /// `:name`-literal / `@:`/`%:` placeholder forms, `&`-sigiled callables,
     /// plain (non-attributive) `@`/`%` container named params (container-alias
     /// semantics live only on the full path), the topic `_`, and `self`.
-    pub(super) fn named_param_fast_match_key(pd: &crate::ast::ParamDef) -> Option<&str> {
+    pub(crate) fn named_param_fast_match_key(pd: &crate::ast::ParamDef) -> Option<&str> {
         let name = pd.name.as_str();
         let bare = if let Some(rest) = name
             .strip_prefix("@!")
