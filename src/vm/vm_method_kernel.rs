@@ -47,8 +47,10 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
 const MAX_BAIL_STREAK: u32 = 8;
 /// The largest constant exponent a kernel raises an `Int` to.
 const MAX_INT_POW: i64 = 30;
-/// The longest body a kernel takes; its value stack is bounded by it.
+/// The longest body a kernel takes.
 const MAX_KERNEL_OPS: usize = 64;
+/// The deepest value stack a kernel may need.
+const KERNEL_STACK: usize = 16;
 
 /// One kernel op over the value stack.
 #[derive(Debug, Clone, Copy)]
@@ -60,10 +62,11 @@ enum KOp {
     /// The receiver's scalar attribute behind local slot `idx` of the body.
     Attr(u32),
     /// The generated accessor `name` of the positional argument at this
-    /// index (`$other.x`).
-    ParamAccessor(u16, Symbol),
+    /// index (`$other.x`); the last field indexes the kernel's
+    /// accessor-slot memo.
+    ParamAccessor(u16, Symbol, u16),
     /// The generated accessor `name` of the receiver (`$.x`, `self.x`).
-    SelfAccessor(Symbol),
+    SelfAccessor(Symbol, u16),
     Add,
     Sub,
     Mul,
@@ -83,6 +86,11 @@ enum N {
 #[derive(Debug)]
 pub(crate) struct MethodKernel {
     ops: Box<[KOp]>,
+    /// Per accessor op, the accessor lane's `(layout id << 32) | entry` it
+    /// last read through, or 0. The lane is cleared with the registry method
+    /// generation, which a registry write moves; a write also retires the
+    /// plan that owns this kernel, so a memo never outlives its lane entry.
+    accessor_slots: Box<[std::sync::atomic::AtomicU64]>,
     bail_streak: AtomicU32,
     disabled: AtomicBool,
 }
@@ -105,6 +113,8 @@ impl MethodKernel {
         let inv_offset = usize::from(def.param_defs.iter().any(|pd| pd.is_invocant));
         let mut ops: Vec<KOp> = Vec::with_capacity(body.ops.len());
         let mut depth: usize = 0;
+        let mut max_depth: usize = 0;
+        let mut accessors: u16 = 0;
         let n = body.ops.len();
         let mut i = 0usize;
         while i < n {
@@ -136,14 +146,16 @@ impl MethodKernel {
                         match next {
                             Some(name) => {
                                 i += 1;
-                                KOp::ParamAccessor(arg, name)
+                                accessors += 1;
+                                KOp::ParamAccessor(arg, name, accessors - 1)
                             }
                             None => KOp::Param(arg),
                         }
                     }
                     (LocalInit::Invocant, Some(name)) => {
                         i += 1;
-                        KOp::SelfAccessor(name)
+                        accessors += 1;
+                        KOp::SelfAccessor(name, accessors - 1)
                     }
                     _ if super::vm_method_slot_frame::slot_attr_read(cc, *idx as usize) => {
                         KOp::Attr(*idx)
@@ -197,6 +209,7 @@ impl MethodKernel {
             if depth == 0 {
                 return None;
             }
+            max_depth = max_depth.max(depth);
             ops.push(k);
             i += 1;
         }
@@ -208,8 +221,11 @@ impl MethodKernel {
                 KOp::Add | KOp::Sub | KOp::Mul | KOp::PowConst(_) | KOp::Sqrt
             )
         });
-        (depth == 1 && computes).then(|| MethodKernel {
+        (depth == 1 && computes && max_depth <= KERNEL_STACK).then(|| MethodKernel {
             ops: ops.into_boxed_slice(),
+            accessor_slots: (0..accessors)
+                .map(|_| std::sync::atomic::AtomicU64::new(0))
+                .collect(),
             bail_streak: AtomicU32::new(0),
             disabled: AtomicBool::new(false),
         })
@@ -258,7 +274,7 @@ impl Interpreter {
         receiver: &Value,
         args: &[Value],
     ) -> Option<Value> {
-        let mut stack: [N; MAX_KERNEL_OPS] = [N::I(0); MAX_KERNEL_OPS];
+        let mut stack: [N; KERNEL_STACK] = [N::I(0); KERNEL_STACK];
         let mut sp = 0usize;
         for op in kernel.ops.iter() {
             match *op {
@@ -278,13 +294,13 @@ impl Interpreter {
                     stack[sp] = number_of(&self.kernel_attr_read(body, idx as usize, receiver)?)?;
                     sp += 1;
                 }
-                KOp::ParamAccessor(i, name) => {
+                KOp::ParamAccessor(i, name, memo) => {
                     stack[sp] =
-                        number_of(&self.kernel_accessor_read(args.get(i as usize)?, name)?)?;
+                        self.kernel_accessor_read(kernel, memo, args.get(i as usize)?, name)?;
                     sp += 1;
                 }
-                KOp::SelfAccessor(name) => {
-                    stack[sp] = number_of(&self.kernel_accessor_read(receiver, name)?)?;
+                KOp::SelfAccessor(name, memo) => {
+                    stack[sp] = self.kernel_accessor_read(kernel, memo, receiver, name)?;
                     sp += 1;
                 }
                 KOp::Add | KOp::Sub | KOp::Mul => {
@@ -322,20 +338,39 @@ impl Interpreter {
         Some(map.slot_vivify(slot)?.deref_container())
     }
 
-    /// `target.name` when that is the generated accessor's plain read the
-    /// accessor lane holds for `target`'s layout; `None` otherwise.
-    // Cost: O(1), one lane probe.
-    fn kernel_accessor_read(&mut self, target: &Value, name: Symbol) -> Option<Value> {
+    /// `target.name` as a number, when that is the generated accessor's plain
+    /// read the accessor lane holds for `target`'s layout; `None` otherwise.
+    /// The lane entry is memoized in the kernel's accessor-slot `memo`.
+    // Cost: O(1); a memo miss costs one lane probe.
+    fn kernel_accessor_read(
+        &mut self,
+        kernel: &MethodKernel,
+        memo: u16,
+        target: &Value,
+        name: Symbol,
+    ) -> Option<N> {
         let ValueView::Instance { attributes, .. } = target.view() else {
             return None;
         };
-        let layout_id = attributes.as_map().layout()?.id();
+        let cell = kernel.accessor_slots.get(memo as usize)?;
+        let map = attributes.as_map();
+        let layout_id = map.layout()?.id();
+        let word = cell.load(Relaxed);
+        if word != 0 && (word >> 32) as u32 == layout_id {
+            if map.has_undeclared() {
+                return None;
+            }
+            let slot = super::vm_accessor_lane::accessor_lane_slot_index(word as u32);
+            return number_of(&map.slot_vivify(slot)?.deref_container());
+        }
+        drop(map);
         if self.caches.accessor_lane.is_empty() {
             return None;
         }
         self.refresh_method_caches_for_generation();
         let entry = *self.caches.accessor_lane.get(&(layout_id, name))?;
-        self.accessor_lane_read(target, layout_id, entry)
+        cell.store((u64::from(layout_id) << 32) | u64::from(entry), Relaxed);
+        number_of(&self.accessor_lane_read(target, layout_id, entry)?)
     }
 }
 

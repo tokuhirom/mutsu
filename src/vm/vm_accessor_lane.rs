@@ -43,6 +43,14 @@ const LANE_RW: u32 = 1 << 30;
 /// it yet takes the full path (which tags it).
 const LANE_NEEDS_META: u32 = 1 << 29;
 
+/// The layout slot a lane entry reads. The flag bits only matter for an
+/// Array/Hash value, which a caller that wants a scalar refuses itself.
+// Cost: O(1).
+#[inline]
+pub(super) fn accessor_lane_slot_index(entry: u32) -> usize {
+    (entry & LANE_SLOT_MASK) as usize
+}
+
 impl Interpreter {
     /// The attribute value a lane hit answers for the receiver on top of the
     /// stack, or `None` to run the full dispatch.

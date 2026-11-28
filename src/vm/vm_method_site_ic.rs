@@ -377,11 +377,24 @@ impl Interpreter {
                 return None;
             }
             args = self.stack.split_off(target_idx + 1);
-            let mut keys = std::mem::take(&mut self.caches.plain_method_lane_scratch);
-            keys.clear();
-            let same = self.plain_lane_arg_keys_into(&args, &mut keys) && keys == arg_keys;
-            keys.clear();
-            self.caches.plain_method_lane_scratch = keys;
+            // A plain instance argument keys as exactly its class
+            // (`multi_arg_type_keys_impl`: no container, `VarRef`, native or
+            // definedness marker applies to one), so a call whose arguments
+            // are all such instances compares the classes directly.
+            let same = if arg_keys.len() == args.len()
+                && args.iter().zip(arg_keys).all(|(arg, key)| {
+                    arg.is_instance_value()
+                        && matches!(arg.view(), ValueView::Instance { class_name, .. } if class_name == *key)
+                }) {
+                true
+            } else {
+                let mut keys = std::mem::take(&mut self.caches.plain_method_lane_scratch);
+                keys.clear();
+                let same = self.plain_lane_arg_keys_into(&args, &mut keys) && keys == arg_keys;
+                keys.clear();
+                self.caches.plain_method_lane_scratch = keys;
+                same
+            };
             if !same {
                 self.stack.extend(args);
                 return None;
