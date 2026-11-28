@@ -478,7 +478,13 @@ impl Interpreter {
     // Cost: O(1).
     fn write_caller_topic(&mut self, value: Value) {
         if let Some(frame) = self.call_frames.last_mut() {
-            frame.saved_env.insert("_".to_string(), value);
+            if let Some(ValueView::ContainerRef(cell)) =
+                frame.saved_env.get("_").map(Value::view)
+            {
+                cell.store(value);
+            } else {
+                frame.saved_env.insert("_".to_string(), value);
+            }
             self.record_caller_var_writeback("_");
         }
     }

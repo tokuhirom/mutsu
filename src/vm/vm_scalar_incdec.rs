@@ -211,7 +211,7 @@ impl Interpreter {
         // `$CALLER::x++` and friends step the caller's variable.
         if let Some((bare_name, depth)) = crate::compiler::Compiler::parse_caller_prefix(name) {
             let raw_val = loan_env!(self, get_caller_var(&bare_name, depth))?;
-            let old = Self::normalize_incdec_source(raw_val);
+            let old = Self::normalize_incdec_source(raw_val.into_deref());
             let new = self.incdec_step(k, &old)?;
             loan_env!(self, set_caller_var(&bare_name, depth, new.clone()))?;
             self.stack.push(k.result(old, new));
@@ -279,7 +279,13 @@ impl Interpreter {
         // don't lose updates (Track C), and so closures over this lexical
         // observe the change.
         if let ValueView::ContainerRef(arc) = raw_val.view() {
-            return self.incdec_through_cell(&arc, name, name_sym, k);
+            self.incdec_through_cell(&arc, name, name_sym, k)?;
+            if name == "_" {
+                let updated = arc.load().into_deref();
+                self.note_rw_map_topic(&updated);
+                self.write_topic_to_source_var(code, &updated);
+            }
+            return Ok(());
         }
         // A Proxy: FETCH, step, STORE.
         if let ValueView::Proxy { storer, .. } = raw_val.view()

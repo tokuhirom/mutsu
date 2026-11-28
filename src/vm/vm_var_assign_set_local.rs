@@ -3333,6 +3333,13 @@ impl Interpreter {
                     }
                 }
                 self.flush_local_to_env(code, idx);
+                if name == "_" {
+                    // A nested closure can box an inline map/grep topic while
+                    // its loop is running. The cell store still has to update
+                    // the loop's source element before this early return.
+                    self.note_rw_map_topic(&val);
+                    self.write_topic_to_source_var(code, &val);
+                }
                 return Ok(());
             }
         }
