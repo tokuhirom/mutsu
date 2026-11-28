@@ -711,6 +711,14 @@ pub(crate) fn identifier_or_call(input: &str) -> PResult<'_, Expr> {
         ));
     }
 
+    // A statement-prefix word that names an in-scope sigilless term, with no
+    // whitespace after it, is that term (#19364).
+    if crate::parser::stmt::simple::is_statement_prefix_word(&name)
+        && super::predicates::declared_term_shadows_prefix(&name, rest)
+    {
+        return Ok((rest, Expr::BareWord(name)));
+    }
+
     // Handle special expression keywords before qualified name resolution
     match name.as_str() {
         "infix" | "prefix" | "postfix" | "circumfix" | "postcircumfix" | "trait_mod" => {

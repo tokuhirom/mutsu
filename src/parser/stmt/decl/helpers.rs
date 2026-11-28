@@ -214,7 +214,11 @@ pub(super) fn register_term_symbol_from_decl_name(name: &str) {
         // by the keyword-specific paths in identifier_or_call, not as
         // bare words via declared_term_symbol. E.g. `my $sub` should not
         // cause `sub` to be treated as a bare word on the RHS.
-        if !is_parser_keyword(name) {
+        // A statement-prefix word (`my \sink`, `constant quietly`) is the
+        // exception: rakudo lets such a term shadow the prefix where no
+        // whitespace follows it, which `declared_term_shadows_prefix` decides
+        // at each occurrence (#19364).
+        if !is_parser_keyword(name) || super::super::simple::is_statement_prefix_word(name) {
             super::super::simple::register_user_term_symbol(name);
         }
     }

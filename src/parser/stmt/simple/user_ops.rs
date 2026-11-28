@@ -496,6 +496,16 @@ pub(crate) fn register_user_callable_term_symbol(name: &str) {
     });
 }
 
+/// The statement-prefix words a sigilless term may be spelled as: such a term
+/// shadows the prefix only where no whitespace follows it (#19364).
+// Cost: O(1).
+pub(crate) fn is_statement_prefix_word(word: &str) -> bool {
+    matches!(
+        word,
+        "lazy" | "eager" | "hyper" | "race" | "sink" | "quietly"
+    )
+}
+
 /// Resolve an in-scope term symbol from the current input.
 /// Returns `(canonical_name, consumed_len)` when the input begins with a declared symbol.
 pub(crate) fn match_user_declared_term_symbol(input: &str) -> Option<(String, usize, bool)> {
@@ -517,6 +527,14 @@ pub(crate) fn match_user_declared_term_symbol(input: &str) -> Option<(String, us
                 // constant alias `G` in `G::c`), not a bare reference to the
                 // declared term. Let the qualified-name path handle it.
                 if input[consumed..].starts_with("::") {
+                    continue;
+                }
+                // A term spelled like a statement prefix is the prefix where
+                // whitespace follows it (`sink 3`), the term otherwise
+                // (`sink+1`), as in rakudo (#19364).
+                if is_statement_prefix_word(symbol)
+                    && input[consumed..].starts_with(char::is_whitespace)
+                {
                     continue;
                 }
                 // For word-like symbols, require identifier boundary.

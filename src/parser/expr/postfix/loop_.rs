@@ -504,6 +504,10 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         && input.starts_with("lazy")
         && !is_ident_char(input.as_bytes().get(4).copied())
         && !user_sub_called_with_parens(input, "lazy")
+        && !crate::parser::primary::ident::predicates::declared_term_shadows_prefix(
+            "lazy",
+            &input[4..],
+        )
     {
         let r = &input[4..];
         let (r, _) = ws(r)?;
@@ -552,6 +556,10 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         && input.starts_with("hyper")
         && !is_ident_char(input.as_bytes().get(5).copied())
         && !user_sub_called_with_parens(input, "hyper")
+        && !crate::parser::primary::ident::predicates::declared_term_shadows_prefix(
+            "hyper",
+            &input[5..],
+        )
     {
         let r = &input[5..];
         let (r, _) = ws(r)?;
@@ -578,6 +586,10 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         && input.starts_with("race")
         && !is_ident_char(input.as_bytes().get(4).copied())
         && !user_sub_called_with_parens(input, "race")
+        && !crate::parser::primary::ident::predicates::declared_term_shadows_prefix(
+            "race",
+            &input[4..],
+        )
     {
         let r = &input[4..];
         let (r, _) = ws(r)?;
@@ -603,6 +615,10 @@ pub(in crate::parser::expr) fn prefix_expr(input: &str) -> PResult<'_, Expr> {
         && input.starts_with("eager")
         && !is_ident_char(input.as_bytes().get(5).copied())
         && !user_sub_called_with_parens(input, "eager")
+        && !crate::parser::primary::ident::predicates::declared_term_shadows_prefix(
+            "eager",
+            &input[5..],
+        )
     {
         let r = &input[5..];
         let (r, _) = ws(r)?;
