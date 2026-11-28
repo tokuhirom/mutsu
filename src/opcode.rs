@@ -2,6 +2,7 @@ mod attribute_decl;
 mod class_body_free_vars;
 #[cfg(feature = "jit")]
 pub(crate) mod kernel_slot;
+mod lexsub_free_slots;
 #[cfg(test)]
 #[path = "opcode/nested_decl_names_tests.rs"]
 mod nested_decl_names_tests;
@@ -890,6 +891,18 @@ pub(crate) enum GatherMode {
     LazyList,
 }
 
+/// Which by-name read an [`OpCode::GetLexFree`] stands for: the opcode it
+/// replaced, and therefore the resolution its slow path runs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+pub(crate) enum LexFreeKind {
+    /// `GetGlobal`: a scalar (or sigilless / `&`) name.
+    Scalar,
+    /// `GetArrayVar`: an `@` name.
+    Array,
+    /// `GetHashVar`: a `%` name.
+    Hash,
+}
+
 /// Bytecode operations for the VM.
 /// [`OpCode::PackageScope`]'s `lexicals_idx` for a body with no lexicals to
 /// re-bind.
@@ -1218,6 +1231,21 @@ pub(crate) enum OpCode {
     /// array), execution falls back to a `GetGlobal(name_idx)` env lookup. Env is
     /// retained as the capture source, so the fallback is always correct.
     GetUpvalue { index: u32, name_idx: u32 },
+    /// A named sub's read of a free variable its declaring scope aliases per
+    /// activation (ADR-0114), through a hidden local `slot` of the sub's own
+    /// frame (ADR-18244 stage B, #18274).
+    ///
+    /// The slot starts each call empty. The first read resolves the name
+    /// exactly as the by-name opcode `kind` names does, then stores the alias
+    /// cell the resolution provably answered from into the slot; later reads
+    /// of the call load the cell. A slot whose name did not resolve to such a
+    /// binding is marked so the call stops trying. `name_idx` is the name
+    /// constant, as for the by-name opcodes. See `vm_lexsub_free_slot.rs`.
+    GetLexFree {
+        slot: u32,
+        name_idx: u32,
+        kind: LexFreeKind,
+    },
     /// Load `self` from the captured environment for a `$.attr` accessor.
     /// Raises X::Syntax::NoSelf (the operand is the constant index of the
     /// accessor's display name, e.g. `$.a`) when `self` is unavailable.
@@ -8830,6 +8858,7 @@ impl CompiledCode {
         for op in &self.ops[start.min(end)..end] {
             let name_idx = match op {
                 OpCode::GetGlobal(idx)
+                | OpCode::GetLexFree { name_idx: idx, .. }
                 | OpCode::GetGlobalDeferred(idx)
                 | OpCode::SetGlobal(idx)
                 | OpCode::SetGlobalRaw { name_idx: idx, .. }
@@ -9677,6 +9706,7 @@ impl CompiledCode {
         for op in &self.ops {
             let name_idx = match op {
                 OpCode::GetGlobal(idx)
+                | OpCode::GetLexFree { name_idx: idx, .. }
                 | OpCode::GetGlobalDeferred(idx)
                 | OpCode::SetGlobal(idx)
                 | OpCode::SetGlobalRaw { name_idx: idx, .. }
@@ -10483,6 +10513,7 @@ impl CompiledCode {
         for op in &self.ops {
             let name_idx = match op {
                 OpCode::GetGlobal(idx)
+                | OpCode::GetLexFree { name_idx: idx, .. }
                 | OpCode::GetGlobalDeferred(idx)
                 | OpCode::SetGlobal(idx)
                 | OpCode::SetGlobalRaw { name_idx: idx, .. }
@@ -11272,6 +11303,7 @@ impl CompiledCode {
         match op {
             OpCode::GetUpvalue { name_idx: idx, .. }
             | OpCode::GetGlobal(idx)
+            | OpCode::GetLexFree { name_idx: idx, .. }
             | OpCode::GetGlobalDeferred(idx)
             | OpCode::GetScalarContainer { name_idx: idx, .. }
             | OpCode::SetGlobal(idx)

@@ -1271,6 +1271,7 @@ impl Interpreter {
             }
             let name_idx = match op {
                 crate::opcode::OpCode::GetGlobal(idx)
+                | crate::opcode::OpCode::GetLexFree { name_idx: idx, .. }
                 | crate::opcode::OpCode::SetGlobal(idx)
                 | crate::opcode::OpCode::GetArrayVar(idx)
                 | crate::opcode::OpCode::GetHashVar(idx)

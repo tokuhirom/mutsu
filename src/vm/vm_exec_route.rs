@@ -18,6 +18,7 @@ impl Interpreter {
             OpCode::CallTrir { .. }
             | OpCode::GetGlobal(..)
             | OpCode::GetGlobalDeferred(..)
+            | OpCode::GetLexFree { .. }
             | OpCode::GetUpvalue { .. }
             | OpCode::LoadConst(..)
             | OpCode::LoadFalse

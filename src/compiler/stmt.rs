@@ -4632,6 +4632,10 @@ impl Compiler {
                 } else {
                     Vec::new()
                 };
+                // ADR-18244 stage B (#18274): each body reads its aliased free
+                // variables through a slot of its own frame, filled from the
+                // alias on the first read of a call.
+                self.assign_lexsub_free_slots(&compiled_routine_keys, &lexsub_free_aliases);
                 // The hoist pass registered this same declaration from a plan of
                 // its own, which never sees the compiled bodies. Hand them over,
                 // so a `multi` candidate installed by the hoisted registration
