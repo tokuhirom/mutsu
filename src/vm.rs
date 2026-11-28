@@ -400,6 +400,7 @@ pub(crate) mod vm_method_dispatch;
 pub(crate) mod vm_method_fast_gate;
 mod vm_method_finalize;
 pub(crate) mod vm_method_frame_plan;
+pub(crate) mod vm_method_kernel;
 pub(crate) mod vm_method_lean_frame;
 mod vm_method_named_slurpy;
 mod vm_method_return_spec;
