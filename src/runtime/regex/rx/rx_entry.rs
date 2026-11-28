@@ -14,6 +14,9 @@ use crate::symbol::Symbol;
 pub(super) enum Goal<'a> {
     /// The first match in priority order.
     First,
+    /// [`Goal::First`]'s end alone: the match's captures are not snapshotted
+    /// (the run answers empty ones), for a caller that wants only the span.
+    FirstEnd,
     /// The first match that ends exactly at this position, as the walk's
     /// `regex_match_branch_ending_at` picks one from the full end list.
     End(usize),

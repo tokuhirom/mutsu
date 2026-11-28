@@ -1052,6 +1052,7 @@ impl Interpreter {
                     RxOp::Match => match if FRAMES { frame } else { None } {
                         None => match &mut goal {
                             Goal::First => break 'run Some((pos, root_snapshot!())),
+                            Goal::FirstEnd => break 'run Some((pos, RegexCaptures::default())),
                             Goal::End(end) => {
                                 if pos == *end {
                                     break 'run Some((pos, root_snapshot!()));
