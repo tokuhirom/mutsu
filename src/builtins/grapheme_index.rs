@@ -254,6 +254,26 @@ pub(crate) fn index_of_arc(arc: &Arc<StrBody>) -> Arc<GraphemeIndex> {
 /// Run `f` over `v`'s string form and its grapheme index. A `Str` value is
 /// borrowed (no copy) and its index comes from the cache; anything else is
 /// stringified and indexed on the spot.
+/// The number of graphemes in `v`'s string form. A short `Str` is counted in
+/// place: building (and dropping) a heap-allocated index just to read its
+/// length cost more than the count itself, and a string below the cache
+/// threshold never reuses one.
+// Cost: O(n), n = bytes, for a string below `CACHE_MIN_BYTES`; O(1)
+// amortized above it (the cached index).
+pub(crate) fn grapheme_count(v: &Value) -> usize {
+    if let ValueView::Str(arc) = v.view()
+        && arc.len() < CACHE_MIN_BYTES
+    {
+        let s = arc.as_str();
+        return if is_flat_ascii(s) {
+            s.len()
+        } else {
+            Units::from(s, 0).count()
+        };
+    }
+    with_str_index(v, |_, idx| idx.len())
+}
+
 pub(crate) fn with_str_index<R>(v: &Value, f: impl FnOnce(&str, &GraphemeIndex) -> R) -> R {
     if let ValueView::Str(arc) = v.view() {
         let idx = index_of_arc(&arc);
