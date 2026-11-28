@@ -48,6 +48,10 @@ pub(super) struct LoopCtx {
     pub(super) kctx: super::vm_kernel_compile::KernelCtx,
     /// Each call's sub-kernel entry, resolved at entry.
     pub(super) callees: [usize; MAX_CALLS],
+    /// The interpreter and the code the element helpers act on
+    /// (`vm_kernel_elem`); set by the entry for the length of the run.
+    pub(super) interp: *mut Interpreter,
+    pub(super) code: *const CompiledCode,
 }
 
 const CTX_POLL: i32 = 0;
@@ -73,9 +77,10 @@ pub(super) fn compile(
     code: &CompiledCode,
     shape: &LoopShape,
     carried: &[(u32, SlotKind)],
+    elem_reads: &[(u32, SlotKind)],
     typed: &Typed,
 ) -> Option<usize> {
-    with_engine(|module, n| build(module, n, code, shape, carried, typed))
+    with_engine(|module, n| build(module, n, code, shape, carried, elem_reads, typed))
 }
 
 fn build(
@@ -84,6 +89,7 @@ fn build(
     code: &CompiledCode,
     shape: &LoopShape,
     carried: &[(u32, SlotKind)],
+    elem_reads: &[(u32, SlotKind)],
     typed: &Typed,
 ) -> Option<usize> {
     let frontend_config = module.target_config();
@@ -108,6 +114,21 @@ fn build(
             b.import_signature(sig)
         })
         .collect();
+    let elem_sig = |b: &mut FunctionBuilder, value: types::Type| {
+        let mut sig = cranelift_codegen::ir::Signature::new(module.isa().default_call_conv());
+        for t in [ptr, ptr, types::I32, types::I64, value] {
+            sig.params.push(AbiParam::new(t));
+        }
+        sig.returns.push(AbiParam::new(types::I32));
+        b.import_signature(sig)
+    };
+    let elem = super::vm_loop_kernel_emit_elem::ElemSigs {
+        read: elem_sig(&mut b, ptr),
+        store_int: elem_sig(&mut b, types::I64),
+        store_num: elem_sig(&mut b, types::F64),
+        interp_offset: std::mem::offset_of!(LoopCtx, interp) as i32,
+        code_offset: std::mem::offset_of!(LoopCtx, code) as i32,
+    };
     let mf = MemFlagsData::trusted();
 
     let entry = b.create_block();
@@ -172,6 +193,8 @@ fn build(
         kctx_offset: std::mem::offset_of!(LoopCtx, kctx) as i32,
         call_sigs,
         next_call: 0,
+        elem_reads: elem_reads.to_vec(),
+        elem,
     };
     em.poll();
     let body_blk = em.b.create_block();

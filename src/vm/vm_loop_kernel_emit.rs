@@ -24,6 +24,8 @@ pub(super) fn clty(k: K) -> types::Type {
         K::Num => types::F64,
         K::Int => types::I64,
         K::Bool => types::I8,
+        // A placeholder word: only an `Index` consumes it, by its slot.
+        K::Arr(_) => types::I64,
     }
 }
 
@@ -47,6 +49,10 @@ pub(super) struct Em<'f, 'c> {
     pub(super) call_sigs: Vec<SigRef>,
     /// Calls emitted so far: the next call's slot in the callee table.
     pub(super) next_call: usize,
+    /// The element kind of each array the region reads.
+    pub(super) elem_reads: Vec<(u32, SlotKind)>,
+    /// Element helper signatures and context offsets.
+    pub(super) elem: super::vm_loop_kernel_emit_elem::ElemSigs,
 }
 
 impl Em<'_, '_> {
@@ -233,9 +239,44 @@ impl Em<'_, '_> {
                 continue;
             }
             match op {
+                OpCode::GetLocal(s) if self.elem_reads.iter().any(|(e, _)| e == s) => {
+                    let v = self.b.ins().iconst(types::I64, i64::from(*s));
+                    stack.push((v, K::Arr(*s)));
+                }
                 OpCode::GetLocal(s) | OpCode::GetLocalMetaAssign { slot: s, .. } => {
                     let (v, k) = *self.vars.get(s)?;
                     stack.push((self.b.use_var(v), K::of(k)));
+                }
+                OpCode::Index { .. } => {
+                    let (index, _) = stack.pop()?;
+                    let (_, K::Arr(slot)) = stack.pop()? else {
+                        return None;
+                    };
+                    let (_, kind) = *self.elem_reads.iter().find(|(e, _)| *e == slot)?;
+                    let v = self.elem_read(slot, index, kind);
+                    stack.push((v, K::of(kind)));
+                }
+                OpCode::IndexAssignLocal { slot, .. } => {
+                    let (v, k) = stack.pop()?;
+                    let (index, _) = stack.pop()?;
+                    self.elem_store(*slot, index, v, k);
+                    stack.push((v, k));
+                }
+                OpCode::SinkPopAssign => {
+                    stack.pop()?;
+                }
+                OpCode::PreIncrement(_, Some(s))
+                | OpCode::PreDecrement(_, Some(s))
+                | OpCode::PostIncrement(_, Some(s))
+                | OpCode::PostDecrement(_, Some(s)) => {
+                    let v = self.incdec(op, *s)?;
+                    stack.push((v, K::Int));
+                }
+                OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor => {
+                    let (y, _) = stack.pop()?;
+                    let (x, _) = stack.pop()?;
+                    let r = self.bitop(op, x, y);
+                    stack.push((r, K::Int));
                 }
                 OpCode::GetGlobal(_) => {
                     debug_assert_eq!(self.var, Some(LoopVar::Topic));
@@ -273,7 +314,7 @@ impl Em<'_, '_> {
                         stack.push((r, K::Num));
                     }
                 }
-                OpCode::IntDiv | OpCode::IntMod => {
+                OpCode::IntDiv | OpCode::IntMod | OpCode::Mod => {
                     // Floored, as `Integer::div_floor`/`mod_floor` and Tier B's
                     // `emit_int_divmod`; a zero divisor and `MIN div -1` bail.
                     let (y, _) = stack.pop()?;

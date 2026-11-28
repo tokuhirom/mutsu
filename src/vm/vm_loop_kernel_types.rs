@@ -13,7 +13,7 @@
 //! kind must agree on every edge.
 
 use super::*;
-use crate::opcode::kernel_slot::SlotKind;
+use crate::opcode::kernel_slot::{ElemSlot, SlotKind};
 
 /// Which loop the region belongs to.
 #[derive(Debug, Clone, Copy)]
@@ -63,6 +63,9 @@ pub(super) enum K {
     Int,
     Num,
     Bool,
+    /// An array local about to be subscripted (`@a` before `[$i]`): only an
+    /// `Index` consumes it.
+    Arr(u32),
 }
 
 impl K {
@@ -71,6 +74,21 @@ impl K {
             SlotKind::Int => K::Int,
             SlotKind::Num => K::Num,
         }
+    }
+
+    /// The slot kind a value of this kind stores as; `None` for a comparison
+    /// result or an array.
+    pub(super) fn slot_kind(self) -> Option<SlotKind> {
+        match self {
+            K::Int => Some(SlotKind::Int),
+            K::Num => Some(SlotKind::Num),
+            K::Bool | K::Arr(_) => None,
+        }
+    }
+
+    /// Whether this is an `Int` or a `Num`.
+    pub(super) fn numeric(self) -> bool {
+        self.slot_kind().is_some()
     }
 }
 
@@ -201,9 +219,29 @@ pub(super) fn num_method_call(code: &CompiledCode, op: &OpCode) -> Option<(u32, 
 /// The slots a region reads or writes that it does not declare and that are
 /// not its loop variable: the frame state the kernel carries in and out.
 /// `None` when the region contains an op no loop kernel admits, so the loop
-/// is never retried.
+/// is never retried. Also returns the array locals whose elements the region
+/// reads or stores (`kernel_elem_slot_ok`); a local both read and stored
+/// declines, so a replayed iteration never reads its own earlier store.
 // Cost: O(n), n = ops in the region.
-pub(super) fn carried_slots(code: &CompiledCode, shape: &LoopShape) -> Option<Vec<u32>> {
+pub(super) fn carried_slots(
+    code: &CompiledCode,
+    shape: &LoopShape,
+) -> Option<(Vec<u32>, Vec<ElemSlot>)> {
+    let mut elems: Vec<ElemSlot> = Vec::new();
+    let mut elem = |slot: u32, name_idx: u32, store: bool| -> Option<()> {
+        match elems.iter().find(|e| e.slot == slot) {
+            Some(e) if e.store != store => None,
+            Some(_) => Some(()),
+            None => {
+                elems.push(ElemSlot {
+                    slot,
+                    name_idx,
+                    store,
+                });
+                Some(())
+            }
+        }
+    };
     let mut declared = Vec::new();
     // Nested loops' parameters: readonly per-iteration bindings the kernel
     // owns, neither carried nor `my` declarations.
@@ -223,6 +261,23 @@ pub(super) fn carried_slots(code: &CompiledCode, shape: &LoopShape) -> Option<Ve
                 | OpCode::ContainerizePair
                 | OpCode::WrapVarRef { .. }
                 | OpCode::CallFunc { .. } => {}
+                OpCode::GetLocal(s) if super::vm_kernel_elem::kernel_elem_slot_ok(code, *s) => {
+                    elem(*s, 0, false)?
+                }
+                OpCode::IndexAssignLocal {
+                    slot,
+                    name_idx,
+                    is_positional: true,
+                    index_first: true,
+                    concat_append: false,
+                    element_share: false,
+                } if super::vm_kernel_elem::kernel_elem_slot_ok(code, *slot) => {
+                    elem(*slot, *name_idx, true)?
+                }
+                OpCode::PreIncrement(_, Some(s))
+                | OpCode::PreDecrement(_, Some(s))
+                | OpCode::PostIncrement(_, Some(s))
+                | OpCode::PostDecrement(_, Some(s)) => used.push(*s),
                 OpCode::GetLocal(s) | OpCode::SetLocal(s) => used.push(*s),
                 OpCode::GetLocalMetaAssign { slot, .. } => used.push(*slot),
                 OpCode::SetVarDynamic { .. } => declared.push(plain_decl(op)?),
@@ -233,6 +288,14 @@ pub(super) fn carried_slots(code: &CompiledCode, shape: &LoopShape) -> Option<Ve
                 | OpCode::Mul
                 | OpCode::IntDiv
                 | OpCode::IntMod
+                | OpCode::Mod
+                | OpCode::BitAnd
+                | OpCode::BitOr
+                | OpCode::BitXor
+                | OpCode::Index {
+                    is_positional: true,
+                }
+                | OpCode::SinkPopAssign
                 | OpCode::NumLt
                 | OpCode::NumLe
                 | OpCode::NumGt
@@ -271,5 +334,5 @@ pub(super) fn carried_slots(code: &CompiledCode, shape: &LoopShape) -> Option<Ve
     if !out.iter().all(untyped) || !declared.iter().all(untyped) {
         return None;
     }
-    Some(out)
+    Some((out, elems))
 }
