@@ -6796,6 +6796,7 @@ t/rakuast/rakuast-array-context-seq-reread.t
 t/rakuast/rakuast-assign-target-origin-equal-terms.t
 t/rakuast/rakuast-assignment-item.t
 t/rakuast/rakuast-assignment-properties.t
+t/rakuast/rakuast-ast-literal-marker.t
 t/rakuast/rakuast-ast.t
 t/rakuast/rakuast-atomic-operators.t
 t/rakuast/rakuast-attribute-bind.t
@@ -10542,6 +10543,7 @@ t/types/string/uniprop-sentence-break-uax29.t
 t/types/string/uniprop-word-break-uax29.t
 t/types/string/utf8-c8-invalid-byte-codepoint.t
 t/types/string/utf8-c8-literal-marker-boundaries.t
+t/types/string/utf8-c8-literal-marker-roundtrip.t
 t/types/string/utf8-c8-literal-marker.t
 t/types/string/utf8-str-decodes.t
 t/types/string/windows-1251-windows-1252-encode-decode.t

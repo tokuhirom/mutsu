@@ -493,6 +493,8 @@ impl Interpreter {
             }
         }
         let code = Self::positional_string(args, 0);
+        // EVAL parses the source codepoints, not Str's escaped marker bytes.
+        let code = crate::grapheme_break::unescape_literal_marker(&code);
         if let Some(lang) = Self::named_value(args, "lang") {
             let lang = lang.to_string_value();
             if !lang.eq_ignore_ascii_case("raku") && !lang.eq_ignore_ascii_case("perl6") {
@@ -509,11 +511,8 @@ impl Interpreter {
                 return Err(err);
             }
         }
-        // `EVAL $code, context => $ctx` compiles the string as if it stood at
-        // `$ctx`'s frame, so a package the snippet declares is named after the
-        // caller and not after whichever module called EVAL. Without this a
-        // `throws-like 'class Foo { ... }', X::...` written against the real
-        // `Test` module reports `Test::Foo`.
+        // `context => $ctx` compiles in that frame's package; a Test.throws-like
+        // snippet declaring Foo must not create Test::Foo.
         let context_arg = Self::named_value(args, "context");
         let saved_package = context_arg
             .as_ref()
