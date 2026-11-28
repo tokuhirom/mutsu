@@ -77,6 +77,7 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::GetCodeVarLocal { .. }
             | OpCode::GetSelfOrNoSelf(_)
             | OpCode::GetUpvalue { .. }
+            | OpCode::GetLexFree { .. }
             // Variable writes / declarations
             | OpCode::SetGlobal(_)
             | OpCode::SetGlobalRaw { .. }
@@ -177,6 +178,13 @@ pub(super) fn step_supported(op: &OpCode) -> bool {
             | OpCode::IndexArgRef(..)
             | OpCode::RwArgCalleeBindsContainer(..)
             | OpCode::IndexAutovivifyLazy { .. }
+            // `%h{$k}++` / `@a[$i]--`: straight-line like the prefix forms
+            // listed above (the lean `%` step, else the generic increment,
+            // which may run a user `.succ` and raise like any other step).
+            // Unlisted, every loop counting into a hash
+            // (`for @words -> $w { %c{$w}++ }`) ran interpreted.
+            | OpCode::PostIncrementIndex(..)
+            | OpCode::PostDecrementIndex(..)
             // String / bool / numeric helpers
             | OpCode::StringConcat(_)
             | OpCode::StrCoerce

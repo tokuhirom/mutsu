@@ -90,9 +90,10 @@ impl CompiledCode {
                 // Consumes and pushes one value: part of the operand before it.
                 OpCode::DerefContainer => continue,
                 OpCode::LoadConst(idx) => first = Some(*idx),
-                OpCode::GetLocal(_) | OpCode::GetGlobal(_) | OpCode::GetUpvalue { .. } => {
-                    first = None
-                }
+                OpCode::GetLocal(_)
+                | OpCode::GetGlobal(_)
+                | OpCode::GetLexFree { .. }
+                | OpCode::GetUpvalue { .. } => first = None,
                 _ => return None,
             }
             remaining -= 1;

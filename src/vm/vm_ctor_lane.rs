@@ -18,7 +18,7 @@
 //! Every probe *returns* when it claims a call, so a dispatch that reaches the
 //! native default constructor has been declined by every probe in between.
 //! Reaching it is the proof, and the memo is written exactly there
-//! ([`Interpreter::note_ctor_lane_reached`]), not from a hand-audited list of
+//! ([`Interpreter::install_ctor_lane`]), not from a hand-audited list of
 //! conditions.
 //!
 //! # What the key has to hold constant
@@ -131,19 +131,27 @@ impl Interpreter {
         }
     }
 
-    /// Record that the whole chain was inert for `class_sym`, if it is the
-    /// class the current dispatch's gate nominated.
+    /// Whether this dispatch's gate nominated exactly `class_sym` for the
+    /// lane. Asked where the chain reaches the native default constructor,
+    /// before it runs: a BUILD/TWEAK body makes calls of its own, whose gates
+    /// clear the candidate, and they are not part of the chain the memo
+    /// proves.
     ///
     /// The candidate is cleared by every `CallMethodMut` gate, so a nested
     /// dispatch run from inside a probe cannot leave its own key behind for an
     /// outer call to install; and the equality check means an outer call can
     /// only ever install the class it was nominated with.
-    // Cost: O(1) when the candidate does not match; otherwise one plan fetch
-    // and the eligibility checks, once per class and generation.
-    pub(crate) fn note_ctor_lane_reached(&mut self, class_sym: crate::symbol::Symbol) {
-        if self.caches.ctor_lane_candidate != Some(class_sym) {
-            return;
-        }
+    // Cost: O(1).
+    pub(crate) fn ctor_lane_nominated(&self, class_sym: crate::symbol::Symbol) -> bool {
+        self.caches.ctor_lane_candidate == Some((class_sym, crate::symbol::wk::new_method()))
+    }
+
+    /// Record that the whole chain was inert for `class_sym`, for a dispatch
+    /// the gate nominated ([`Self::ctor_lane_nominated`]) whose native default
+    /// construction succeeded.
+    // Cost: one plan fetch and the eligibility checks, once per class and
+    // generation.
+    pub(crate) fn install_ctor_lane(&mut self, class_sym: crate::symbol::Symbol) {
         self.caches.ctor_lane_candidate = None;
         let plan = self.native_ctor_plan(class_sym);
         // A class whose user `new` declined these arguments installs too: the

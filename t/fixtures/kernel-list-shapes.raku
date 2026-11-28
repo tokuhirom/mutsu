@@ -129,3 +129,38 @@ say "prefixed=", prefixed();
     for ^50 { %t{"t$_"} = $_ }
     say "prefixed-typed=", %t.values.sum;
 }
+
+# `%h{$w}++` over a list of Strs (a `Str` list kernel): the word-count shape,
+# a named parameter and the topic, decrements and pre-forms.
+sub word-count() {
+    my @lines = ('a b c a b a' xx 10).list;
+    my %counts;
+    for ^20 {
+        for @lines -> $line {
+            for $line.split(' ') -> $w { %counts{$w}++ }
+        }
+    }
+    %counts.sort.map({ .key ~ '=' ~ .value }).join(',')
+}
+say "str-words=", word-count();
+{
+    my %c;
+    my @w = (<x y x> xx 10).flat;
+    for @w.List { %c{$_}++ }
+    for @w.List -> $k { --%c{$k} }
+    say "str-topic=", %c<x>, ",", %c<y>;
+}
+{
+    # A present element that is not an Int: the iteration reruns generically
+    # (`Str.succ`).
+    my %c = b => 'a9';
+    for (<a b a c> xx 5).flat -> $k { %c{$k}++ }
+    say "str-succ=", %c<a>, ",", %c<b>, ",", %c<c>;
+}
+{
+    # The outer variable of the parameter's name is untouched.
+    my $w = 'outer';
+    my %c;
+    for (<p q> xx 10).flat -> $w { %c{$w}++ }
+    say "str-outer=", $w, ",", %c<p>;
+}

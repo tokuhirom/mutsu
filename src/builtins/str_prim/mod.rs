@@ -54,9 +54,10 @@ pub(crate) fn str_order(a: &str, b: &str) -> std::cmp::Ordering {
 /// The number of graphemes in `v`'s string form (`.chars`, `nqp::chars`).
 ///
 /// Cost: O(1) amortized for a cached `Str` (the index is built once in O(n)
-/// and cached per payload, see `grapheme_index`); O(n) otherwise.
+/// and cached per payload, see `grapheme_index`); O(n) otherwise, which
+/// includes every `Str` short enough to be counted without an index.
 pub(crate) fn chars(v: &Value) -> usize {
-    with_str_index(v, |_, idx| idx.len())
+    crate::builtins::grapheme_index::grapheme_count(v)
 }
 
 /// `text[start .. start + count]` in graphemes, both clamped to the string.

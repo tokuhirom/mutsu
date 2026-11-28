@@ -83,7 +83,19 @@ impl Interpreter {
             // Cost: O(n + k), n = chars of $str (copied, normalized), k = old elems of $target.
             "strtocodes" => {
                 let target = args.get(2).cloned().unwrap_or(Value::NIL);
-                super::nqp_ops_string::refill_codes(op, &sarg(args, 0), iarg(args, 1), &target)
+                // A plain Str is decomposed where it lies: copying its text
+                // into a fresh `String` first was a third of the op for the
+                // short strings JSON::Fast's string scanner hands it.
+                let view = args.first().map(Value::view);
+                let owned;
+                let text: &str = match &view {
+                    Some(ValueView::Str(s)) => s.as_str(),
+                    _ => {
+                        owned = sarg(args, 0);
+                        &owned
+                    }
+                };
+                super::nqp_ops_string::refill_codes(op, text, iarg(args, 1), &target)
                     .map(|()| target)
             }
             // nqp::strfromcodes($codes) -> the string those codepoints spell.

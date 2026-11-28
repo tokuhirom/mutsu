@@ -106,7 +106,7 @@ impl Interpreter {
     /// list, directly or inside a container. Every other value, the common
     /// case, makes that pass a no-op.
     // Cost: O(1): tag probes, and one container read.
-    fn ctor_arg_may_hold_lazy(arg: &Value) -> bool {
+    pub(super) fn ctor_arg_may_hold_lazy(arg: &Value) -> bool {
         let ValueView::Pair(_, value) = arg.view() else {
             return true;
         };

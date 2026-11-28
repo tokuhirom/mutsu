@@ -10,12 +10,13 @@
 //! and rewrites the same elements.
 
 use super::vm_kernel_elem::{
-    kernel_elem_read_int, kernel_elem_read_num, kernel_elem_store_int, kernel_elem_store_num,
+    kernel_elem_read_int_view, kernel_elem_read_num_view, kernel_elem_store_int,
+    kernel_elem_store_num,
 };
 use super::vm_kernel_hash::{
-    kernel_elem2_read_int, kernel_elem2_read_num, kernel_hash_read_int, kernel_hash_read_num,
-    kernel_hash_store_int, kernel_hash_store_num, kernel_hash_store_prefixed_int,
-    kernel_hash_store_prefixed_num,
+    kernel_elem2_read_int, kernel_elem2_read_num, kernel_hash_incdec_int, kernel_hash_incdec_item,
+    kernel_hash_read_int, kernel_hash_read_num, kernel_hash_store_int, kernel_hash_store_num,
+    kernel_hash_store_prefixed_int, kernel_hash_store_prefixed_num,
 };
 use super::vm_loop_kernel_emit::Em;
 use super::vm_loop_kernel_types::K;
@@ -42,9 +43,17 @@ pub(super) struct ElemSigs {
     pub(super) store_prefixed_int: SigRef,
     /// `(interp, code, slot, prefix, key, value: f64) -> status`.
     pub(super) store_prefixed_num: SigRef,
+    /// `(interp, code, slot, items, index, flags) -> status`.
+    pub(super) incdec_item: SigRef,
+    /// `(interp, code, slot, key, flags) -> status`.
+    pub(super) incdec_int: SigRef,
+    /// Offset of the `Str` list's items pointer in the loop context.
+    pub(super) items_offset: i32,
     /// Offsets of the interpreter and code pointers in the loop context.
     pub(super) interp_offset: i32,
     pub(super) code_offset: i32,
+    /// Offset of the element views (`LoopCtx::elem_views`).
+    pub(super) views_offset: i32,
 }
 
 impl Em<'_, '_> {
@@ -102,13 +111,35 @@ impl Em<'_, '_> {
         self.b.ins().stack_load(self.ptr, ty, out, 0)
     }
 
-    /// `@a[index]` for the read array in `slot`, whose elements are `kind`.
+    /// `@a[index]` for the read array in `slot`, whose elements are `kind`:
+    /// through the element views the entry resolved (`LoopCtx::elem_views`),
+    /// with the same read signature, the views taking the interpreter's place.
     pub(super) fn elem_read(&mut self, slot: u32, index: ClValue, kind: SlotKind) -> ClValue {
         let f = match kind {
-            SlotKind::Int => kernel_elem_read_int as *const () as usize,
-            SlotKind::Num => kernel_elem_read_num as *const () as usize,
+            SlotKind::Int => kernel_elem_read_int_view as *const () as usize,
+            SlotKind::Num => kernel_elem_read_num_view as *const () as usize,
         };
-        self.read_via(self.elem.read, f, slot, &[index], kind)
+        let out =
+            self.b
+                .create_sized_stack_slot(StackSlotData::new(StackSlotKind::ExplicitSlot, 8, 3));
+        let out_addr = self.b.ins().stack_addr(self.ptr, out, 0);
+        let views = self
+            .b
+            .ins()
+            .iadd_imm_s(self.ctxp, self.elem.views_offset as i64);
+        let slot_v = self.b.ins().iconst(types::I32, slot as i64);
+        let f = self.b.ins().iconst(self.ptr, f as i64);
+        let call =
+            self.b
+                .ins()
+                .call_indirect(self.elem.read, f, &[views, views, slot_v, index, out_addr]);
+        let status = self.b.inst_results(call)[0];
+        self.guard_status(status);
+        let ty = match kind {
+            SlotKind::Int => types::I64,
+            SlotKind::Num => types::F64,
+        };
+        self.b.ins().stack_load(self.ptr, ty, out, 0)
     }
 
     /// `%h{key}` for the read hash in `slot`, whose values are `kind`.
@@ -184,6 +215,46 @@ impl Em<'_, '_> {
             self.b
                 .ins()
                 .call_indirect(sig, f, &[interp, code, slot_v, prefix_v, key, value]);
+        let status = self.b.inst_results(call)[0];
+        self.guard_status(status);
+    }
+
+    /// `%h{key}++` / `--` (pre or post: the value is sunk) on the stored hash
+    /// in `slot`, keyed by a `Str` list item (`K::StrItem`, `key` its index)
+    /// or an Int.
+    pub(super) fn hash_incdec(&mut self, op: &OpCode, slot: u32, key: ClValue, key_kind: K) {
+        let increment = matches!(
+            op,
+            OpCode::PreIncrementIndex(..) | OpCode::PostIncrementIndex(..)
+        );
+        let (interp, code) = self.elem_ptrs();
+        let slot_v = self.b.ins().iconst(types::I32, slot as i64);
+        let flags = self.b.ins().iconst(types::I32, increment as i64);
+        let call = if key_kind == K::StrItem {
+            let items = self.b.ins().load(
+                self.ptr,
+                MemFlagsData::trusted(),
+                self.ctxp,
+                self.elem.items_offset,
+            );
+            let f = self.b.ins().iconst(
+                self.ptr,
+                kernel_hash_incdec_item as *const () as usize as i64,
+            );
+            self.b.ins().call_indirect(
+                self.elem.incdec_item,
+                f,
+                &[interp, code, slot_v, items, key, flags],
+            )
+        } else {
+            let f = self.b.ins().iconst(
+                self.ptr,
+                kernel_hash_incdec_int as *const () as usize as i64,
+            );
+            self.b
+                .ins()
+                .call_indirect(self.elem.incdec_int, f, &[interp, code, slot_v, key, flags])
+        };
         let status = self.b.inst_results(call)[0];
         self.guard_status(status);
     }

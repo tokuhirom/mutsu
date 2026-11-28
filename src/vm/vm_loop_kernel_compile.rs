@@ -19,7 +19,7 @@
 
 use super::vm_jit_compile::with_engine;
 use super::vm_loop_kernel_emit::Em;
-use super::vm_loop_kernel_types::{LoopShape, LoopVar};
+use super::vm_loop_kernel_types::{ListKind, LoopShape, LoopVar};
 use super::vm_loop_kernel_typing::Typed;
 use super::*;
 use crate::opcode::kernel_slot::SlotKind;
@@ -52,9 +52,16 @@ pub(super) struct LoopCtx {
     /// (`vm_kernel_elem`); set by the entry for the length of the run.
     pub(super) interp: *mut Interpreter,
     pub(super) code: *const CompiledCode,
-    /// A list loop's items (`LoopShape::Range { list: true, .. }`), each a
-    /// plain `Int`, indexed by the counter; null for a counted loop.
+    /// An `Int` list loop's items (`ListKind::Int`), each a plain `Int`,
+    /// indexed by the counter; null otherwise.
     pub(super) list: *const i64,
+    /// A `Str` list loop's items (`ListKind::Str`), read in place by the hash
+    /// helpers at the counter; null otherwise.
+    pub(super) items: *const Value,
+    /// The arrays the region only reads, resolved at entry
+    /// (`vm_kernel_elem::kernel_elem_view`); the array read helpers index them
+    /// instead of resolving the slot per access.
+    pub(super) elem_views: [super::vm_kernel_elem::ElemView; super::vm_kernel_elem::ELEM_VIEWS],
 }
 
 const CTX_POLL: i32 = 0;
@@ -154,8 +161,26 @@ fn build(
             sig.returns.push(AbiParam::new(types::I32));
             b.import_signature(sig)
         },
+        incdec_item: {
+            let mut sig = cranelift_codegen::ir::Signature::new(module.isa().default_call_conv());
+            for t in [ptr, ptr, types::I32, ptr, types::I64, types::I32] {
+                sig.params.push(AbiParam::new(t));
+            }
+            sig.returns.push(AbiParam::new(types::I32));
+            b.import_signature(sig)
+        },
+        incdec_int: {
+            let mut sig = cranelift_codegen::ir::Signature::new(module.isa().default_call_conv());
+            for t in [ptr, ptr, types::I32, types::I64, types::I32] {
+                sig.params.push(AbiParam::new(t));
+            }
+            sig.returns.push(AbiParam::new(types::I32));
+            b.import_signature(sig)
+        },
+        items_offset: std::mem::offset_of!(LoopCtx, items) as i32,
         interp_offset: std::mem::offset_of!(LoopCtx, interp) as i32,
         code_offset: std::mem::offset_of!(LoopCtx, code) as i32,
+        views_offset: std::mem::offset_of!(LoopCtx, elem_views) as i32,
     };
     let mf = MemFlagsData::trusted();
 
@@ -211,6 +236,16 @@ fn build(
         vars,
         bail,
         var: shape.loop_var(),
+        str_var: match (*shape, shape.loop_var()) {
+            (
+                LoopShape::Range {
+                    list: ListKind::Str,
+                    ..
+                },
+                Some(LoopVar::Slot(s)),
+            ) => Some(s),
+            _ => None,
+        },
         counter,
         ctxp,
         poll_sig,
@@ -237,10 +272,13 @@ fn build(
             em.b.ins().brif(more, body_blk, &[], exit, &[]);
             em.b.switch_to_block(body_blk);
             match var {
-                // A list loop's variable is the item at the counter: the
-                // entry checked `0 <= counter < end = len` holds for every
+                // A `Str` list's variable is the counter itself, read as the
+                // item's index (`K::StrItem`): nothing to load.
+                LoopVar::Slot(_) if list == ListKind::Str => {}
+                // An `Int` list loop's variable is the item at the counter:
+                // the entry checked `0 <= counter < end = len` holds for every
                 // index the loop test admits.
-                LoopVar::Slot(s) if list => {
+                LoopVar::Slot(s) if list == ListKind::Int => {
                     let (v, _) = *em.vars.get(&s)?;
                     let base = em.b.ins().load(ptr, mf, ctxp, CTX_LIST);
                     let off = em.b.ins().ishl_imm_u(i, 3);
@@ -253,7 +291,7 @@ fn build(
                     em.b.def_var(v, i);
                 }
                 // A list loop always reads its topic through a slot.
-                LoopVar::Topic if list => return None,
+                LoopVar::Topic if list != ListKind::No => return None,
                 LoopVar::Topic => {}
             }
             let segs = shape.segments();
