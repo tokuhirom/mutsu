@@ -57,7 +57,11 @@ impl Interpreter {
         kind: LexFreeKind,
         ip: &mut usize,
     ) -> Result<(), RuntimeError> {
-        let held = self.locals.get(slot as usize).cloned().unwrap_or(Value::NIL);
+        let held = self
+            .locals
+            .get(slot as usize)
+            .cloned()
+            .unwrap_or(Value::NIL);
         if held.is_container_ref() {
             let name = Self::const_str(code, name_idx);
             if self.lexsub_free_cache_guards_hold(name) {

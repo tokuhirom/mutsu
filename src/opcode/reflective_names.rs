@@ -93,9 +93,7 @@ impl CompiledCode {
                 OpCode::GetLocal(_)
                 | OpCode::GetGlobal(_)
                 | OpCode::GetLexFree { .. }
-                | OpCode::GetUpvalue { .. } => {
-                    first = None
-                }
+                | OpCode::GetUpvalue { .. } => first = None,
                 _ => return None,
             }
             remaining -= 1;

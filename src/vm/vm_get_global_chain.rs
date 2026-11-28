@@ -64,9 +64,7 @@ impl Interpreter {
                 // `@`/`%` name has -- the scalar shortcut above excludes
                 // those sigils -- so a container-heavy program paid one
                 // intern per element access without it.
-                .or_else(|| {
-                    self.get_env_with_main_alias_sym(name, code.const_sym(name_idx))
-                })
+                .or_else(|| self.get_env_with_main_alias_sym(name, code.const_sym(name_idx)))
                 .or_else(|| {
                     // Fall back to the persistent our_vars store for `our`-scoped
                     // variables accessed via package-qualified names (e.g., $Pkg::var).
@@ -92,11 +90,10 @@ impl Interpreter {
                                 // symbol; the empty prefix would rebuild the
                                 // name itself, which already missed above.
                                 let name_sym = code.const_sym(name_idx);
-                                for pkg in crate::qualified::package_ancestors(
-                                    self.current_package_sym(),
-                                ) {
-                                    let candidate =
-                                        crate::qualified::qualified_var(pkg, name_sym);
+                                for pkg in
+                                    crate::qualified::package_ancestors(self.current_package_sym())
+                                {
+                                    let candidate = crate::qualified::qualified_var(pkg, name_sym);
                                     if let Some(v) = self.get_our_var(candidate.as_str()) {
                                         return Some(v);
                                     }
@@ -121,8 +118,7 @@ impl Interpreter {
                     // unqualified names (not as `A::x`).
                     // The split is memoized per symbol: no `"::"` search
                     // on each miss.
-                    let split =
-                        crate::qualified::split_qualified_var(code.const_sym(name_idx))?;
+                    let split = crate::qualified::split_qualified_var(code.const_sym(name_idx))?;
                     // Only apply when the qualifier matches the current package
                     // (i.e. the name was auto-qualified by the compiler, not
                     // explicitly written as a package-qualified access).

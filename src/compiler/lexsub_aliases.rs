@@ -131,7 +131,11 @@ impl Compiler {
     /// ([`CompiledCode::lexsub_free_slot_plan`](crate::opcode::CompiledCode::lexsub_free_slot_plan)).
     // Cost: O(k * (o + v * c)), k = `keys`, o = a body's ops, v = aliased
     // variables, c = its constants.
-    pub(super) fn assign_lexsub_free_slots(&mut self, keys: &[Symbol], aliases: &[LexSubFreeAlias]) {
+    pub(super) fn assign_lexsub_free_slots(
+        &mut self,
+        keys: &[Symbol],
+        aliases: &[LexSubFreeAlias],
+    ) {
         if aliases.is_empty() {
             return;
         }

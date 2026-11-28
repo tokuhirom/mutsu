@@ -395,7 +395,11 @@ impl Interpreter {
     /// of the alias table's names.
     // Cost: O(a + d), a = aliases of the running sub, d = env chain depth.
     #[inline]
-    pub(super) fn lexsub_alias_binding(&self, name: &str, name_sym: Option<Symbol>) -> Option<&Value> {
+    pub(super) fn lexsub_alias_binding(
+        &self,
+        name: &str,
+        name_sym: Option<Symbol>,
+    ) -> Option<&Value> {
         if self.lexicals.lexsub_free_aliases.is_empty() || self.active_loop_param_shadows(name) {
             return None;
         }
