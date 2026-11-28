@@ -784,6 +784,7 @@ impl Compiler {
                             c.emit_wrap_var_ref(name);
                             c.code.emit(OpCode::MakeNamedArg {
                                 readonly: c.is_readonly_param_operand(right),
+                                lazy: false,
                             });
                             continue;
                         }

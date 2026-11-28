@@ -287,10 +287,18 @@ impl Compiler {
         let immutable_topic_cb = self.method_binds_immutable_topic(target, &mname);
         let positional_indices = Self::arg_positional_indices(args);
         let deferred_slips = Self::deferred_slips(args);
+        // The call compiles to `CallMethodMut` (see the emit below), whose site
+        // resolves a lazy `:$var` argument before reading its arguments.
+        let lazy_named_ok = !(target_name == "!" || (target_name == "/" && mname != "VAR"));
         for (i, arg) in args.iter().enumerate() {
             if self.compile_deferred_slip(&deferred_slips, i, arg) {
                 continue;
             }
+            self.lazy_named_arg_value = if lazy_named_ok {
+                Self::lazy_named_arg_value_addr(arg)
+            } else {
+                0
+            };
             // Only the closure literal itself is escaping (see
             // `is_closure_literal_arg`); the legacy `then`/`tap`/`act`/`start`
             // names keep marking every argument, as they always did.
@@ -302,6 +310,7 @@ impl Compiler {
                 && Self::is_bare_block_arg(arg)
                 && (immutable_topic_cb || !Self::receiver_topic_decided_at_run_time(target));
             self.compile_method_arg_with_escape(arg, arg_esc);
+            self.lazy_named_arg_value = 0;
             self.pending_immutable_topic_block = false;
             self.pending_topic_site_block = false;
             // ADR-0067's argument producer, method-callee half: the invocant

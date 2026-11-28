@@ -233,6 +233,11 @@ impl Interpreter {
         code: &CompiledCode,
         ip: usize,
     ) -> Result<(), RuntimeError> {
+        // Lazy `:$var` arguments are resolved before anything reads the
+        // arguments (`vm_lazy_named_args`, #19384).
+        if let Some(result) = self.resolve_lazy_named_args(code, ip) {
+            return result;
+        }
         // `.VAR` of a readonly sigilless term bound to a value is that value
         // (`my \s = 5; s.VAR.^name` is `Int`); the term keeps no env marker
         // for the by-name `.VAR` path to find (ADR-17376).

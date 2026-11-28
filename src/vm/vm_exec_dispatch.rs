@@ -4586,8 +4586,8 @@ impl Interpreter {
             }
             // Cost: O(m), m = chars of a Str key (copied into the Pair); the
             // value is boxed as for MakePair. Rakudo: O(1) -- see #9252.
-            OpCode::MakeNamedArg { readonly } => {
-                self.exec_make_named_arg_op(code, *readonly);
+            OpCode::MakeNamedArg { readonly, lazy } => {
+                self.exec_make_named_arg_op(code, *readonly, *lazy);
                 *ip += 1;
             }
             // Cost: O(m), m = chars of the key (the `String` key is copied).

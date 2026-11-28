@@ -9,8 +9,14 @@ impl Compiler {
     /// which keeps the named marker, else `MakePair`, which an imported
     /// `infix:<=>>` candidate may replace (ADR-8751 stage 2).
     fn emit_make_pair(&mut self, mint_named_pair: bool, readonly: bool) {
+        self.emit_make_pair_lazy(mint_named_pair, readonly, false);
+    }
+
+    /// [`Self::emit_make_pair`], with `lazy` for the `:$var` argument of a
+    /// `CallMethodMut` site (`OpCode::MakeNamedArg`'s `lazy`).
+    fn emit_make_pair_lazy(&mut self, mint_named_pair: bool, readonly: bool, lazy: bool) {
         if mint_named_pair {
-            self.code.emit(OpCode::MakeNamedArg { readonly });
+            self.code.emit(OpCode::MakeNamedArg { readonly, lazy });
         } else {
             self.emit_lex_import_builtin_op(&OpCode::MakePair);
             self.code.emit(OpCode::MakePair);
@@ -737,10 +743,15 @@ impl Compiler {
             && !self.is_readonly_param_operand(right)
         {
             let name = name.to_string();
+            // The `:$var` argument its `CallMethodMut` site marked: the call op
+            // decides whether the callee needs the variable's cell (#19384).
+            let lazy = mint_named_pair
+                && self.lazy_named_arg_value == right as *const Expr as usize
+                && self.local_map.contains_key(&name);
             self.compile_expr(left);
             self.compile_expr(right);
             self.emit_wrap_var_ref(&name);
-            self.emit_make_pair(mint_named_pair, false);
+            self.emit_make_pair_lazy(mint_named_pair, false, lazy);
             return;
         }
 

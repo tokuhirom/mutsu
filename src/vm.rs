@@ -231,6 +231,7 @@ mod vm_comparison_ops;
 mod vm_comparison_order_ops;
 mod vm_ctor_early_lane;
 mod vm_ctor_lane;
+mod vm_lazy_named_args;
 mod vm_eqv_instances;
 mod vm_instance_method_front;
 mod vm_multi_light_call;

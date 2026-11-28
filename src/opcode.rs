@@ -2361,7 +2361,14 @@ pub(crate) enum OpCode {
     /// shape as `MakePair` (pop value, pop key, push a Pair) — only the
     /// resulting flavour differs. `readonly` records a plain readonly scalar
     /// parameter operand, whose binding remains readonly through transport.
-    MakeNamedArg { readonly: bool },
+    ///
+    /// `lazy` (#19384) is set only for a `:$var` argument of a `CallMethodMut`
+    /// site: the Pair keeps the `WrapVarRef`-tagged value as it is instead of
+    /// promoting the variable to a shared cell. The call op resolves it before
+    /// anything else reads the arguments (`vm_lazy_named_args`): the default
+    /// constructor takes the variable's value, every other callee gets the
+    /// shared cell exactly as an eager `MakeNamedArg` would have built it.
+    MakeNamedArg { readonly: bool, lazy: bool },
     /// Convert Pair(k,v) → ValuePair(Str(k),v) so it's treated as positional arg
     ContainerizePair,
 

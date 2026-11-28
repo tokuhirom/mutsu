@@ -618,6 +618,7 @@ pub(crate) mod mixin_identity;
 pub(crate) use dispatch_shape::iterator_kind::native_iterator_is_lazy;
 pub(crate) mod render_guard;
 pub(crate) mod seq_gen;
+mod pair_value_swap;
 mod varref_declared;
 pub(crate) use dispatch_shape::iterator_kind::{
     MAP_GREP_STREAM_ATTR, MONOTONIC_ITERATOR_ATTR, NONDETERMINISTIC_ITERATOR_ATTR,
