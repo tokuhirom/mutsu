@@ -17,7 +17,9 @@
 //! slot holds the binding or, as every call opens its frame, Nil:
 //!
 //! - **Nil**: take the running sub's alias binding from the env
-//!   (`lexsub_alias_binding`), unless a probe the by-name chain asks ahead of
+//!   (`lexsub_alias_binding`) -- or, for a sub declared at the mainline or in
+//!   a bare block, the cell ADR-0024 captured into its unit-lexical bucket,
+//!   also fixed for the call -- unless a probe the by-name chain asks ahead of
 //!   the alias could answer instead (the guards below, a frame linked to a
 //!   code object that captured its activation, a name the sub rebinds). That
 //!   binding is a shared cell, or the plain value of a read-only parameter
@@ -199,12 +201,18 @@ impl Interpreter {
         {
             return None;
         }
-        let binding = self.lexsub_alias_binding(name, Some(name_sym))?;
+        let binding = match self.lexsub_alias_binding(name, Some(name_sym)) {
+            Some(cell) => cell.clone(),
+            // A mainline or bare-block sub: its ADR-0024 capture.
+            None => self
+                .active_unit_lexical_entry()
+                .and_then(|(_, cells)| cells.get(name).cloned())?,
+        };
         if binding.is_container_ref()
             || !(code.free_var_writes.contains(&name_sym)
                 || code.free_var_container_writes.contains(&name_sym))
         {
-            Some(binding.clone())
+            Some(binding)
         } else {
             None
         }
