@@ -62,20 +62,16 @@ impl Interpreter {
         kind: LexFreeKind,
         ip: &mut usize,
     ) -> Result<(), RuntimeError> {
-        let held = self
-            .locals
-            .get(slot as usize)
-            .cloned()
-            .unwrap_or(Value::NIL);
-        if !held.is_nil() {
-            let name = Self::const_str(code, name_idx);
-            if self.lex_free_guards_hold(name, kind) {
-                let val = held.deref_clone();
-                if Self::lex_free_servable(&val, kind) {
-                    self.stack.push(val);
-                    *ip += 1;
-                    return Ok(());
-                }
+        let filled = self.locals.get(slot as usize).is_some_and(|v| !v.is_nil());
+        if filled {
+            // Borrowed, not cloned: only the content leaves the slot.
+            let val = (self.lex_free_guards_hold_at(code, name_idx, kind))
+                .then(|| self.locals[slot as usize].deref_clone())
+                .filter(|val| Self::lex_free_servable(val, kind));
+            if let Some(val) = val {
+                self.stack.push(val);
+                *ip += 1;
+                return Ok(());
             }
             return self.exec_lex_free_by_name(code, name_idx, kind, ip);
         }
@@ -135,6 +131,33 @@ impl Interpreter {
         self.lexsub_free_cache_guards_hold(name)
             && (matches!(kind, LexFreeKind::Scalar | LexFreeKind::Constant)
                 || !crate::runtime::shared_store::atomic_lane_entries_exist())
+    }
+
+    /// [`Self::lex_free_guards_hold`] for the name constant `name_idx`, testing
+    /// the per-interpreter flags first and resolving the name only for the
+    /// tests that need it (an atomic variable registered somewhere, a running
+    /// `for` parameter).
+    // Cost: O(l), l = names of the running `for` parameters; O(1) when none
+    // runs and no atomic variable exists.
+    #[inline]
+    fn lex_free_guards_hold_at(
+        &self,
+        code: &CompiledCode,
+        name_idx: u32,
+        kind: LexFreeKind,
+    ) -> bool {
+        if self.rw_return_context
+            || self.threads.sigilless_attrs_active
+            || !self.lexicals.escaping_our_lexical_names.is_empty()
+            || (matches!(kind, LexFreeKind::Array | LexFreeKind::Hash)
+                && crate::runtime::shared_store::atomic_lane_entries_exist())
+        {
+            return false;
+        }
+        if !self.atomic_var_seen() && !self.topic_state.any_loop_param_active() {
+            return true;
+        }
+        self.lex_free_guards_hold(Self::const_str(code, name_idx), kind)
     }
 
     /// The by-name read `kind` stands for.
