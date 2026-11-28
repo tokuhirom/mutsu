@@ -9,6 +9,10 @@ regression or win is visible at a glance. Each card also marks where mutsu
 loses against rakudo or rakupp, on a median of the last commits rather than the
 latest point, with the issues `benchmarks/bench-tracking.toml` names.
 
+Every ratio against rakudo or rakupp is read on the JIT-on series only
+(`@section+jit`, else `+jit`); the JIT-off series is mutsu's own baseline and
+is drawn on the seconds/counter metrics only (docs/benchmarks.md).
+
 Usage:
     # open directly in a browser (standards mode via --standalone):
     git show origin/bench-data:bench-history.tsv | \
@@ -309,8 +313,10 @@ def ref_changes(rows, idx):
 
 def standing(entry, n_commits, changes=None):
     """Where mutsu stands against each reference on this benchmark, read from
-    the shipped configuration's series (+jit, the default) and falling back to
-    the interpreter series for a benchmark recorded only without it.
+    the JIT-on series only (`@section+jit`, or `+jit` for a benchmark with no
+    section). The JIT-off series is mutsu's own interpreter baseline: losing to
+    rakudo or rakupp with the JIT off is not a perf gap (maintainer decision,
+    2026-11-28), so it never feeds a ratio, a loss, a sort order or `--report`.
 
     Each ratio is the median of the per-commit ratios over the newest RECENT
     points -- not the latest point -- with its interquartile range, so a row is
@@ -321,7 +327,7 @@ def standing(entry, n_commits, changes=None):
     (`changes`, from `ref_changes`): a median over both sides of a bump would
     blend two different baselines. A window that the change cut short says so
     (`since`, the version it starts at), since it reads fewer points."""
-    lane = "jit" if entry["jit"] else "base"
+    lane = "jit"
     pts = entry[lane]
     if not pts or pts[-1][0] < n_commits - STALE_AFTER:
         return None
@@ -702,8 +708,8 @@ __CHROME_NAV__
       <button data-v="table" aria-pressed="false">table</button>
     </div>
     <div class="legend">
-      <span><i class="swatch" style="background:var(--base)"></i>interpreter</span>
-      <span><i class="swatch" style="background:var(--jit)"></i>+jit</span>
+      <span id="legendBase"><i class="swatch" style="background:var(--base)"></i>interpreter (JIT off)</span>
+      <span><i class="swatch" style="background:var(--jit)"></i>+jit (JIT on)</span>
       <span id="legendWhole" class="hidden"><i class="swatch whole"></i>whole script (ratio charts)</span>
       <span id="legendSec" class="hidden"><i class="swatch secmark"></i>section series starts</span>
       <span id="legendRef" class="hidden"><i class="swatch refmark"></i>reference version changed</span>
@@ -828,14 +834,16 @@ const W = 300, H = 96, PADL = 6, PADR = 10, PADT = 10, PADB = 16;
 function chart(b) {
   const x0 = windowStart(), span = Math.max(1, (N - 1) - x0);
   const sx = (i) => PADL + (i - x0) / span * (W - PADL - PADR);
-  const lanes = [['base', b.base], ['jit', b.jit]]
+  // The JIT-off series is mutsu's own baseline: it is drawn on the seconds and
+  // counter metrics only, never on a ratio chart (no ratio is read from it).
+  const lanes = (isRatio() ? [['jit', b.jit]] : [['base', b.base], ['jit', b.jit]])
     .map(([k, pts]) => [k, pts.filter(p => p[0] >= x0 && defined(p))]);
   // The whole-script series of a card whose headline is the in-process section,
   // drawn dashed behind it on the ratio metrics only: seconds and ratios of the
   // two are different quantities, but two ratios against the same reference
   // share one axis, and the gap between them is the startup the section drops.
   const wholeLanes = (b.whole && isRatio())
-    ? [['base', b.whole.base], ['jit', b.whole.jit]]
+    ? [['jit', b.whole.jit]]
         .map(([k, pts]) => [k, pts.filter(p => p[0] >= x0 && defined(p))])
     : [];
   let lo = Infinity, hi = -Infinity;
@@ -898,7 +906,8 @@ function chart(b) {
 function card(b) {
   const c = chart(b);
   // The shipped configuration (+jit) when it has points in the window.
-  const nowLane = recentVals(b.jit).length ? 'jit' : 'base';
+  // (A ratio is read from the JIT-on series only.)
+  const nowLane = (isRatio() || recentVals(b.jit).length) ? 'jit' : 'base';
   const vals = recentVals(b[nowLane]);
   const readout = el('div', { class: 'readout' });
   if (vals.length) {
@@ -978,6 +987,8 @@ function renderCharts() {
   grid.replaceChildren(...benches.map(card));
   benches.forEach((b, i) => wireHover(grid.children[i], b));
   document.getElementById('legendRef').classList.toggle('hidden', !refChanges().length);
+  // No ratio is read from the JIT-off series, so a ratio chart does not draw it.
+  document.getElementById('legendBase').classList.toggle('hidden', isRatio());
   document.getElementById('legendWhole').classList.toggle('hidden',
     !(isRatio() && benches.some(b => b.whole)));
   document.getElementById('legendSec').classList.toggle('hidden',
@@ -988,7 +999,7 @@ function wireHover(card, b) {
   const svg = card.querySelector('svg'), tip = card.querySelector('.tip');
   const cross = card.querySelector('.crosshair');
   const x0 = windowStart(), span = Math.max(1, (N - 1) - x0);
-  const all = [...b.base.map(p => ['base', p]), ...b.jit.map(p => ['jit', p])]
+  const all = [...(isRatio() ? [] : b.base.map(p => ['base', p])), ...b.jit.map(p => ['jit', p])]
     .filter(([, p]) => p[0] >= x0 && defined(p));
   function move(ev) {
     const r = svg.getBoundingClientRect();
@@ -1000,7 +1011,7 @@ function wireHover(card, b) {
     if (best == null) return;
     const bx = PADL + (best - x0) / span * (W - PADL - PADR);
     cross.setAttribute('x1', bx); cross.setAttribute('x2', bx); cross.style.opacity = 1;
-    const bp = b.base.find(p => p[0] === best && defined(p));
+    const bp = isRatio() ? null : b.base.find(p => p[0] === best && defined(p));
     const jp = b.jit.find(p => p[0] === best && defined(p));
     const cm = commits[best];
     let rows = '';
@@ -1021,7 +1032,7 @@ function wireHover(card, b) {
 function renderTable() {
   const wrap = document.getElementById('tableWrap');
   const rows = benches.map(b => {
-    const vb = recentVals(b.base), vj = recentVals(b.jit);
+    const vb = isRatio() ? [] : recentVals(b.base), vj = recentVals(b.jit);
     const st = b.standing || {};
     return { b, name: b.name, base: vb.length ? median(vb) : null,
              jit: vj.length ? median(vj) : null, note: cardNoteFor(b),
@@ -1034,7 +1045,7 @@ function renderTable() {
     return (av > xv ? 1 : av < xv ? -1 : 0) * sortDir;
   });
   const th = (k, label) => `<th data-k="${k}">${label}${sortKey===k?(sortDir>0?' ↑':' ↓'):''}</th>`;
-  let h = `<table><thead><tr>${th('name','benchmark')}${th('base','interp '+unit())}${th('jit','+jit '+unit())}${th('rk','vs rakudo')}${th('pp','vs rakupp')}${th('wrk','whole script vs rakudo')}</tr></thead><tbody></tbody></table>`;
+  let h = `<table><thead><tr>${th('name','benchmark')}${th('base','interp (JIT off) '+unit())}${th('jit','+jit '+unit())}${th('rk','vs rakudo')}${th('pp','vs rakupp')}${th('wrk','whole script vs rakudo')}</tr></thead><tbody></tbody></table>`;
   wrap.innerHTML = h;
   const body = wrap.querySelector('tbody');
   for (const r of rows) {
@@ -1043,7 +1054,8 @@ function renderTable() {
     const mark = r.note ? el('span', { class: 'note-mark', title: stripTags(r.note) }, '†') : null;
     body.append(el('tr', {},
       el('td', {}, r.name, mark),
-      el('td', { class: 'mono' }, r.base == null ? '—' : fmt(r.base)),
+      el('td', { class: 'mono', title: isRatio() ? 'JIT off: mutsu\'s own baseline, no ratio against rakudo or rakupp is read from it' : '' },
+        (r.base == null || isRatio()) ? '—' : fmt(r.base)),
       el('td', { class: 'mono' }, r.jit == null ? '—' : fmt(r.jit)),
       ratioCell(r.b, 'ratio'), ratioCell(r.b, 'ratiopp'),
       el('td', { class: 'mono', title: 'secondary: the whole-script ratio, including interpreter startup' },
@@ -1229,6 +1241,11 @@ document.getElementById('foot').innerHTML =
     ? `<b>ratio vs rakupp</b> is mutsu ÷ <a href="https://github.com/ash/rakupp">Raku++</a>, ` +
       `an independent C++ implementation, measured the same way on the same runner. `
     : '') +
+  `<b>Every ratio is read on the JIT-on series</b> (<span class="mono">@section+jit</span>, or ` +
+  `<span class="mono">+jit</span> where a benchmark has no section): the JIT is on by default in ` +
+  `the shipped binary, and the JIT-off interpreter series is mutsu's own baseline. It is drawn ` +
+  `on the seconds and counter metrics next to +jit, but no ratio against rakudo or rakupp is ` +
+  `drawn or read from it; losing to either with the JIT off is not a perf gap. ` +
   `The big number on a card and the table's columns are the <b>median of the last ${RECENT} ` +
   `points</b> in the window, not the latest one: a CI runner is a lottery, and one commit's ` +
   `move is mostly noise, so the page shows no per-commit change either. ` +
