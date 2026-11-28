@@ -390,6 +390,7 @@ role Weird { method w { 1 } }; enum Flags does Weird (A => 1, B => 2); say Flags
 | `buf32.new(0x11223344, 0x55667788).read-ubits(0, 8)` and the other wide-buffer bit offsets | `0x11223344` (leaked MoarVM pointer arithmetic) | not mirrored | [#6816](https://github.com/tokuhirom/mutsu/pull/6816), news/2026-08/wide-buffer-bit-accessor-divergence-left-unfixed.md |
 | A routine that runs while a block-scoped `use` is live and executes on the caller's env | does not see the imported names | may see them (only widens visibility) | [ADR-11136](adr/11136-module-global-merge-is-lexical-to-the-importing-scope.md) §4 |
 | `GLOBAL::OuterCls` for a class a module merged lexically | not resolvable | resolvable, as mutsu's `GLOBAL` is the shared store (only widens visibility) | ADR-11136 §4 |
+| `sub F { fail "x" }; my @a = 0, 1, &F ... *; try @a[5]; try @a[3,5]` (a second read past a sequence generator's `Failure`) | the second read throws "This continuation has already been invoked" (an iterator-state artefact); the first throws "x" | both reads throw "x" | [#19344](https://github.com/tokuhirom/mutsu/issues/19344), `t/exceptions/sequence-generator-failure-throws.t` |
 
 ### C9. Temporary: module `BEGIN`s run on every load
 
