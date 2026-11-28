@@ -113,7 +113,18 @@ impl Interpreter {
             LexicalStashRoutines::All => None,
             LexicalStashRoutines::None => Some(None),
             LexicalStashRoutines::OwnImports { skip } => {
-                Some(self.import_scopes().len().checked_sub(skip as usize + 1))
+                // EVAL's carrier has an import region even when this package
+                // block opened none. It is not part of the block's MY:: pad.
+                Some(
+                    self.import_scopes()
+                        .len()
+                        .checked_sub(skip as usize + 1)
+                        .filter(|&i| {
+                            self.module
+                                .eval_unit_region
+                                .is_none_or(|unit| self.import_scopes()[i].region != Some(unit))
+                        }),
+                )
             }
         };
         // A package block (`module M { use P5chr; MY::.keys }`) imports into
