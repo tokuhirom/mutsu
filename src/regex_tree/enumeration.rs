@@ -84,7 +84,7 @@ impl CharClassElement {
                             class: BackslashClass::BackSpace,
                             negated,
                         }) => format!("\\{}", if *negated { 'B' } else { 'b' }),
-                        EnumerationElement::Class(atom) => atom.to_source(),
+                        EnumerationElement::Class(atom) => atom.to_enumeration_source(),
                     })
                     .collect::<Vec<_>>()
                     .join(" ");

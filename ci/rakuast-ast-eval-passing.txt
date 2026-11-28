@@ -8125,6 +8125,7 @@ t/regex/regex-m-s.t
 t/regex/regex-make.t
 t/regex/regex-modifier-only.t
 t/regex/regex-modifiers.t
+t/regex/regex-multi-codepoint-escape.t
 t/regex/regex-my-decl-once-per-invocation.t
 t/regex/regex-my-embedded-block-persist.t
 t/regex/regex-my-initializer-and-escaping-sub.t

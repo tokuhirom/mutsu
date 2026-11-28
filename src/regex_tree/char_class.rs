@@ -126,13 +126,37 @@ impl CharClassAtom {
             Self::Specified {
                 characters,
                 negated,
-            } => {
-                let letter = if *negated { 'X' } else { 'x' };
-                characters
-                    .chars()
-                    .map(|ch| format!("\\{letter}[{:X}]", ch as u32))
-                    .collect()
-            }
+            } => Self::specified_source(characters, *negated, true),
+        }
+    }
+
+    /// Inside `<[...]>`, adjacent escapes denote one grapheme class entry.
+    /// Preserve that spelling for a multi-codepoint specified entry.
+    // Cost: O(n), n = number of specified characters.
+    pub(crate) fn to_enumeration_source(&self) -> String {
+        match self {
+            Self::Specified {
+                characters,
+                negated,
+            } => Self::specified_source(characters, *negated, false),
+            _ => self.to_source(),
+        }
+    }
+
+    // Cost: O(n), n = number of specified characters.
+    fn specified_source(characters: &str, negated: bool, grouped: bool) -> String {
+        let letter = if negated { 'X' } else { 'x' };
+        let codepoints = characters
+            .chars()
+            .map(|ch| format!("{:X}", ch as u32))
+            .collect::<Vec<_>>();
+        if grouped {
+            format!("\\{letter}[{}]", codepoints.join(","))
+        } else {
+            codepoints
+                .into_iter()
+                .map(|codepoint| format!("\\{letter}[{codepoint}]"))
+                .collect()
         }
     }
 }
