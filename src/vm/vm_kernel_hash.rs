@@ -459,7 +459,7 @@ mod tests {
         let ValueView::Hash(hash) = interp.locals[slot as usize].view() else {
             panic!("slot holds a hash");
         };
-        assert!(hash.map.get("-40").is_some(), "keyed by the decimal Str");
+        assert!(hash.map.contains_key("-40"), "keyed by the decimal Str");
         assert_eq!(hash.map.len(), 5);
     }
 
