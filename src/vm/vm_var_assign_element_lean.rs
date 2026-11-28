@@ -293,14 +293,13 @@ impl Interpreter {
         // The slot's constraint, as `decl_type_constraint` reads it for this
         // store: none for a slot the chunk declares untyped; the by-name
         // record for one it leaves unrecorded (a `my @b := @a` binding).
-        let unconstrained = match code.declared_constraint(slot) {
+        match code.declared_constraint(slot) {
             crate::binding_desc::DeclaredConstraint::Untyped => true,
             crate::binding_desc::DeclaredConstraint::Unrecorded => {
                 self.own_var_type_constraint_value_sym(var_sym).is_none()
             }
             _ => false,
-        };
-        unconstrained
+        }
     }
 
     /// The container node the slot holds -- in its own word, or inside its
