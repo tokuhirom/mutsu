@@ -394,7 +394,7 @@ impl Interpreter {
     /// A value the lane stores as is: an immutable scalar (not a container, a
     /// list, a lazy value, a bind token or a boot box).
     // Cost: O(1).
-    fn lean_store_value_is_plain(val: &Value) -> bool {
+    pub(super) fn lean_store_value_is_plain(val: &Value) -> bool {
         matches!(
             val.view(),
             ValueView::Int(_)

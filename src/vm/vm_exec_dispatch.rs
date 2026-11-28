@@ -5755,9 +5755,17 @@ impl Interpreter {
                 value_source_idx,
             } => {
                 self.sync_source_line(code, *ip);
-                let pre = self.attr_container_op_prologue(code, *target_name_idx, *target_slot);
-                self.exec_array_push_op(code, *target_name_idx, *target_slot, *value_source_idx)?;
-                self.attr_container_op_epilogue(code, *target_name_idx, pre);
+                // The plain declared-`@`-local push (`vm_data_push_lean`);
+                // every other shape takes the general push below.
+                let lean = value_source_idx.is_none()
+                    && target_slot
+                        .is_some_and(|slot| self.try_lean_local_array_push(code, slot, *target_name_idx));
+                if !lean {
+                    let pre =
+                        self.attr_container_op_prologue(code, *target_name_idx, *target_slot);
+                    self.exec_array_push_op(code, *target_name_idx, *target_slot, *value_source_idx)?;
+                    self.attr_container_op_epilogue(code, *target_name_idx, pre);
+                }
                 *ip += 1;
             }
             // Cost: O(a) plus the method body, a = arguments (`push_method_dispatch_frame`'s
