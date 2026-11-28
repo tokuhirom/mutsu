@@ -141,10 +141,11 @@ impl Interpreter {
         // resolved here too, so the loop body is one or two `insert_sym`s.
         // A loop that owns its topic slot (`ForLoopSpec::topic_slot_only`)
         // binds only the slot: its body never reads `_` by name.
-        let topic_sym = (!use_local_only && param_name.is_none() && !spec.topic_slot_only).then(|| {
-            crate::env::note_env_key("_");
-            crate::symbol::Symbol::intern("_")
-        });
+        let topic_sym =
+            (!use_local_only && param_name.is_none() && !spec.topic_slot_only).then(|| {
+                crate::env::note_env_key("_");
+                crate::symbol::Symbol::intern("_")
+            });
         let param_sym = param_name.as_ref().map(|name| {
             crate::env::note_env_key(name);
             crate::symbol::Symbol::intern(name)
