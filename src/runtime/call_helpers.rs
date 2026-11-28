@@ -158,7 +158,13 @@ impl Interpreter {
         }
     }
 
+    // Cost: O(1). The tag probe comes first: every closure call scans its
+    // arguments with this, and a `view()` of a lazy Match argument (a subst
+    // replacement block's `$/`) would materialize it.
     pub(crate) fn is_callsite_line_marker(arg: &Value) -> bool {
+        if !arg.is_any_pair_value() {
+            return false;
+        }
         match arg.view() {
             ValueView::Pair(key, _) => key == TEST_CALLSITE_LINE_KEY,
             ValueView::ValuePair(key, _) => {
@@ -170,6 +176,9 @@ impl Interpreter {
 
     pub(crate) fn peek_callsite_line(args: &[Value]) -> Option<i64> {
         for arg in args {
+            if !arg.is_any_pair_value() {
+                continue;
+            }
             if let Some(line) = Self::callsite_line_of_view(&arg.view()) {
                 return Some(line);
             }

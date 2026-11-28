@@ -30,6 +30,10 @@ pub(super) struct Typed {
     pub(super) readonly_checks: Vec<(bool, u32)>,
     /// `.Num` call sites `(ip, receiver kind)`, vouched for at entry.
     pub(super) num_sites: Vec<(u32, SlotKind)>,
+    /// Sub calls `(ip, arity)` in region order; each must reach a sub kernel
+    /// (resolved at entry, ADR-19288 D3), and its index here is its slot in
+    /// the kernel's callee table.
+    pub(super) calls: Vec<(u32, u8)>,
     /// Every join `(segment start, ip)` with the stack kinds it is entered with
     /// (a jump target, and each segment's end).
     pub(super) joins: BTreeMap<(usize, usize), Vec<K>>,
@@ -176,6 +180,32 @@ impl Walk<'_> {
                 OpCode::Pop => {
                     stack.pop()?;
                 }
+                // Identities on an Int or Num: a pair's containerization and
+                // the wrap that lets a callee bind a variable `is rw` (a sub
+                // kernel's parameters are readonly).
+                OpCode::ContainerizePair | OpCode::WrapVarRef { .. } => {
+                    if *stack.last()? == K::Bool {
+                        return None;
+                    }
+                }
+                OpCode::CallFunc {
+                    arity,
+                    literal_native_args: 0,
+                    ..
+                } => {
+                    if *arity as usize > super::vm_kernel_compile::MAX_KERNEL_PARAMS
+                        || self.t.calls.len() >= super::vm_loop_kernel_compile::MAX_CALLS
+                    {
+                        return None;
+                    }
+                    for _ in 0..*arity {
+                        if stack.pop()? != K::Int {
+                            return None;
+                        }
+                    }
+                    self.t.calls.push((i as u32, *arity as u8));
+                    stack.push(K::Int);
+                }
                 OpCode::JumpIfFalse(t) | OpCode::JumpIfTrue(t) => {
                     stack.pop()?;
                     edge(&mut incoming, *t as usize, &stack)?;
@@ -276,6 +306,7 @@ pub(super) fn type_region(
             decls: Vec::new(),
             readonly_checks: Vec::new(),
             num_sites: Vec::new(),
+            calls: Vec::new(),
             joins: BTreeMap::new(),
         },
         loop_vars: Vec::new(),

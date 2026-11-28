@@ -219,7 +219,10 @@ pub(super) fn carried_slots(code: &CompiledCode, shape: &LoopShape) -> Option<Ve
                 OpCode::MakeRange
                 | OpCode::MakeRangeExcl
                 | OpCode::RestoreForParam
-                | OpCode::WhileLoop { .. } => {}
+                | OpCode::WhileLoop { .. }
+                | OpCode::ContainerizePair
+                | OpCode::WrapVarRef { .. }
+                | OpCode::CallFunc { .. } => {}
                 OpCode::GetLocal(s) | OpCode::SetLocal(s) => used.push(*s),
                 OpCode::GetLocalMetaAssign { slot, .. } => used.push(*slot),
                 OpCode::SetVarDynamic { .. } => declared.push(plain_decl(op)?),

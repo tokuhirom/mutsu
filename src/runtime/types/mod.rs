@@ -87,6 +87,11 @@ pub(crate) fn is_internal_named_arg(arg: &Value) -> bool {
             TEST_CALLSITE_LINE_KEY | CALLFRAME_LINE_KEY | CALLFRAME_BLOCKS_KEY
         )
     }
+    // The binder asks this of every argument: a tag probe first, so a lazy
+    // Match argument is not materialized just to see it is not a Pair.
+    if !arg.is_any_pair_value() {
+        return false;
+    }
     match arg.view() {
         ValueView::Pair(key, _) => is_internal_key(key.as_str()),
         ValueView::ValuePair(key, _) => {

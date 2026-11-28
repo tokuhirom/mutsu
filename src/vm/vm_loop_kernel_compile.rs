@@ -32,6 +32,9 @@ use cranelift_module::{Linkage, Module};
 /// Back-edges between two runs of the ordinary safepoint poll.
 pub(super) const LOOP_POLL_EVERY: u32 = 4096;
 
+/// The most sub calls one loop kernel makes (its callee table's size).
+pub(super) const MAX_CALLS: usize = 8;
+
 /// Per-run state of a loop kernel.
 #[repr(C)]
 pub(super) struct LoopCtx {
@@ -41,6 +44,10 @@ pub(super) struct LoopCtx {
     pub(super) inclusive: u32,
     /// The range's end.
     pub(super) end: i64,
+    /// The context every sub kernel the loop calls runs with.
+    pub(super) kctx: super::vm_kernel_compile::KernelCtx,
+    /// Each call's sub-kernel entry, resolved at entry.
+    pub(super) callees: [usize; MAX_CALLS],
 }
 
 const CTX_POLL: i32 = 0;
@@ -90,6 +97,17 @@ fn build(
     let mut poll_sig = cranelift_codegen::ir::Signature::new(module.isa().default_call_conv());
     poll_sig.params.push(AbiParam::new(ptr));
     let poll_sig = b.import_signature(poll_sig);
+    let call_sigs: Vec<_> = (0..=super::vm_kernel_compile::MAX_KERNEL_PARAMS)
+        .map(|n| {
+            let mut sig = cranelift_codegen::ir::Signature::new(module.isa().default_call_conv());
+            sig.params.push(AbiParam::new(ptr));
+            for _ in 0..n {
+                sig.params.push(AbiParam::new(types::I64));
+            }
+            sig.returns.push(AbiParam::new(types::I64));
+            b.import_signature(sig)
+        })
+        .collect();
     let mf = MemFlagsData::trusted();
 
     let entry = b.create_block();
@@ -150,6 +168,10 @@ fn build(
         poll_fn: loop_poll as *const () as usize,
         poll_offset: CTX_POLL,
         ptr,
+        callees_offset: std::mem::offset_of!(LoopCtx, callees) as i32,
+        kctx_offset: std::mem::offset_of!(LoopCtx, kctx) as i32,
+        call_sigs,
+        next_call: 0,
     };
     em.poll();
     let body_blk = em.b.create_block();

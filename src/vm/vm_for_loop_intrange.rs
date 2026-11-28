@@ -159,49 +159,65 @@ impl Interpreter {
         });
 
         // ADR-19288 D5: a body of closed Int/Num arithmetic runs the rest of
-        // the range as one native loop. A bail hands back the iteration to
-        // rerun; a decline changes nothing.
-        #[cfg_attr(not(feature = "jit"), allow(unused_mut))]
-        let mut kernel_done = false;
+        // the range as one native loop, tried at the first iteration and,
+        // once declined, again after 256 (by then a sub the body calls has
+        // been called, so the call cache can name its kernel). A bail hands
+        // back the iteration to rerun generically; a decline changes nothing.
         #[cfg(feature = "jit")]
-        if nested_entry.is_none()
-            && let Some(shape) = Self::range_kernel_shape(spec, param_name.is_none(), topic_local)
-        {
-            let trips = if inclusive {
-                end_val.saturating_sub(i).saturating_add(1)
-            } else {
-                end_val.saturating_sub(i)
-            };
-            let shape = shape(body_start, loop_end);
-            match self.try_loop_kernel(
-                code,
-                body_start - 1,
-                shape,
-                i,
-                Some((end_val, inclusive)),
-                trips >= 16,
-            ) {
-                Ok(super::vm_loop_kernel::LoopOutcome::Declined) => {}
-                Ok(super::vm_loop_kernel::LoopOutcome::Done) => kernel_done = true,
-                Ok(super::vm_loop_kernel::LoopOutcome::Bailed(at)) => i = at,
-                Err(e) => {
-                    if !spec.is_rw
-                        && let Some(ref name) = param_name
-                    {
-                        self.unmark_readonly(name);
-                    }
-                    if !was_topic_readonly {
-                        self.unmark_readonly("_");
-                    }
-                    self.restore_loop_topic(saved_topic, saved_topic_local);
-                    self.pop_loop_local_scope(code);
-                    return Err(e);
-                }
-            }
-        }
+        let kernel_shape = nested_entry
+            .is_none()
+            .then(|| Self::range_kernel_shape(spec, param_name.is_none(), topic_local))
+            .flatten()
+            .map(|shape| shape(body_start, loop_end));
+        #[cfg(feature = "jit")]
+        let mut kernel_try_at = Some(i);
         // Use <= for inclusive ranges instead of end_val + 1 to avoid overflow
         // when end_val is i64::MAX
-        'for_loop: while !kernel_done && if inclusive { i <= end_val } else { i < end_val } {
+        'for_loop: while if inclusive { i <= end_val } else { i < end_val } {
+            #[cfg(feature = "jit")]
+            if kernel_try_at == Some(i)
+                && let Some(shape) = kernel_shape
+            {
+                let trips = if inclusive {
+                    end_val.saturating_sub(i).saturating_add(1)
+                } else {
+                    end_val.saturating_sub(i)
+                };
+                let first = i == start;
+                kernel_try_at = None;
+                match self.try_loop_kernel(
+                    code,
+                    body_start - 1,
+                    shape,
+                    Some((i, end_val, inclusive)),
+                    trips >= 16 || !first,
+                    compiled_fns,
+                ) {
+                    Ok(super::vm_loop_kernel::LoopOutcome::Declined) => {
+                        if first {
+                            kernel_try_at = i.checked_add(256);
+                        }
+                    }
+                    Ok(super::vm_loop_kernel::LoopOutcome::Done) => break 'for_loop,
+                    Ok(super::vm_loop_kernel::LoopOutcome::Bailed(at)) => {
+                        i = at;
+                        continue 'for_loop;
+                    }
+                    Err(e) => {
+                        if !spec.is_rw
+                            && let Some(ref name) = param_name
+                        {
+                            self.unmark_readonly(name);
+                        }
+                        if !was_topic_readonly {
+                            self.unmark_readonly("_");
+                        }
+                        self.restore_loop_topic(saved_topic, saved_topic_local);
+                        self.pop_loop_local_scope(code);
+                        return Err(e);
+                    }
+                }
+            }
             crate::alloc_scope_named!(_sc_for_bind, "op:ForLoop:iter-bind");
             let item = Value::int(i);
             self.topic_state.topic_source_var = None;

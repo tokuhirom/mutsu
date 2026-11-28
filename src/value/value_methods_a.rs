@@ -1444,7 +1444,10 @@ impl Value {
         val: &Value,
     ) {
         let mut inner = arc.lock().unwrap();
-        if matches!(inner.view(), ValueView::HashEntryRef { .. })
+        // Tag probes only, never `view()`: a lazy Match on either side (the
+        // `$/` cell a substitution publishes each occurrence through) would
+        // otherwise be materialized just to see it is neither shape.
+        if inner.is_hash_entry_ref_value()
             && let Some(terminal) = inner.hash_entry_terminal()
         {
             terminal.insert(Value::ContainerRef(arc.clone()));
@@ -1468,7 +1471,8 @@ impl Value {
         // (Slice 2a/2e, `vm/vm_attr_share.rs`) which the source variable holds
         // too, and a Scalar assignment rebinds the Scalar rather than
         // overwriting the shared source.
-        if !matches!(val.view(), ValueView::ContainerRef(_))
+        if !val.is_container_ref()
+            && inner.is_container_ref()
             && !inner.container_ref_is_itemized()
             && let ValueView::ContainerRef(nested) = inner.view()
             && !crate::gc::Gc::ptr_eq(&nested, arc)
