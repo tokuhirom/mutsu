@@ -211,10 +211,9 @@ impl Interpreter {
         // was removed in Stage 3 (the interpreter-bridge writes it covered, e.g.
         // EVAL modifying a `$GLOBAL::` variable, are now reconciled by precise
         // write-throughs at their own sites).
-        let rhs_names = Self::smartmatch_rhs_sync(code, rhs_start, rhs_end);
-        self.apply_smartmatch_sync(code, &rhs_names);
-        let adverb_names = Self::smartmatch_rhs_adverb_names(code, rhs_start, rhs_end);
-        self.apply_smartmatch_adverb_sync(code, &adverb_names);
+        let rhs_names = Self::smartmatch_rhs_names(code, rhs_start, rhs_end);
+        self.apply_smartmatch_sync(code, &rhs_names.sync);
+        self.apply_smartmatch_adverb_sync(code, &rhs_names.adverb);
         let saved_in_smartmatch_rhs = self.topic_state.in_smartmatch_rhs;
         self.topic_state.in_smartmatch_rhs = true;
         self.topic_state.transliterate_in_smartmatch = false;
@@ -321,7 +320,11 @@ impl Interpreter {
         let topic_modified = was_substitution
             || was_transliterate
             || (!rhs_is_bare_topic
-                && !crate::runtime::utils::values_identical(&topic_after, &left));
+                // The same word is the same value: the topic still holds
+                // the `left` this op installed (an O(1) check before the
+                // structural one, which compares a Str by its text).
+                && !(topic_after.same_binding(&left)
+                    || crate::runtime::utils::values_identical(&topic_after, &left)));
         if let Some(var_name) = lhs_var.filter(|_| topic_modified) {
             let modified_topic = topic_after.clone();
             // An aliasing topic keeps its binding: write the modified value into
@@ -512,7 +515,7 @@ impl Interpreter {
         // special vars read by name, never a caller local slot, so no pull.
         let wrote_caller_via_code = !self.pending_local_updates.is_empty();
         let match_var_is_local = !code
-            .local_slots_of(crate::symbol::Symbol::intern("/"))
+            .local_slots_of(crate::symbol::wk::match_var())
             .is_empty();
         let pure = rhs_pure_regex
             && !was_substitution

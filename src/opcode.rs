@@ -8424,6 +8424,13 @@ pub(crate) struct CompiledCode {
     /// Lazily-built enum-bare env keys (`enum_bare_key`) of
     /// [`free_var_syms`](Self::free_var_syms) -- see [`Self::free_enum_bare_keys`].
     pub(crate) free_enum_bare_keys: std::sync::OnceLock<Box<[Symbol]>>,
+    /// Lazily-built, per `SmartMatchExpr` op (keyed by its RHS start): the
+    /// names its RHS's regex literals and substitutions can read by name
+    /// (`vm_smartmatch_sync`). A pure function of the chunk's ops and
+    /// constants, which every execution of the op used to recompute by
+    /// re-scanning the RHS and re-parsing each pattern.
+    pub(crate) smartmatch_rhs_names:
+        std::sync::OnceLock<rustc_hash::FxHashMap<usize, Arc<SmartMatchRhsNames>>>,
     /// Lazily-built name indexes over [`locals`](Self::locals) (see
     /// [`LocalSlotIndex`]), so a block exit can find the slots of the handful
     /// of names it has to reset without scanning every local of the frame
@@ -9099,6 +9106,7 @@ impl CompiledCode {
             capture_probe_keys: std::sync::OnceLock::new(),
             body_name_tokens: std::sync::OnceLock::new(),
             free_enum_bare_keys: std::sync::OnceLock::new(),
+            smartmatch_rhs_names: std::sync::OnceLock::new(),
             local_slot_index: std::sync::OnceLock::new(),
             op_scan_index: std::sync::OnceLock::new(),
             stmt_pool_bodies: std::sync::OnceLock::new(),
@@ -16066,4 +16074,15 @@ fn nqp_op_names_lexical(id: u16, binds_only: bool) -> bool {
                 | "curlexpad"
                 | "ctx"
         ))
+}
+
+/// What a `SmartMatchExpr` op's RHS can read by name, settled once per chunk
+/// (see [`CompiledCode::smartmatch_rhs_names`]).
+#[derive(Debug, Default)]
+pub(crate) struct SmartMatchRhsNames {
+    /// The variables its regex literals, substitution patterns and
+    /// replacements name.
+    pub(crate) sync: Vec<String>,
+    /// The variables its adverbed regex literals (`m:i/$re/`) name.
+    pub(crate) adverb: Vec<String>,
 }
