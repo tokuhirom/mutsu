@@ -266,6 +266,16 @@ impl Interpreter {
 
     /// Returns true if the given key is in the shared_vars_dirty set
     /// (i.e., was modified by an atomic/CAS operation).
+    /// Whether any shared variable is marked dirty.
+    // Cost: O(1) — one read lock.
+    pub(crate) fn shared_vars_dirty_any(&self) -> bool {
+        self.threads
+            .shared_vars_dirty
+            .read()
+            .map(|d| !d.is_empty())
+            .unwrap_or(true)
+    }
+
     pub(crate) fn is_shared_var_dirty(&self, key: &str) -> bool {
         self.threads
             .shared_vars_dirty
