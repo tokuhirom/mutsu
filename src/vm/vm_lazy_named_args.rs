@@ -16,7 +16,8 @@
 //!
 //! - when the call is a `.new` the default constructor answers for a class
 //!   that runs no user code over the arguments (no user `new`, `bless`,
-//!   `BUILD`, `TWEAK`, BUILDPLAN or `set_build`), each such Pair takes the
+//!   `BUILD`, `TWEAK`, BUILDPLAN or `set_build`) and binds no attribute
+//!   `is built(:bind)`, each such Pair takes the
 //!   variable's current value, and the constructor lane runs on them;
 //! - otherwise, or when the lane declines, each Pair takes the shared cell the
 //!   eager op would have built, and the call proceeds exactly as before.
@@ -100,9 +101,10 @@ impl Interpreter {
     /// values: a plain `.new` on a class the lane holds, whose construction
     /// runs no user code that could bind an argument `is rw` or keep its
     /// container (a user `new`/`bless`, `BUILD`, `TWEAK`, a replaced
-    /// BUILDPLAN, an `Attribute.set_build` closure).
-    // Cost: O(1) hash probes; the BUILDPLAN check is O(m), m = MRO length,
-    // only once a program has replaced a BUILDPLAN.
+    /// BUILDPLAN, an `Attribute.set_build` closure), and that binds no
+    /// attribute `is built(:bind)` to its argument's container.
+    // Cost: O(n), n = attributes of the class, plus hash probes; the BUILDPLAN
+    // check is O(m), m = MRO length, only once a program has replaced one.
     fn lazy_named_ctor_candidate(
         &mut self,
         code: &CompiledCode,
@@ -136,7 +138,9 @@ impl Interpreter {
             && !plan.has_build
             && !plan.has_tweak
             && !plan.has_custom_bless
-            && !plan.has_build_overrides;
+            && !plan.has_build_overrides
+            // An `is built(:bind)` attribute binds the argument's container.
+            && !plan.attr_binds.iter().any(|binds| *binds);
         runs_no_user_code && !self.buildplan_replaced_in_mro(class_sym)
     }
 

@@ -14,8 +14,8 @@ The argument of a method call now travels lazily: the Pair keeps the
 reads the arguments (`src/vm/vm_lazy_named_args.rs`). When the call is a
 `.new` that the constructor lane answers for a class that runs no user code
 over the arguments (no user `new`, `bless`, `BUILD`, `TWEAK`, replaced
-BUILDPLAN or `Attribute.set_build`), each argument takes the variable's
-current value. Every other callee, and a constructor call the lane declines,
+BUILDPLAN or `Attribute.set_build`) and binds no attribute
+`is built(:bind)`, each argument takes the variable's current value. Every other callee, and a constructor call the lane declines,
 gets the shared cell exactly as before.
 
 On the reproducer of #19384 (`Quoted.new` with two `:$var` and two literal
