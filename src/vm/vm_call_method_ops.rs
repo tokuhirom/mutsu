@@ -983,6 +983,17 @@ impl Interpreter {
             self.stack.push(result?);
             return Ok(());
         }
+        // `.parse` / `.subparse` on a grammar (`vm_grammar_parse_site`).
+        if let Some(result) = self.try_grammar_parse_site(
+            code,
+            name.raw,
+            arity,
+            modifier_idx,
+            quoted,
+            arg_sources_idx,
+        ) {
+            return result;
+        }
         // A recorded argument-less `.?name` miss (#17987). Only while no
         // accessor-ref marker is pending: this dispatch would consume it.
         if !self.accessor_ref_pending

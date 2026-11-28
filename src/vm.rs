@@ -196,6 +196,7 @@ mod vm_bareword_site;
 mod vm_call_method_site_lane;
 mod vm_call_nqp_list;
 mod vm_cursor_match_lane;
+mod vm_grammar_parse_site;
 mod vm_iterator_site_lane;
 mod vm_method_site_lane;
 mod vm_method_site_static;
