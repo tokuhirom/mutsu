@@ -19,4 +19,6 @@ override, for instance) is called exactly as before.
 
 YAMLish makes one such call per plain scalar it concretizes
 (`$schema.new.parse($!value)`, 60 per `load-yaml` of
-`bench-yaml-parse-big`'s document) (#12917).
+`bench-yaml-parse-big`'s document). One warm `load-yaml`, `MUTSU_JIT=off`,
+callgrind: 108.24M -> 105.79M instructions (-2.3%), 60.8k -> 59.7k
+allocations (#12917).
