@@ -416,6 +416,18 @@ impl Interpreter {
         left: Value,
         right: Value,
     ) -> Result<Value, RuntimeError> {
+        // Two plain `Str` operands, the common `~`: no BOOT box to hllize, no
+        // junction to thread, no `.Stringy`/`.Str` to dispatch and no user
+        // `^find_method` to ask, so only a user `infix:<~>` could answer
+        // differently. Each step below declines such operands one probe at a
+        // time (~800 Ir per `~`).
+        if left.is_str_value()
+            && right.is_str_value()
+            && !crate::runtime::find_method_intercept::any_user_find_method()
+            && !self.user_infix_override("infix:<~>")
+        {
+            return Ok(crate::builtins::str_prim::concat(left, &right));
+        }
         // A raw BOOT scalar box is its high-level value at an operator (#12881).
         let left = left.hllize_operand();
         let right = right.hllize_operand();
