@@ -119,7 +119,10 @@ pub(super) fn process_latches_clear(interp: &Interpreter, positional: bool) -> b
 /// backing, element type, `is default` or shape.
 // Cost: O(1) (one refcount bump; one uncontended cell lock for a cell).
 #[inline(always)]
-pub(super) fn plain_array_node(interp: &Interpreter, slot: u32) -> Option<crate::gc::Gc<ArrayData>> {
+pub(super) fn plain_array_node(
+    interp: &Interpreter,
+    slot: u32,
+) -> Option<crate::gc::Gc<ArrayData>> {
     let word = interp.locals.get(slot as usize)?;
     let items = match word.view() {
         ValueView::Array(items, ArrayKind::Array | ArrayKind::ItemArray) => items.clone(),

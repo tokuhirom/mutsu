@@ -273,7 +273,10 @@ fn read_element2(interp: &Interpreter, slot: u32, i: i64, j: i64) -> Option<Valu
         ValueView::Array(row, ArrayKind::Array | ArrayKind::ItemArray) => row.clone(),
         _ => return None,
     };
-    if row.has_native_backing() || row.has_type_meta() || row.default.is_some() || row.shape.is_some()
+    if row.has_native_backing()
+        || row.has_type_meta()
+        || row.default.is_some()
+        || row.shape.is_some()
     {
         return None;
     }
@@ -423,7 +426,9 @@ mod tests {
         }
         assert!(kernel_hash_node_id(&interp, slot).is_some());
         let not_hash = interp_with(&code, slot, Value::int(1));
-        assert!(!kernel_hash_entry_ok(&not_hash, &code, slot, name_idx, false));
+        assert!(!kernel_hash_entry_ok(
+            &not_hash, &code, slot, name_idx, false
+        ));
         assert!(kernel_hash_node_id(&not_hash, slot).is_none());
     }
 
@@ -464,7 +469,10 @@ mod tests {
         let mut interp = interp_with(&code, slot, Value::int(3));
         assert_eq!(read_int(&mut interp, slot, 1), None);
         assert_eq!(store_int(&mut interp, slot, 1, 1), KERNEL_ELEM_DECLINE);
-        assert!(matches!(interp.locals[slot as usize].view(), ValueView::Int(3)));
+        assert!(matches!(
+            interp.locals[slot as usize].view(),
+            ValueView::Int(3)
+        ));
     }
 
     const GRID_SRC: &str = "my @g = [1, 2], [3, 4]; @g[0] = 5;";
