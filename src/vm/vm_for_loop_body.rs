@@ -281,7 +281,14 @@ impl Interpreter {
         // element with the Pair (S32-array/pairs.t 14). The Pair's rw `.value`
         // alias handles propagation (and immutability for Mix), so suppress the
         // plain writeback here while keeping the source tag.
-        let writes_back_loop_var = writes_back_topic && !spec.loop_var_wraps_element;
+        //
+        // A body that cannot write, bind or capture `$_` (`topic_alias_unobservable`,
+        // #14495) never changes the topic, so its writeback would compare
+        // every element with itself; skip it, and the up-front copy of a
+        // `%h.values` source's key order it needs.
+        let writes_back_loop_var = writes_back_topic
+            && !spec.loop_var_wraps_element
+            && !(spec.topic_alias_unobservable && !spec.do_writeback);
         // ADR-0052 Slice 1: a construct that runs a body owns a stack base and
         // truncates to it at the end of EVERY iteration, not only when it is
         // collecting. A sink-position loop used to establish no base at all, so
