@@ -1095,7 +1095,9 @@ impl Interpreter {
                     && !pd.is_parens()
                     && !pd.is_bare_type_capture()
                 {
-                    self.bind_param_value(&pd.name, arg.clone());
+                    // Under the storage name: a sigilless `\n` is the term key
+                    // a later parameter's `where` reads (`Int \k where * == n`).
+                    self.bind_param_value(&pd.storage_name(), arg.clone());
                 }
                 if is_subsig_capture {
                     p = positional_indices.len();
