@@ -6011,11 +6011,17 @@ impl Interpreter {
             // Cost: O(1) amortized for a single index/key; O(k) for a slice (see
             // exec_delete_index_named_op).
             OpCode::DeleteIndexNamed(name_idx, slot, kind) => {
-                let pre = self.attr_elem_env_snapshot(code, *name_idx);
-                self.with_package_lexical_seeded(code, *name_idx, |vm| {
-                    vm.exec_delete_index_named_op(code, *name_idx, *slot, *kind)
-                })?;
-                self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
+                // The plain declared-`%`-local delete (`vm_var_delete_lean`).
+                let lean = slot.is_some_and(|slot| {
+                    self.try_lean_local_hash_delete(code, slot, *name_idx, *kind)
+                });
+                if !lean {
+                    let pre = self.attr_elem_env_snapshot(code, *name_idx);
+                    self.with_package_lexical_seeded(code, *name_idx, |vm| {
+                        vm.exec_delete_index_named_op(code, *name_idx, *slot, *kind)
+                    })?;
+                    self.mirror_attr_elem_env_to_cell(code, *name_idx, pre);
+                }
                 *ip += 1;
             }
             // Cost: O(1) amortized for a single index/key; O(k) for a slice, k = indices.
