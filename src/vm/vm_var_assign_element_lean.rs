@@ -37,7 +37,7 @@ use super::*;
 
 /// The container node a store addresses: an ordinary `Array` (or itemized
 /// `Array`) node, or a `Hash` node.
-enum LeanStoreNode {
+pub(super) enum LeanStoreNode {
     Array(crate::gc::Gc<crate::value::ArrayData>),
     Hash(crate::gc::Gc<crate::value::HashData>),
 }
@@ -259,18 +259,36 @@ impl Interpreter {
         if !Self::lean_store_value_is_plain(&self.stack[ops.value_at]) {
             return None;
         }
+        self.lean_store_variable_ok(code, slot, name_idx)
+            .then_some(ops)
+    }
+
+    /// The variable half of [`Self::lean_store_preamble`]: the conditions a
+    /// store into the variable named by `name_idx` (in `slot`) needs that are
+    /// decided by the variable, not by the stack or the container -- no `:=`
+    /// pair recorded on it, not readonly, no `is default`, no constraint. None
+    /// of them can change without running code: the loop kernels' element
+    /// stores check them once per kernel entry (`vm_kernel_elem`).
+    // Cost: O(1) expected (a few symbol-keyed probes).
+    #[inline(always)]
+    pub(super) fn lean_store_variable_ok(
+        &self,
+        code: &CompiledCode,
+        slot: usize,
+        name_idx: u32,
+    ) -> bool {
         let var_sym = code.const_sym(name_idx);
         // A `:=` pair recorded on this variable's name: the frame may hold a
         // second slot for it the lane does not check (see
         // `bind_pair_names_container`).
         if self.bind_pair_names_container(code, var_sym.as_str()) {
-            return None;
+            return false;
         }
         if self.is_readonly_sym(var_sym)
             || (crate::runtime::runtime_var_default::var_default_possible()
                 && self.var_default(var_sym.as_str()).is_some())
         {
-            return None;
+            return false;
         }
         // The slot's constraint, as `decl_type_constraint` reads it for this
         // store: none for a slot the chunk declares untyped; the by-name
@@ -282,7 +300,7 @@ impl Interpreter {
             }
             _ => false,
         };
-        unconstrained.then_some(ops)
+        unconstrained
     }
 
     /// The container node the slot holds -- in its own word, or inside its
@@ -290,7 +308,7 @@ impl Interpreter {
     /// node's `Gc` handle is cloned, never the slot's word.
     // Cost: O(1) (one refcount bump; one uncontended cell lock).
     #[inline(always)]
-    fn lean_store_slot_node(
+    pub(super) fn lean_store_slot_node(
         &self,
         slot: usize,
     ) -> Option<(
@@ -330,7 +348,7 @@ impl Interpreter {
     /// same node.
     // Cost: O(1) when the latch is clear; else one intern and up to four
     // symbol-keyed probes, O(d), d = env tiers walked.
-    fn lean_store_alias_agrees(
+    pub(super) fn lean_store_alias_agrees(
         &self,
         var_sym: Symbol,
         node: usize,
