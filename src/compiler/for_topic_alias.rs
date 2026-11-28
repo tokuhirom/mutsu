@@ -21,6 +21,8 @@
 //! - an associative store into a `%` variable, `%h{$k} = $v`: a hash element
 //!   is never an array element, so the store cannot reach the source array,
 //!   and the stored value is a copy of what the operands evaluate to.
+//! - a read of a `%` variable's element, `%h{$k}`, and `++`/`--` of one
+//!   (`%h{$w}++`), for the same reason.
 //!
 //! Accepted limits, all of which need the loop to mutate the very array it
 //! iterates and to read `$_` afterwards in the same iteration: an operator
@@ -235,6 +237,9 @@ impl<'ast> Visit<'ast> for AliasScan {
                 ..
             } => matches!(**target, Expr::HashVar(_)),
             Expr::Ternary { .. } => true,
+            // Reading `%h{$k}` (and the element a `%h{$k}++` writes): a hash
+            // element is never an element of the source array.
+            expr if is_hash_element(expr) => true,
             Expr::Binary { op, .. } => safe_binary(op),
             Expr::Unary { op, expr, .. } => {
                 safe_unary(op)
@@ -299,6 +304,7 @@ mod tests {
     fn hash_element_increments_are_unobservable() {
         assert!(unobservable("my %h; for @a { %h{$_}++ }"));
         assert!(unobservable("my %h; for @a { --%h{$_} }"));
+        assert!(unobservable("my %h; my $n = 0; for @a { $n += %h{$_} }"));
         assert!(!unobservable("my @o; for @a { @o[$_]++ }"));
     }
 
