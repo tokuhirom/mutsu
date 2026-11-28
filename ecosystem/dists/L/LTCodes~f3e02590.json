@@ -1,0 +1,64 @@
+{
+  "axis": "pure",
+  "deps": {
+    "bundled_would_supply": [],
+    "mode": "flat-closure",
+    "resolved": [
+      "JSON::Fast"
+    ],
+    "unresolved": []
+  },
+  "dist": "LTCodes",
+  "files": [
+    {
+      "cmp": "parity",
+      "mutsu": {
+        "nok": 0,
+        "ok": 38,
+        "plan": 38,
+        "secs": 0.25,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      },
+      "path": "t/01-vectors.rakutest",
+      "raku": {
+        "nok": 0,
+        "ok": 38,
+        "plan": 38,
+        "secs": 2.52,
+        "skip": 0,
+        "todo": 0,
+        "verdict": "pass"
+      }
+    }
+  ],
+  "load": {
+    "LTCodes": "ok"
+  },
+  "measured": {
+    "attempts": 3,
+    "date": "2026-11-28",
+    "harness": 3,
+    "host": "gha-ubuntu24-4c",
+    "mutsu_commit": "eb93f958",
+    "mutsu_version": "1.0.0",
+    "raku_backend": "moar 2026.11",
+    "raku_version": "2026.11",
+    "sandbox": "bwrap"
+  },
+  "schema": 1,
+  "source": {
+    "index": "fez",
+    "url": "https://360.zef.pm/L/TC/LTCODES/19ee13734aca42d6d940bc6053aa51c55cd36216.tar.gz"
+  },
+  "status": "green",
+  "totals": {
+    "baseline_assertions": 38,
+    "baseline_files": 1,
+    "mutsu_assertions": 38,
+    "parity_files": 1,
+    "regressed_files": 0
+  },
+  "version": "0.1.0"
+}
