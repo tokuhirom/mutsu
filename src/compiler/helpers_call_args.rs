@@ -1413,14 +1413,16 @@ impl Compiler {
         if !is_values {
             return;
         }
-        let (name_idx, quoted) = (*name_idx, *quoted);
-        *self.code.ops.last_mut().expect("checked above") = OpCode::CallMethod {
-            name_idx,
+        let demoted = OpCode::CallMethod {
+            name_idx: *name_idx,
             arity: 0,
             modifier_idx: None,
-            quoted,
+            quoted: *quoted,
             arg_sources_idx: None,
         };
+        if let Some(last) = self.code.ops.last_mut() {
+            *last = demoted;
+        }
     }
 
     pub(super) fn insert_accessor_ref_marker(&mut self, marker: OpCode) {
