@@ -864,7 +864,7 @@ impl Interpreter {
     /// `Some`, so a `None` leaves the operand stack untouched.
     // Cost: O(1) (an `Int` read of a plain array).
     #[inline]
-    fn index_fast_path_element(&self, is_positional: bool) -> Option<Value> {
+    pub(super) fn index_fast_path_element(&self, is_positional: bool) -> Option<Value> {
         // The core-subscript re-entry guard means this dispatch is not an
         // ordinary one, so leave it to the general path (which also has to
         // CLEAR the flag — this helper never touches it).

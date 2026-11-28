@@ -315,6 +315,8 @@ mod vm_jit_compile;
 #[cfg(feature = "jit")]
 mod vm_jit_dump;
 #[cfg(feature = "jit")]
+mod vm_jit_element_step;
+#[cfg(feature = "jit")]
 mod vm_jit_helpers;
 #[cfg(feature = "jit")]
 mod vm_jit_layout;
