@@ -29,6 +29,12 @@ fn polls(src: &str, n: u64) -> u64 {
         cmd.env_remove(k);
     }
     cmd.env("MUTSU_VM_STATS", "1");
+    // These loops pin the interpreter's poll placement. A loop kernel
+    // (ADR-19288 D4/D5) runs the whole loop natively and polls on its own
+    // countdown, once every `LOOP_POLL_EVERY` back-edges, which
+    // `t/vm/codegen/jit-loop-kernel.t` exercises; it is off here so every
+    // shape below keeps testing the path it names.
+    cmd.env("MUTSU_KERNEL", "off");
     let out = cmd.output().expect("failed to spawn mutsu");
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "run failed; stderr:\n{err}");

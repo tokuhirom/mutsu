@@ -7,7 +7,7 @@
 
 use std::collections::HashSet;
 
-use super::lower::{leaf_str, named_child, named_child_or_positional};
+use super::lower::{leaf_str, list_field, named_child, named_child_or_positional, positional_leaf};
 use super::name_parts::{self, NameShape};
 use super::{RakuAstClass, RakuAstFieldValue, RakuAstNode};
 use crate::ast::Stmt;
@@ -236,6 +236,32 @@ struct Found {
 }
 
 fn walk(node: &RakuAstNode, in_decl: bool, found: &mut Found) {
+    if node.class == RakuAstClass::TypeEnum
+        && let Ok(term) = named_child(node, "term")
+        && term.class == RakuAstClass::QuotedString
+        && let Ok(processors) = list_field(term, "processors")
+        && matches!(
+            processors
+                .iter()
+                .filter_map(|p| p.as_str())
+                .collect::<Vec<_>>()
+                .as_slice(),
+            ["words" | "quotewords", "val"]
+        )
+        && let Ok(segments) = list_field(term, "segments")
+    {
+        for segment in segments {
+            if let ValueView::RakuAst(segment) = segment.view()
+                && segment.class == RakuAstClass::StrLiteral
+                && let Ok(text) = positional_leaf(segment)
+                && let ValueView::Str(text) = text.view()
+            {
+                found
+                    .shadowed
+                    .extend(text.split_whitespace().map(str::to_string));
+            }
+        }
+    }
     if let Some(name) = super::declared_routines::declared_by(node) {
         found.routines.insert(name);
     }

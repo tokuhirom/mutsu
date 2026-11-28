@@ -3337,6 +3337,7 @@ t/lang/parsing/parser-modifier-key-after-comma.t
 t/lang/parsing/parser-nesting-limit.t
 t/lang/parsing/parser-pipe-prefixed-declaration.t
 t/lang/parsing/parser-statement-continues-past-early-stop.t
+t/lang/parsing/parser-success-path-probes.t
 t/lang/parsing/parser-two-terms-statement-shapes.t
 t/lang/parsing/semicolon-list-literal.t
 t/lang/parsing/slang-action-effect-seen-at-begin.t
@@ -6997,6 +6998,7 @@ t/rakuast/rakuast-empty-role-application.t
 t/rakuast/rakuast-empty-statements.t
 t/rakuast/rakuast-enum-lone-element-implicit-traits.t
 t/rakuast/rakuast-enum-term.t
+t/rakuast/rakuast-enum-word-term-shadow.t
 t/rakuast/rakuast-enum.t
 t/rakuast/rakuast-eval-andthen.t
 t/rakuast/rakuast-eval-anonsub.t

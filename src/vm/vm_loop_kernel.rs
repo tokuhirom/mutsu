@@ -24,6 +24,9 @@ const MAX_CARRIED: usize = 24;
 /// The most declarations a loop kernel's body makes.
 const MAX_DECLS: usize = 24;
 
+/// The most arrays a loop kernel's body subscripts.
+const MAX_ELEMS: usize = 8;
+
 /// What a loop kernel did.
 pub(super) enum LoopOutcome {
     /// Nothing ran; the driver continues as if it had not asked.
@@ -76,19 +79,24 @@ impl Interpreter {
             return Ok(LoopOutcome::Declined);
         }
         // The site: its carried slots, decided once.
-        let carried_slots_list = {
+        let (carried_slots_list, elems) = {
             let Ok(mut sites) = code.jit.loop_kernels.sites.lock() else {
                 return Ok(LoopOutcome::Declined);
             };
             let k = match sites.iter().position(|s| s.ip == ip as u32) {
                 Some(k) => k,
                 None => {
+                    let region = carried_slots(code, &shape)
+                        .filter(|(c, e)| c.len() <= MAX_CARRIED && e.len() <= MAX_ELEMS);
+                    let (carried, elems) = match region {
+                        Some((c, e)) => (Some(c.into()), e.into()),
+                        None => (None, Vec::new().into()),
+                    };
                     sites.push(LoopSite {
                         ip: ip as u32,
                         entries: 0,
-                        carried: carried_slots(code, &shape)
-                            .filter(|c| c.len() <= MAX_CARRIED)
-                            .map(Into::into),
+                        carried,
+                        elems,
                         variants: Vec::new(),
                     });
                     sites.len() - 1
@@ -102,7 +110,7 @@ impl Interpreter {
             if !hot && site.entries < LOOP_ENTRY_THRESHOLD && site.variants.is_empty() {
                 return Ok(LoopOutcome::Declined);
             }
-            carried
+            (carried, site.elems.clone())
         };
         // The carried slots' current values, each a plain Int or Num. Fixed
         // arrays: a kernel entry allocates nothing.
@@ -121,7 +129,44 @@ impl Interpreter {
             };
         }
         let carried = &carried[..n];
-        let Some(info) = self.loop_kernel_variant(code, ip, &shape, carried) else {
+        // The arrays the body subscripts: each still served by the element
+        // lane, a read one with the element kind its reads compile for, and a
+        // stored one reachable through no other element name.
+        let mut elem_reads = [(0u32, SlotKind::Int); MAX_ELEMS];
+        let mut elem_stores = [0u32; MAX_ELEMS];
+        let mut node_ids = [0usize; MAX_ELEMS];
+        let (mut nr, mut ns) = (0, 0);
+        for (i, e) in elems.iter().enumerate() {
+            use super::vm_kernel_elem::{
+                kernel_elem_entry_ok, kernel_elem_kind_hint, kernel_elem_node_id,
+            };
+            if !kernel_elem_entry_ok(self, code, e.slot, e.name_idx, e.store) {
+                return Ok(LoopOutcome::Declined);
+            }
+            let Some(id) = kernel_elem_node_id(self, e.slot) else {
+                return Ok(LoopOutcome::Declined);
+            };
+            if e.store {
+                elem_stores[ns] = e.slot;
+                ns += 1;
+            } else {
+                let Some(kind) = kernel_elem_kind_hint(self, e.slot) else {
+                    return Ok(LoopOutcome::Declined);
+                };
+                elem_reads[nr] = (e.slot, kind);
+                nr += 1;
+            }
+            node_ids[i] = id;
+        }
+        for (i, e) in elems.iter().enumerate() {
+            if e.store && (0..elems.len()).any(|j| j != i && node_ids[j] == node_ids[i]) {
+                return Ok(LoopOutcome::Declined);
+            }
+        }
+        let (elem_reads, elem_stores) = (&elem_reads[..nr], &elem_stores[..ns]);
+        let Some(info) =
+            self.loop_kernel_variant(code, ip, &shape, carried, elem_reads, elem_stores)
+        else {
             return Ok(LoopOutcome::Declined);
         };
         // A readonly check that fails raises on the generic path, at its op.
@@ -174,6 +219,8 @@ impl Interpreter {
             end,
             kctx: super::vm_kernel::fresh_kernel_ctx(),
             callees,
+            interp: self as *mut Interpreter,
+            code: code as *const CompiledCode,
         };
         LOOP_KERNEL_ENTRIES.fetch_add(1, Relaxed);
         // SAFETY: `info.entry` is a finalized loop kernel compiled for this
@@ -181,6 +228,9 @@ impl Interpreter {
         // whose signature is `extern "C" fn(*mut LoopCtx, *mut u64) -> u32`;
         // `buf` holds the `2 + carried + decls` words it reads and writes, and
         // both pointers outlive the call. The JIT module lives for the process.
+        // `ctx.interp` and `ctx.code` come from `self` and `code`, which are
+        // not used here until the call returns: the element helpers the
+        // kernel calls are the only users of either during the run.
         let status = unsafe {
             let f = std::mem::transmute::<usize, extern "C" fn(*mut LoopCtx, *mut u64) -> u32>(
                 info.entry,
@@ -234,25 +284,30 @@ impl Interpreter {
         ip: usize,
         shape: &LoopShape,
         carried: &[(u32, SlotKind)],
+        elem_reads: &[(u32, SlotKind)],
+        elem_stores: &[u32],
     ) -> Option<std::sync::Arc<LoopKernelInfo>> {
         let mut sites = code.jit.loop_kernels.sites.lock().ok()?;
         let site = sites.iter_mut().find(|s| s.ip == ip as u32)?;
+        let key = || carried.iter().chain(elem_reads).map(|c| c.1);
         if let Some((_, v)) = site
             .variants
             .iter()
-            .find(|(k, _)| k.iter().copied().eq(carried.iter().map(|c| c.1)))
+            .find(|(k, _)| k.iter().copied().eq(key()))
         {
             return v.clone();
         }
-        let kinds: Box<[SlotKind]> = carried.iter().map(|c| c.1).collect();
+        let kinds: Box<[SlotKind]> = key().collect();
         // A few kind signatures per site at most; past that, stop compiling.
         if site.variants.len() >= 4 {
             return None;
         }
-        let compiled = type_region(code, shape, carried)
+        let compiled = type_region(code, shape, carried, elem_reads, elem_stores)
             .filter(|typed| typed.decls.len() <= MAX_DECLS)
             .and_then(|typed| {
-                let entry = super::vm_loop_kernel_compile::compile(code, shape, carried, &typed)?;
+                let entry = super::vm_loop_kernel_compile::compile(
+                    code, shape, carried, elem_reads, &typed,
+                )?;
                 Some(std::sync::Arc::new(LoopKernelInfo {
                     entry,
                     carried: carried.to_vec().into_boxed_slice(),

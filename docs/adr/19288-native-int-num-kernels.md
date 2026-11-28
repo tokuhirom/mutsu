@@ -213,6 +213,29 @@ the bytecode JIT. With `MUTSU_JIT=off`, or without the `jit` feature, kernels ar
 call takes today's path. `MUTSU_KERNEL=off` disables kernels alone, so a test can compare the two
 paths.
 
+### Amendment A1 (proposed 2026-11-28): array elements, C-style loops, bit ops
+
+Campaign B (#19294) asked loop kernels to serve the index benchmarks, whose loops read
+`@a[$i +& 15]` and store `@a[$i] = ...` inside C-style `loop (...; ...; $i++)` statements. The
+amendment:
+
+- **Element reads and stores are calls of campaign B's helpers** (`vm_kernel_elem`). A helper
+  checks the container on every access and declines when it no longer holds a plain `Array` of
+  the expected kind. A decline bails the iteration like an overflow does. The checks that only
+  code can change (thread clone, user `postcircumfix:<[ ]>`, readonly, `is default`, constraints,
+  `:=` pairs) are made once at entry. A read array's element kind is the kind of its first element
+  at entry and is part of the variant key.
+- **A store is the one outside effect a region may have, and D4's rerun argument is extended
+  rather than broken.** A store either writes or declines with no mutation. The region never
+  reads an array it stores into: a slot both read and stored declines at analysis time, and two
+  names for the same array decline at entry by node identity. So an iteration that bails after a
+  store and is rerun recomputes every stored index and value from the same snapshot of the carried
+  slots. It writes the same elements again, an append included, because the rerun's index is then
+  in range.
+- **C-style loops** run as a `while` whose body is the body followed by the step. `++`/`--` on a
+  carried `Int` slot are admitted, with their readonly check made at entry. `+&`, `+|`, `+^` and
+  `%` are admitted on two `Int`s.
+
 ## 3. Consequences
 
 - The rows of §1.1 should end up within a small factor of rakupp, or ahead of it: a kernel call
