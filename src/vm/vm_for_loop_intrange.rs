@@ -158,9 +158,49 @@ impl Interpreter {
             Some(crate::symbol::Symbol::intern(&alias))
         });
 
+        // ADR-19288 D5: a body of closed Int/Num arithmetic runs the rest of
+        // the range as one native loop. A bail hands back the iteration to
+        // rerun; a decline changes nothing.
+        let mut kernel_done = false;
+        #[cfg(feature = "jit")]
+        if nested_entry.is_none()
+            && let Some(shape) = Self::range_kernel_shape(spec, param_name.is_none(), topic_local)
+        {
+            let trips = if inclusive {
+                end_val.saturating_sub(i).saturating_add(1)
+            } else {
+                end_val.saturating_sub(i)
+            };
+            let shape = shape(body_start, loop_end);
+            match self.try_loop_kernel(
+                code,
+                body_start - 1,
+                shape,
+                i,
+                Some((end_val, inclusive)),
+                trips >= 16,
+            ) {
+                Ok(super::vm_loop_kernel::LoopOutcome::Declined) => {}
+                Ok(super::vm_loop_kernel::LoopOutcome::Done) => kernel_done = true,
+                Ok(super::vm_loop_kernel::LoopOutcome::Bailed(at)) => i = at,
+                Err(e) => {
+                    if !spec.is_rw
+                        && let Some(ref name) = param_name
+                    {
+                        self.unmark_readonly(name);
+                    }
+                    if !was_topic_readonly {
+                        self.unmark_readonly("_");
+                    }
+                    self.restore_loop_topic(saved_topic, saved_topic_local);
+                    self.pop_loop_local_scope(code);
+                    return Err(e);
+                }
+            }
+        }
         // Use <= for inclusive ranges instead of end_val + 1 to avoid overflow
         // when end_val is i64::MAX
-        'for_loop: while if inclusive { i <= end_val } else { i < end_val } {
+        'for_loop: while !kernel_done && if inclusive { i <= end_val } else { i < end_val } {
             crate::alloc_scope_named!(_sc_for_bind, "op:ForLoop:iter-bind");
             let item = Value::int(i);
             self.topic_state.topic_source_var = None;
@@ -352,5 +392,48 @@ impl Interpreter {
         }
         self.pop_loop_local_scope(code);
         Ok(())
+    }
+
+    /// The loop-kernel shape of an int-range `for` whose spec a kernel can
+    /// serve: one plain readonly scalar parameter (or the topic), nothing the
+    /// driver must do per iteration beyond binding it. The returned closure
+    /// takes the body's `[start, end)`.
+    #[cfg(feature = "jit")]
+    fn range_kernel_shape(
+        spec: &ForLoopSpec,
+        implicit_topic: bool,
+        topic_local: Option<usize>,
+    ) -> Option<impl Fn(usize, usize) -> super::vm_loop_kernel_types::LoopShape> {
+        use super::vm_loop_kernel_types::{LoopShape, LoopVar};
+        if spec.collect
+            || spec.threaded
+            || spec.is_rw
+            || spec.kv_mode
+            || spec.arity != 1
+            || spec.chunk_local.is_some()
+            || spec.source_container_local.is_some()
+            || spec.block_callable_local.is_some()
+            || spec.body_declares_routines
+            || spec.param_type_constraint.is_some()
+            || !spec.multi_param_names.is_empty()
+            || !spec.source_var_names.is_empty()
+            || spec.autothread_junctions
+            || spec.values_mode
+            || spec.param_sigilless
+            || spec.param_raw
+            || spec.do_writeback
+        {
+            return None;
+        }
+        let var = match (implicit_topic, spec.param_local, topic_local) {
+            (false, Some(slot), _) => LoopVar::Slot(slot),
+            (true, _, Some(slot)) => LoopVar::Slot(slot as u32),
+            (true, _, None) => LoopVar::Topic,
+            _ => return None,
+        };
+        Some(move |start, end| LoopShape::Range {
+            body: (start, end),
+            var,
+        })
     }
 }

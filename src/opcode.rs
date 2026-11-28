@@ -8567,6 +8567,8 @@ pub(crate) struct JitCodeState {
     pub(crate) range_cache: [(std::sync::atomic::AtomicU64, std::sync::atomic::AtomicU64); 4],
     /// The routine's native int kernel, when it has one (ADR-19288).
     pub(crate) kernel: kernel_slot::KernelSlot,
+    /// The chunk's loop kernels, per loop op (ADR-19288 D5).
+    pub(crate) loop_kernels: kernel_slot::LoopKernelTable,
 }
 
 /// The per-chunk range table: `(start, end)` keys to shared range states.

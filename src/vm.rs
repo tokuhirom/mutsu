@@ -335,6 +335,12 @@ pub(crate) mod vm_kernel;
 mod vm_kernel_admit;
 #[cfg(feature = "jit")]
 mod vm_kernel_compile;
+#[cfg(feature = "jit")]
+mod vm_loop_kernel;
+#[cfg(feature = "jit")]
+mod vm_loop_kernel_compile;
+#[cfg(feature = "jit")]
+mod vm_loop_kernel_types;
 mod vm_lazy_front_mutate;
 mod vm_lazy_index_prefix;
 mod vm_lazy_slip;

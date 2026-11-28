@@ -601,7 +601,40 @@ impl Interpreter {
         // Balanced by pop on every exit path.
         self.push_loop_local_scope(Default::default(), Default::default());
 
+        // ADR-19288 D5: a loop of closed Int/Num arithmetic runs natively from
+        // this iteration boundary on; a bail reruns its iteration from here.
+        #[cfg(feature = "jit")]
+        let mut kernel_tried = false;
+        #[cfg(feature = "jit")]
+        let mut iterations: u32 = 0;
         'while_loop: loop {
+            #[cfg(feature = "jit")]
+            if !kernel_tried
+                && !resume_in_body
+                && body_entry.is_none()
+                && !spec.collect
+                && !spec.isolate_topic
+                && (iterations == 0 || iterations == 256)
+            {
+                kernel_tried = iterations == 256;
+                let shape = super::vm_loop_kernel_types::LoopShape::While {
+                    cond: (cond_start, body_start),
+                    body_end: loop_end,
+                };
+                match self.try_loop_kernel(code, cond_start - 1, shape, 0, None, iterations == 256) {
+                    Ok(super::vm_loop_kernel::LoopOutcome::Declined) => {}
+                    Ok(super::vm_loop_kernel::LoopOutcome::Done) => break 'while_loop,
+                    Ok(super::vm_loop_kernel::LoopOutcome::Bailed(_)) => kernel_tried = true,
+                    Err(e) => {
+                        self.pop_loop_local_scope(code);
+                        return Err(e);
+                    }
+                }
+            }
+            #[cfg(feature = "jit")]
+            {
+                iterations = iterations.saturating_add(1);
+            }
             // Deferred lazy-pull suspension (see `gather_suspend_pending`):
             // an iteration boundary is the exact point where re-entering from
             // the condition on resume continues correctly.
