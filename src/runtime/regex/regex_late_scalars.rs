@@ -25,6 +25,40 @@ pub(crate) fn scalars_in_pattern(text: &str) -> (Vec<String>, bool) {
     (names.into_iter().map(|(name, _)| name).collect(), saw_block)
 }
 
+thread_local! {
+    /// [`scalars_in_pattern`]'s names by pattern text. The scan is a pure
+    /// function of the text, and a match entry point asks it of the same
+    /// pattern on every match (`with_match_time_scalars`, twice per
+    /// `$l ~~ / $needle \d+ /`, #19296).
+    static PATTERN_SCALARS: std::cell::RefCell<
+        rustc_hash::FxHashMap<Box<str>, std::rc::Rc<[String]>>,
+    > = std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+}
+
+/// Entry cap for [`PATTERN_SCALARS`]: reaching it clears the map, since a
+/// pattern built at run time can mint a new text per call.
+const PATTERN_SCALARS_MAX: usize = 4096;
+
+/// [`scalars_in_pattern`]'s names, memoized by text ([`PATTERN_SCALARS`]).
+// Cost: O(n) to hash the text, n = its length; O(n) for the scan on a miss.
+fn pattern_scalars(text: &str) -> std::rc::Rc<[String]> {
+    if !text.contains('$') {
+        return std::rc::Rc::from(Vec::new());
+    }
+    if let Some(names) = PATTERN_SCALARS.with(|m| m.borrow().get(text).cloned()) {
+        return names;
+    }
+    let names: std::rc::Rc<[String]> = scalars_in_pattern(text).0.into();
+    PATTERN_SCALARS.with(|m| {
+        let mut m = m.borrow_mut();
+        if m.len() >= PATTERN_SCALARS_MAX {
+            m.clear();
+        }
+        m.insert(text.into(), std::rc::Rc::clone(&names));
+    });
+    names
+}
+
 /// Every plain scalar name in order of first use, flagged by whether it was
 /// written after a code block, and whether the text had a code block at all.
 fn scan_scalars(text: &str) -> (Vec<(String, bool)>, bool) {
@@ -218,16 +252,23 @@ impl super::super::Interpreter {
         pattern: &'a str,
         mut names: Vec<String>,
     ) -> std::borrow::Cow<'a, str> {
-        let (pattern_scalars, _) = scalars_in_pattern(pattern);
-        for name in pattern_scalars {
-            if self.late_scalar_reads_at_match_time(&name, true)
-                && !self.is_compile_time_constant_scalar(&name)
-                && !names.contains(&name)
+        for name in pattern_scalars(pattern).iter() {
+            if !names.contains(name)
+                && self.late_scalar_reads_at_match_time(name, true)
+                && !self.is_compile_time_constant_scalar(name)
             {
-                names.push(name);
+                names.push(name.clone());
             }
         }
-        if names.is_empty() {
+        // A text a previous call already marked (`parse_regex` re-marks the
+        // pattern its caller marked) declares the same names again: keep it.
+        let already_declared = || {
+            names.iter().all(|n| {
+                super::regex_rule_params::split_rule_params(pattern)
+                    .is_some_and(|(mut existing, _)| existing.any(|e| e == n))
+            })
+        };
+        if names.is_empty() || already_declared() {
             std::borrow::Cow::Borrowed(pattern)
         } else {
             std::borrow::Cow::Owned(super::regex_rule_params::add_runtime_names(&names, pattern))

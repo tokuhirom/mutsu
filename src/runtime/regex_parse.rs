@@ -61,6 +61,18 @@ thread_local! {
     pub(crate) static REGEX_INTERPOLATED_PARSE_CACHE: RefCell<RegexInterpolatedParseCache> =
         RefCell::new(rustc_hash::FxHashMap::default());
 
+    /// Parses of a dynamic top-level pattern whose interpolation pre-pass read
+    /// no variable at all (`interpolate_regex_scalars_traced` reports it), keyed
+    /// by the pattern text *before* interpolation. Such a pattern is dynamic
+    /// only because it names match-time scalars (`with_match_time_scalars`
+    /// declared them, so `VarInterp` reads them while matching): its parse is a
+    /// function of the text, the package and `TOKEN_DEFS_GEN`, exactly like a
+    /// static pattern's. A hit skips the pre-pass's rescan and its output
+    /// allocation on every match (`$l ~~ / $needle \d+ /`, #19296).
+    /// Bounded like [`REGEX_INTERPOLATED_PARSE_CACHE`].
+    pub(crate) static REGEX_PURE_DYNAMIC_PARSE_CACHE: RefCell<RegexInterpolatedParseCache> =
+        RefCell::new(rustc_hash::FxHashMap::default());
+
     /// Memoization cache for *sub-pattern* parses — every `parse_regex_uncached`
     /// entry, not just the outermost one [`REGEX_PARSE_CACHE`] covers.
     ///

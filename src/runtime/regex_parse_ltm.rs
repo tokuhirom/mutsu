@@ -1638,7 +1638,20 @@ impl Interpreter {
         // reaches it (ADR-12917 direction 2, #14510), whichever entry point
         // parses it.
         let pattern = &*self.with_match_time_scalars(pattern, Vec::new());
-        let interpolated = match self.interpolate_regex_scalars(pattern) {
+        // A pattern whose pre-pass reads nothing parses the same way every
+        // time (`REGEX_PURE_DYNAMIC_PARSE_CACHE`).
+        let pure_cached = crate::runtime::regex_parse::REGEX_PURE_DYNAMIC_PARSE_CACHE.with(|c| {
+            c.borrow()
+                .get(&package)
+                .and_then(|bucket| bucket.get(pattern))
+                .filter(|(cached_gen, _)| *cached_gen == tok_gen)
+                .map(|(_, p)| std::sync::Arc::clone(p))
+        });
+        if let Some(cached) = pure_cached {
+            crate::vm::vm_stats::record_regex_parse_cache(true);
+            return Some(cached);
+        }
+        let (interpolated, consulted) = match self.interpolate_regex_scalars_traced(pattern) {
             Ok(s) => s,
             Err(e) => {
                 crate::runtime::regex_parse::PENDING_REGEX_ERROR.with(|err| {
@@ -1656,6 +1669,11 @@ impl Interpreter {
         });
         if let Some(cached) = cached {
             crate::vm::vm_stats::record_regex_parse_cache(true);
+            // That cache holds only parses that read no ambient state, so a
+            // text whose pre-pass read nothing may skip the pre-pass next time.
+            if !consulted {
+                Self::pure_dynamic_parse_store(package, pattern, tok_gen, &cached);
+            }
             return Some(cached);
         }
         // A pattern that splices a Regex value (`<$rx>`) is stored keyed by the
@@ -1682,6 +1700,8 @@ impl Interpreter {
             if let Some(ref p) = parsed {
                 Self::value_keyed_parse_store(package, interpolated, tok_gen, reads, p);
             }
+        } else if !consulted && let Some(ref p) = parsed {
+            Self::pure_dynamic_parse_store(package, pattern, tok_gen, p);
         } else if let Some(ref p) = parsed {
             crate::runtime::regex_parse::REGEX_INTERPOLATED_PARSE_CACHE.with(|c| {
                 let mut cache = c.borrow_mut();
@@ -1693,6 +1713,25 @@ impl Interpreter {
             });
         }
         parsed
+    }
+
+    /// Record the parse of a dynamic `pattern` whose interpolation pre-pass
+    /// read nothing (`REGEX_PURE_DYNAMIC_PARSE_CACHE`).
+    // Cost: O(n), n = the pattern's length (one hash and one copy).
+    fn pure_dynamic_parse_store(
+        package: crate::symbol::Symbol,
+        pattern: &str,
+        tok_gen: u64,
+        parsed: &std::sync::Arc<RegexPattern>,
+    ) {
+        crate::runtime::regex_parse::REGEX_PURE_DYNAMIC_PARSE_CACHE.with(|c| {
+            let mut cache = c.borrow_mut();
+            let bucket = cache.entry(package).or_default();
+            if bucket.len() >= crate::runtime::regex_parse::INTERPOLATED_PARSE_CACHE_MAX {
+                bucket.clear();
+            }
+            bucket.insert(pattern.to_owned(), (tok_gen, std::sync::Arc::clone(parsed)));
+        });
     }
 
     /// Parse a regex value while retaining parser-produced source provenance.
