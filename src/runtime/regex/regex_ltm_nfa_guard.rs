@@ -99,6 +99,77 @@ fn resolve(nodes: &[NfaNode], node: usize, slots: &mut [Slot], depth: usize) -> 
     guard
 }
 
+/// The *gate* of every root of a several-root NFA (`LtmNfa::roots`), or
+/// `None` when some root has none: the set of characters a match of that root
+/// can begin with. It is a node guard that also looks through a `<name>`
+/// call into the callee's body, which the run's own guards must not do (a call
+/// can be a recursion-cut fate, or read a live left-recursion seed, without
+/// testing a character). The ranking that uses a gate
+/// (`ltm_rank_alternation`) answers neither case: a recursion-cut fate at the
+/// start measures the same `(0, 0)` as a root that fails, and the ranking does
+/// not use the gates while any left-recursion activation is live.
+// Cost: O(s + t), s = nodes, t = split targets and calls (each node is
+// resolved once).
+pub(super) fn root_gates(
+    nodes: &[NfaNode],
+    roots: &[super::regex_ltm_nfa::NfaRoot],
+) -> Option<Box<[FirstSet]>> {
+    if roots.len() < 2 {
+        return None;
+    }
+    let mut slots = vec![Slot::Todo; nodes.len()];
+    roots
+        .iter()
+        .map(|root| resolve_through_calls(nodes, root.entry as usize, &mut slots, 0))
+        .collect()
+}
+
+/// [`resolve`], following a call into its callee's body.
+fn resolve_through_calls(
+    nodes: &[NfaNode],
+    node: usize,
+    slots: &mut [Slot],
+    depth: usize,
+) -> Option<FirstSet> {
+    match &slots[node] {
+        Slot::Done(guard) => return guard.clone(),
+        Slot::Active => return None,
+        Slot::Todo => {}
+    }
+    slots[node] = Slot::Active;
+    let guard = match &nodes[node] {
+        NfaNode::Leaf {
+            atom,
+            ic: false,
+            kind: LeafKind::Consume,
+            ..
+        } => atom_guard(atom),
+        NfaNode::Split(targets) if !targets.is_empty() && depth < MAX_DEPTH => {
+            let mut union = FirstSet::empty();
+            let mut guarded = true;
+            for &target in targets {
+                match resolve_through_calls(nodes, target as usize, slots, depth + 1) {
+                    Some(guard) => union.union(&guard),
+                    None => {
+                        guarded = false;
+                        break;
+                    }
+                }
+            }
+            guarded.then_some(union)
+        }
+        // A callee's body begins where the call does; a body that can reach
+        // its `Return` without consuming has no guard (`Return` has none).
+        NfaNode::Call { body, .. } if depth < MAX_DEPTH => {
+            resolve_through_calls(nodes, *body as usize, slots, depth + 1)
+        }
+        _ => None,
+    }
+    .filter(|guard| !guard.is_universal());
+    slots[node] = Slot::Done(guard.clone());
+    guard
+}
+
 /// What the matcher of a `Consume` leaf's `atom` can accept at a start
 /// position, for the atoms the module comment names.
 fn atom_guard(atom: &RegexAtom) -> Option<FirstSet> {
