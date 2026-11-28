@@ -72,11 +72,13 @@ pub(super) fn lean_frame_eligible(
         && def.param_defs.iter().all(|pd| {
             lean_param_ok(pd)
                 && pd.type_constraint.as_deref().is_none_or(|tc| {
-                    // A builtin type that nothing in scope renames.
+                    // A builtin type, or a user class (not a role, subset or
+                    // enum, whose checks read more than the instance's class),
+                    // that nothing in scope renames.
                     matches!(
                         interp.resolved_param_constraint_cow(pd, tc),
                         std::borrow::Cow::Borrowed(_)
-                    )
+                    ) && (lean_type_ok(tc) || interp.is_lean_nominal_class(tc))
                 })
         })
 }
@@ -110,6 +112,20 @@ fn lean_type_ok(tc: &str) -> bool {
         )
 }
 
+/// Whether `tc` is spelled like a plain nominal class name: no smiley, no
+/// parameterization, no coercion, no definiteness or native lower-case form.
+/// `lean_frame_eligible` then requires it to name a registered user class.
+// Cost: O(k), k = length of `tc`.
+fn plain_class_name(tc: &str) -> bool {
+    tc.chars().next().is_some_and(|c| c.is_ascii_uppercase())
+        && tc
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | ':'))
+        && !tc.ends_with(':')
+        && !tc.contains(":D")
+        && !tc.contains(":U")
+}
+
 /// A parameter the lean binder binds: the plain invocant, the implicit
 /// `*%_`, or an untyped, trait-less, required positional `$` scalar.
 // Cost: O(1).
@@ -139,7 +155,10 @@ fn lean_param_ok(pd: &crate::ast::ParamDef) -> bool {
         && !pd.does_target
         && !pd.block_param
         && pd.default.is_none()
-        && pd.type_constraint.as_deref().is_none_or(lean_type_ok)
+        && pd
+            .type_constraint
+            .as_deref()
+            .is_none_or(|tc| lean_type_ok(tc) || plain_class_name(tc))
         && !pd.is_type_only()
         && pd.type_capture.is_none()
         && pd.literal_value.is_none()
@@ -196,7 +215,15 @@ impl Interpreter {
             match pd.type_constraint.as_deref() {
                 None => self.light_arg_is_any(a),
                 Some("Mu") => true,
-                Some(tc) => self.type_matches_value(tc, a),
+                Some(tc) if lean_type_ok(tc) => self.type_matches_value(tc, a),
+                // A user class (admitted by `lean_frame_eligible`): an instance
+                // of exactly that class passes. Anything else -- a subclass
+                // instance, the type object, a junction -- goes to the general
+                // binder, which decides it in full.
+                Some(tc) => matches!(
+                    a.view(),
+                    ValueView::Instance { class_name, .. } if class_name.as_str() == tc
+                ),
             }
         })
     }
@@ -525,5 +552,17 @@ impl Interpreter {
             self.finalize_method_result_fast(cc, final_result, spec, effective, return_fast)
         };
         final_result.map(|v| (Self::method_frame_result_sharing(&base, v), None))
+    }
+
+    /// Whether `name` is a registered class that is not a role, subset or
+    /// enum: a type a value passes exactly when its class is it or inherits
+    /// it.
+    // Cost: O(1), four registry probes.
+    pub(super) fn is_lean_nominal_class(&self, name: &str) -> bool {
+        let registry = self.registry();
+        registry.classes.contains_key(name)
+            && !registry.roles.contains_key(name)
+            && !registry.subsets.contains_key(name)
+            && !registry.enum_types.contains_key(name)
     }
 }
