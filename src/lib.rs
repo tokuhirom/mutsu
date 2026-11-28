@@ -78,6 +78,7 @@ pub(crate) mod source_comments;
 mod state_scope;
 pub(crate) mod static_str;
 mod stats_gate;
+mod static_str_set;
 mod str_scan;
 pub mod symbol;
 pub(crate) mod term_names;

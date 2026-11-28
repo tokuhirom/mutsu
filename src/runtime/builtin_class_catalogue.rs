@@ -34,16 +34,16 @@ use super::builtin_class_catalogue_x_rows::X_CLASS_ROWS;
 use super::registry_cow_table::CowTable;
 use crate::symbol::Symbol;
 
-const X_ROWS: &[u8] = X_CLASS_ROWS.as_bytes();
-const CORE_ROWS: &[u8] = CORE_CLASS_ROWS.as_bytes();
-const ATTR_ROWS: &[u8] = ATTR_CLASS_ROWS.as_bytes();
+pub(super) const X_ROWS: &[u8] = X_CLASS_ROWS.as_bytes();
+pub(super) const CORE_ROWS: &[u8] = CORE_CLASS_ROWS.as_bytes();
+pub(super) const ATTR_ROWS: &[u8] = ATTR_CLASS_ROWS.as_bytes();
 
 /// The number of `X::` rows; they come first.
 pub(crate) const X_LEN: usize = count_rows(X_ROWS);
 /// The number of core rows; they follow the `X::` rows.
 const CORE_LEN: usize = count_rows(CORE_ROWS);
 /// The first attribute row; they follow the core rows.
-const ATTR_START: usize = X_LEN + CORE_LEN;
+pub(super) const ATTR_START: usize = X_LEN + CORE_LEN;
 /// The number of attribute rows.
 const ATTR_LEN: usize = count_rows(ATTR_ROWS);
 /// The number of catalogue rows.
@@ -112,7 +112,8 @@ pub(super) const fn row_starts<const N: usize>(rows: &[u8]) -> [u32; N] {
 
 // Cost: O(n), n = bytes of the row data; compile time only. Also checks that
 // every row has three tab-separated fields and that the names are strictly
-// increasing (the binary search below relies on it).
+// increasing (names are unique across the catalogue, which the hash index
+// relies on; sorted order keeps the row files reviewable).
 pub(super) const fn name_ends<const N: usize>(rows: &[u8]) -> [u32; N] {
     let starts = row_starts::<N>(rows);
     let mut out = [0u32; N];
@@ -215,45 +216,26 @@ pub(crate) fn does(index: usize) -> impl Iterator<Item = &'static str> {
     fields(index).1.split(',').filter(|role| !role.is_empty())
 }
 
-/// The row of the built-in class `name`, if the catalogue has one.
-// Cost: O(|name| log LEN).
+/// The row of the built-in class `name`, if the catalogue has one: a probe
+/// of the compile-time hash index (`builtin_class_catalogue_index`).
+// Cost: O(|name|).
+#[inline]
 pub(crate) fn index_of(name_: &str) -> Option<usize> {
-    // Every `X::` row's name starts with `X::`; the core and attribute rows
-    // are searched too, each sorted on its own.
-    if name_.starts_with("X::")
-        && let Some(index) = search(0, X_LEN, name_)
-    {
-        return Some(index);
-    }
-    search(X_LEN, ATTR_START, name_).or_else(|| search(ATTR_START, LEN, name_))
+    super::builtin_class_catalogue_index::lookup(name_)
 }
 
 /// Whether `name_` is one of rakudo's `X::` classes that are not exceptions:
 /// its catalogue row's parent is `Any` (`X::Whatever::ShortCircuit`,
 /// `X::WhateverCode::SmartMatch::LHS`, which carry a worry's text).
-// Cost: O(|name| log LEN).
+// Cost: O(|name|).
 pub(crate) fn is_non_exception_x_class(name_: &str) -> bool {
     name_.starts_with("X::")
-        && search(0, X_LEN, name_).is_some_and(|index| parent(index) == "Any")
-}
-
-/// Binary search for `name_` among rows `lo..hi`, which are sorted by name.
-// Cost: O(|name| log (hi - lo)).
-fn search(mut lo: usize, mut hi: usize, name_: &str) -> Option<usize> {
-    while lo < hi {
-        let mid = (lo + hi) / 2;
-        match name(mid).cmp(name_) {
-            std::cmp::Ordering::Less => lo = mid + 1,
-            std::cmp::Ordering::Greater => hi = mid,
-            std::cmp::Ordering::Equal => return Some(mid),
-        }
-    }
-    None
+        && index_of(name_).is_some_and(|index| index < X_LEN && parent(index) == "Any")
 }
 
 /// The first parent of a class an `X::` row's MRO walk reaches: another `X::`
 /// row, one of the classes in [`EAGER_PARENTS`], or none.
-// Cost: O(|name| log LEN).
+// Cost: O(|name|).
 fn parent_of(name_: &str) -> Option<&'static str> {
     if let Some(index) = index_of(name_)
         && index < X_LEN
@@ -267,7 +249,7 @@ fn parent_of(name_: &str) -> Option<&'static str> {
 }
 
 /// Row `index`'s class, built on its first lookup in this process.
-// Cost: O(1) after the first call; the first builds the class in O(d log LEN),
+// Cost: O(1) after the first call; the first builds the class in O(d),
 // d = its MRO depth.
 pub(crate) fn materialize(index: usize) -> &'static CowTable<ClassDef> {
     SLOTS[index].get_or_init(|| match index.checked_sub(X_LEN) {
@@ -303,7 +285,7 @@ fn build_core(core: usize, name_: &str) -> ClassDef {
 /// is one of rakudo's few `X::` classes that are not exceptions
 /// (`X::Whatever::ShortCircuit`, a worry's message carrier); its MRO is not
 /// given `Exception`.
-// Cost: O(d log LEN), d = the MRO depth.
+// Cost: O(d), d = the MRO depth.
 fn build(index: usize) -> ClassDef {
     let own = Symbol::intern(name(index));
     let exception = Symbol::intern("Exception");
