@@ -53,7 +53,8 @@ use crate::symbol::{Symbol, wk};
 mod split;
 mod var;
 pub(crate) use split::{
-    ends_with_segments, is_inside_package, is_type_capture, last_segment, last_separator, segments,
+    ends_with_segments, has_separator, is_inside_package, is_type_capture, last_segment,
+    last_separator, segments,
     separators, split_first, split_qualified, stash_stem, text_segments, type_capture_name,
 };
 pub(crate) use var::{QualifiedVar, qualified_var, qualified_var_package, split_qualified_var};
@@ -211,7 +212,7 @@ mod flags {
     /// not a lexical pseudo-stash (`MY::`, `OUTER::`, `CALLER::`, ...) or the
     /// compiler's internal spelling of one (`@__mutsu_outer::0:a`, the
     /// resolved slot of an `@OUTER::a` past a shadowing `my @a`).
-    fn names_package_stash(rest: &str) -> bool {
+    pub(super) fn names_package_stash(rest: &str) -> bool {
         let Some(at) = super::split::separators(rest).next() else {
             return false;
         };
@@ -235,6 +236,15 @@ mod flags {
                     | "CLIENT"
             )
     }
+}
+
+/// Whether a sigil-stripped `Pkg::name` addresses a real package stash rather
+/// than a lexical pseudo-stash (`MY::`, `OUTER::`, `CALLER::`, ...) or the
+/// compiler's internal spelling of one. A pure function of the text, so the
+/// symbol classifier may ask it while it classifies.
+// Cost: O(|rest|).
+pub(crate) fn names_package_stash(rest: &str) -> bool {
+    flags::names_package_stash(rest)
 }
 
 /// Whether `name` carries a `::` qualifier, decided once per symbol.

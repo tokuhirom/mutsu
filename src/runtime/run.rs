@@ -1507,7 +1507,16 @@ impl Interpreter {
                 } else {
                     fname
                 };
-                if unqualified != "_" && unqualified != "@_" && unqualified != "%_" {
+                // The block's own `our` declarations are written through
+                // their package key (`our @X` in module `M` writes
+                // `@M::X`, recorded in `our_locals`), so they reach
+                // `free_var_writes` although no caller owns them: no frame
+                // would ever claim such a name, and the retain-on-miss list
+                // would keep it for the rest of the run. A module exporting
+                // ~300 `our` arrays left ~300 such names that every later
+                // call return had to look at (#19324).
+                let own_our = code.our_locals.iter().any(|(_, key)| key == fname);
+                if !own_our && unqualified != "_" && unqualified != "@_" && unqualified != "%_" {
                     self.record_caller_var_writeback(unqualified);
                 }
             });

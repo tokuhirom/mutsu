@@ -3075,22 +3075,40 @@ impl Interpreter {
     /// runs on every call return while the set is non-empty: asking the set
     /// about every local of a Text::CSV `parse` frame (two hash probes per
     /// local, per method call it makes) was ~3% of parsing a CSV file (#9494).
-    /// Looking the few pending names up in `code.locals` instead reaches the
-    /// same first-slot-per-name matches, applied in the same slot order.
-    // Cost: O(min(p, l) * l), p = pending names, l = the frame's live locals
-    // (the locals-side scan is O(l) hash probes; the pending-side one O(p * l)
-    // name compares, taken only when p < l).
+    /// Looking the few pending names up in the chunk's name index
+    /// ([`CompiledCode::local_slots_named`]) instead reaches the same
+    /// first-slot-per-name matches, applied in the same slot order.
+    ///
+    /// That lookup must be the index, not a `code.locals` scan: the pending
+    /// side is taken whenever `p < l`, and a frame with many locals meets a
+    /// large pending set exactly when a module exported many symbols -- the
+    /// mainline holds every imported name as a local, and the module's load
+    /// left those same names pending. `use Math::Sequences::Integer` (~300
+    /// exports) made every call return in the mainline compare ~300 pending
+    /// names against ~300 locals, a closure call ~100x slower than without the
+    /// `use`, and pushed the distribution's `t/OEIS.rakutest` past its own
+    /// per-sequence timeout (#19324).
+    // Cost: O(min(p, l)) hash probes, p = pending names, l = the frame's live
+    // locals (the locals side probes the pending set once per local; the
+    // pending side probes the chunk's name index once per pending name, taken
+    // only when p < l).
     #[inline(never)]
     fn apply_pending_caller_var_writeback_slow(&mut self, code: &CompiledCode) {
         // `code.locals` can in principle outrun the frame's live slot region; only
         // slots that exist are writable, and a name past the end stays pending.
         let live = self.locals.len().min(code.locals.len());
         if self.pending_caller_var_writeback.len() < live {
-            let locals = &code.locals[..live];
+            // The first slot bearing the name, if it is live: the same slot a
+            // scan of `code.locals[..live]` finds first.
             let mut slots: Vec<usize> = self
                 .pending_caller_var_writeback
                 .iter()
-                .filter_map(|pending| locals.iter().position(|n| n == pending))
+                .filter_map(|pending| {
+                    code.local_slots_named(pending)
+                        .first()
+                        .map(|&slot| slot as usize)
+                        .filter(|&slot| slot < live)
+                })
                 .collect();
             slots.sort_unstable();
             for slot in slots {
