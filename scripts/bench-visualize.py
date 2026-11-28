@@ -414,11 +414,11 @@ def merge_sections(benches):
             for i in set(sec) | set(whole[lane]):
                 w = whole[lane].get(i)
                 sp = sec.get(i)
-                instr, allocs = (w[3], w[4]) if w else (None, None)
+                det = (w[3], w[4], w[6], w[7]) if w else (None,) * 4
                 if sp:
-                    pts[i] = [i, sp[1], sp[2], instr, allocs, sp[5]]
+                    pts[i] = [i, sp[1], sp[2], det[0], det[1], sp[5], det[2], det[3]]
                 else:
-                    pts[i] = [i, None, None, instr, allocs, None]
+                    pts[i] = [i, None, None, det[0], det[1], None, det[2], det[3]]
             merged[lane] = pts
         entries[base_name] = merged
     return entries
@@ -443,9 +443,17 @@ def build_model(rows, det_rows=(), tracking=None):
         return (name[:-4], "jit") if name.endswith("+jit") else (name, "base")
 
     # The deterministic row for each (benchmark, commit), keyed the same way, so
-    # it can be attached to the matching wall-clock point below.
+    # it can be attached to the matching wall-clock point below. The `@net` rows
+    # (scripts/bench-det.sh: the same counts minus an empty script's own startup)
+    # are not benchmarks of their own: `foo@net` / `foo@net+jit` become the net
+    # slots of the `foo` / `foo+jit` points, keyed by the raw row's name.
     det = {}
+    net = {}
     for r in det_rows:
+        if "@net" in r["benchmark"]:
+            net[(r["benchmark"].replace("@net", "", 1), r["commit"])] = (
+                r["instructions"], r["allocations"])
+            continue
         det[(r["benchmark"], r["commit"])] = (r["instructions"], r["allocations"])
 
     # benchmark basename -> {"base": [...pts], "jit": [...pts]}
@@ -478,6 +486,13 @@ def build_model(rows, det_rows=(), tracking=None):
         b = benches.setdefault(base_name, {"base": {}, "jit": {}})
         b[lane].setdefault(idx[commit], [idx[commit], None, None, instr, allocs, None])
 
+    # Net slots (6: instructions, 7: allocations) on every point, None where the
+    # series has no `@net` row (every commit before it started being recorded).
+    for base_name, lanes in benches.items():
+        for lane, suffix in (("base", ""), ("jit", "+jit")):
+            for i, pt in lanes[lane].items():
+                n_i, n_a = net.get((base_name + suffix, order[i]), (None, None))
+                pt.extend([n_i, n_a])
     changes = ref_changes(rows, idx)
     out = []
     entries = merge_sections(benches)
@@ -527,6 +542,8 @@ def build_model(rows, det_rows=(), tracking=None):
         # Same, for "allocations" (#8959), which started being recorded later
         # than the instruction counts and so is absent from the older rows.
         "hasAllocs": any(r["allocations"] is not None for r in det_rows),
+        # Same, for the `@net` metrics (startup subtracted).
+        "hasNet": any("@net" in r["benchmark"] for r in det_rows),
         # Same, for "ratio vs rakupp", which started being recorded later still.
         "hasRakupp": any(r["ratio_pp"] is not None for r in rows),
     }
@@ -665,6 +682,8 @@ __CHROME_NAV__
       <button data-v="ratiopp" aria-pressed="false" id="metricRakupp" hidden>ratio vs rakupp</button>
       <button data-v="instr" aria-pressed="false" id="metricInstr" hidden>instructions</button>
       <button data-v="allocs" aria-pressed="false" id="metricAllocs" hidden>allocations</button>
+      <button data-v="instrnet" aria-pressed="false" id="metricInstrNet" hidden>instructions (net)</button>
+      <button data-v="allocsnet" aria-pressed="false" id="metricAllocsNet" hidden>allocations (net)</button>
     </div>
     <span class="ctl-label">Window</span>
     <div class="seg" id="window" role="group" aria-label="Commit window">
@@ -710,7 +729,7 @@ let sortKey = 'name', sortDir = 1;
 // ratio_vs_rakupp]. The last three are null for every commit before each series
 // started being recorded, so every consumer below has to tolerate a null y --
 // see `defined`.
-const YIDX = { seconds: 1, ratio: 2, instr: 3, allocs: 4, ratiopp: 5 };
+const YIDX = { seconds: 1, ratio: 2, instr: 3, allocs: 4, ratiopp: 5, instrnet: 6, allocsnet: 7 };
 const isRatio = () => metric === 'ratio' || metric === 'ratiopp';
 const yval = (pt) => pt[YIDX[metric]];
 const defined = (pt) => yval(pt) != null;
@@ -724,7 +743,7 @@ function fmtInstr(v) {
   if (a >= 1e3) return (v / 1e3).toFixed(1) + 'k';
   return String(v);
 }
-const fmt = (v) => (metric === 'instr' || metric === 'allocs') ? fmtInstr(v)
+const fmt = (v) => (metric === 'instr' || metric === 'allocs' || metric === 'instrnet' || metric === 'allocsnet') ? fmtInstr(v)
   : metric === 'seconds'
     ? (v === 0 ? '0' : v < 0.001 ? v.toExponential(1) : v.toFixed(v < 0.1 ? 4 : 3))
     : v.toFixed(2);
@@ -1063,6 +1082,7 @@ const VALID = {
   // validator. The generator asserts the two agree (see `_assert_metrics_valid`).
   metric: (v) => v === 'seconds' || v === 'ratio'
     || (v === 'instr' && DATA.hasDet) || (v === 'allocs' && DATA.hasAllocs)
+    || ((v === 'instrnet' || v === 'allocsnet') && DATA.hasNet)
     || (v === 'ratiopp' && DATA.hasRakupp),
   window: (v) => v === '0' || v === '50' || v === '150',
   view: (v) => v === 'charts' || v === 'table',
@@ -1151,6 +1171,10 @@ function seg(id, cb) {
 }
 if (DATA.hasDet) document.getElementById('metricInstr').hidden = false;
 if (DATA.hasAllocs) document.getElementById('metricAllocs').hidden = false;
+if (DATA.hasNet) {
+  document.getElementById('metricInstrNet').hidden = false;
+  document.getElementById('metricAllocsNet').hidden = false;
+}
 if (DATA.hasRakupp) document.getElementById('metricRakupp').hidden = false;
 seg('metric', v => metric = v);
 seg('window', v => windowN = +v);
@@ -1214,6 +1238,13 @@ document.getElementById('foot').innerHTML =
       `16-33% for wall clock. It is blind to cache behaviour, memory boundness, lock ` +
       `contention and real thread parallelism, and it steps whenever the toolchain ` +
       `changes &mdash; read it together with the seconds series, not instead of it. `
+    : '') +
+  (DATA.hasNet
+    ? `<b>instructions (net)</b> and <b>allocations (net)</b> are the same two series with ` +
+      `the interpreter's own startup taken out: the raw count minus an empty script's count ` +
+      `in the same job and JIT mode (<span class="mono">name@net</span> rows). The raw series ` +
+      `stay as they were; the net ones show a light benchmark's own work instead of a floor. ` +
+      `They still include parsing and compiling the file and loading the modules it uses. `
     : '') +
   (DATA.hasAllocs
     ? `<b>allocations</b> is the heap allocation count, read out of the same callgrind ` +

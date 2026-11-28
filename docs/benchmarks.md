@@ -80,6 +80,22 @@ without its subject size says nothing.
 `scripts/bench-det.sh` runs each file once under callgrind. Its instruction and allocation counts
 include mutsu's own startup, which is a constant floor under every file.
 
+For each file and JIT mode `bench-det.sh` prints, next to the raw `<name>` / `<name>+jit` rows,
+`<name>@net` / `<name>@net+jit`: the raw count minus the count of an **empty script** measured in
+the same job, in the same JIT mode, by the same callgrind invocation (clamped at 0). The raw rows
+are unchanged, so the older series continues; the trend page offers the net counts as the
+*instructions (net)* and *allocations (net)* metrics and does not draw `@net` rows as cards of
+their own. Net exists because a light benchmark's raw count is mostly the interpreter's startup
+floor, so a 10% change in its own work barely moves it.
+
+Why a subtracted baseline and not callgrind's `--toggle-collect` around the section: the baseline
+needs no interpreter function names (the first thing a refactor renames) and cannot silently
+collect nothing, whereas a stale toggle yields an empty profile that reads as "the benchmark became
+free". The price is stated, not hidden: the net count still contains parsing and compiling the
+file, loading the modules it `use`s, and (outside `BENCH_DET`) the warm-up runs — it is "the file
+minus a bare interpreter", not "the timed section alone". The wall-clock `@section` series is the
+one that times the section alone.
+
 The deterministic instruction/allocation series warms each benchmark once in both JIT modes
 before callgrind, inside `scripts/bench-det.sh` itself. It therefore measures the same populated
 precompilation-cache state on push-triggered CI runs that skip the wall-clock benchmark job.
