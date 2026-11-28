@@ -4187,6 +4187,7 @@ t/modules/module-noarg-default-private-sub-comma.t
 t/modules/module-our-globals-outlive-scope.t
 t/modules/module-own-dynamic-does-not-leak.t
 t/modules/module-parse-warning-once.t
+t/modules/module-pod-late-call.t
 t/modules/module-pod-variable.t
 t/modules/module-private-enum-qualified-scope.t
 t/modules/module-private-sub-call-cache-per-unit.t
@@ -7030,6 +7031,7 @@ t/rakuast/rakuast-eval-given.t
 t/rakuast/rakuast-eval-imported-infix-candidates.t
 t/rakuast/rakuast-eval-infix.t
 t/rakuast/rakuast-eval-interp.t
+t/rakuast/rakuast-eval-module-pod-late-call.t
 t/rakuast/rakuast-eval-named-infix.t
 t/rakuast/rakuast-eval-named-param.t
 t/rakuast/rakuast-eval-pair.t
