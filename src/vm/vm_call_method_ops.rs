@@ -994,7 +994,7 @@ impl Interpreter {
                     class_name,
                     name.sym,
                     0,
-                    super::vm_method_site_ic::MethodSiteIcAction::Accessor,
+                    super::vm_method_site_ic::MethodSiteIcAction::Accessor(None),
                 );
             }
             self.stack.push(value);

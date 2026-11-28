@@ -49,6 +49,20 @@ impl Interpreter {
     // Cost: O(1): a generation compare, one probe of the lane, and one slot
     // read under the instance's read guard.
     pub(super) fn try_accessor_lane(&mut self, method_sym: crate::symbol::Symbol) -> Option<Value> {
+        let (layout_id, entry) = self.accessor_lane_entry(method_sym)?;
+        let target = self.stack.last()?;
+        self.accessor_lane_read(target, layout_id, entry)
+    }
+
+    /// The lane's `(layout id, entry)` for `method_sym` on the receiver on
+    /// top of the stack, which a caller may keep and replay with
+    /// [`Self::accessor_lane_read`] for as long as the registry method
+    /// generation is unchanged (the lane is cleared with it).
+    // Cost: O(1): a generation compare and one probe of the lane.
+    pub(super) fn accessor_lane_entry(
+        &mut self,
+        method_sym: crate::symbol::Symbol,
+    ) -> Option<(u32, u32)> {
         if self.caches.accessor_lane.is_empty() {
             return None;
         }
@@ -56,15 +70,31 @@ impl Interpreter {
         let ValueView::Instance { attributes, .. } = self.stack.last()?.view() else {
             return None;
         };
+        let layout_id = attributes.as_map().layout()?.id();
+        let entry = *self.caches.accessor_lane.get(&(layout_id, method_sym))?;
+        Some((layout_id, entry))
+    }
+
+    /// The attribute value the lane entry `entry` of layout `layout_id`
+    /// answers for `target`, or `None` to run the full dispatch.
+    // Cost: O(1): one slot read under the instance's read guard.
+    pub(super) fn accessor_lane_read(
+        &self,
+        target: &Value,
+        layout_id: u32,
+        entry: u32,
+    ) -> Option<Value> {
+        let ValueView::Instance { attributes, .. } = target.view() else {
+            return None;
+        };
         let map = attributes.as_map();
-        if map.has_undeclared() {
+        if map.has_undeclared() || map.layout()?.id() != layout_id {
             return None;
         }
-        let layout_id = map.layout()?.id();
-        let entry = *self.caches.accessor_lane.get(&(layout_id, method_sym))?;
         let value = map
             .slot_vivify((entry & LANE_SLOT_MASK) as usize)?
             .deref_container();
+        drop(map);
         if matches!(value.view(), ValueView::Array(..) | ValueView::Hash(_)) {
             // An aggregate read is the full path's: decontainerize unless the
             // accessor is `is rw`, and hand back a container that already

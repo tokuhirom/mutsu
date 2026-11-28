@@ -43,12 +43,13 @@ use super::*;
 /// What a site answered the last time.
 #[derive(Debug, Clone)]
 pub(crate) enum MethodSiteIcAction {
-    /// The generated accessor's plain read (`try_accessor_lane`).
-    Accessor,
+    /// The generated accessor's plain read (`try_accessor_lane`), with the
+    /// lane's `(layout id, entry)` once a hit has looked it up.
+    Accessor(Option<(u32, u32)>),
     /// A planned user-method call (`run_method_call_plan`) for these argument
     /// type keys.
     Plan {
-        arg_keys: Vec<Symbol>,
+        arg_keys: std::sync::Arc<[Symbol]>,
         plan: std::sync::Arc<super::vm_method_call_plan::MethodCallPlan>,
     },
     /// A `CallMethod` site whose call was found unplannable: the full path
@@ -255,7 +256,10 @@ impl Interpreter {
             return;
         }
         let action = match self.method_call_plan_for(method, owner, def, target, args) {
-            Some(plan) if plan.lean => MethodSiteIcAction::Plan { arg_keys, plan },
+            Some(plan) if plan.lean => MethodSiteIcAction::Plan {
+                arg_keys: arg_keys.into(),
+                plan,
+            },
             _ => MethodSiteIcAction::Unplanned,
         };
         self.install_method_site_ic(class_name, method, args.len(), action);
@@ -285,12 +289,23 @@ impl Interpreter {
             return None;
         }
         match action {
-            MethodSiteIcAction::Accessor => {
+            MethodSiteIcAction::Accessor(slot) => {
                 if arity != 0 || self.has_any_wrap_chains() {
                     return None;
                 }
                 self.sync_source_line(code, ip);
-                let value = self.try_accessor_lane(method)?;
+                let (layout_id, lane_entry) = match slot {
+                    Some(slot) => slot,
+                    None => {
+                        // First hit: keep the lane's entry with the site.
+                        let slot = self.accessor_lane_entry(method)?;
+                        if let Some(entry) = self.caches.method_site_ic.get_mut(&key) {
+                            entry.action = MethodSiteIcAction::Accessor(Some(slot));
+                        }
+                        slot
+                    }
+                };
+                let value = self.accessor_lane_read(self.stack.last()?, layout_id, lane_entry)?;
                 self.stack.pop();
                 self.stack.push(value);
                 self.set_pending_call_arg_sources(None);
@@ -385,10 +400,10 @@ impl Interpreter {
             self.pending_call_arg_source_slots.clear();
             self.set_pending_call_arg_sources(None);
         } else {
+            // No `reify_map_grep_seq_method_args`: the plan's argument keys
+            // admit only scalar-kind values (`plan_arg_kind_ok`), never the
+            // Seq or LazyList it reifies.
             self.set_pending_call_arg_sources_shared(decoded.map(|(names, _)| names));
-            if let Err(e) = self.reify_map_grep_seq_method_args(&target, method, &args) {
-                return Some(Err(e));
-            }
         }
         let result = self.in_method_call(|vm| {
             vm.run_method_call_plan(code, target_name, target, method, plan, args)

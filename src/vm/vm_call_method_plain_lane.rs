@@ -297,7 +297,7 @@ impl Interpreter {
                         method_sym,
                         0,
                         super::vm_method_site_ic::MethodSiteIcAction::Plan {
-                            arg_keys: Vec::new(),
+                            arg_keys: std::sync::Arc::from([]),
                             plan: std::sync::Arc::clone(&plan),
                         },
                     );
@@ -370,7 +370,7 @@ impl Interpreter {
                         method_sym,
                         args.len(),
                         super::vm_method_site_ic::MethodSiteIcAction::Plan {
-                            arg_keys,
+                            arg_keys: arg_keys.into(),
                             plan: std::sync::Arc::clone(&plan),
                         },
                     );
