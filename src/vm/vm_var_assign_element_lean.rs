@@ -88,7 +88,7 @@ impl Interpreter {
     }
 
     // Cost: O(1) amortized.
-    #[inline]
+    #[inline(always)]
     fn try_lean_local_array_store(
         &mut self,
         code: &CompiledCode,
@@ -222,7 +222,7 @@ impl Interpreter {
     /// variable's `:=` pair, readonly flag, `is default` and constraint.
     /// `None` = decline.
     // Cost: O(1) expected (a few latch loads and symbol-keyed probes).
-    #[inline]
+    #[inline(always)]
     fn lean_store_preamble(
         &self,
         code: &CompiledCode,
@@ -289,7 +289,7 @@ impl Interpreter {
     /// binding cell (a non-itemized `ContainerRef`) -- with that cell. Only the
     /// node's `Gc` handle is cloned, never the slot's word.
     // Cost: O(1) (one refcount bump; one uncontended cell lock).
-    #[inline]
+    #[inline(always)]
     fn lean_store_slot_node(
         &self,
         slot: usize,
@@ -310,7 +310,7 @@ impl Interpreter {
     /// Pop the index and the value of an accepted store; the value is
     /// returned.
     // Cost: O(1).
-    #[inline]
+    #[inline(always)]
     fn lean_store_take_value(&mut self, ops: &LeanStoreOperands) -> Value {
         let val = self.stack.swap_remove(ops.value_at);
         self.stack.pop();
