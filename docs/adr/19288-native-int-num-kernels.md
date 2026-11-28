@@ -1,6 +1,6 @@
 # ADR-19288: Native kernels — closed int/num regions lowered to typed native code, rerun from their start on the generic path when they cannot continue
 
-- **Status**: Proposed (2026-11-28)
+- **Status**: Accepted (maintainer decision 2026-11-28; proposed 2026-11-28)
 - **Issue**: [#19288](https://github.com/tokuhirom/mutsu/issues/19288) (carrier); stages
   [#19290](https://github.com/tokuhirom/mutsu/issues/19290) (sub kernels),
   [#19292](https://github.com/tokuhirom/mutsu/issues/19292) (loop kernels),
