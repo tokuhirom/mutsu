@@ -218,6 +218,97 @@ fn store_value(interp: &Interpreter, slot: u32, key: i64, value: Value) -> u32 {
     KERNEL_ELEM_OK
 }
 
+/// [`store_value`] under the key `"prefix$key"`: the text of the `Str`
+/// constant `prefix` of `code` followed by `key` in decimal, built straight
+/// into the `String` a new entry is filed under (no `Str` value is made).
+/// The text is what the interpolation would produce: the constant is NFC and
+/// a decimal digit or `-` composes with nothing, so the join is NFC too; the
+/// kernel entry checked that no user `^find_method` could reach the `Int`'s
+/// stringification (`Typed::str_keys`), and no user `infix:<~>` is declared
+/// (`USER_INFIX_DECLS`).
+// Cost: O(1) expected, plus O(p + d) to build the key, p = prefix bytes,
+// d <= 20 digits.
+#[inline(always)]
+fn store_value_prefixed(
+    interp: &Interpreter,
+    code: &CompiledCode,
+    slot: u32,
+    prefix: u32,
+    key: i64,
+    value: Value,
+) -> u32 {
+    let Some(ValueView::Str(prefix)) = code.constants.get(prefix as usize).map(Value::view) else {
+        return KERNEL_ELEM_DECLINE;
+    };
+    let Some(hash) = plain_hash_node(interp, slot, true) else {
+        return KERNEL_ELEM_DECLINE;
+    };
+    let digits = crate::builtins::str_prim::IntDecimal::of(key);
+    let prefix = prefix.as_str();
+    let mut text = String::with_capacity(prefix.len() + digits.as_str().len());
+    text.push_str(prefix);
+    text.push_str(digits.as_str());
+    let present = match hash.map.get(text.as_str()) {
+        Some(entry)
+            if entry.is_container_ref()
+                || entry.is_hash_entry_ref_value()
+                || entry.is_proxy_value() =>
+        {
+            return KERNEL_ELEM_DECLINE;
+        }
+        Some(_) => true,
+        None => false,
+    };
+    // SAFETY: as in `store_value`: the audited aliased in-place write the
+    // lean store makes, with no borrow into the node live across it and this
+    // thread the only writer (`kernel_hash_entry_ok` checked
+    // `multi_mutator_threads_live`).
+    let data: &mut HashData = unsafe { crate::value::gc_contents_mut(&hash) };
+    if present {
+        Value::hash_insert_through_str(&mut data.map, text.as_str(), value);
+    } else {
+        data.map.insert(text, value.itemize_for_hash_element());
+    }
+    KERNEL_ELEM_OK
+}
+
+/// `%h{"prefix$int"} = $v` for an `Int` value; `prefix` is the index of the
+/// `Str` constant in `code`.
+///
+/// # Safety
+/// As [`kernel_hash_store_int`].
+// Cost: O(1) expected, plus the key's text.
+pub(super) unsafe extern "C" fn kernel_hash_store_prefixed_int(
+    interp: *mut Interpreter,
+    code: *const CompiledCode,
+    slot: u32,
+    prefix: u32,
+    key: i64,
+    value: i64,
+) -> u32 {
+    // SAFETY: see the function's safety contract.
+    let (vm, code) = unsafe { (&*interp, &*code) };
+    store_value_prefixed(vm, code, slot, prefix, key, Value::int(value))
+}
+
+/// `%h{"prefix$int"} = $v` for a `Num` value.
+///
+/// # Safety
+/// As [`kernel_hash_store_int`].
+// Cost: O(1) expected, plus the key's text.
+pub(super) unsafe extern "C" fn kernel_hash_store_prefixed_num(
+    interp: *mut Interpreter,
+    code: *const CompiledCode,
+    slot: u32,
+    prefix: u32,
+    key: i64,
+    value: f64,
+) -> u32 {
+    // SAFETY: see the function's safety contract.
+    let (vm, code) = unsafe { (&*interp, &*code) };
+    store_value_prefixed(vm, code, slot, prefix, key, Value::num(value))
+}
+
 /// `%h{$int} = $v` for an `Int` value.
 ///
 /// # Safety

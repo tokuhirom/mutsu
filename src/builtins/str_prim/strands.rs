@@ -142,6 +142,21 @@ impl Joiner {
                 return None;
             }
         }
+        // A result under `STRAND_MIN_BYTES` (`cap` bounds it) is built flat
+        // whatever its pieces are (`finish` copies shared parts back into one
+        // buffer then), so write it straight into one buffer: the same text,
+        // NFC-checked the same way, without the joiner's bookkeeping.
+        if cap < STRAND_MIN_BYTES {
+            let mut out = String::with_capacity(cap);
+            for v in pieces {
+                if let Some(i) = v.as_int() {
+                    out.push_str(super::IntDecimal::of(i).as_str());
+                } else if let crate::value::ValueView::Str(arc) = v.view() {
+                    out.push_str(arc.as_str());
+                }
+            }
+            return Some(super::build::nfc_value(out));
+        }
         let mut joiner = Joiner {
             parts: Vec::new(),
             pending: String::with_capacity(cap),

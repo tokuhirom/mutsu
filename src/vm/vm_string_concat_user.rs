@@ -8,6 +8,23 @@
 use super::*;
 
 impl Interpreter {
+    /// The `StringConcat(n)` op at `ip`: its source line, the join, and the
+    /// render guard. The interpreter's arm and the JIT's direct shim
+    /// (`vm_jit_concat_step`) both run exactly this.
+    // Cost: as `exec_string_concat_op`.
+    pub(crate) fn exec_string_concat_at(
+        &mut self,
+        code: &CompiledCode,
+        ip: usize,
+        n: u32,
+    ) -> Result<(), RuntimeError> {
+        self.sync_source_line(code, ip);
+        // #11217: a render truncated by a stack overflow raises.
+        crate::value::render_guard::check_render(
+            self.exec_string_concat_op(n, code.interp_part_names_at(ip)),
+        )
+    }
+
     /// Build the string of the `n` pieces on top of the stack.
     // Cost: O(1) over the plain op when no user `infix:<~>` is in scope;
     // otherwise O(n) candidate rankings plus the winners' calls.

@@ -28,6 +28,8 @@ pub(super) fn clty(k: K) -> types::Type {
         K::Arr(_) => types::I64,
         // The row index a grid's first subscript applied.
         K::Row(_) => types::I64,
+        // A placeholder word, and a `"prefix$i"` key's Int.
+        K::StrConst(_) | K::IntKey(_) => types::I64,
     }
 }
 
@@ -282,9 +284,11 @@ impl Em<'_, '_> {
                     ..
                 } => {
                     let (v, k) = stack.pop()?;
-                    let (index, _) = stack.pop()?;
+                    let (index, key_kind) = stack.pop()?;
                     if *is_positional {
                         self.elem_store(*slot, index, v, k);
+                    } else if let K::IntKey(prefix) = key_kind {
+                        self.hash_store_prefixed(*slot, prefix, index, v, k);
                     } else {
                         self.hash_store(*slot, index, v, k);
                     }
@@ -309,6 +313,20 @@ impl Em<'_, '_> {
                 OpCode::GetGlobal(_) => {
                     debug_assert_eq!(self.var, Some(LoopVar::Topic));
                     stack.push((self.b.use_var(self.counter), K::Int));
+                }
+                // A `"prefix$i"` key's pieces: the constant has no machine
+                // value (its index travels in the kind), the key carries the Int.
+                OpCode::LoadConst(c) if super::vm_loop_kernel_types::str_const(self.code, *c) => {
+                    let none = self.b.ins().iconst(types::I64, 0);
+                    stack.push((none, K::StrConst(*c)));
+                }
+                OpCode::StringConcat(2) => {
+                    let (y, _) = stack.pop()?;
+                    let (_, x) = stack.pop()?;
+                    let K::StrConst(c) = x else {
+                        return None;
+                    };
+                    stack.push((y, K::IntKey(c)));
                 }
                 OpCode::LoadConst(c) => {
                     let (k, iv, fv) = num_const(self.code, *c)?;

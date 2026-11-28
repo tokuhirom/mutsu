@@ -32,6 +32,7 @@ mod find_method_fallback;
 mod capture_storage;
 mod container_role_of;
 mod ctor_phase_plan;
+mod ctor_phase_bind_only;
 pub(crate) mod native_decl;
 pub(crate) mod instance_backing;
 mod native_pointer_value;

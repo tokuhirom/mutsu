@@ -37,6 +37,9 @@ pub(super) struct Typed {
     /// Every join `(segment start, ip)` with the stack kinds it is entered with
     /// (a jump target, and each segment's end).
     pub(super) joins: BTreeMap<(usize, usize), Vec<K>>,
+    /// The region stores under a `"prefix$i"` key: the entry checks that the
+    /// interpolation is the built-in one (`any_user_find_method`).
+    pub(super) str_keys: bool,
 }
 
 struct Walk<'c> {
@@ -73,7 +76,8 @@ impl Walk<'_> {
         let mut open = true;
         let mut incoming: BTreeMap<usize, Vec<K>> = BTreeMap::new();
         let edge = |incoming: &mut BTreeMap<usize, Vec<K>>, t: usize, stack: &[K]| -> Option<()> {
-            if t <= start || t > end || stack.iter().any(|k| matches!(k, K::Arr(_) | K::Row(_))) {
+            if t <= start || t > end || stack.iter().any(super::vm_loop_kernel_types::k_is_pending)
+            {
                 return None;
             }
             match incoming.get(&t) {
@@ -179,10 +183,26 @@ impl Walk<'_> {
                     ..
                 } if self.elem_stores.contains(&(*slot, !*is_positional)) => {
                     let v = stack.pop()?;
-                    if !v.numeric() || stack.pop()? != K::Int {
+                    let key = stack.pop()?;
+                    // A hash takes a `"prefix$i"` key too; an array only an Int.
+                    let key_ok = key == K::Int || (!*is_positional && matches!(key, K::IntKey(_)));
+                    if !v.numeric() || !key_ok {
                         return None;
                     }
+                    if matches!(key, K::IntKey(_)) {
+                        self.t.str_keys = true;
+                    }
                     stack.push(v);
+                }
+                // `"prefix$i"`: a `Str` constant and an `Int`, only as a hash
+                // key (see `K::IntKey`).
+                OpCode::StringConcat(2) => {
+                    let y = stack.pop()?;
+                    let x = stack.pop()?;
+                    match (x, y) {
+                        (K::StrConst(c), K::Int) => stack.push(K::IntKey(c)),
+                        _ => return None,
+                    }
                 }
                 OpCode::SinkPopAssign => {
                     stack.pop()?.slot_kind()?;
@@ -200,6 +220,9 @@ impl Walk<'_> {
                     stack.push(K::Int);
                 }
                 OpCode::GetGlobal(n) if self.topic && is_topic(self.code, *n) => stack.push(K::Int),
+                OpCode::LoadConst(c) if super::vm_loop_kernel_types::str_const(self.code, *c) => {
+                    stack.push(K::StrConst(*c))
+                }
                 OpCode::LoadConst(c) => stack.push(num_const(self.code, *c)?.0),
                 OpCode::Add | OpCode::Sub | OpCode::Mul => {
                     let y = stack.pop()?;
@@ -338,7 +361,7 @@ impl Walk<'_> {
         if !open
             || stack.len() != leaves
             || pending.is_some()
-            || stack.iter().any(|k| matches!(k, K::Arr(_) | K::Row(_)))
+            || stack.iter().any(super::vm_loop_kernel_types::k_is_pending)
         {
             return None;
         }
@@ -367,6 +390,7 @@ pub(super) fn type_region(
             num_sites: Vec::new(),
             calls: Vec::new(),
             joins: BTreeMap::new(),
+            str_keys: false,
         },
         loop_vars: Vec::new(),
         declared: Vec::new(),
