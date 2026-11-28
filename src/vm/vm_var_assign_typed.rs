@@ -426,32 +426,32 @@ impl Interpreter {
         let mut coerced_rows = Vec::with_capacity(rows.len());
         for row in rows.iter() {
             let row = row.deref_container();
-            let coerced = if let Some(row_shape) =
-                crate::value::shaped_array::jagged_array_shape(&row)
-            {
-                self.coerce_typed_jagged_rows(
-                    var_name,
-                    constraint,
-                    &row,
-                    &row_shape,
-                    coercion_target,
-                    explicit_initializer,
-                )?
-            } else if let ValueView::Array(items, row_kind) = row.view() {
-                let items = self.coerce_typed_array_elements(
-                    var_name,
-                    constraint,
-                    &items,
-                    row_kind,
-                    coercion_target,
-                    explicit_initializer,
-                )?;
-                let mut data = (*Value::array_data_coerced_whole(&items_data(&row), items, true)).clone();
-                data.value_type = Some(constraint.to_string());
-                Value::array_with_kind(crate::gc::Gc::new(data), row_kind)
-            } else {
-                row
-            };
+            let coerced =
+                if let Some(row_shape) = crate::value::shaped_array::jagged_array_shape(&row) {
+                    self.coerce_typed_jagged_rows(
+                        var_name,
+                        constraint,
+                        &row,
+                        &row_shape,
+                        coercion_target,
+                        explicit_initializer,
+                    )?
+                } else if let ValueView::Array(items, row_kind) = row.view() {
+                    let items = self.coerce_typed_array_elements(
+                        var_name,
+                        constraint,
+                        &items,
+                        row_kind,
+                        coercion_target,
+                        explicit_initializer,
+                    )?;
+                    let mut data =
+                        (*Value::array_data_coerced_whole(&items_data(&row), items, true)).clone();
+                    data.value_type = Some(constraint.to_string());
+                    Value::array_with_kind(crate::gc::Gc::new(data), row_kind)
+                } else {
+                    row
+                };
             coerced_rows.push(coerced);
         }
         let mut data = crate::value::ArrayData::new(coerced_rows);

@@ -2189,7 +2189,11 @@ impl Interpreter {
             if let Some(shape) = lhs_jagged
                 && !crate::value::shaped_array::jagged_array_shape(&assigned).is_some()
             {
-                assigned = self.refill_jagged_array(&self.locals[idx].deref_container(), &shape, assigned)?;
+                assigned = self.refill_jagged_array(
+                    &self.locals[idx].deref_container(),
+                    &shape,
+                    assigned,
+                )?;
             } else if let Some(shape) = &lhs_shape
                 && shape.len() == 1
                 && !assigned_has_own_shape
