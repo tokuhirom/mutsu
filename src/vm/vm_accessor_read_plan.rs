@@ -144,6 +144,11 @@ impl Interpreter {
         match self.try_fast_accessor_read(&target, method_sym, &[], false, false, false) {
             Some(result) => {
                 crate::vm::vm_stats::record_dispatch_entry_outcome("callmethod", "accessor");
+                // A site that may record this answer (`vm_method_site_ic`)
+                // replays it through the accessor lane, filled from here.
+                if result.is_ok() && self.caches.method_site_ic_site.is_some() {
+                    self.note_accessor_lane(&target, method_sym);
+                }
                 Some(result)
             }
             None => {

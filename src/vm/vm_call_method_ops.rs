@@ -976,10 +976,27 @@ impl Interpreter {
         arg_sources_idx: Option<u32>,
     ) -> Result<(), RuntimeError> {
         crate::vm::vm_stats::record_method_dispatch();
+        let receiver_class = match self.stack.last().map(Value::view) {
+            Some(ValueView::Instance { class_name, .. }) => Some(class_name),
+            _ => None,
+        };
         if let Some(result) =
             self.try_early_accessor_lane(name.sym, arity, modifier_idx, quoted, arg_sources_idx)
         {
-            self.stack.push(result?);
+            let value = result?;
+            // A plain read the accessor lane can replay for this site
+            // (`vm_method_site_ic`): the lane is filled from this answer.
+            if let Some(class_name) = receiver_class
+                && self.caches.method_site_ic_site.is_some()
+            {
+                self.install_method_site_ic(
+                    class_name,
+                    name.sym,
+                    0,
+                    super::vm_method_site_ic::MethodSiteIcAction::Accessor,
+                );
+            }
+            self.stack.push(value);
             return Ok(());
         }
         // `.parse` / `.subparse` on a grammar (`vm_grammar_parse_site`).
