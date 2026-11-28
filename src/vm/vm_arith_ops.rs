@@ -317,8 +317,11 @@ impl Interpreter {
         // only a result that does not fit consults `$*RAT-OVERFLOW`, so the
         // overflow scope and the wrapper below have nothing to do for it.
         if !has_override
-            && let Some(result) =
-                crate::builtins::arith::plain_rat_small(&left, &right, crate::builtins::arith::RatOp::Add)
+            && let Some(result) = crate::builtins::arith::plain_rat_small(
+                &left,
+                &right,
+                crate::builtins::arith::RatOp::Add,
+            )
         {
             self.stack.push(result);
             return Ok(());
@@ -378,8 +381,11 @@ impl Interpreter {
         // only a result that does not fit consults `$*RAT-OVERFLOW`, so the
         // overflow scope and the wrapper below have nothing to do for it.
         if !has_override
-            && let Some(result) =
-                crate::builtins::arith::plain_rat_small(&left, &right, crate::builtins::arith::RatOp::Sub)
+            && let Some(result) = crate::builtins::arith::plain_rat_small(
+                &left,
+                &right,
+                crate::builtins::arith::RatOp::Sub,
+            )
         {
             self.stack.push(result);
             return Ok(());
@@ -687,8 +693,11 @@ impl Interpreter {
         // only a result that does not fit consults `$*RAT-OVERFLOW`, so the
         // overflow scope and the wrapper below have nothing to do for it.
         if !has_override
-            && let Some(result) =
-                crate::builtins::arith::plain_rat_small(&left, &right, crate::builtins::arith::RatOp::Mul)
+            && let Some(result) = crate::builtins::arith::plain_rat_small(
+                &left,
+                &right,
+                crate::builtins::arith::RatOp::Mul,
+            )
         {
             self.stack.push(result);
             return Ok(());
@@ -727,8 +736,11 @@ impl Interpreter {
         // only a result that does not fit consults `$*RAT-OVERFLOW`, so the
         // overflow scope and the wrapper below have nothing to do for it.
         if !has_override
-            && let Some(result) =
-                crate::builtins::arith::plain_rat_small(&left, &right, crate::builtins::arith::RatOp::Div)
+            && let Some(result) = crate::builtins::arith::plain_rat_small(
+                &left,
+                &right,
+                crate::builtins::arith::RatOp::Div,
+            )
         {
             self.stack.push(result);
             return Ok(());
