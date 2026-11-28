@@ -19,7 +19,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 0.31,
+        "secs": 0.26,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -29,7 +29,7 @@
         "nok": 0,
         "ok": 4,
         "plan": 4,
-        "secs": 3.85,
+        "secs": 3.42,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -41,7 +41,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.13,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -51,7 +51,7 @@
         "nok": 0,
         "ok": 11,
         "plan": 11,
-        "secs": 0.73,
+        "secs": 0.62,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -63,7 +63,7 @@
         "nok": 0,
         "ok": 43,
         "plan": 43,
-        "secs": 0.11,
+        "secs": 0.08,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -73,7 +73,7 @@
         "nok": 0,
         "ok": 43,
         "plan": 43,
-        "secs": 0.72,
+        "secs": 0.64,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -95,7 +95,7 @@
         "nok": 0,
         "ok": 36,
         "plan": 36,
-        "secs": 0.66,
+        "secs": 0.55,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -107,7 +107,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.11,
+        "secs": 0.12,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -117,7 +117,7 @@
         "nok": 0,
         "ok": 13,
         "plan": 13,
-        "secs": 0.74,
+        "secs": 0.8,
         "skip": 0,
         "todo": 0,
         "verdict": "pass"
@@ -131,11 +131,11 @@
   },
   "measured": {
     "attempts": 3,
-    "date": "2026-11-27",
+    "date": "2026-11-28",
     "harness": 3,
     "host": "gha-ubuntu24-4c",
-    "mutsu_commit": "9fa982f0",
-    "mutsu_version": "0.26.1",
+    "mutsu_commit": "5c4feeab",
+    "mutsu_version": "1.0.0",
     "raku_backend": "moar 2026.11",
     "raku_version": "2026.11",
     "sandbox": "bwrap"
