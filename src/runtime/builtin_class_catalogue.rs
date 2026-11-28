@@ -365,6 +365,15 @@ mod tests {
         let registry = crate::runtime::Interpreter::shared_builtin_registry();
         for index in 0..X_LEN {
             let class_def = build(index);
+            if parent(index) == "Any" {
+                // A non-exception `X::` class: just its own name and `Any`.
+                let mro: Vec<&str> = class_def.mro.iter().map(|s| s.as_str()).collect();
+                assert_eq!(mro, [name(index), "Any"], "{}", name(index));
+                assert!(is_non_exception_x_class(name(index)));
+                assert!(registry.classes.contains_key(name(index)));
+                continue;
+            }
+            assert!(!is_non_exception_x_class(name(index)), "{}", name(index));
             let mut expected = vec![name(index).to_string()];
             let mut cur = parent(index).to_string();
             loop {
