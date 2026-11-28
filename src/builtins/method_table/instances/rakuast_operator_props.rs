@@ -62,8 +62,8 @@ pub(super) static ROWS: &[MethodRow] = rows_for![
     "RakuAST::MetaInfix::Assign",
     "RakuAST::MetaInfix::Negate",
     "RakuAST::MetaInfix::Reverse",
-    "RakuAST::MetaInfix::Cross",
-    "RakuAST::MetaInfix::Zip",
+    // (Rakudo 2026.11 declares both on the shared parent of `Cross` and `Zip`.)
+    "RakuAST::MetaInfix::CrossZip",
     "RakuAST::MetaInfix::Hyper",
 ];
 

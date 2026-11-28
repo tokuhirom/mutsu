@@ -16,7 +16,13 @@ built-in classes were 2026.09 snapshots, though the pinned oracle
 - `src/builtins/rakudo_method_tables.txt` drops a duplicated `Any` block and
   picks up `Array`/`Hash`'s `ELEMENT-DESCRIPTOR`, `Hash`'s `VIVIFY-*-KEY`,
   `Rakudo::Internals`'s `JAGGED-*` helpers, the reworked RakuAST `IMPL-*`
-  methods, and `IO::Path.resolve-inside`.
+  methods, and `IO::Path.resolve-inside`. It now also lists the owners
+  `RakuAST::Infixish`, `RakuAST::Prefixish`, `RakuAST::MetaInfix`,
+  `RakuAST::MetaInfix::CrossZip` and `RakuAST::Assignment`. Their
+  `is-pure`/`short-circuit` rows no longer need the 2026.09-era
+  model-extension exemption. `properties` and `reducer-name` moved from
+  `MetaInfix::Cross`/`Zip` to their new parent `MetaInfix::CrossZip`, as on
+  2026.11, so `.^methods(:local)` matches rakudo.
 - `src/builtins/rakudo_method_candidates.txt` and
   `src/runtime/builtin_method_sigs.tsv` follow 2026.11's signatures: `Any`'s
   `BIND-KEY` binds `Mu \BIND`, `Hash` gains `:U` `ASSIGN-KEY`/`BIND-KEY`
