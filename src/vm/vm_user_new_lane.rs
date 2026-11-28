@@ -82,7 +82,10 @@ fn user_new_shape_ok(def: &crate::runtime::MethodDef) -> bool {
         && def.delegation.is_none()
         && !def.is_multi
         && def.deprecated_message.is_none()
-        && def.param_defs.iter().any(|pd| pd.slurpy && pd.name.starts_with('%'))
+        && def
+            .param_defs
+            .iter()
+            .any(|pd| pd.slurpy && pd.name.starts_with('%'))
         && def.param_defs.iter().all(|pd| {
             if pd.is_invocant {
                 return pd.implicit_invocant
@@ -176,21 +179,19 @@ impl Interpreter {
     /// user-`new` lane holds the class (see the module doc). `None`, with the
     /// stack untouched, on a miss.
     // Cost: O(a), a = arguments, to decide; then the method's frame.
-    #[allow(clippy::too_many_arguments)]
+    /// `plain`: the call has no `.^`/`.!` modifier and is not quoted.
     pub(super) fn try_user_new_early_lane(
         &mut self,
         code: &CompiledCode,
         target_name: &str,
         method_sym: Symbol,
         arity: usize,
-        modifier_idx: Option<u32>,
-        quoted: bool,
+        plain: bool,
         arg_sources_idx: Option<u32>,
     ) -> Option<Result<(), RuntimeError>> {
         if self.caches.user_new_lane.is_empty()
             || method_sym != crate::symbol::wk::new_method()
-            || modifier_idx.is_some()
-            || quoted
+            || !plain
             || self.accessor_ref_pending
             || crate::runtime::find_method_intercept::any_user_find_method()
             || self.registry().method_name_ever_wrapped("new")
@@ -228,6 +229,7 @@ impl Interpreter {
         if !self.method_named_slurpy_args_light(&plan.def, &self.stack[target_idx + 1..]) {
             return None;
         }
+        let cc = std::sync::Arc::clone(plan.def.compiled_code.as_ref()?);
         // The stretch's own decode: `true` means a `|` spread at the call site.
         let decoded = self.decode_arg_sources_shared(code, arg_sources_idx);
         if decoded.as_ref().is_some_and(|(_, spread)| *spread) {
@@ -248,10 +250,6 @@ impl Interpreter {
         self.dispatch.method_dispatch_pure = false;
         crate::vm::vm_stats::record_dispatch_entry_outcome("callmethodmut", "user-new-lane");
         let def = &*plan.def;
-        let cc = def
-            .compiled_code
-            .as_ref()
-            .expect("a planned new is compiled");
         let armed = self.arm_raw_invocant_arrival(code, target_name, &target, method_sym, &args);
         let pushed_dispatch = match loan_env!(
             self,
@@ -282,7 +280,7 @@ impl Interpreter {
             plan.owner,
             method_sym,
             def,
-            cc,
+            &cc,
             args,
             target,
             fns_ref,
@@ -296,7 +294,8 @@ impl Interpreter {
         }
         self.pop_method_samewith_context();
         self.disarm_raw_invocant_arrival(armed);
-        let result = self.finish_compiled_method_mut_call(class_sym, None, None, def, method_result);
+        let result =
+            self.finish_compiled_method_mut_call(class_sym, None, None, def, method_result);
         Some(result.map(|value| self.stack.push(value)))
     }
 }

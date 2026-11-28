@@ -608,8 +608,7 @@ impl Interpreter {
             Self::const_str(code, target_name_idx),
             name.sym,
             arity as usize,
-            modifier_idx,
-            quoted,
+            modifier_idx.is_none() && !quoted,
             arg_sources_idx,
         ) {
             return result;
