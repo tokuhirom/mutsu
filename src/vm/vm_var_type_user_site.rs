@@ -46,10 +46,9 @@ impl Interpreter {
             return false;
         }
         let generation = self.registry_write_generation();
-        let Some(key) = crate::value::TypeDeclSiteCaches::user_key(
-            generation,
-            self.current_package_sym().id(),
-        ) else {
+        let Some(key) =
+            crate::value::TypeDeclSiteCaches::user_key(generation, self.current_package_sym().id())
+        else {
             return false;
         };
         let sites = code.constants.len();

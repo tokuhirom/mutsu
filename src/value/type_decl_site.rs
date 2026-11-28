@@ -60,7 +60,9 @@ impl TypeDeclSiteCaches {
     // Cost: O(1).
     #[inline]
     pub(crate) fn user_key(generation: u64, package_id: u32) -> Option<u64> {
-        let stamp = generation.checked_add(1).filter(|g| *g <= u64::from(u32::MAX))?;
+        let stamp = generation
+            .checked_add(1)
+            .filter(|g| *g <= u64::from(u32::MAX))?;
         Some((stamp << 32) | u64::from(package_id))
     }
 
