@@ -388,7 +388,9 @@ impl Compiler {
         // readonly per item (`ForLoopSpec::param_slot_only`).
         let threaded = matches!(mode, crate::ast::ForMode::Race | crate::ast::ForMode::Hyper);
         let param_slot_only = fresh_single_param.as_deref().is_some_and(|p| {
-            p.chars().next().is_some_and(|c| c.is_alphabetic() || c == '_')
+            p.chars()
+                .next()
+                .is_some_and(|c| c.is_alphabetic() || c == '_')
                 && !threaded
                 && !has_rw
                 && !has_copy

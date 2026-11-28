@@ -56,7 +56,10 @@ pub(crate) fn topic_alias_unobservable(body: &[Stmt]) -> bool {
 // Cost: O(n), n = AST nodes of the body.
 pub(crate) fn param_alias_unobservable(body: &[Stmt], param: &str) -> bool {
     let mut scan = AliasScan { ok: true };
-    let mut writes = ParamWrites { param, found: false };
+    let mut writes = ParamWrites {
+        param,
+        found: false,
+    };
     for stmt in body {
         scan.visit_stmt(stmt);
         writes.visit_stmt(stmt);
@@ -315,7 +318,10 @@ mod tests {
     #[test]
     fn named_param_bodies() {
         assert!(param_unobservable("my %c; for @a -> $w { %c{$w}++ }", "w"));
-        assert!(param_unobservable("my $n = 0; for @a -> $w { $n += $w }", "w"));
+        assert!(param_unobservable(
+            "my $n = 0; for @a -> $w { $n += $w }",
+            "w"
+        ));
         assert!(!param_unobservable("for @a -> $w { $w = 1 }", "w"));
         assert!(!param_unobservable("for @a -> $w { $w++ }", "w"));
         assert!(!param_unobservable("for @a -> $w { my $w = 1 }", "w"));

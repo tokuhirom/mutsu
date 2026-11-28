@@ -13,8 +13,8 @@ use super::vm_kernel_elem::{
     kernel_elem_read_int, kernel_elem_read_num, kernel_elem_store_int, kernel_elem_store_num,
 };
 use super::vm_kernel_hash::{
-    kernel_elem2_read_int, kernel_elem2_read_num, kernel_hash_read_int, kernel_hash_read_num,
-    kernel_hash_incdec_int, kernel_hash_incdec_item, kernel_hash_store_int, kernel_hash_store_num,
+    kernel_elem2_read_int, kernel_elem2_read_num, kernel_hash_incdec_int, kernel_hash_incdec_item,
+    kernel_hash_read_int, kernel_hash_read_num, kernel_hash_store_int, kernel_hash_store_num,
     kernel_hash_store_prefixed_int, kernel_hash_store_prefixed_num,
 };
 use super::vm_loop_kernel_emit::Em;
@@ -206,24 +206,26 @@ impl Em<'_, '_> {
         let slot_v = self.b.ins().iconst(types::I32, slot as i64);
         let flags = self.b.ins().iconst(types::I32, increment as i64);
         let call = if key_kind == K::StrItem {
-            let items =
-                self.b
-                    .ins()
-                    .load(self.ptr, MemFlagsData::trusted(), self.ctxp, self.elem.items_offset);
-            let f = self
-                .b
-                .ins()
-                .iconst(self.ptr, kernel_hash_incdec_item as *const () as usize as i64);
+            let items = self.b.ins().load(
+                self.ptr,
+                MemFlagsData::trusted(),
+                self.ctxp,
+                self.elem.items_offset,
+            );
+            let f = self.b.ins().iconst(
+                self.ptr,
+                kernel_hash_incdec_item as *const () as usize as i64,
+            );
             self.b.ins().call_indirect(
                 self.elem.incdec_item,
                 f,
                 &[interp, code, slot_v, items, key, flags],
             )
         } else {
-            let f = self
-                .b
-                .ins()
-                .iconst(self.ptr, kernel_hash_incdec_int as *const () as usize as i64);
+            let f = self.b.ins().iconst(
+                self.ptr,
+                kernel_hash_incdec_int as *const () as usize as i64,
+            );
             self.b
                 .ins()
                 .call_indirect(self.elem.incdec_int, f, &[interp, code, slot_v, key, flags])
