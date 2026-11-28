@@ -19,6 +19,42 @@
 use super::*;
 use crate::value::ValueMap;
 
+impl CompiledCode {
+    /// Whether every `my` declaration of `slot` sits inside a nested
+    /// `BlockScope` of this code, so the slot belongs to a block that is not
+    /// the frame's own scope. Such a slot holds `Nil` unless that block is
+    /// running (block entry resets it, exit restores the outer binding), which
+    /// is how `DYNAMIC::<$y>` tells a dormant block's `my $y` from the
+    /// frame's own (#19182). A slot with no recorded declaration is not nested.
+    // Cost: O(n), n = ops of this code (a lookup is rare; nothing is cached).
+    fn slot_declared_only_in_nested_block(&self, slot: usize) -> bool {
+        let mut ends: Vec<usize> = Vec::new();
+        let mut declared = false;
+        for (idx, op) in self.ops.iter().enumerate() {
+            while ends.last().is_some_and(|&end| idx >= end) {
+                ends.pop();
+            }
+            match op {
+                OpCode::BlockScope { end, .. } => ends.push(*end as usize),
+                OpCode::SetVarDynamic {
+                    local_slot: Some(s),
+                    ..
+                }
+                | OpCode::SetLocalDecl { slot: s, .. }
+                    if *s as usize == slot =>
+                {
+                    if ends.is_empty() {
+                        return false;
+                    }
+                    declared = true;
+                }
+                _ => {}
+            }
+        }
+        declared
+    }
+}
+
 impl Interpreter {
     /// The value `DYNAMIC::<key>` names, or `None` when no frame of the
     /// dynamic scope binds `key`.
@@ -81,8 +117,14 @@ impl Interpreter {
                 value.clone()
             }
         };
+        // A slot of a nested block that is not running reads `Nil` and names
+        // no binding of this frame's dynamic scope (#19182).
+        let dormant = |code: &CompiledCode, i: usize, value: &Value| {
+            value.is_nil() && code.slot_declared_only_in_nested_block(i)
+        };
         if let Some(i) = code.locals.iter().position(|name| name == env_key)
             && let Some(value) = self.locals.get(i)
+            && !dormant(code, i, value)
         {
             return Some(from_slot(value));
         }
@@ -110,6 +152,7 @@ impl Interpreter {
                 let caller = unsafe { &*(frame.caller_code as *const CompiledCode) };
                 if let Some(i) = caller.locals.iter().position(|name| name == env_key)
                     && let Some(value) = region.get(i)
+                    && !dormant(caller, i, value)
                 {
                     return Some(from_slot(value));
                 }
