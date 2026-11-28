@@ -412,8 +412,14 @@ impl Interpreter {
             // fast binders' shared named arm writes the attribute and gives
             // the value the frame's local starts from.
             if let Some(pd) = pd.filter(|pd| pd.named) {
-                let (val, _) =
-                    self.bind_named_param_fast(owner_sym, method_def, idx, pd, &args, attrs_cell.as_ref());
+                let (val, _) = self.bind_named_param_fast(
+                    owner_sym,
+                    method_def,
+                    idx,
+                    pd,
+                    &args,
+                    attrs_cell.as_ref(),
+                );
                 param_values.push((param_name.as_str(), param_syms[idx], val));
                 continue;
             }
