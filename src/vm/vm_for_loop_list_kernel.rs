@@ -66,10 +66,14 @@ impl Interpreter {
                 code,
                 body_start - 1,
                 shape,
-                Some((0, len, false)),
+                Some(super::vm_loop_kernel::KernelRange {
+                    start: 0,
+                    end: len,
+                    inclusive: false,
+                    list: Some(&words),
+                }),
                 true,
                 compiled_fns,
-                Some(&words),
             )? {
                 LoopOutcome::Declined => None,
                 LoopOutcome::Done => Some(words.len()),

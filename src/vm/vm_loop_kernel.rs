@@ -27,6 +27,16 @@ const MAX_DECLS: usize = 24;
 /// The most arrays a loop kernel's body subscripts.
 const MAX_ELEMS: usize = 8;
 
+/// The counter range of a `for` kernel: the first counter value, the end and
+/// its inclusivity, and for a list loop the items the counter indexes.
+#[derive(Clone, Copy, Default)]
+pub(super) struct KernelRange<'a> {
+    pub(super) start: i64,
+    pub(super) end: i64,
+    pub(super) inclusive: bool,
+    pub(super) list: Option<&'a [i64]>,
+}
+
 /// What a loop kernel did.
 pub(super) enum LoopOutcome {
     /// Nothing ran; the driver continues as if it had not asked.
@@ -56,7 +66,8 @@ pub(crate) fn stats_line() -> String {
 
 impl Interpreter {
     /// Run the rest of the loop at `ip` (`shape`) natively; for a `for`,
-    /// `range` is the counter value to start at, the end and its inclusivity.
+    /// `range` is the counter value to start at, the end and its inclusivity
+    /// (and a list loop's items).
     /// `hot` says the driver already knows the loop is long.
     // Cost: O(c) entry and exit work plus the native run, c = carried slots;
     // O(n) once per site, n = ops in the region.
@@ -65,10 +76,9 @@ impl Interpreter {
         code: &CompiledCode,
         ip: usize,
         shape: LoopShape,
-        range: Option<(i64, i64, bool)>,
+        range: Option<KernelRange<'_>>,
         hot: bool,
         compiled_fns: &CompiledFns,
-        list: Option<&[i64]>,
     ) -> Result<LoopOutcome, RuntimeError> {
         use std::sync::atomic::Ordering::Relaxed;
         if !super::vm_kernel::kernels_enabled()
@@ -238,7 +248,12 @@ impl Interpreter {
             callees[k] = kernel.entry;
         }
         let mut buf = [0u64; 2 + MAX_CARRIED + MAX_DECLS];
-        let (start, end, inclusive) = range.unwrap_or((0, 0, false));
+        let KernelRange {
+            start,
+            end,
+            inclusive,
+            list,
+        } = range.unwrap_or_default();
         buf[0] = start as u64;
         buf[2..2 + n].copy_from_slice(&words[..n]);
         let mut ctx = LoopCtx {

@@ -192,10 +192,14 @@ impl Interpreter {
                     code,
                     body_start - 1,
                     shape,
-                    Some((i, end_val, inclusive)),
+                    Some(super::vm_loop_kernel::KernelRange {
+                        start: i,
+                        end: end_val,
+                        inclusive,
+                        list: None,
+                    }),
                     trips >= 16 || !first,
                     compiled_fns,
-                    None,
                 ) {
                     Ok(super::vm_loop_kernel::LoopOutcome::Declined) => {
                         if first {
