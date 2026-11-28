@@ -248,6 +248,7 @@ mod vm_str_eq_local_const;
 mod vm_string_concat_user;
 mod vm_take_method_lane;
 mod vm_trailing_sub_decl;
+pub(crate) mod vm_user_new_lane;
 pub(crate) use vm_operator_values::StrCmp;
 mod vm_compile_diagnostics;
 mod vm_concat_assign;

@@ -114,6 +114,11 @@ impl Interpreter {
                     &target,
                     &args,
                 );
+                // Its type-object twin for a class's own `new`
+                // (`vm_user_new_lane`).
+                if method_sym == crate::symbol::wk::new_method() {
+                    self.install_user_new_lane(class_sym, owner_class, &method_def, &target, &args);
+                }
                 let cc = method_def.compiled_code.clone().expect("compiled_code set");
                 let target_id = match target.view() {
                     ValueView::Instance { id, .. } => Some(id),

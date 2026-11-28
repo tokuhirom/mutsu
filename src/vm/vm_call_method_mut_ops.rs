@@ -602,6 +602,17 @@ impl Interpreter {
         ) {
             return result;
         }
+        // A class's own `method new(*%_)` (`vm_user_new_lane`).
+        if let Some(result) = self.try_user_new_early_lane(
+            code,
+            Self::const_str(code, target_name_idx),
+            name.sym,
+            arity as usize,
+            modifier_idx.is_none() && !quoted,
+            arg_sources_idx,
+        ) {
+            return result;
+        }
         // Its `bless` twin (`vm_bless_lane`).
         if let Some(result) = self.try_bless_early_lane(
             code,
