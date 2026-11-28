@@ -367,6 +367,8 @@ X::UnitScope::MustHaveUnit	X::UnitScope::MustHaveUnit,Exception,Any,Mu	X::Syntax
 X::UnitScope::TooLate	X::UnitScope::TooLate,Exception,Any,Mu	X::Syntax	X::Syntax,X::Comp
 X::Useless::Declaration	X::Useless::Declaration,Exception,Any,Mu	X::Comp	X::Comp
 X::Value::Dynamic	X::Value::Dynamic,Exception,Any,Mu	X::Comp	X::Comp
+X::Whatever::ShortCircuit	X::Whatever::ShortCircuit,Any,Mu		
+X::WhateverCode::SmartMatch::LHS	X::WhateverCode::SmartMatch::LHS,Any,Mu		
 X::WheneverOutOfScope	X::WheneverOutOfScope,Exception,Any,Mu		
 X::Worry	X::Worry,Exception,Any,Mu		
 X::Worry::P5	X::Worry::P5,X::Worry,Exception,Any,Mu		

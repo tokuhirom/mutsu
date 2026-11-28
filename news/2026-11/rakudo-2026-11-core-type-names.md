@@ -15,7 +15,10 @@ checked against `raku`:
   `X::Whatever::ShortCircuit` resolve with rakudo's MRO and roles
   (`HiddenName` isa `X::Undeclared`; `ShortCircuit` is not an `Exception`),
   their constructor attributes, and rakudo's `.message` texts. Throwing the
-  heredoc checks is #19284.
+  heredoc checks is #19284. The class catalogue now supports an `X::` row
+  whose parent is `Any`, so `ShortCircuit` and the older
+  `X::WhateverCode::SmartMatch::LHS` can be constructed and no longer
+  smartmatch `Exception`, as on rakudo.
 - The new RakuAST nodes (`MetaInfix::CrossZip`, `Name::Part::EmptyEdge`,
   `StatementModifier::IfUnless`, `Var::PackageHeaderLookup`,
   `VarDeclaration::Implicit::HeaderValue`, `WhereThunk`) were already known

@@ -4,7 +4,7 @@ use Test;
 # X::Syntax::Heredoc::* (heredoc body name checks, thrown by #19284) and
 # X::Whatever::ShortCircuit (the `* && 1` worry).
 
-plan 17;
+plan 19;
 
 nok X::Syntax::Heredoc.DEFINITE, 'X::Syntax::Heredoc resolves';
 nok X::Whatever.DEFINITE, 'X::Whatever resolves';
@@ -48,3 +48,10 @@ is $sc.message,
     ~ "and is always true and defined.\n"
     ~ "Try a block using \$_ instead if results are not as expected.",
     'ShortCircuit message';
+
+# The older non-exception worry class takes the same shape.
+nok X::WhateverCode::SmartMatch::LHS ~~ Exception, 'X::WhateverCode::SmartMatch::LHS is not an Exception';
+is X::WhateverCode::SmartMatch::LHS.new.message,
+    "WhateverCode on LHS of smart-match does not curry the smart-match expression.\n"
+    ~ "Try placing the WhateverCode expression on the RHS instead if results are not as expected.",
+    'LHS message';

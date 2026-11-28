@@ -392,6 +392,8 @@ pub(super) const X_CLASS_ROWS: &str = concat!(
     "X::Useless::Declaration\tException\tX::Comp\n",
     "X::Value\tException\t\n",
     "X::Value::Dynamic\tException\tX::Comp\n",
+    "X::Whatever::ShortCircuit\tAny\t\n",
+    "X::WhateverCode::SmartMatch::LHS\tAny\t\n",
     "X::WheneverOutOfScope\tException\t\n",
     "X::Worry\tException\t\n",
     "X::Worry::P5\tX::Worry\t\n",

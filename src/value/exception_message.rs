@@ -85,6 +85,12 @@ pub(crate) fn format_exception_message(class_name: &str, attrs: &AttrMap) -> Opt
                  Try a block using $_ instead if results are not as expected."
             ))
         }
+        "X::WhateverCode::SmartMatch::LHS" => Some(
+            "WhateverCode on LHS of smart-match does not curry the smart-match expression.\n\
+             Try placing the WhateverCode expression on the RHS instead if results are not as \
+             expected."
+                .to_string(),
+        ),
         "X::Cannot::Lazy" => {
             let action = attr_str(attrs, "action");
             Some(format!("Cannot {} a lazy list", action))

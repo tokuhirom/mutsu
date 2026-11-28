@@ -228,6 +228,15 @@ pub(crate) fn index_of(name_: &str) -> Option<usize> {
     search(X_LEN, ATTR_START, name_).or_else(|| search(ATTR_START, LEN, name_))
 }
 
+/// Whether `name_` is one of rakudo's `X::` classes that are not exceptions:
+/// its catalogue row's parent is `Any` (`X::Whatever::ShortCircuit`,
+/// `X::WhateverCode::SmartMatch::LHS`, which carry a worry's text).
+// Cost: O(|name| log LEN).
+pub(crate) fn is_non_exception_x_class(name_: &str) -> bool {
+    name_.starts_with("X::")
+        && search(0, X_LEN, name_).is_some_and(|index| parent(index) == "Any")
+}
+
 /// Binary search for `name_` among rows `lo..hi`, which are sorted by name.
 // Cost: O(|name| log (hi - lo)).
 fn search(mut lo: usize, mut hi: usize, name_: &str) -> Option<usize> {
@@ -290,7 +299,10 @@ fn build_core(core: usize, name_: &str) -> ClassDef {
 /// The class row `index` describes, exactly as `register_x` used to build it:
 /// one parent, the MRO from walking first parents (with `Exception` appended
 /// if the walk did not reach it), and its rakudo attributes marked for
-/// declaration on first access (#18654, #18956).
+/// declaration on first access (#18654, #18956). A row whose parent is `Any`
+/// is one of rakudo's few `X::` classes that are not exceptions
+/// (`X::Whatever::ShortCircuit`, a worry's message carrier); its MRO is not
+/// given `Exception`.
 // Cost: O(d log LEN), d = the MRO depth.
 fn build(index: usize) -> ClassDef {
     let own = Symbol::intern(name(index));
@@ -304,7 +316,7 @@ fn build(index: usize) -> ClassDef {
             _ => break,
         }
     }
-    if !mro.contains(&exception) {
+    if !mro.contains(&exception) && cur != "Any" {
         mro.push(exception);
     }
     let mut class_def = ClassDef {
