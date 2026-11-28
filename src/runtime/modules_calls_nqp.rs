@@ -41,6 +41,7 @@ pub(crate) mod nqp_attr;
 pub(crate) mod nqp_backing;
 mod nqp_create;
 mod nqp_descriptor;
+mod nqp_istype;
 mod nqp_iter;
 pub(crate) mod nqp_native;
 pub(crate) use crate::nqp_op_ids;

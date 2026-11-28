@@ -110,6 +110,12 @@ impl Interpreter {
         if self.exec_nqp_identity_op(id, arity) {
             return Ok(());
         }
+        if self.exec_nqp_istype_op(id, arity) {
+            return Ok(());
+        }
+        if self.exec_nqp_push_typed_op(id, arity)? {
+            return Ok(());
+        }
         if self.exec_nqp_list_op(id, arity) {
             return Ok(());
         }
@@ -181,6 +187,100 @@ impl Interpreter {
         self.stack.truncate(start);
         self.stack.push(result);
         true
+    }
+
+    /// `nqp::istype` / `nqp::istype_nd` on operands that need no
+    /// normalization beyond a container deref (no `VarRef`, no `Proxy`): the
+    /// table arm's answer (`nqp_istype_answer`, the one implementation),
+    /// without the argument vector, the name-keyed table walk and the
+    /// per-op bookkeeping the generic path wraps around every op. A type
+    /// dispatcher asks it of every value it sees: JSON::Fast's `jsonify`
+    /// runs up to fifteen in a row per value it writes. Like
+    /// [`Self::exec_nqp_pure_op`], the one-shot callsite-line clear and the
+    /// dispatch tally are kept.
+    // Cost: O(1) expected on a type-check memo hit; O(d) otherwise, d = depth
+    // of the value's MRO/role closure.
+    fn exec_nqp_istype_op(&mut self, id: u16, arity: usize) -> bool {
+        static IDS: std::sync::OnceLock<(Option<u16>, Option<u16>)> = std::sync::OnceLock::new();
+        let (istype_id, istype_nd_id) = *IDS.get_or_init(|| {
+            (
+                crate::runtime::nqp_op_ids::nqp_op_id("istype"),
+                crate::runtime::nqp_op_ids::nqp_op_id("istype_nd"),
+            )
+        });
+        if arity != 2 || (Some(id) != istype_id && Some(id) != istype_nd_id) {
+            return false;
+        }
+        let n = self.stack.len();
+        let (v, ty) = (&self.stack[n - 2], &self.stack[n - 1]);
+        if v.as_varref().is_some()
+            || ty.as_varref().is_some()
+            || v.is_proxy_value()
+            || ty.is_proxy_value()
+        {
+            return false;
+        }
+        // The generic path decontainerizes every operand at the table's
+        // boundary (`call_nqp_op`); so does this one.
+        let v = if v.is_container_ref() || v.is_hash_entry_ref_value() {
+            v.deref_container()
+        } else {
+            v.clone()
+        };
+        let ty = if ty.is_container_ref() || ty.is_hash_entry_ref_value() {
+            ty.deref_container()
+        } else {
+            ty.clone()
+        };
+        let answer = self.nqp_istype_answer(&v, &ty);
+        loan_env!(self, set_pending_callsite_line(None));
+        crate::vm::vm_stats::record_function_dispatch();
+        self.stack.truncate(n - 2);
+        self.stack.push(Value::int(i64::from(answer)));
+        true
+    }
+
+    /// `nqp::push_s` / `push_i` / `push_n` on operands that need no
+    /// normalization (no `VarRef`, no `Proxy`): the REPR check and the table
+    /// arm's body (`nqp_push_typed`, the one implementation), without the
+    /// argument vector and the name-keyed table walk. JSON::Fast's encoder
+    /// builds its output with three or more `push_s` per value it writes.
+    /// Like [`Self::exec_nqp_pure_op`], the one-shot callsite-line clear and
+    /// the dispatch tally are kept. `Ok(false)` means "not this op, or not
+    /// these operands": the generic path runs.
+    // Cost: O(1) amortized, plus the coercion's own cost (see
+    // `nqp_push_typed`).
+    fn exec_nqp_push_typed_op(&mut self, id: u16, arity: usize) -> Result<bool, RuntimeError> {
+        static IDS: std::sync::OnceLock<[Option<u16>; 3]> = std::sync::OnceLock::new();
+        let ids = IDS.get_or_init(|| {
+            ["push_s", "push_i", "push_n"].map(crate::runtime::nqp_op_ids::nqp_op_id)
+        });
+        let Some(which) = ids.iter().position(|i| *i == Some(id)) else {
+            return Ok(false);
+        };
+        if arity != 2 {
+            return Ok(false);
+        }
+        let n = self.stack.len();
+        let operands = &self.stack[n - 2..];
+        if operands
+            .iter()
+            .any(|v| v.as_varref().is_some() || v.is_proxy_value())
+        {
+            return Ok(false);
+        }
+        loan_env!(self, set_pending_callsite_line(None));
+        crate::vm::vm_stats::record_function_dispatch();
+        crate::runtime::nqp_repr_check::check_operand(self, id, &self.stack[n - 2..])?;
+        let op = ["push_s", "push_i", "push_n"][which];
+        let pushed = crate::runtime::nqp_ops_text::nqp_push_typed(
+            op,
+            &self.stack[n - 2],
+            &self.stack[n - 1],
+        )?;
+        self.stack.truncate(n - 2);
+        self.stack.push(pushed);
+        Ok(true)
     }
 
     /// `nqp::null` and `nqp::eqaddr` on operands that need no normalization
