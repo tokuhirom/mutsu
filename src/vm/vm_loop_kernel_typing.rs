@@ -50,6 +50,10 @@ struct Walk<'c> {
     live: Vec<u32>,
     /// Nesting depth of the walk (0 = the kernel's own body).
     depth: u32,
+    /// The element kind of each array the region reads, settled at entry.
+    elem_reads: &'c [(u32, SlotKind)],
+    /// The arrays the region stores into.
+    elem_stores: &'c [u32],
 }
 
 impl Walk<'_> {
@@ -68,7 +72,7 @@ impl Walk<'_> {
         let mut open = true;
         let mut incoming: BTreeMap<usize, Vec<K>> = BTreeMap::new();
         let edge = |incoming: &mut BTreeMap<usize, Vec<K>>, t: usize, stack: &[K]| -> Option<()> {
-            if t <= start || t > end {
+            if t <= start || t > end || stack.iter().any(|k| matches!(k, K::Arr(_))) {
                 return None;
             }
             match incoming.get(&t) {
@@ -101,11 +105,7 @@ impl Walk<'_> {
             }
             let op = &self.code.ops[i];
             if let Some((_, _)) = num_method_call(self.code, op) {
-                let k = match stack.pop()? {
-                    K::Int => SlotKind::Int,
-                    K::Num => SlotKind::Num,
-                    K::Bool => return None,
-                };
+                let k = stack.pop()?.slot_kind()?;
                 self.t.num_sites.push((i as u32, k));
                 stack.push(K::Num);
                 i += 1;
@@ -142,21 +142,71 @@ impl Walk<'_> {
                 continue;
             }
             match op {
+                OpCode::GetLocal(s) if self.elem_reads.iter().any(|(e, _)| e == s) => {
+                    stack.push(K::Arr(*s));
+                }
                 OpCode::GetLocal(s) | OpCode::GetLocalMetaAssign { slot: s, .. } => {
                     stack.push(K::of(self.readable(*s)?));
+                }
+                // `@a[$i]`: an Int index into a read array; the element is
+                // the kind the entry settled (a different one declines there).
+                OpCode::Index {
+                    is_positional: true,
+                } => {
+                    if stack.pop()? != K::Int {
+                        return None;
+                    }
+                    let K::Arr(s) = stack.pop()? else {
+                        return None;
+                    };
+                    let (_, k) = self.elem_reads.iter().find(|(e, _)| *e == s)?;
+                    stack.push(K::of(*k));
+                }
+                // `@a[$i] = v`: the value stays on the stack.
+                OpCode::IndexAssignLocal { slot, .. } if self.elem_stores.contains(slot) => {
+                    let v = stack.pop()?;
+                    if !v.numeric() || stack.pop()? != K::Int {
+                        return None;
+                    }
+                    stack.push(v);
+                }
+                OpCode::SinkPopAssign => {
+                    stack.pop()?.slot_kind()?;
+                }
+                // `$i++` and kin on a carried or live Int: the readonly check
+                // the op makes is made once at entry.
+                OpCode::PreIncrement(n, Some(s))
+                | OpCode::PreDecrement(n, Some(s))
+                | OpCode::PostIncrement(n, Some(s))
+                | OpCode::PostDecrement(n, Some(s)) => {
+                    if self.readable(*s)? != SlotKind::Int || self.loop_vars.contains(s) {
+                        return None;
+                    }
+                    self.t.readonly_checks.push((true, *n));
+                    stack.push(K::Int);
                 }
                 OpCode::GetGlobal(n) if self.topic && is_topic(self.code, *n) => stack.push(K::Int),
                 OpCode::LoadConst(c) => stack.push(num_const(self.code, *c)?.0),
                 OpCode::Add | OpCode::Sub | OpCode::Mul => {
                     let y = stack.pop()?;
                     let x = stack.pop()?;
-                    stack.push(match (x, y) {
-                        (K::Int, K::Int) => K::Int,
-                        (K::Bool, _) | (_, K::Bool) => return None,
-                        _ => K::Num,
+                    if !x.numeric() || !y.numeric() {
+                        return None;
+                    }
+                    stack.push(if (x, y) == (K::Int, K::Int) {
+                        K::Int
+                    } else {
+                        K::Num
                     });
                 }
-                OpCode::IntDiv | OpCode::IntMod => {
+                // `%` on two Ints is the floored `mod`; on anything else the
+                // generic path decides.
+                OpCode::IntDiv
+                | OpCode::IntMod
+                | OpCode::Mod
+                | OpCode::BitAnd
+                | OpCode::BitOr
+                | OpCode::BitXor => {
                     if stack.pop()? != K::Int || stack.pop()? != K::Int {
                         return None;
                     }
@@ -171,7 +221,7 @@ impl Walk<'_> {
                     let y = stack.pop()?;
                     let x = stack.pop()?;
                     // Mixed Int/Num comparisons are left to the generic path.
-                    if x != y || x == K::Bool {
+                    if x != y || !x.numeric() {
                         return None;
                     }
                     stack.push(K::Bool);
@@ -184,9 +234,7 @@ impl Walk<'_> {
                 // the wrap that lets a callee bind a variable `is rw` (a sub
                 // kernel's parameters are readonly).
                 OpCode::ContainerizePair | OpCode::WrapVarRef { .. } => {
-                    if *stack.last()? == K::Bool {
-                        return None;
-                    }
+                    stack.last()?.slot_kind()?;
                 }
                 OpCode::CallFunc {
                     arity,
@@ -217,16 +265,10 @@ impl Walk<'_> {
                 OpCode::CheckReadOnly(n) => self.t.readonly_checks.push((false, *n)),
                 OpCode::CheckReadOnlyModify(n) => self.t.readonly_checks.push((true, *n)),
                 OpCode::MarkArrayShareSource(_) => {
-                    if stack.last()? == &K::Bool {
-                        return None;
-                    }
+                    stack.last()?.slot_kind()?;
                 }
                 OpCode::SetLocal(s) => {
-                    let v = match stack.pop()? {
-                        K::Int => SlotKind::Int,
-                        K::Num => SlotKind::Num,
-                        K::Bool => return None,
-                    };
+                    let v = stack.pop()?.slot_kind()?;
                     if self.loop_vars.contains(s) || self.t.slot_kind.get(s) != Some(&v) {
                         return None;
                     }
@@ -263,11 +305,7 @@ impl Walk<'_> {
                         return None;
                     }
                     pending = None;
-                    let v = match stack.pop()? {
-                        K::Int => SlotKind::Int,
-                        K::Num => SlotKind::Num,
-                        K::Bool => return None,
-                    };
+                    let v = stack.pop()?.slot_kind()?;
                     if self
                         .t
                         .slot_kind
@@ -282,7 +320,11 @@ impl Walk<'_> {
             }
             i += 1;
         }
-        if !open || stack.len() != leaves || pending.is_some() {
+        if !open
+            || stack.len() != leaves
+            || pending.is_some()
+            || stack.iter().any(|k| matches!(k, K::Arr(_)))
+        {
             return None;
         }
         // The stack every edge brings to the segment's end.
@@ -297,6 +339,8 @@ pub(super) fn type_region(
     code: &CompiledCode,
     shape: &LoopShape,
     carried: &[(u32, SlotKind)],
+    elem_reads: &[(u32, SlotKind)],
+    elem_stores: &[u32],
 ) -> Option<Typed> {
     let mut w = Walk {
         code,
@@ -313,6 +357,8 @@ pub(super) fn type_region(
         declared: Vec::new(),
         live: Vec::new(),
         depth: 0,
+        elem_reads,
+        elem_stores,
     };
     if let Some(LoopVar::Slot(s)) = shape.loop_var() {
         w.t.slot_kind.insert(s, SlotKind::Int);

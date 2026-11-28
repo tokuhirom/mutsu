@@ -134,5 +134,65 @@ my $cb = 1;
 for ^400 { $cb = dbl($cb) }
 say "call-overflow=", $cb;
 
+# Element reads and stores (campaign B's helpers), `+&`/`+|`/`+^`, `%`,
+# `++`/`--`, and C-style loops.
+my @ra = ^64;
+my $rs = 0;
+loop (my $ri = 0; $ri < 5000; $ri++) { $rs = $rs + @ra[$ri +& 15] }
+say "elem-read-cloop=", $rs;
+my @rn = (^32).map(* + 0.5e0);
+my $rns = 0e0;
+for ^3000 -> $i { $rns = $rns + @rn[$i % 32] }
+say "elem-read-num=", $rns;
+my @rmix = ^200;
+@rmix[150] = "x";
+my $rms = 0;
+for ^200 -> $i { $rms = $rms + (@rmix[$i] ~~ Int ?? @rmix[$i] !! 1) }
+say "elem-read-mixed=", $rms;
+my @rk = ^100;
+@rk[60] = 2.5e0;
+my $rks = 0;
+for ^100 -> $i { $rks = $rks + @rk[$i] }
+say "elem-read-kind-change=", $rks;
+my @sb;
+for ^300 -> $i { @sb[$i] = $i * 2 }
+say "elem-store-append=", @sb.elems, " ", @sb.sum;
+my @sc = 0 xx 50;
+loop (my $si = 0; $si < 500; $si++) { @sc[$si % 50] = $si }
+say "elem-store-cloop=", @sc.sum;
+my @sn;
+for ^100 -> $i { @sn[$i] = $i * 0.25e0 }
+say "elem-store-num=", @sn.sum;
+my @sg;
+for ^10 -> $i { @sg[$i * 2] = $i }
+say "elem-store-gap=", @sg.elems, " ", @sg.grep(*.defined).sum;
+my Int @st;
+for ^50 -> $i { @st[$i] = $i }
+say "elem-store-typed=", @st.sum;
+my @rw = ^40;
+for ^40 -> $i { @rw[$i] = @rw[$i] + 1 }
+say "elem-read-write-same=", @rw.sum;
+my @al = ^30;
+my @al2 := @al;
+for ^30 -> $i { @al2[$i] = @al[29 - $i] }
+say "elem-alias=", @al.join(",");
+my @rb;
+my $rbig = 1;
+for ^300 -> $i { @rb[$i] = $i; $rbig = $rbig * 3 }
+say "elem-store-then-bail=", @rb.sum, " ", $rbig.chars;
+my $bm = 0;
+for ^2000 -> $i { $bm = $bm + ($i - 1000) % 7 + ($i +& 12) + ($i +| 3) + ($i +^ 5) + ($i - 1000) % -6 }
+say "bitops-mod=", $bm;
+my $pc = 0;
+my $pd = 1000;
+for ^3000 -> $i { $pc++; --$pd; $pc = $pc + $pd-- - ++$pd }
+say "incdec=", $pc, " ", $pd;
+my $ec = 0;
+while $ec++ < 3000 { }
+say "empty-body=", $ec;
+my $px = 9223372036854775000;
+for ^2000 { $px++ }
+say "incdec-overflow=", $px;
+
 # From several threads.
 say "threads=", await((^4).map(-> $o { start { my $z = 0; for ^10000 -> $i { $z = $z + $i * $o }; $z } })).join(",");

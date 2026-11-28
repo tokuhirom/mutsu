@@ -69,7 +69,48 @@ impl Interpreter {
         // (owned_captures). Balanced by pop on every exit path.
         self.push_loop_local_scope(Default::default(), Default::default());
 
+        // ADR-19288 D5: a loop of closed Int/Num arithmetic and element
+        // accesses runs natively from this iteration boundary on, as a
+        // `while` whose body is the body and the step; a bail reruns its
+        // iteration from the condition.
+        #[cfg(feature = "jit")]
+        let mut kernel_tried = false;
+        #[cfg(feature = "jit")]
+        let mut iterations: u32 = 0;
         'c_loop: loop {
+            #[cfg(feature = "jit")]
+            if !kernel_tried
+                && !resume_in_body
+                && body_entry.is_none()
+                && !spec.collect
+                && (iterations == 0 || iterations == 256)
+            {
+                kernel_tried = iterations == 256;
+                let shape = super::vm_loop_kernel_types::LoopShape::While {
+                    cond: (cond_start, body_start),
+                    body_end: loop_end,
+                };
+                match self.try_loop_kernel(
+                    code,
+                    cond_start - 1,
+                    shape,
+                    None,
+                    iterations == 256,
+                    compiled_fns,
+                ) {
+                    Ok(super::vm_loop_kernel::LoopOutcome::Declined) => {}
+                    Ok(super::vm_loop_kernel::LoopOutcome::Done) => break 'c_loop,
+                    Ok(super::vm_loop_kernel::LoopOutcome::Bailed(_)) => kernel_tried = true,
+                    Err(e) => {
+                        self.pop_loop_local_scope(code);
+                        return Err(e);
+                    }
+                }
+            }
+            #[cfg(feature = "jit")]
+            {
+                iterations = iterations.saturating_add(1);
+            }
             // Deferred lazy-pull suspension (see `gather_suspend_pending`):
             // the iteration boundary (post-step) is the exact point where
             // re-entering from the condition on resume continues correctly.

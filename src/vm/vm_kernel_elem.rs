@@ -37,10 +37,6 @@
 //! store. Those lanes are the generic path's answer for these shapes, so a
 //! kernel access equals the generic one whenever it does not decline.
 
-// TODO(#19292): campaign A wires these into loop-kernel typing and emission
-// (`ElemRead` / `ElemStore`); until then only the unit tests below call them.
-#![allow(dead_code)]
-
 use super::vm_var_assign_element_lean::LeanStoreNode;
 use super::*;
 use crate::value::ArrayData;
@@ -141,6 +137,30 @@ fn plain_array_node(interp: &Interpreter, slot: u32) -> Option<crate::gc::Gc<Arr
         return None;
     }
     Some(items)
+}
+
+/// The identity of the array node the slot holds, when the lane serves it:
+/// the kernel entry compares a stored array against every other element
+/// array, so a store never reaches an array the region also reads through
+/// another name.
+// Cost: O(1).
+pub(super) fn kernel_elem_node_id(interp: &Interpreter, slot: u32) -> Option<usize> {
+    plain_array_node(interp, slot).map(|items| crate::gc::Gc::as_ptr(&items) as usize)
+}
+
+/// The kind of the first element of the slot's array, which a kernel
+/// compiles its reads of that array for (a read of another kind declines).
+// Cost: O(1).
+pub(super) fn kernel_elem_kind_hint(
+    interp: &Interpreter,
+    slot: u32,
+) -> Option<crate::opcode::kernel_slot::SlotKind> {
+    use crate::opcode::kernel_slot::SlotKind;
+    match read_element(interp, slot, 0)?.view() {
+        ValueView::Int(_) => Some(SlotKind::Int),
+        ValueView::Num(_) => Some(SlotKind::Num),
+        _ => None,
+    }
 }
 
 /// The element at `index` of the slot's array, when it is present (not a hole,
