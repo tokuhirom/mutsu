@@ -56,6 +56,9 @@ pub(crate) struct LoopKernelInfo {
     /// `.Num` call sites `(ip, receiver kind)`, checked at entry to reach
     /// the built-in method.
     pub(crate) num_sites: Box<[(u32, SlotKind)]>,
+    /// Sub calls `(CallFunc ip, arity)`, each resolved to a sub kernel at
+    /// entry; the index is the call's slot in the callee table.
+    pub(crate) calls: Box<[(u32, u8)]>,
 }
 
 /// A loop site's variant: the carried kinds it was compiled for, and the

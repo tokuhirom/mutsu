@@ -40,6 +40,13 @@ pub(super) struct Em<'f, 'c> {
     pub(super) poll_fn: usize,
     pub(super) poll_offset: i32,
     pub(super) ptr: types::Type,
+    /// The callee table and sub-kernel context offsets in the loop context.
+    pub(super) callees_offset: i32,
+    pub(super) kctx_offset: i32,
+    /// Sub-kernel signatures by arity (index = arity).
+    pub(super) call_sigs: Vec<SigRef>,
+    /// Calls emitted so far: the next call's slot in the callee table.
+    pub(super) next_call: usize,
 }
 
 impl Em<'_, '_> {
@@ -329,6 +336,27 @@ impl Em<'_, '_> {
                 OpCode::Dup => stack.push(*stack.last()?),
                 OpCode::Pop => {
                     stack.pop()?;
+                }
+                OpCode::ContainerizePair | OpCode::WrapVarRef { .. } => {}
+                OpCode::CallFunc { arity, .. } => {
+                    // A direct call of the sub kernel the entry resolved into
+                    // this call's slot; a bail in it bails this iteration.
+                    let mf = MemFlagsData::trusted();
+                    let k = self.next_call;
+                    self.next_call += 1;
+                    let at = stack.len().checked_sub(*arity as usize)?;
+                    let kctx = self.b.ins().iadd_imm_s(self.ctxp, self.kctx_offset as i64);
+                    let mut cargs = vec![kctx];
+                    cargs.extend(stack.drain(at..).map(|(v, _)| v));
+                    let off = self.callees_offset + 8 * k as i32;
+                    let f = self.b.ins().load(self.ptr, mf, self.ctxp, off);
+                    let sig = *self.call_sigs.get(*arity as usize)?;
+                    let call = self.b.ins().call_indirect(sig, f, &cargs);
+                    let r = self.b.inst_results(call)[0];
+                    let flag = self.b.ins().load(types::I32, mf, kctx, 0);
+                    let ok = self.b.ins().icmp_imm_s(IntCC::Equal, flag, 0);
+                    self.guard(ok);
+                    stack.push((r, K::Int));
                 }
                 OpCode::JumpIfFalse(t) | OpCode::JumpIfTrue(t) => {
                     let (c, k) = stack.pop()?;

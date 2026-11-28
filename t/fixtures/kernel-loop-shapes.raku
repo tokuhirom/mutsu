@@ -123,5 +123,16 @@ my $big = 1;
 for 1..3 -> $o { for 1..40 -> $i { $big = $big * 2 } }
 say "nested-overflow=", $big;
 
+# A loop calling a sub kernel directly (from its 257th iteration, once the
+# call cache knows the sub), and a callee overflow mid-loop.
+sub sq3($x) { my $y = $x * $x + 3; $y }
+my $cs = 0;
+for ^2000 -> $i { $cs = $cs + sq3($i) mod 7 }
+say "calls=", $cs;
+sub dbl($x) { $x * 2 }
+my $cb = 1;
+for ^400 { $cb = dbl($cb) }
+say "call-overflow=", $cb;
+
 # From several threads.
 say "threads=", await((^4).map(-> $o { start { my $z = 0; for ^10000 -> $i { $z = $z + $i * $o }; $z } })).join(",");

@@ -652,6 +652,86 @@ impl Interpreter {
         r
     }
 
+    /// The routine the call at `code` by constant `name_idx` with
+    /// `arg_sources_idx` would reach through the name-keyed light-call cache
+    /// hit (the door kernels and TRIR take) if it ran now, with the name and
+    /// package it resolves under. `None` when any probe ahead of that hit could
+    /// claim the call (a frame-lexical routine, a frame-activation binding, the
+    /// static-outer latch, a dispatcher builtin, an `nqp::` op or atomic helper,
+    /// a qualified name, an increment operator, an empty-signature proto, the
+    /// cache bypass list), when it has a named or slipped argument, or when
+    /// the cache does not hold an ahead-of-time body for it (ADR-19288: a loop
+    /// kernel calls a sub kernel only where the generic call would reach it).
+    // Cost: O(1), the probes of the cache hit.
+    #[cfg(feature = "jit")]
+    pub(super) fn light_cache_callee<'f>(
+        &mut self,
+        code: &CompiledCode,
+        name_idx: u32,
+        arg_sources_idx: Option<u32>,
+        compiled_fns: &'f CompiledFns,
+    ) -> Option<(&'f Arc<CompiledFunction>, Symbol, Symbol)> {
+        let name_sym = code.const_sym(name_idx);
+        let name_str = Self::const_str(code, name_idx);
+        let kinds = Self::stack_arg_kinds(code, arg_sources_idx);
+        if kinds.named
+            || kinds.slip
+            || code.lexical_routine(name_sym).is_some()
+            || name_sym.flags()
+                & (crate::symbol::flags::NQP_OP | crate::symbol::flags::NATIVE_ATOMIC_HELPER)
+                != 0
+            || name_sym == crate::symbol::wk::callsame()
+            || name_sym == crate::symbol::wk::nextsame()
+            || crate::qualified::is_qualified(name_sym)
+            || IncrementOp::from_routine_name(name_str).is_some()
+            || self.dispatch.empty_sig_proto_names.contains(&name_sym)
+            || crate::parser::static_outer_latch::static_outer_observed()
+            || self.env().frame_activation_binds_routine(name_str)
+            || self.name_caches_skipped(name_sym)
+        {
+            return None;
+        }
+        if self.caches.pos_light_call_cache_gen != self.caches.fn_resolve_gen {
+            self.bump_pos_light_ic_epoch();
+            self.caches.pos_light_call_cache_gen = self.caches.fn_resolve_gen;
+        }
+        let cur_pkg_sym = self.current_package_sym();
+        let cf = match self.call_ic_hit(name_sym, cur_pkg_sym, compiled_fns.id()) {
+            // SAFETY: as at the cache hit in `exec_call_func_op_inner`: the
+            // slot's `fns_id` equals this table's, so the address is into this
+            // unmutated table and lives as long as its borrow.
+            Some(p) => unsafe { Self::ic_target(compiled_fns, p) },
+            None => match self
+                .caches
+                .pos_light_call_cache
+                .get(self.caches.fn_resolve_gen, &(name_sym, cur_pkg_sym))
+            {
+                Some(crate::runtime::PosLightTarget::Compiled { key, fingerprint }) => {
+                    let fingerprint = *fingerprint;
+                    compiled_fns.get(key).filter(|cf| cf.fingerprint == fingerprint)?
+                }
+                _ => return None,
+            },
+        };
+        Some((cf, name_sym, cur_pkg_sym))
+    }
+
+    /// Whether a call by `name_sym` must bypass the name-keyed light-call
+    /// caches (see the comment at its use in `exec_call_func_op_inner`).
+    // Cost: O(1), up to three set probes.
+    #[inline]
+    pub(super) fn name_caches_skipped(&self, name_sym: Symbol) -> bool {
+        if self.lexicals.amp_param_shadowed_names.is_empty()
+            && self.module.export_amp_override_names.is_empty()
+        {
+            self.is_unit_scoped_routine_sym(name_sym)
+        } else {
+            self.lexicals.amp_param_shadowed_names.contains(&name_sym)
+                || self.module.export_amp_override_names.contains(&name_sym)
+                || self.is_unit_scoped_routine_sym(name_sym)
+        }
+    }
+
     fn exec_call_func_op_inner(
         &mut self,
         code: &CompiledCode,
@@ -695,15 +775,7 @@ impl Interpreter {
         // sub of the same name forever, never re-checking the installed
         // override.
         let name_sym = code.const_sym(name_idx);
-        let skip_name_caches = if self.lexicals.amp_param_shadowed_names.is_empty()
-            && self.module.export_amp_override_names.is_empty()
-        {
-            self.is_unit_scoped_routine_sym(name_sym)
-        } else {
-            self.lexicals.amp_param_shadowed_names.contains(&name_sym)
-                || self.module.export_amp_override_names.contains(&name_sym)
-                || self.is_unit_scoped_routine_sym(name_sym)
-        };
+        let skip_name_caches = self.name_caches_skipped(name_sym);
         // ADR-0054 Slice 4: whether this call site wrote a `|EXPR` argument,
         // decided once from the compile-time descriptor rather than by
         // probing the stack for Slip-shaped values on every cache check
