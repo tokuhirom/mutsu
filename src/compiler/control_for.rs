@@ -43,8 +43,7 @@ impl Compiler {
     /// (`*`, an index list, a range).
     // Cost: O(1).
     fn multidim_dim_is_slice_syntax(dim: &Expr) -> bool {
-        matches!(dim, Expr::Whatever | Expr::ArrayLiteral(_))
-            || Self::for_index_is_slice(dim)
+        matches!(dim, Expr::Whatever | Expr::ArrayLiteral(_)) || Self::for_index_is_slice(dim)
     }
 
     /// Compile a `for` construct in either position.
