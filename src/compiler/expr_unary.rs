@@ -137,6 +137,7 @@ impl Compiler {
                         // Nested index (e.g. ++$foo[0][0])
                         self.compile_nested_prefix_incdec(expr, true);
                     }
+                } else if self.compile_multidim_incdec(expr, true, false) {
                 } else if !self.compile_prefix_incdec_method_lvalue(expr, true)
                     && !self.compile_incdec_named_sub_lvalue(expr, true, true)
                 {
@@ -216,6 +217,7 @@ impl Compiler {
                         // Nested index (e.g. --$foo[0][0])
                         self.compile_nested_prefix_incdec(expr, false);
                     }
+                } else if self.compile_multidim_incdec(expr, false, false) {
                 } else if !self.compile_prefix_incdec_method_lvalue(expr, false)
                     && !self.compile_incdec_named_sub_lvalue(expr, false, true)
                 {
