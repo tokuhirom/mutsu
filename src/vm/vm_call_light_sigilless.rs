@@ -193,8 +193,9 @@ impl Interpreter {
 
     /// [`Self::light_sigilless_bind`] for a `$_` argument whose `WrapVarRef`
     /// carried `value`. `None` for a shape the general binder must take: a
-    /// Proxy, a read-only binding cell, or a plain value while the live
-    /// topic binding is a cell (the two would disagree about what aliases).
+    /// Proxy, a read-only binding cell, a plain value while the live topic
+    /// binding is a cell (the two would disagree about what aliases), and a
+    /// plain value in a writable `$_`.
     // Cost: O(1), plus [`Self::light_sigilless_cell_ok`] for a cell.
     fn light_sigilless_topic_bind(&self, value: &Value) -> Option<LightSigillessBind> {
         if value.is_proxy_value() {
@@ -206,11 +207,18 @@ impl Interpreter {
         if matches!(value.view(), ValueView::HashEntryRef { .. }) {
             return None;
         }
+        // A plain value is a read-only term only where the topic is a
+        // read-only binding: a `for` alias over a List's values. A writable
+        // `$_` (`$_ = "b"; f($_)` at mainline) also holds a plain value, and
+        // the general binder aliases it by name, so a write through the
+        // parameter reaches it; that shape keeps the general binder.
+        let topic = crate::symbol::wk::topic();
         let live_topic_is_cell = self
             .env()
-            .get_sym(crate::symbol::wk::topic())
+            .get_sym(topic)
             .is_some_and(|v| v.is_container_ref());
-        (!live_topic_is_cell).then_some(LightSigillessBind::Readonly)
+        (!live_topic_is_cell && self.name_is_readonly_binding_for("_", Some(topic)))
+            .then_some(LightSigillessBind::Readonly)
     }
 
     /// A cell that is not a read-only binding (`my $x := 5` holds one, and
