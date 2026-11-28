@@ -45,9 +45,50 @@ pub(super) fn lean_frame_eligible(
     receiver: Symbol,
     can_skip_merge: bool,
 ) -> bool {
+    lean_frame_eligible_with(
+        interp,
+        def,
+        cc,
+        owner,
+        receiver,
+        can_skip_merge,
+        LeanShapes::Method,
+    )
+}
+
+/// Which parameter and body shapes [`lean_frame_eligible_with`] admits.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum LeanShapes {
+    /// A planned method call (`vm_method_call_plan`): positional parameters
+    /// only, and a body that creates no closure.
+    Method,
+    /// A construction phase step (`BUILD`/`TWEAK`, `ctor_phase_plan`): also
+    /// optional, untyped, default-less attributive named parameters
+    /// (`:$!x`, `:@!x`, `:%!x`), bound by the fast binders' shared named arm
+    /// (`bind_named_param_fast`), and a body that creates closures. A closure
+    /// captures the frame's env as it stands when it is built
+    /// (`capture_closure_env`), so the frame's exit dropping or carrying its
+    /// overlay does not reach it; the one thing the general binder does for
+    /// such a body that a lean frame did not is root the frame's callable id
+    /// (`set_callable_id`, which `$_`/`$!` resolution for the closure's calls
+    /// reads), and the lean frame does that too for a body with closures.
+    PhaseStep,
+}
+
+/// [`lean_frame_eligible`] for the given shapes.
+// Cost: O(p + l), p = parameters, l = local slots.
+pub(crate) fn lean_frame_eligible_with(
+    interp: &Interpreter,
+    def: &crate::runtime::MethodDef,
+    cc: &CompiledCode,
+    owner: Symbol,
+    receiver: Symbol,
+    can_skip_merge: bool,
+    shapes: LeanShapes,
+) -> bool {
     let owner_name = owner.as_str();
     can_skip_merge
-        && cc.closure_compiled_codes.is_empty()
+        && (shapes == LeanShapes::PhaseStep || cc.closure_compiled_codes.is_empty())
         && def.deprecated_message.is_none()
         && !cc.uses_callframe
         && !cc.uses_dispatcher
@@ -70,7 +111,7 @@ pub(super) fn lean_frame_eligible(
         && !interp.method_has_role_bindings(def, owner_name, receiver.as_str())
         && interp.attr_default_classes(owner_name, receiver.as_str()) == (false, false)
         && def.param_defs.iter().all(|pd| {
-            lean_param_ok(pd)
+            (lean_param_ok(pd) || (shapes == LeanShapes::PhaseStep && lean_attributive_named_ok(pd)))
                 && pd.type_constraint.as_deref().is_none_or(|tc| {
                     // A builtin type, or a user class (not a role, subset or
                     // enum, whose checks read more than the instance's class),
@@ -171,6 +212,33 @@ fn lean_param_ok(pd: &crate::ast::ParamDef) -> bool {
         && pd.trait_args.is_empty()
 }
 
+/// An optional, untyped, trait-less, default-less attributive named
+/// parameter (`:$!x`, `:@!x`, `:%!x`, or the public `.` twigil): the shape
+/// the fast-path gate admits on every call (`named_param_fast_eligible`)
+/// and the fast binders' shared named arm binds (`bind_named_param_fast`).
+// Cost: O(1).
+pub(crate) fn lean_attributive_named_ok(pd: &crate::ast::ParamDef) -> bool {
+    pd.named
+        && crate::value::attr_twigil_base(&pd.name).is_some()
+        && Interpreter::named_param_fast_match_key(pd).is_some()
+        && !pd.required
+        && pd.default.is_none()
+        && pd.type_constraint.is_none()
+        && pd.type_capture.is_none()
+        && pd.where_constraint.is_none()
+        && pd.sub_signature.is_none()
+        && pd.outer_sub_signature.is_none()
+        && pd.code_signature.is_none()
+        && pd.literal_value.is_none()
+        && pd.shape_constraints.is_none()
+        && pd.traits.is_empty()
+        && pd.trait_args.is_empty()
+        && !pd.slurpy
+        && !pd.double_slurpy
+        && !pd.sigilless
+        && !pd.is_invocant
+}
+
 /// The resolved, planned call a lean frame runs.
 pub(super) struct LeanMethodCall<'a> {
     /// The receiver's class (a metamethod's `state` is keyed by it).
@@ -204,8 +272,18 @@ impl Interpreter {
         let mut params = def
             .param_defs
             .iter()
-            .filter(|pd| !pd.is_invocant && !pd.slurpy);
+            .filter(|pd| !pd.is_invocant && !pd.slurpy && !pd.named);
         args.iter().all(|a| {
+            // A named argument binds a named parameter (an attributive one,
+            // `LeanShapes::PhaseStep`) or the implicit `*%_`: only the
+            // implicit `Any` check of its value is per call, as the gate's
+            // `named_mu_only_arg`.
+            if a.is_string_pair_value() {
+                return match a.view() {
+                    ValueView::Pair(_, v) => !v.is_proxy_value() && self.light_arg_is_any(&v),
+                    _ => false,
+                };
+            }
             let Some(pd) = params.next() else {
                 return false;
             };
@@ -292,7 +370,9 @@ impl Interpreter {
             self.set_env(scoped);
         }
         let method_callable_id = crate::value::next_instance_id();
-        if !can_skip_merge {
+        // A body with closures roots its callable id whether or not its exit
+        // merges, as the general binder does (`skip_env_setup` there).
+        if !can_skip_merge || !cc.closure_compiled_codes.is_empty() {
             // As the fast binder's non-skip arm: the rooted frame answers `$_`
             // and `$!` for the callees this body runs.
             self.env_mut().set_callable_id(method_callable_id as i64);
@@ -328,7 +408,19 @@ impl Interpreter {
             if pd.is_some_and(|pd| pd.slurpy) {
                 continue;
             }
-            if let Some(val) = args_iter.next() {
+            // An attributive named parameter (`LeanShapes::PhaseStep`): the
+            // fast binders' shared named arm writes the attribute and gives
+            // the value the frame's local starts from.
+            if let Some(pd) = pd.filter(|pd| pd.named) {
+                let (val, _) =
+                    self.bind_named_param_fast(owner_sym, method_def, idx, pd, &args, attrs_cell.as_ref());
+                param_values.push((param_name.as_str(), param_syms[idx], val));
+                continue;
+            }
+            // Positional parameters take the positional arguments in order;
+            // a named argument binds by name.
+            let next_positional = args_iter.by_ref().find(|a| !a.is_string_pair_value());
+            if let Some(val) = next_positional {
                 param_values.push((
                     param_name.as_str(),
                     param_syms[idx],

@@ -211,6 +211,7 @@ mod vm_accessor_lane;
 mod vm_accessor_read_plan;
 mod vm_bless_lane;
 pub(crate) mod vm_named_param_bind;
+pub(crate) mod vm_phase_step_lean;
 mod vm_block_alias_sync;
 pub(crate) mod vm_block_env;
 mod vm_call_method_compiled_mut;
