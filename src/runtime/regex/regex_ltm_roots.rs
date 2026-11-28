@@ -45,6 +45,12 @@ impl Interpreter {
             return;
         }
         let nfa = self.ltm_proto_nfa_for(candidates);
+        // A lone candidate the gates leave is tried as is, and none left
+        // means no candidate can match (`LtmNfa::gated_ranking`).
+        if let Some(lone) = nfa.gated_ranking(chars, pos) {
+            out.extend(lone);
+            return;
+        }
         self.ltm_measure_roots(&nfa, chars, pos, |idx, measured| {
             // ADR-0022 §4.1's contract: `(None, false)` is a sound "this
             // candidate cannot match here" verdict and may filter; `(None,
@@ -87,8 +93,8 @@ impl Interpreter {
             }
         };
         // The character in front of the ranking decides it on its own when
-        // at most one branch can begin with it (`LtmNfa::gated_winner`).
-        if let Some(winner) = nfa.gated_winner(chars, pos) {
+        // at most one branch can begin with it (`LtmNfa::gated_ranking`).
+        if let Some(winner) = nfa.gated_ranking(chars, pos) {
             order.extend(winner.map(|idx| (idx, (1, 0))));
             order.extend(
                 (0..nfa.root_count())

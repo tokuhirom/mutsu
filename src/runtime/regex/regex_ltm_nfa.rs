@@ -125,9 +125,9 @@ pub(crate) struct LtmNfa {
     /// Per node, what a thread arriving there at a character the guard rejects
     /// cannot go on from (`regex_ltm_nfa_guard`): the run drops it unasked.
     pub(super) guards: Vec<Option<super::regex_prefilter_firstset::FirstSet>>,
-    /// Per root, the characters a match of it can begin with, when every root
-    /// has such a set (`regex_ltm_nfa_guard::root_gates`).
-    pub(super) root_gates: Option<Box<[super::regex_prefilter_firstset::FirstSet]>>,
+    /// Per root, the characters a match of it can begin with, `None` for a
+    /// root that has no such set (`regex_ltm_nfa_guard::root_gates`).
+    pub(super) root_gates: Option<Box<[Option<super::regex_prefilter_firstset::FirstSet>]>>,
 }
 
 impl LtmNfa {
@@ -145,35 +145,42 @@ impl LtmNfa {
         }
     }
 
-    /// The root that wins the ranking at `pos` when the root gates decide it
-    /// without a run: at most one root's gate admits the character there, so
-    /// every other root fails at its first character, in the measurement and
-    /// in the match alike. `Some(None)` when no root admits it. The admitting
-    /// root ranks first and the rest keep their order, which is the order a
+    /// The one root that can begin a match at `pos`, when the root gates
+    /// say so without a run: every other root has a gate that rejects the
+    /// character there (or `pos` is the end, which every gate rejects), so
+    /// it fails at its first character, in the measurement and in the match
+    /// alike. `Some(None)` when every root is rejected so. `None` when the
+    /// gates do not decide it: several roots are not rejected (a root with no
+    /// gate is never rejected), or a left-recursion activation is live, whose
+    /// seed a run would read through a call instead of a character.
+    ///
+    /// Both rankings take the answer as theirs. A `|` (`ltm_rank_alternation`)
+    /// ranks that root first and the rest in their order, which is the order a
     /// run ranks them in whenever that root measures any length; when it
-    /// measures none, no root can match at all except possibly it, so trying
-    /// it first changes no outcome. `None` when the gates do not decide it
-    /// (several roots admit the character, a root has no gate, or a
-    /// left-recursion activation is live, whose seed a run would read through
-    /// a call instead of a character).
+    /// measures none, no root but it can match at all, so trying it first
+    /// changes no outcome. A proto (`ltm_rank_proto`) tries only that root: a
+    /// rejected candidate is the "cannot match here" verdict its ranking
+    /// filters on, and a lone candidate needs no rank.
     // Cost: O(r), r = roots.
-    pub(super) fn gated_winner(&self, chars: &[char], pos: usize) -> Option<Option<usize>> {
+    pub(super) fn gated_ranking(&self, chars: &[char], pos: usize) -> Option<Option<usize>> {
         let gates = self.root_gates.as_deref()?;
-        let mut winner = None;
-        if pos < chars.len() {
-            for (idx, gate) in gates.iter().enumerate() {
-                if gate.admits_at(chars, pos) {
-                    if winner.is_some() {
-                        return None;
-                    }
-                    winner = Some(idx);
+        let mut viable = None;
+        for (idx, gate) in gates.iter().enumerate() {
+            let rejected = match gate {
+                Some(gate) => pos >= chars.len() || !gate.admits_at(chars, pos),
+                None => false,
+            };
+            if !rejected {
+                if viable.is_some() {
+                    return None;
                 }
+                viable = Some(idx);
             }
         }
         if super::regex_lr_state::lr_any_live() {
             return None;
         }
-        Some(winner)
+        Some(viable)
     }
 
     /// The number of roots (branches) of a several-root NFA.

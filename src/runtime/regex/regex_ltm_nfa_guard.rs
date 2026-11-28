@@ -99,29 +99,28 @@ fn resolve(nodes: &[NfaNode], node: usize, slots: &mut [Slot], depth: usize) -> 
     guard
 }
 
-/// The *gate* of every root of a several-root NFA (`LtmNfa::roots`), or
-/// `None` when some root has none: the set of characters a match of that root
-/// can begin with. It is a node guard that also looks through a `<name>`
-/// call into the callee's body, which the run's own guards must not do (a call
-/// can be a recursion-cut fate, or read a live left-recursion seed, without
-/// testing a character). The ranking that uses a gate
-/// (`ltm_rank_alternation`) answers neither case: a recursion-cut fate at the
-/// start measures the same `(0, 0)` as a root that fails, and the ranking does
-/// not use the gates while any left-recursion activation is live.
+/// The *gate* of every root of a several-root NFA (`LtmNfa::roots`), each
+/// `None` when that root has none, and `None` altogether when no root has
+/// one: the set of characters a match of that root can begin with. It is a
+/// node guard that also looks through a `<name>` call into the callee's body,
+/// which the run's own guards must not do (a call can be a recursion-cut
+/// fate, or read a live left-recursion seed, without testing a character).
+/// The rankings that use a gate (`LtmNfa::gated_ranking`) answer neither case:
+/// a recursion-cut fate at the start needs a call to a rule already on the
+/// left-call path, which is a cycle here and leaves the root without a gate,
+/// and the gates are not used while any left-recursion activation is live.
 // Cost: O(s + t), s = nodes, t = split targets and calls (each node is
 // resolved once).
 pub(super) fn root_gates(
     nodes: &[NfaNode],
     roots: &[super::regex_ltm_nfa::NfaRoot],
-) -> Option<Box<[FirstSet]>> {
-    if roots.len() < 2 {
-        return None;
-    }
+) -> Option<Box<[Option<FirstSet>]>> {
     let mut slots = vec![Slot::Todo; nodes.len()];
-    roots
+    let gates: Box<[Option<FirstSet>]> = roots
         .iter()
         .map(|root| resolve_through_calls(nodes, root.entry as usize, &mut slots, 0))
-        .collect()
+        .collect();
+    gates.iter().any(Option::is_some).then_some(gates)
 }
 
 /// [`resolve`], following a call into its callee's body.
