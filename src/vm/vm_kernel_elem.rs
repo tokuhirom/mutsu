@@ -334,8 +334,19 @@ mod tests {
         let (code, slot, name_idx) = compile(SRC);
         assert!(kernel_elem_slot_ok(&code, slot));
         let interp = interp_with(&code, slot, plain());
-        assert!(kernel_elem_entry_ok(&interp, &code, slot, name_idx, false));
-        assert!(kernel_elem_entry_ok(&interp, &code, slot, name_idx, true));
+        // The process latches are shared by every test in this binary (a
+        // test elsewhere may have declared an atomic or started a thread), so
+        // the positive answer is only required while they are all clear.
+        let latches_clear = crate::vm::vm_jit::local_read_unspoiled()
+            && !crate::runtime::shared_store::atomic_lane_entries_exist()
+            && !crate::value::container_lock::multi_mutator_threads_live();
+        if latches_clear {
+            assert!(kernel_elem_entry_ok(&interp, &code, slot, name_idx, false));
+            assert!(kernel_elem_entry_ok(&interp, &code, slot, name_idx, true));
+        }
+        // A slot that holds no array never qualifies, whatever the latches.
+        let not_array = interp_with(&code, slot, Value::int(1));
+        assert!(!kernel_elem_entry_ok(&not_array, &code, slot, name_idx, false));
     }
 
     #[test]
