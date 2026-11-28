@@ -106,10 +106,31 @@ fn any_only_names() -> &'static FxHashSet<&'static str> {
 
 /// Whether `method` is resolvable only through `Cool` or one of its subtypes
 /// (see [`cool_only_name`]).
-// Cost: O(k + |method|), k = the 12 names of `COOL_SUBTYPE_ONLY`; up to three
-// per-owner hash probes, so no whole-catalog set is built on the first call.
+// Cost: O(|method|) on a memo hit (one hash probe); the first ask of a name
+// is O(k + |method|), k = the 12 names of `COOL_SUBTYPE_ONLY`, plus up to
+// three per-owner catalog probes -- no whole-catalog set is built.
 pub(crate) fn is_cool_only_method(method: &str) -> bool {
-    cool_only_name(method)
+    // The answer depends on the name alone (a static catalog), and the
+    // native method dispatch asks it on every method call it serves, so
+    // each name is decided once per thread. The memo is bounded: a program
+    // calling unboundedly many distinct method names (`."$name"()`) is
+    // answered without caching past the cap.
+    thread_local! {
+        static MEMO: std::cell::RefCell<rustc_hash::FxHashMap<Box<str>, bool>> =
+            std::cell::RefCell::new(rustc_hash::FxHashMap::default());
+    }
+    const MEMO_CAP: usize = 4096;
+    MEMO.with(|memo| {
+        if let Some(&known) = memo.borrow().get(method) {
+            return known;
+        }
+        let answer = cool_only_name(method);
+        let mut memo = memo.borrow_mut();
+        if memo.len() < MEMO_CAP {
+            memo.insert(method.into(), answer);
+        }
+        answer
+    })
 }
 
 /// Whether `method` is one of the [`COOL_SUBTYPE_ONLY`] names: declared on
@@ -304,5 +325,23 @@ mod tests {
         // `Nil` and `Str:U` ARE `Cool`: raku runs the method and warns.
         assert!(cool_method_not_found(&Value::NIL, "comb").is_none());
         assert!(cool_method_not_found(&Value::package(Symbol::intern("Str")), "uc").is_none());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{cool_only_name, is_cool_only_method};
+
+    /// The memoized answer is the catalog's answer, on a first ask and on a
+    /// repeat (a hit), for gated and ungated names alike.
+    #[test]
+    fn memo_agrees_with_the_catalog() {
+        for name in ["comb", "uc", "chars", "succ", "base", "split", "match", "elems", "new", "WHAT", "no-such-method"] {
+            let direct = cool_only_name(name);
+            assert_eq!(is_cool_only_method(name), direct, "{name}: first ask");
+            assert_eq!(is_cool_only_method(name), direct, "{name}: memo hit");
+        }
+        assert!(is_cool_only_method("comb"));
+        assert!(!is_cool_only_method("split"));
     }
 }
