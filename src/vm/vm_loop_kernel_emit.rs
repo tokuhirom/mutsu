@@ -176,7 +176,12 @@ impl Em<'_, '_> {
     ) -> Option<Vec<(ClValue, K)>> {
         // Join blocks, with one block parameter per stack entry.
         let mut blocks: BTreeMap<usize, (Block, Vec<K>)> = BTreeMap::new();
-        for (&(_, t), kinds) in joins.range((start, start + 1)..(start, end)) {
+        // An empty segment (`while $i++ < $m { }`) has no join inside it.
+        let inner = (start < end)
+            .then(|| joins.range((start, start + 1)..(start, end)))
+            .into_iter()
+            .flatten();
+        for (&(_, t), kinds) in inner {
             let blk = self.b.create_block();
             for k in kinds {
                 self.b.append_block_param(blk, clty(*k));

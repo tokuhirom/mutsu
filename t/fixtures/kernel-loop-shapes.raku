@@ -187,6 +187,9 @@ my $pc = 0;
 my $pd = 1000;
 for ^3000 -> $i { $pc++; --$pd; $pc = $pc + $pd-- - ++$pd }
 say "incdec=", $pc, " ", $pd;
+my $ec = 0;
+while $ec++ < 3000 { }
+say "empty-body=", $ec;
 my $px = 9223372036854775000;
 for ^2000 { $px++ }
 say "incdec-overflow=", $px;
