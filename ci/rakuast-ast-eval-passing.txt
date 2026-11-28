@@ -4812,6 +4812,7 @@ t/oo/attribute/at-sigil-attribute-list-assign.t
 t/oo/attribute/attr-access-resolution.t
 t/oo/attribute/attr-accessor-rw-method-overrides-readonly.t
 t/oo/attribute/attr-accessor-slot.t
+t/oo/attribute/attr-aggregate-assign-tied-or-plain.t
 t/oo/attribute/attr-aggregate-bind-callee-instance.t
 t/oo/attribute/attr-aggregate-slot-ops.t
 t/oo/attribute/attr-aggregate-store-site-cache.t
@@ -7214,6 +7215,7 @@ t/rakuast/rakuast-labelled-repeat.t
 t/rakuast/rakuast-leading-colons-type-name.t
 t/rakuast/rakuast-leaf-accessors.t
 t/rakuast/rakuast-lexical-package.t
+t/rakuast/rakuast-lexical-three-way-operators.t
 t/rakuast/rakuast-list-infix-adverbs.t
 t/rakuast/rakuast-list-infix.t
 t/rakuast/rakuast-listinfix-bind.t
@@ -8268,6 +8270,7 @@ t/regex/regex-str-coercion-name.t
 t/regex/regex-str-coercion-warns.t
 t/regex/regex-subpattern-parse-memo.t
 t/regex/regex-subrule-absolute-position.t
+t/regex/regex-subrule-arg-list-simple.t
 t/regex/regex-subrule-block-argument.t
 t/regex/regex-subrule-parameter-typecheck.t
 t/regex/regex-subrule-parse-cache.t
@@ -9269,6 +9272,7 @@ t/routines/nested-sub-same-name-own-free-vars.t
 t/routines/nested-sub-shadows-class-body-my.t
 t/routines/nested-sub-shadows-imported-constant-term.t
 t/routines/nested-sub-shadows-outer-code-variable.t
+t/routines/operator-routine-value-ignores-caller-lexical.t
 t/routines/orelse-andthen-routine-form-callable.t
 t/routines/os-functions.t
 t/routines/output-routine-forms-agree.t
@@ -9609,6 +9613,7 @@ t/routines/signature/param-default-before-return-arrow.t
 t/routines/signature/param-default-bool-conforms-int.t
 t/routines/signature/param-default-keeps-code-lexicals.t
 t/routines/signature/param-default-nil-and-type-object.t
+t/routines/signature/param-default-resolves-in-routine-scope.t
 t/routines/signature/param-default-self-scoping.t
 t/routines/signature/param-default-whatever-and-empty-capture.t
 t/routines/signature/param-exprs-compile-once.t
